@@ -49,6 +49,7 @@ export function minutesText(min: number): string {
 /** What `e` does with an item, in words, or undefined when the owner cannot finish it from Today. */
 export function doneWord(item: Pick<AgendaItem, "done">): string | undefined {
   if (item.done?.kind === "dismiss-finding") return "Dismiss";
+  if (item.done?.kind === "ack-incident") return "Acknowledge";
   return undefined;
 }
 
@@ -61,14 +62,21 @@ export function dayText(day: string): string {
 }
 
 /**
- * The header's one sentence. Its wording waits for the owner: "need you" counts decisions only
- * elsewhere, and "N on today's agenda" is the proposed replacement (docs/PROGRESS.md).
+ * The header's one sentence. "Need you" is the Needs you count, the same number as the bell and the Decisions
+ * page. Findings and incidents on the agenda that are not decisions are counted apart.
  */
-export function subtitleOf(input: { day: string; count: number; minutes: number; later: number }): string {
+export function subtitleOf(input: {
+  day: string;
+  needs: number;
+  look: number;
+  minutes: number;
+  later: number;
+}): string {
   const date = dayText(input.day);
   const later = input.later > 0 ? `, ${input.later} more later` : "";
-  if (input.count === 0) return `${date}. Nothing needs you${later}.`;
-  return `${date}. ${input.count} ${input.count === 1 ? "thing needs" : "things need"} you, about ${minutesText(input.minutes)}${later}.`;
+  const look = input.look > 0 ? `, ${input.look} to look at` : "";
+  if (input.needs === 0) return `${date}. Nothing needs you${look}${later}.`;
+  return `${date}. ${input.needs} ${input.needs === 1 ? "thing needs" : "things need"} you, about ${minutesText(input.minutes)}${look}${later}.`;
 }
 
 /** What an agenda row calls itself: a decision uses its Decisions kind and title, so both screens agree. */

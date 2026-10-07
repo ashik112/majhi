@@ -467,6 +467,8 @@ export type ChangeBranchResult = z.infer<typeof ChangeBranchResultSchema>;
 
 /** The brief of a chat the owner started from the Chats page or Cmd J. It marks the task; it is never shown. */
 export const CHAT_BRIEF = "Chat";
+/** Starts the `why` of a review card when the captain tried to ship the task and failed; the reason follows. */
+export const SHIP_FAILED_PREFIX = "The captain tried to ship it and failed: ";
 /** The same marker on chats made before the Chats page. */
 export const BOSS_CHAT_BRIEF = "Captain chat";
 /** What an untitled chat is called until the owner's first message names it. */
@@ -1051,6 +1053,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The merge it made, for Undo. */
     merge: z.number().int().positive().optional(),
   }),
+  /** Asked once in the chat: a sender who looks like one of us (an admin of the chat or workspace). The answer is the person's role. */
+  RoomItemBase.extend({
+    type: z.literal("who-is"),
+    /** The sender's id in the app. */
+    sender: z.string(),
+    name: z.string(),
+    state: z.enum(["asking", "us", "client"]),
+  }),
   /** A fact about a client incident: the cause, a reopen, an update told to a room. Read by the incident card, not drawn in the log. */
   RoomItemBase.extend({
     type: z.literal("incident-event"),
@@ -1077,6 +1087,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     decision: z.string().max(40).optional(),
     /** The hand-off check step this line reports as failed: the room shows its log and a rerun beside it. */
     failed: HandoffFailedSchema.optional(),
+    /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
+    action: z.enum(["memory-retry", "runner-memory"]).optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

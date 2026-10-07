@@ -123,6 +123,8 @@ export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => v
   return useMutation<WorkspacesUpdateResult, ApiRequestError, WorkspacesUpdate>({
     mutationFn: (input) => cmd("workspaces.set", input, { reason: "Owner edited project folders" }),
     onSuccess: async (result) => {
+      // Nothing was saved: a folder does not exist. The caller offers to create it.
+      if ((result.missing?.length ?? 0) > 0) return;
       onSaved?.(result);
       client.setQueryData(queryKeys.config, result.state);
       await client.invalidateQueries({ queryKey: queryKeys.repos });
@@ -199,6 +201,37 @@ export function useSshReload() {
   return useMutation<SshStatus, ApiRequestError>({
     mutationFn: () => cmd("ssh.reload", {}, { reason: "Owner asked to check SSH keys again" }),
     onSuccess: (ssh) => noteSsh(client, ssh),
+  });
+}
+
+/** The public SSH keys in ~/.ssh, to show the one to add on a git host. */
+export function useSshPublicKeys() {
+  return useQuery<CommandOutput<"ssh.publicKeys">, ApiRequestError>({
+    queryKey: ["ssh", "public-keys"],
+    queryFn: () => cmd("ssh.publicKeys", {}),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Puts back the newest earlier majhi.yaml that loads, then reads the config again. */
+export function useRestoreConfig() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"config.restoreLast">, ApiRequestError, void>({
+    mutationFn: () => cmd("config.restoreLast", {}, { reason: "Owner restored the last working majhi.yaml" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.config }),
+  });
+}
+
+/** Makes an SSH key on this computer through the host helper. The private key never leaves it. */
+export function useMakeSshKey() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"ssh.makeKey">, ApiRequestError, void>({
+    mutationFn: () => cmd("ssh.makeKey", {}, { reason: "Owner asked majhi to make an SSH key" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["ssh", "public-keys"] });
+      void client.invalidateQueries({ queryKey: queryKeys.hostStatus });
+    },
   });
 }
 

@@ -6,7 +6,7 @@ import { serviceById } from "@majhi/shared";
  * owner picks a service, majhi shows the cheapest method that works, and the others sit behind
  * "Other ways".
  */
-export type MethodGroup = "one-click" | "on-this-mac" | "token" | "own-app" | "own";
+export type MethodGroup = "one-click" | "on-this-mac" | "token" | "own-app" | "chat" | "own";
 
 export const GROUPS: readonly { id: MethodGroup; title: string; blurb: string }[] = [
   {
@@ -30,6 +30,11 @@ export const GROUPS: readonly { id: MethodGroup; title: string; blurb: string }[
     blurb: "The service gives majhi no sign-in of its own, so you make one app. majhi guides each step.",
   },
   {
+    id: "chat",
+    title: "Chat apps",
+    blurb: "Slack and Telegram bots. majhi reads the chats they are in and the captain replies.",
+  },
+  {
     id: "own",
     title: "Your own servers and keys",
     blurb: "Hosts, clusters, mailboxes and keys that are not a listed service.",
@@ -41,6 +46,7 @@ export const TIME: Record<MethodGroup, string> = {
   "on-this-mac": "About a minute",
   token: "About 2 minutes",
   "own-app": "About 10 minutes",
+  chat: "About 5 minutes",
   own: "About 2 minutes",
 };
 
@@ -50,6 +56,7 @@ export const METHOD_WORD: Record<MethodGroup, string> = {
   "on-this-mac": "On this Mac",
   token: "Token",
   "own-app": "Your own app",
+  chat: "Chat app",
   own: "Custom",
 };
 
@@ -183,6 +190,8 @@ export function groupOfConnection(view: ConnectionView): MethodGroup {
       return view.fields.auth?.value === "oauth" ? "one-click" : "token";
     case "api":
       return "own-app";
+    case "chat":
+      return "chat";
     case "cli":
       return "on-this-mac";
     case "git":

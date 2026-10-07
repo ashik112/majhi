@@ -105,6 +105,12 @@ export function whenWord(at: Date, now: Date, tz: string): string {
   return n > 0 && n < 7 ? `${weekday} ${date}${timed}` : `${date}${timed}`;
 }
 
+/** "3 min ago", or "just now". */
+export function agoWord(fromIso: string, now: Date): string {
+  const age = ageWord(fromIso, now);
+  return age === "just now" ? age : `${age} ago`;
+}
+
 /** "3 min", "2 h", "1 day": how long something has waited. */
 export function ageWord(fromIso: string, now: Date): string {
   const ms = Math.max(0, now.getTime() - new Date(fromIso).getTime());

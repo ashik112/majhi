@@ -40,23 +40,33 @@ export function PendingAsk({ item }: { item: Ask }) {
   /** A single question's option, waiting out the undo window. */
   const [sending, setSending] = useState<{ id: string; label: string }>();
 
-  const send = useMutation<unknown, ApiRequestError, Record<string, string>>({
-    mutationFn: (body) => cmd("room.answerAsk", { task: item.task, item: item.id, answers: body }),
+  const send = useMutation<unknown, ApiRequestError, { answers: Record<string, string>; holdMs?: number }>({
+    mutationFn: ({ answers: body, holdMs }) =>
+      cmd("room.answerAsk", {
+        task: item.task,
+        item: item.id,
+        answers: body,
+        ...(holdMs === undefined ? {} : { holdMs }),
+      }),
     onError: (error) => {
       setSending(undefined);
       toast("Could not answer", { detail: error.message, tone: "error" });
     },
   });
 
-  // The timer belongs to one pick; a rerender must not restart it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  // The server holds a single question's answer for its Undo time and sends it, also when this tab is gone.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one send per pick; a rerender must not repeat it
   useEffect(() => {
     if (sending === undefined) return;
     const q = item.questions[0];
     if (q === undefined) return;
-    const timer = setTimeout(() => send.mutate({ [q.id]: sending.id }), UNDO_MS);
-    return () => clearTimeout(timer);
+    send.mutate({ answers: { [q.id]: sending.id }, holdMs: UNDO_MS });
   }, [sending]);
+
+  const undo = () => {
+    setSending(undefined);
+    void cmd("answers.cancelHeld", { key: `ask:${item.task}:${item.id}` });
+  };
 
   const status = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -134,7 +144,7 @@ export function PendingAsk({ item }: { item: Ask }) {
                   disabled={busy}
                   onChange={(e) => type(q, e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && single && answered(q) && !busy) send.mutate(answers);
+                    if (e.key === "Enter" && single && answered(q) && !busy) send.mutate({ answers });
                   }}
                   className={FIELD}
                 />
@@ -143,7 +153,7 @@ export function PendingAsk({ item }: { item: Ask }) {
                     size="sm"
                     variant="primary"
                     disabled={busy || !answered(q)}
-                    onClick={() => send.mutate(answers)}
+                    onClick={() => send.mutate({ answers })}
                   >
                     {send.isPending ? "Sending..." : "Send"}
                   </Button>
@@ -174,7 +184,7 @@ export function PendingAsk({ item }: { item: Ask }) {
             {send.isPending ? "Sending" : "Sending in 5 seconds"}: {sending.label}
           </span>
           {!send.isPending && (
-            <Button size="sm" variant="ghost" onClick={() => setSending(undefined)}>
+            <Button size="sm" variant="ghost" onClick={undo}>
               Undo
             </Button>
           )}
@@ -187,7 +197,7 @@ export function PendingAsk({ item }: { item: Ask }) {
             size="sm"
             variant="primary"
             disabled={send.isPending || !ready}
-            onClick={() => send.mutate(answers)}
+            onClick={() => send.mutate({ answers })}
           >
             {send.isPending ? "Sending..." : "Send"}
           </Button>

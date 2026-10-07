@@ -187,6 +187,8 @@ export function createChores(
       task: t.id,
       irreversible: true,
       recheck,
+      failText: `Opening the merge request for ${t.id} failed`,
+      onFail: (error) => ports.shipFailed(org, t.id, error),
       do: async () => {
         const out = await ports.openMrs(org, t.id, reason);
         if (out.failed !== undefined) throw new Error(out.failed);
@@ -561,6 +563,8 @@ export function createChores(
           task: t.id,
           irreversible: true,
           recheck,
+          failText: `Ship failed for ${t.id}`,
+          onFail: (error) => ports.shipFailed(org, t.id, error),
           do: () => ports.ship(org, t.id, { push }, reason),
         });
       }

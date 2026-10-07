@@ -22,6 +22,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "room.cancel",
   "room.fresh",
   "ssh.unlock",
+  "ssh.makeKey",
   "secrets.exportKey",
   "secrets.restoreKey",
   "boss.chat",
@@ -31,6 +32,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "projects.holdDeploy",
   // Read state is the owner's: what they have seen is not for an agent to read or move.
   "conversations.list",
+  "conversations.search",
   "conversations.markRead",
   "conversations.archive",
   "chats.create",
@@ -40,6 +42,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.link",
   "chat.ignore",
   "chat.channels",
+  "chat.groups",
   "chat.channelLink",
   "chat.channelIgnore",
   "chat.unlink",
@@ -48,6 +51,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.send",
   "chat.editReply",
   "chat.samePerson",
+  "chat.whoIs",
   "chat.confirmWebhook",
   "chat.markUs",
   "chat.settings",
@@ -183,7 +187,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
     ],
   },
   accounts: {
-    label: "Orgs, git accounts and secrets",
+    label: "Workspaces, git accounts and secrets",
     about:
       "Org settings, git accounts and tokens, saved logins, accounts, connections, secrets, skills and MCP servers (code that runs in agent runs).",
     commands: [
@@ -212,6 +216,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
       "mcp.enable",
       "mcp.disable",
       "ssh.reload",
+      "ssh.makeKey",
     ],
   },
   shipping: {
@@ -342,6 +347,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "mcp.enable": "Turn an MCP server on for an agent",
   "mcp.disable": "Turn an MCP server off for an agent",
   "ssh.reload": "Reload SSH keys",
+  "ssh.makeKey": "Make an SSH key",
   "tasks.merge": "Merge a task into a local branch",
   "tasks.push": "Push a task branch",
   "tasks.openMrs": "Open merge requests",
@@ -384,6 +390,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "room.answerAsk": "Answer an ask card",
   "containers.images.allow": "Allow a service image",
   "history.undo": "Undo a config change",
+  "config.restoreLast": "Restore the last majhi.yaml that loads",
   "settings.set": "Change hub settings",
   "cleanup.preview": "Preview a cleanup",
   "health.fix": "Run a health fix",
@@ -497,6 +504,7 @@ export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
   "policy.removeRule",
   "settings.set",
   "history.undo",
+  "config.restoreLast",
   "autonomy.start",
   "autonomy.pause",
   "autonomy.stop",

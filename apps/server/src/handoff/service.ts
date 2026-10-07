@@ -15,6 +15,7 @@ import {
   handoffSeconds,
   handoffSummary,
 } from "@majhi/shared";
+import type { CiService } from "../ci/jobs.ts";
 import { safeLine } from "../ci/safe.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import {
@@ -38,6 +39,7 @@ import { impliedMemoryMb, memoryMb, sizeWords } from "./limits.ts";
 import { logPath, newRunId, StepLog } from "./logs.ts";
 import { compareFailures, type ProblemKind, problemsOf } from "./problems.ts";
 import type { DeepRow, HandoffRepo } from "./repo.ts";
+import { startServices } from "./services.ts";
 
 /**
  * The checked hand-off (SPEC 5.18, captain v2 step 7). A task that says it is done is verified
@@ -114,6 +116,8 @@ export interface CheckSpec {
   from: string;
   /** The minutes the CI gives the job. */
   minutes?: number | undefined;
+  /** The services the CI job starts next to the check: started for it, removed after. */
+  services?: CiService[] | undefined;
 }
 
 /** What a check did on the base commit: kept by the base, the check and its environment. */
@@ -151,12 +155,22 @@ export interface HandoffPorts {
   /** The body of a package.json script in a folder, for turning a script that writes into its read-only form. */
   script?(cwd: string, name: string): Promise<string | undefined>;
   /**
-   * A throwaway checkout of a commit, with the worktree's installed packages linked in. Absent: checks
+   * A throwaway checkout of a commit, with the worktree's installed packages linked in (none when `installedFrom` is absent). Absent: checks
    * run in the worktree itself.
    */
-  checkout?(task: string, project: string, commit: string, installedFrom: string): Promise<Checkout>;
+  checkout?(
+    task: string,
+    project: string,
+    commit: string,
+    installedFrom: string | undefined,
+  ): Promise<Checkout>;
   /** The commit the task's branch is at in one project. */
   headCommit?(task: string, project: string): Promise<string | undefined>;
+  /**
+   * Whether the task changed what a project installs (a manifest or a lockfile) between `base` and its head. A base
+   * copy then gets its own install: the packages of the head are not the base's.
+   */
+  dependenciesChanged?(task: string, project: string, base: string): Promise<boolean>;
   /** What the same check did on a base commit, kept by `key` (the base, the check, its environment). */
   baseRuns?: {
     get(key: string): Promise<BaseRun | undefined>;
@@ -838,6 +852,23 @@ export class HandoffService {
     work: Checkouts,
     always = false,
   ): Promise<HandoffStep> {
+    // The services a job starts for a check are removed however the step ends.
+    const stops: (() => Promise<void>)[] = [];
+    try {
+      return await this.commandSteps(task, kind, runId, work, always, stops);
+    } finally {
+      await Promise.all(stops.map((stop) => stop().catch(() => undefined)));
+    }
+  }
+
+  private async commandSteps(
+    task: HandoffTask,
+    kind: HandoffCommandStep,
+    runId: string,
+    work: Checkouts,
+    always: boolean,
+    stops: (() => Promise<void>)[],
+  ): Promise<HandoffStep> {
     interface Run {
       project: string;
       worktree: string;
@@ -847,6 +878,7 @@ export class HandoffService {
       env: Record<string, string>;
       ran: HandoffRan;
       minutes: number | undefined;
+      services: CiService[];
     }
     const runs: Run[] = [];
     const skipped: string[] = [];
@@ -896,6 +928,7 @@ export class HandoffService {
         command: safe.command,
         env: spec.env,
         minutes: spec.minutes,
+        services: kind === "install" ? [] : (spec.services ?? []),
         ran: {
           project: r.project,
           command: safe.command,
@@ -957,6 +990,17 @@ export class HandoffService {
         r.ran.notes.push(
           `the CI gives Node a ${sizeWords(`${Math.round(wantsMb / 1024)}g`)} heap and headroom, and the limit here is ${sizeWords(limits.memory)}`,
         );
+      }
+      if (r.services.length > 0) {
+        const started = await startServices(
+          (command, ms) => this.ports.exec(task.id, r.cwd, command, ms, limits),
+          r.services,
+        );
+        if (!started.ok) {
+          return finish({ status: "fail", detail: started.why, ms: total, owner: true });
+        }
+        stops.push(started.stop);
+        r.ran.notes.push(...started.notes);
       }
       const run = () => this.ports.exec(task.id, r.cwd, r.command, timeoutMs, limits, r.env);
       let res = await run();
@@ -1117,14 +1161,33 @@ export class HandoffService {
     const commit = await ports.mergeBase(task.id, r.project).catch(() => undefined);
     if (commit === undefined) return undefined;
     const problemKind: ProblemKind = kind === "tests" ? "test" : kind === "install" ? "build" : kind;
+    // The head's installed packages are right for the base only while the task left what is installed alone.
+    const ownInstall =
+      (await ports.dependenciesChanged?.(task.id, r.project, commit).catch(() => false)) === true;
     const key = createHash("sha1")
-      .update(JSON.stringify([r.project, commit, kind, r.command, r.env, r.workdir ?? ""]))
+      .update(
+        JSON.stringify([r.project, commit, kind, r.command, r.env, r.workdir ?? "", ownInstall ? "own" : ""]),
+      )
       .digest("hex");
     let base = await ports.baseRuns?.get(key).catch(() => undefined);
     if (base === undefined) {
       let copy: Checkout | undefined;
       try {
-        copy = await ports.checkout(task.id, r.project, commit, installedFrom);
+        copy = await ports.checkout(task.id, r.project, commit, ownInstall ? undefined : installedFrom);
+        if (ownInstall) {
+          const install = await this.specOf(task, { project: r.project, worktree: installedFrom }, "install");
+          // No way to install for the base: the comparison would be off, so the failure is not called existing.
+          if (install === undefined || install.command.trim() === "") return undefined;
+          const done = await ports.exec(
+            task.id,
+            copy.path,
+            install.command,
+            this.timeouts.install,
+            limits,
+            install.env,
+          );
+          if (done.error !== undefined || done.timedOut || done.code !== 0) return undefined;
+        }
         const where = r.workdir === undefined ? copy.path : join(copy.path, r.workdir);
         const res = await ports.exec(task.id, where, r.command, timeoutMs, limits, r.env);
         // A base that could not be run says nothing about the task.
@@ -1175,7 +1238,7 @@ export class HandoffService {
     if (quiet) {
       return {
         by: "code",
-        why: "the model reads it when Autonomous is on or you press Check again",
+        why: "the model reads it when Auto-pilot is on or you press Check again",
         notes,
         tokens: 0,
       };
@@ -1242,15 +1305,15 @@ export class HandoffService {
       this.ports.hold(
         task.id,
         existing.action === "told"
-          ? `Checks failed and nothing was committed since the lead was told: ${firstLine(result.failures)}`
-          : `Checks failed${state.escalated ? ` ${state.strikes} times in a row` : ""}: ${firstLine(result.failures)}`,
+          ? `${what(result)} failed. The lead was told and has not committed a fix since.`
+          : `${what(result)} failed${state.escalated ? ` ${state.strikes} times in a row` : ""}.`,
       );
       return;
     }
     const strikes = state.strikes + 1;
     this.repo.addHistory(task.id, item("none"), result);
     if (!tells) {
-      this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
+      this.ports.hold(task.id, `${what(result)} failed.`);
       return;
     }
     if (strikes >= HANDOFF_STRIKES || state.escalated) {
@@ -1258,7 +1321,7 @@ export class HandoffService {
       this.repo.setAction(task.id, head, "escalated");
       this.ports.hold(
         task.id,
-        `Checks failed ${strikes} times in a row, so the lead is not told again. The latest: ${firstLine(result.failures)}`,
+        `${what(result)} failed ${strikes} times in a row, so the lead is not told again.`,
       );
       return;
     }
@@ -1274,7 +1337,7 @@ export class HandoffService {
       // No lead to tell (paused, done, no agent): the owner sees the failure on the card.
       this.ports.hold(
         task.id,
-        `Checks failed and the lead could not be told (${errorMessage(err)}): ${firstLine(result.failures)}`,
+        `${what(result)} failed and the lead could not be told (${errorMessage(err)}).`,
       );
     }
   }
@@ -1317,7 +1380,7 @@ export class HandoffService {
 }
 
 /** The first line of the first failure: what the card says, short. */
-function firstLine(failures: readonly string[]): string {
-  const line = (failures[0] ?? "").split("\n")[0] ?? "";
-  return line.length > 200 ? `${line.slice(0, 200)}...` : line;
+/** The step that failed, by its name on the card ("Tests", "Lint"), for the line the card shows. The card has its log. */
+function what(result: HandoffResult): string {
+  return result.failed?.label ?? "The checks";
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type {
   Budget,
   BudgetsPatch,
@@ -11,9 +11,10 @@ import type {
   commands,
   Remount,
   RoomItem,
+  SshPublicKey,
   TaskId,
 } from "@majhi/shared";
-import { CHAT_BRIEF, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
+import { CHAT_BRIEF, isSystemFolder, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
@@ -26,6 +27,7 @@ import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { chatHandlers } from "../chat/handlers.ts";
 import { incidentHandlers } from "../chat/incident-handlers.ts";
+import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -35,10 +37,10 @@ import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
-import { bitbucketKeyFingerprints, type KeyOwner } from "../git/keyOwners.ts";
+import { bitbucketKeyFingerprints, fingerprintOfPublicKey, type KeyOwner } from "../git/keyOwners.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
@@ -53,6 +55,7 @@ import {
   checkToken,
   fetchProbe,
   fetchPublicProfile,
+  mrKindOf,
   setGitAccount,
   tokenRequest,
   useSavedLogin,
@@ -86,6 +89,15 @@ import { wikiEnabledFrom } from "../wiki/switch.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
+const PUBLIC_KEY_TYPES = [
+  "ssh-ed25519",
+  "ssh-rsa",
+  "ecdsa-sha2-nistp256",
+  "ecdsa-sha2-nistp384",
+  "ecdsa-sha2-nistp521",
+  "sk-ssh-ed25519@openssh.com",
+  "sk-ecdsa-sha2-nistp256@openssh.com",
+];
 
 /** `gh auth token` is quick, but the helper may be busy. */
 const GIT_TOKEN_TIMEOUT_MS = 20_000;
@@ -380,7 +392,7 @@ export function createHandlers({
       store: services.store,
     }),
     ...mcpHandlers(services.mcpServers),
-    ...gitConnectHandlers({ config, scanner, hostLink, services }),
+    ...gitConnectHandlers({ config, scanner, hostLink, services, usedHosts }),
 
     "config.get": async () => (await config.load()).state,
 
@@ -407,7 +419,30 @@ export function createHandlers({
       return scan;
     },
 
-    "workspaces.set": async (input, ctx) => {
+    "workspaces.set": async (inputWithCreate, ctx) => {
+      const { create, ...input } = inputWithCreate;
+      const roots = input.workspaces.map((p) => ({ shown: p, abs: resolvePath(p, config.paths.hostHome) }));
+      const system = roots.find((r) => isSystemFolder(r.abs));
+      if (system !== undefined) {
+        throw new UserError(
+          `${system.shown} is a system folder. Choose a folder in your home folder, like ~/Work.`,
+          409,
+        );
+      }
+      const absent = await missingFolders(roots, hostLink);
+      if (absent.length > 0) {
+        if (create !== true) {
+          const { state } = await config.load();
+          return {
+            state,
+            unmounted: [],
+            remount: "not-needed" as const,
+            restartCommand: RESTART_COMMAND,
+            missing: absent.map((r) => r.shown),
+          };
+        }
+        await makeFolders(absent, hostLink);
+      }
       const tasks = input.tasks_dir === undefined ? "" : `, tasks_dir ${input.tasks_dir}`;
       const loaded = await config.setWorkspaces(input, {
         command: ctx.command,
@@ -445,6 +480,31 @@ export function createHandlers({
         .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
         .map((n) => `~/.ssh/${n}`)
         .sort();
+    },
+    "ssh.publicKeys": async () => {
+      const dir = join(config.paths.hostHome, ".ssh");
+      const names = (await readdir(dir).catch(() => [] as string[]))
+        .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
+        .sort();
+      const keys: SshPublicKey[] = [];
+      for (const n of names) {
+        const text = await readFile(join(dir, n), "utf8").catch(() => "");
+        const publicKey = text.split("\n")[0]?.trim() ?? "";
+        if (!PUBLIC_KEY_TYPES.some((t) => publicKey.startsWith(`${t} `))) continue;
+        const fingerprint = fingerprintOfPublicKey(publicKey);
+        keys.push({ path: `~/.ssh/${n}`, publicKey, ...(fingerprint === undefined ? {} : { fingerprint }) });
+      }
+      return keys;
+    },
+    "ssh.makeKey": async () => {
+      const made = await hostLink.call("ssh.keygen", {}, SSH_CALL_TIMEOUT_MS);
+      await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS).then((ssh) => hostLink.noteSsh(ssh));
+      await sshHosts?.refresh().catch(() => undefined);
+      return {
+        path: `${made.path}.pub`,
+        publicKey: made.publicKey,
+        ...(made.fingerprint === undefined ? {} : { fingerprint: made.fingerprint }),
+      };
     },
     "git.logins": (input) => services.gitLogins.list(input.refresh === true),
 
@@ -568,17 +628,18 @@ export function createHandlers({
     },
 
     "orgs.removeGitAccount": async (input, ctx) => {
-      const org = (await config.sections()).orgs[input.id];
-      if (org === undefined) throw new UserError(`Org "${input.id}" does not exist.`, 404);
       const host = input.host.toLowerCase();
-      const rest = (org.git_accounts ?? []).filter(
-        (a) => !(a.host === host && a.account.toLowerCase() === input.account.toLowerCase()),
-      );
-      return orgs.update(
-        { id: input.id, git_accounts: rest.length === 0 ? null : rest },
-        ctx.command,
-        ctx.meta,
-      );
+      const change = { command: ctx.command, meta: ctx.meta };
+      // The account, its token and its `git` connection are one sign-in: they go together.
+      await services.gitConnect.signIn.removeAccount({ org: input.id, host, account: input.account }, change);
+      const classified = classifyHost(host);
+      if (classified !== "other")
+        await services.gitLink.signedOut(
+          { org: input.id, kind: mrKindOf(classified), host },
+          ctx.command,
+          ctx.meta,
+        );
+      return viewOf(input.id);
     },
 
     "ssh.reload": async () => {
@@ -682,7 +743,7 @@ export function createHandlers({
     },
     "projects.cards": async (input) => {
       await services.cards.refreshMoved();
-      return services.cards.list(input.project);
+      return services.cards.listLive(input.project);
     },
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
@@ -1224,8 +1285,23 @@ export function createHandlers({
       answerCard(services, ctx, input, () =>
         services.tasks.answerQuestion(input.task, input.item, input.choice),
       ),
-    "room.answerAsk": (input, ctx) =>
-      answerCard(services, ctx, input, () => services.tasks.answerAsk(input.task, input.item, input.answers)),
+    "room.answerAsk": async (input, ctx) => {
+      const answer = () => services.tasks.answerAsk(input.task, input.item, input.answers);
+      // The owner's Undo time is kept here: closing the tab does not lose the answer.
+      if (input.holdMs !== undefined && ctx.meta.actor.kind !== "agent") {
+        services.inbox.held.hold(`ask:${input.task}:${input.item}`, input.holdMs, answer, (error) =>
+          services.room.post(input.task as TaskId, `warn:${randomUUID()}`, {
+            type: "system",
+            level: "warn",
+            text: `Could not send your answer: ${errorMessage(error)}`,
+          }),
+        );
+        const item = services.room.get(input.task, input.item);
+        if (item === undefined) throw new UserError(`There is no card ${input.item} in ${input.task}.`, 404);
+        return { item };
+      }
+      return answerCard(services, ctx, input, answer);
+    },
     "secrets.list": () => services.secretService.list(),
     "secrets.save": (input) => services.secretService.save(input),
     "secrets.remove": async (input) => {
@@ -1242,6 +1318,12 @@ export function createHandlers({
         writeKey: (key) => hostLink.call("secretsKey.restore", { key }, KEY_RESTORE_TIMEOUT_MS),
       }),
     "history.list": (input) => config.historyEntries(input.limit),
+    "config.restoreLast": async (_input, ctx) =>
+      config.restoreLastWorking({
+        command: ctx.command,
+        meta: ctx.meta,
+        summary: "restored the last majhi.yaml that loads",
+      }),
     "history.undo": async (input, ctx) => {
       const done = await config.undo(input.commit, {
         command: ctx.command,
@@ -1286,6 +1368,7 @@ export function createHandlers({
         meta: ctx.meta,
         summary: `changed ${describePatch(patch)}`,
       });
+      if (patch.containers !== undefined) await services.applyRunMemory();
       // Limits apply live: starts waiting in line may fit now.
       if (patch.limits !== undefined) await services.runs.limitsChanged();
       // Budgets apply live: a raised one re-arms its alerts, a lowered one may fire now.
@@ -1509,6 +1592,39 @@ function allowances(services: Services) {
 /** Placeholder for a Phase 2b command that is not built yet. */
 async function notBuilt(): Promise<never> {
   throw new UserError("This command is not built yet.", 501);
+}
+
+/**
+ * The roots that do not exist. The host helper knows for certain. Without it, a root the server cannot
+ * see is missing only when its parent folder is visible: a folder in a mounted parent shows at once,
+ * while a root that is not mounted yet may exist, so it is not called missing.
+ */
+async function missingFolders<T extends { abs: string }>(
+  roots: readonly T[],
+  hostLink: HostLink,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const root of roots) {
+    if (await isDirectory(root.abs)) continue;
+    if (hostLink.isConnected()) {
+      const exists = await hostLink
+        .call("listDirs", { path: root.abs, showHidden: false })
+        .then(() => true)
+        .catch((err: unknown) => !(err instanceof HostJobError));
+      if (!exists) out.push(root);
+    } else if (await isDirectory(dirname(root.abs))) {
+      out.push(root);
+    }
+  }
+  return out;
+}
+
+/** Makes folders that do not exist: through the host helper, else directly where the server can write. */
+async function makeFolders(roots: readonly { abs: string }[], hostLink: HostLink): Promise<void> {
+  for (const root of roots) {
+    if (hostLink.isConnected()) await hostLink.call("fs.mkdir", { path: root.abs });
+    else await mkdir(root.abs, { recursive: true });
+  }
 }
 
 /** Roots the server cannot see, because they are not mounted yet. */

@@ -1,5 +1,12 @@
-import type { AgendaItem, AgendaToday, Finding, OwnerDecision, OwnerDecisionKind } from "@majhi/shared";
-import { ageWord } from "./time.ts";
+import {
+  type AgendaItem,
+  type AgendaToday,
+  type Finding,
+  type OwnerDecision,
+  type OwnerDecisionKind,
+  parseDecisionId,
+} from "@majhi/shared";
+import { ageWord, agoWord } from "./time.ts";
 
 /**
  * The agenda (SPEC 5.18): one ordered list from what already exists, computed in code. Pure: every input is
@@ -14,6 +21,8 @@ export interface AgendaInput {
   findings: readonly Finding[];
   /** A workspace's name by id; undefined reads as the id. */
   orgName: (org: string | undefined) => string | undefined;
+  /** The incident a finding was made for, to acknowledge it from Today. */
+  incidentOf?: ((finding: number) => number | undefined) | undefined;
 }
 
 /** Minutes the owner is estimated to need for a decision. Cheap to answer ones are 1, a ship to read is 3. */
@@ -26,6 +35,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   "sign-in": 2,
   secret: 1,
   draft: 2,
+  reply: 1,
   batch: 3,
   trust: 1,
   notifications: 1,
@@ -41,12 +51,13 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   ship: 50,
   paused: 48,
   draft: 45,
+  reply: 46,
   batch: 44,
   // A row that went back to You, or a promotion proposal: read when there is time.
   trust: 40,
   // The owner's own switch on the Mac: until it is on, desktop alerts do not show.
   notifications: 53,
-  // An incident decision is left out of the agenda: its finding stands for it, with the same weight.
+  // An incident decision is on the agenda unless its open finding stands for it, with the same weight.
   incident: 100,
   // A budget hold is handled below: it stops new work.
   budget: 85,
@@ -77,28 +88,45 @@ function named(org: string | undefined, orgName: AgendaInput["orgName"]) {
 
 function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
   const waited = ageWord(d.at, input.now);
+  const waiting = waited === "just now" ? "just arrived" : `waiting ${waited}`;
   const hold = d.kind === "budget";
-  const kind = hold ? "budget" : d.kind === "draft" || d.kind === "batch" ? "draft" : "decision";
+  const incident = d.kind === "incident" ? parseDecisionId(d.id) : undefined;
+  const connection = d.link.kind === "connections";
+  const kind = hold
+    ? "budget"
+    : d.kind === "incident"
+      ? "incident"
+      : d.kind === "draft" || d.kind === "batch"
+        ? "draft"
+        : "decision";
   const why =
-    d.kind === "ship"
-      ? `Ready to ship, waiting ${waited}`
-      : hold
-        ? "New work is on hold until you answer"
-        : d.kind === "sign-in"
-          ? `An account is signed out, waiting ${waited}`
-          : d.kind === "draft" || d.kind === "batch"
-            ? `A draft waits for you, ${waited}`
-            : `Waiting ${waited}`;
+    d.kind === "incident"
+      ? `Open incident, first seen ${agoWord(d.at, input.now)}`
+      : connection
+        ? `A connection is failing, ${waiting}`
+        : d.kind === "ship"
+          ? `Ready to ship, ${waiting}`
+          : hold
+            ? "New work is on hold until you answer"
+            : d.kind === "sign-in"
+              ? `An account is signed out, ${waiting}`
+              : d.kind === "draft" || d.kind === "batch"
+                ? `A draft waits for you, ${waited}`
+                : waiting.charAt(0).toUpperCase() + waiting.slice(1);
   const action =
-    d.kind === "ship"
-      ? "Ship"
-      : hold
-        ? "Answer"
-        : d.kind === "draft" || d.kind === "batch"
-          ? "Review"
-          : d.kind === "sign-in"
-            ? "Sign in"
-            : "Answer";
+    d.kind === "incident"
+      ? "Open"
+      : connection
+        ? "Fix"
+        : d.kind === "ship"
+          ? "Ship"
+          : hold
+            ? "Answer"
+            : d.kind === "draft" || d.kind === "batch"
+              ? "Review"
+              : d.kind === "sign-in"
+                ? "Sign in"
+                : "Answer";
   return {
     id: `decision:${d.id}`,
     kind,
@@ -110,8 +138,18 @@ function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
     minutes: DECISION_MINUTES[d.kind],
     weight: DECISION_WEIGHT[d.kind] + (hold ? 0 : ageBonus(d.at, input.now)),
     at: d.at,
-    must: false,
+    must: d.kind === "incident",
+    ...(incident?.kind === "incident"
+      ? { done: { kind: "ack-incident" as const, incident: incident.id } }
+      : {}),
   };
+}
+
+/** A finding is dismissed; an incident is acknowledged, and has no button when its incident is unknown. */
+function doneOf(f: Finding, input: AgendaInput): Pick<AgendaItem, "done"> {
+  if (f.source !== "incident") return { done: { kind: "dismiss-finding", id: f.id } };
+  const incident = input.incidentOf?.(f.id);
+  return incident === undefined ? {} : { done: { kind: "ack-incident", incident } };
 }
 
 function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
@@ -126,7 +164,7 @@ function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
     ...named(f.org, input.orgName),
     title: f.title,
     why: incident
-      ? `Open incident, first seen ${ageWord(f.createdAt, input.now)} ago`
+      ? `Open incident, first seen ${agoWord(f.createdAt, input.now)}`
       : "High severity, nobody has taken it",
     action: incident ? "Open" : "Review",
     target: { to: "finding", id: f.id },
@@ -134,7 +172,7 @@ function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
     weight: incident ? W.incident : W.finding + ageBonus(f.createdAt, input.now),
     at: f.createdAt,
     must: incident,
-    done: { kind: "dismiss-finding", id: f.id },
+    ...doneOf(f, input),
   };
 }
 
@@ -149,9 +187,21 @@ export function compareItems(a: AgendaItem, b: AgendaItem): number {
 
 /** Every item that could be on the agenda, in order. */
 export function buildItems(input: AgendaInput): AgendaItem[] {
+  const findings = input.findings.flatMap((f) => {
+    const item = findingItem(f, input);
+    return item === undefined ? [] : [{ f, item }];
+  });
+  // An incident stands on the agenda once: as its finding when that is open, else as its Needs you decision.
+  const covered = new Set(
+    findings.flatMap(({ f }) => (f.source === "incident" ? [input.incidentOf?.(f.id)] : [])),
+  );
+  const decisions = input.decisions.filter((d) => {
+    const parsed = parseDecisionId(d.id);
+    return d.kind !== "incident" || parsed?.kind !== "incident" || !covered.has(parsed.id);
+  });
   const items: AgendaItem[] = [
-    ...input.decisions.filter((d) => d.kind !== "incident").map((d) => decisionItem(d, input)),
-    ...input.findings.flatMap((f) => findingItem(f, input) ?? []),
+    ...decisions.map((d) => decisionItem(d, input)),
+    ...findings.map(({ item }) => item),
   ];
   return items.sort(compareItems);
 }

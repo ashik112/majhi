@@ -104,7 +104,9 @@ export function ChecksPanel({ checking }: { checking: boolean }) {
     );
 
   const rows = checks.data?.checks ?? [];
-  const problems = openChecks(rows);
+  const problems = openChecks(rows).filter((c) => levelOf(c) === "fail");
+  // A warning is a note, not a failure: it is not counted in Needs you, here or in the sidebar.
+  const notes = openChecks(rows).filter((c) => levelOf(c) === "warn");
   const good = passingChecks(rows);
   const item = (row: CheckRow) => (
     <CheckItem
@@ -141,13 +143,26 @@ export function ChecksPanel({ checking }: { checking: boolean }) {
               {problems.length}
             </span>
             {problems.length === 0 && (
-              <span className="text-sm text-fg-muted">Nothing is failing. Every check passed.</span>
+              <span className="text-sm text-fg-muted">
+                {notes.length === 0 ? "Nothing is failing. Every check passed." : "Nothing is failing."}
+              </span>
             )}
           </div>
           {problems.length > 0 && (
             <ul aria-label="Checks to fix" className="flex flex-col border-t border-line px-2 py-1.5">
               {problems.map(item)}
             </ul>
+          )}
+          {notes.length > 0 && (
+            <div className="border-t border-line">
+              <div className="flex min-h-9 items-center gap-2 px-4 pt-2">
+                <h2 className="text-base font-semibold">To know</h2>
+                <span className="tnum font-mono text-sm text-fg-faint">{notes.length}</span>
+              </div>
+              <ul aria-label="Notes" className="flex flex-col px-2 pb-1.5">
+                {notes.map(item)}
+              </ul>
+            </div>
           )}
           {good.length > 0 && (
             <div className="border-t border-line">

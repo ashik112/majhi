@@ -21,6 +21,20 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
   const rename = useRenameOrg();
   const [orgId, setOrgId] = useState(org.id);
   const [draft, setDraft] = useState<OrgDraft>(() => draftFromOrg(org));
+  // The workspace changed somewhere else (the git accounts set its commit identity): the fields nobody
+  // edited here follow it, so the form is not left looking unsaved.
+  const [baseline, setBaseline] = useState(() => draftFromOrg(org));
+  const latest = draftFromOrg(org);
+  if (JSON.stringify(latest) !== JSON.stringify(baseline)) {
+    const merged = Object.fromEntries(
+      (Object.keys(latest) as (keyof OrgDraft)[]).map((key) => [
+        key,
+        JSON.stringify(draft[key]) === JSON.stringify(baseline[key]) ? latest[key] : draft[key],
+      ]),
+    ) as unknown as OrgDraft;
+    setBaseline(latest);
+    setDraft(merged);
+  }
   const [errors, setErrors] = useState<OrgErrors>({});
   const [failure, setFailure] = useState<string>();
   const [saved, setSaved] = useState(false);

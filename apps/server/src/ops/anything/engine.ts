@@ -427,6 +427,8 @@ export class WatchEngine {
       ? { ...base, pausedBy: by, ...(note === undefined || note === "" ? {} : { pausedNote: note }) }
       : base;
     this.deps.repo.save({ ...w, state, paused });
+    // A watch the owner stopped looks at nothing: its open incident closes, with a line saying why.
+    if (paused && by === "owner") await this.deps.ops.closeSubject(id, "You paused the watch");
     this.deps.changed();
     return this.view(this.mustGet(id), await this.ctx(w.org));
   }
@@ -1187,7 +1189,12 @@ export class WatchEngine {
           : "Snoozed";
     if (status === "new") return "Checking";
     if (status === "unknown") return "Unknown";
-    if (status === "ok") return w.def.spec.kind === "website" ? "Up" : "OK";
+    if (status === "ok") {
+      const spec = w.def.spec;
+      if (spec.kind === "website")
+        return spec.jsonPath === undefined || spec.jsonPath === "" ? "Up" : "Normal";
+      return "OK";
+    }
     const c = w.def.condition;
     const k = w.def.spec.kind;
     switch (c.type) {
@@ -1203,8 +1210,16 @@ export class WatchEngine {
         return "Found";
       case "notContains":
         return "Missing";
-      case "above":
-        return k === "database" || k === "website" ? "Slow" : k === "queue" ? "Backed up" : "High";
+      case "above": {
+        // Still alerting while the number is back under the limit: it waits out the green period.
+        if (w.state.number !== undefined && w.state.number <= c.value) return "Normal";
+        const spec = w.def.spec;
+        const timing =
+          spec.kind === "website"
+            ? spec.jsonPath === undefined || spec.jsonPath === ""
+            : spec.kind === "database" && (spec.unit === "ms" || spec.unit === "s");
+        return timing ? "Slow" : k === "queue" ? "Backed up" : "High";
+      }
       case "below":
         return k === "price" ? "Under target" : "Low";
     }

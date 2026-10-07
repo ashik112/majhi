@@ -88,6 +88,8 @@ import {
   ChatChannelsInputSchema,
   ChatChannelsSchema,
   ChatEditReplyInputSchema,
+  ChatGroupsInputSchema,
+  ChatGroupsSchema,
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
   ChatKeepCountInputSchema,
@@ -111,6 +113,7 @@ import {
   ContactUndoInputSchema,
   ContactViewSchema,
   SamePersonAnswerInputSchema,
+  WhoIsAnswerInputSchema,
 } from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -151,6 +154,8 @@ import {
   ConversationArchiveInputSchema,
   ConversationListSchema,
   ConversationMarkReadInputSchema,
+  ConversationSearchInputSchema,
+  ConversationSearchResultSchema,
 } from "./conversations.ts";
 import {
   DecisionLabelSchema,
@@ -500,6 +505,16 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
   input: I;
   output: O;
 }
+
+/** A public SSH key to add on a git host. The private key is never part of it. */
+export const SshPublicKeySchema = z.object({
+  /** The `.pub` file with `~`. */
+  path: z.string(),
+  /** The one line to paste on the host. */
+  publicKey: z.string(),
+  fingerprint: z.string().optional(),
+});
+export type SshPublicKey = z.infer<typeof SshPublicKeySchema>;
 
 const Empty = z.object({});
 
@@ -880,6 +895,20 @@ export const commands = {
       "The public SSH keys majhi can see in the owner's ~/.ssh, to pick the key a host uses. Never a private key",
     input: Empty,
     output: z.array(z.string()),
+  },
+  "ssh.publicKeys": {
+    risk: "read",
+    summary:
+      "The public SSH keys in the owner's ~/.ssh with their fingerprints, to show the one to add on a git host. Never a private key",
+    input: Empty,
+    output: z.array(SshPublicKeySchema),
+  },
+  "ssh.makeKey": {
+    risk: "change",
+    summary:
+      "Make an ed25519 SSH key with no passphrase in a free name in ~/.ssh through the host helper, load it, and return its public key. Never replaces a key; the private key stays on the owner's computer",
+    input: Empty,
+    output: SshPublicKeySchema,
   },
   "ssh.reload": {
     risk: "change",
@@ -1423,6 +1452,13 @@ export const commands = {
     input: ChatLinkInputSchema,
     output: ClientRowSchema,
   },
+  "chat.groups": {
+    risk: "read",
+    summary:
+      "The groups and channels majhi knows of one chat connection's account: linked, new and ignored ones, for the connection page. Owner only",
+    input: ChatGroupsInputSchema,
+    output: ChatGroupsSchema,
+  },
   "chat.channels": {
     risk: "read",
     summary:
@@ -1452,9 +1488,9 @@ export const commands = {
   "chat.unlink": {
     risk: "change",
     summary:
-      "Unlink a client chat from its workspace: nothing is read or sent for it any more, its history stays read only under the workspace, and the chat can be linked again as a fresh room. Owner only",
+      "Unlink a client chat from its workspace: nothing is read or sent for it any more, its history stays read only under the workspace, and replies that waited for the owner are discarded. Linking it again to the same workspace brings the room back; to another workspace it is a fresh room. Owner only",
     input: ChatUnlinkInputSchema,
-    output: z.object({ ok: z.literal(true) }),
+    output: z.object({ ok: z.literal(true), discarded: z.number().int().nonnegative() }),
   },
   "chat.unignore": {
     risk: "change",
@@ -1487,6 +1523,13 @@ export const commands = {
     summary:
       "Answer the captain's question whether two contacts are one person: Same merges them, Not same remembers it. Owner only",
     input: SamePersonAnswerInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.whoIs": {
+    risk: "change",
+    summary:
+      "Answer the question whether a sender in a client chat is one of us or a client. Us means the captain stays out of what they write. Owner only",
+    input: WhoIsAnswerInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "chat.confirmWebhook": {
@@ -1616,6 +1659,13 @@ export const commands = {
       "The owner's conversations (task rooms, captain threads, client chats, agent chats): title, newest line and how many agent messages the owner has not read, newest first. Owner only",
     input: z.object({}),
     output: ConversationListSchema,
+  },
+  "conversations.search": {
+    risk: "read",
+    summary:
+      "The ids of the conversations whose messages hold some words (client messages and replies, agent and owner messages), for the Chats search. Owner only",
+    input: ConversationSearchInputSchema,
+    output: ConversationSearchResultSchema,
   },
   "conversations.markRead": {
     risk: "change",
@@ -2994,6 +3044,13 @@ export const commands = {
     input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
     output: CardAnswerOutput,
   },
+  "answers.cancelHeld": {
+    risk: "change",
+    summary:
+      "Undo an answer that waits out its Undo time: a decision id, or ask:<task>:<item> for a question card. Owner only",
+    input: z.object({ key: z.string().min(1).max(400) }),
+    output: z.object({ cancelled: z.boolean() }),
+  },
   "room.answerAsk": {
     risk: "change",
     summary: "Answer one or more questions on an ask card and send the answers to the agent",
@@ -3002,6 +3059,8 @@ export const commands = {
       item: z.string(),
       /** questionId -> the option id chosen, or free text typed. */
       answers: z.record(z.string(), z.string()),
+      /** The owner's Undo time: majhi holds the answer this many milliseconds, then sends it. */
+      holdMs: z.number().int().min(1000).max(15_000).optional(),
     }),
     output: CardAnswerOutput,
   },
@@ -3389,6 +3448,13 @@ export const commands = {
         undone: z.boolean(),
       }),
     ),
+  },
+  "config.restoreLast": {
+    risk: "change",
+    summary:
+      "Put back the newest earlier majhi.yaml that loads, when the current one has errors. The broken file stays in the config history. Owner only",
+    input: Empty,
+    output: z.object({ at: z.string() }),
   },
   "history.undo": {
     risk: "change",

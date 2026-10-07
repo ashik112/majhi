@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ConnectionFailureSchema, ConnectionHealthSchema } from "./connection-health.ts";
+import {
+  ConnectionFailureSchema,
+  ConnectionHealthSchema,
+  FAILURE_FIX,
+  FAILURE_LINE,
+} from "./connection-health.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 
 /**
@@ -1056,6 +1061,18 @@ export const ToolAnnotationsSchema = z.object({
 });
 export type ToolAnnotations = z.infer<typeof ToolAnnotationsSchema>;
 
+/**
+ * What the gate does for one tool of an MCP server: `read` runs without asking, `ask` asks the owner,
+ * `allowed` is a change the owner allowed, `destructive` always asks.
+ */
+export const ToolGateSchema = z.object({
+  tool: z.string(),
+  gate: z.enum(["read", "ask", "allowed", "destructive"]),
+  /** Why a change is held, in a few words. Absent for a read. */
+  why: z.string().optional(),
+});
+export type ToolGate = z.infer<typeof ToolGateSchema>;
+
 /** What a Test found. */
 export const ConnectionTestResultSchema = z.object({
   ok: z.boolean(),
@@ -1101,6 +1118,8 @@ export const ConnectionViewSchema = z.object({
   problems: z.array(z.string()),
   /** The last Test since majhi started. */
   lastTest: ConnectionTestResultSchema.optional(),
+  /** MCP servers: what the gate does for each tool of the last Test. Empty before a Test. */
+  toolGate: z.array(ToolGateSchema).optional(),
   /**
    * Where the connection stands: connecting, connected (a real call passed, and when), failed (a typed
    * reason and the fix) or needs-attention (it worked, and the last re-check failed). Absent only for a
@@ -1109,6 +1128,38 @@ export const ConnectionViewSchema = z.object({
   health: ConnectionHealthSchema.optional(),
 });
 export type ConnectionView = z.infer<typeof ConnectionViewSchema>;
+
+/** A sentence without its closing full stop, to compare two and to join them. */
+export function withoutPeriod(text: string): string {
+  return text.endsWith(".") ? text.slice(0, -1) : text;
+}
+
+/**
+ * What failed, in the check's own plain words ("nonexistent-cli is not installed where agents run"),
+ * else the reason's line. No trailing full stop. Empty when the connection has not failed. The Connections
+ * page and Health read it, so the same failure reads the same on both.
+ */
+export function failureLine(view: Pick<ConnectionView, "health" | "lastTest">): string {
+  const health = view.health;
+  if (health === undefined || (health.state !== "failed" && health.state !== "needs-attention")) return "";
+  const test = view.lastTest;
+  const said = test !== undefined && !test.ok && test.failure?.reason === health.reason ? test.detail : "";
+  return withoutPeriod(said === "" ? FAILURE_LINE[health.reason] : said);
+}
+
+/** `failureLine` and `failureFix` as one text, saying a repeated sentence once. */
+export function failureSentence(view: Pick<ConnectionView, "health" | "lastTest">): string {
+  const line = failureLine(view);
+  const fix = failureFix(view);
+  return withoutPeriod(fix) === line ? `${line}.` : `${line}. ${fix}`;
+}
+
+/** The next step of a failed connection, the same everywhere. Empty when it has not failed. */
+export function failureFix(view: Pick<ConnectionView, "health">): string {
+  const health = view.health;
+  if (health === undefined || (health.state !== "failed" && health.state !== "needs-attention")) return "";
+  return health.fix || FAILURE_FIX[health.reason];
+}
 
 /** An entry of `vars`, `headers` or `env` as a command sets it: a text value, or none yet. */
 export const ConnectionEntryInputSchema = z.strictObject({

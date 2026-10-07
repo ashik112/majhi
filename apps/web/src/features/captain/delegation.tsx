@@ -349,7 +349,7 @@ function Grid({
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">
           Auto-pilot is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
-          it is on.
+          it is on, except Tell the client, which follows its row.
         </p>
       )}
     </fieldset>
@@ -611,12 +611,13 @@ export function DelegationSheet({
         >
           <div className="flex max-h-[calc(100dvh-64px)] flex-col gap-3 overflow-y-auto p-5">
             <h2 className="text-md font-semibold">{moreOrg.name}: hours, freezes and more</h2>
-            <MoreRules org={moreOrg} accounts={accounts} zone={zone} onDone={() => setMore(undefined)} />
-            <div className="flex justify-end">
-              <Button variant="secondary" onClick={() => setMore(undefined)}>
-                Close
-              </Button>
-            </div>
+            <MoreRules
+              org={moreOrg}
+              accounts={accounts}
+              zone={zone}
+              onDone={() => setMore(undefined)}
+              doneLabel="Close"
+            />
           </div>
         </Modal>
       )}

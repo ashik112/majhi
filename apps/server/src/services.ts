@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
+  CLIENT_CHAT_BRIEF,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
   effectiveIncident,
@@ -69,6 +70,7 @@ import { McpUrlService } from "./connect/mcp-url.ts";
 import { assertHostAllowed, type Lookup } from "./connect/self-host.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
+import { failingConnectionDecisions } from "./connections/decisions.ts";
 import { GitLink } from "./connections/git-link.ts";
 import { ConnectionHealthService } from "./connections/health.ts";
 import { probePort } from "./connections/host-probe.ts";
@@ -97,6 +99,7 @@ import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
+import { waitingDeployDecisions } from "./deploy/decisions.ts";
 import { createNothingDeploys } from "./deploy/nothing.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
 import type { ServerEnv } from "./env.ts";
@@ -126,7 +129,7 @@ import { IncidentEngine } from "./incident/engine.ts";
 import { IncidentFacts } from "./incident/facts.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
-import { MemoryWatch } from "./machine/memwatch.ts";
+import { MemoryWatch, noteHotContainers } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
@@ -316,6 +319,8 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
+  /** Re-reads the run memory limit from Settings, for the next run. */
+  applyRunMemory: () => Promise<void>;
   /** Deploy environments, deploy records and what follows a deploy. */
   deploy: DeployWorld;
   config: ConfigService;
@@ -600,6 +605,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     server: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
   });
   const sessionOptions = runner.sessionOptions;
+  const fallbackRunMemory = runner.runner?.config.memory;
+  /** The memory limit of the next run: Settings, else what the server started with. Runs already going keep theirs. */
+  const applyRunMemory = async (): Promise<void> => {
+    if (runner.runner === undefined) return;
+    const set = (await config.settings()).containers.run_memory;
+    runner.runner.config.memory = set ?? fallbackRunMemory;
+  };
+  void applyRunMemory().catch(() => undefined);
   const usageRepo = new UsageRepo(store.raw);
   const budgets = new BudgetMonitor({
     usage: usageRepo,
@@ -1092,7 +1105,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         }),
     project: async (id) => (await projectList()).find((p) => p.id === id),
     registry: memoryRegistry,
-    say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
+    say: (id, level, text, action) =>
+      room.post(id, `${level}:${randomUUID()}`, {
+        type: "system",
+        level,
+        text,
+        ...(action === undefined ? {} : { action }),
+      }),
   });
   let chatMemory: ChatMemory | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
@@ -1146,6 +1165,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onRemoving: async (task) => {
       handoffService?.forget(task.id);
+      // A client chat taken out of majhi: replies that waited for the owner would have nowhere to go.
+      if (task.brief === CLIENT_CHAT_BRIEF) await clientChat?.replies.discardPending(task.id);
       await promotion.release(task);
     },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
@@ -1513,7 +1534,24 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let incidentEngine: IncidentEngine | undefined;
   const inbox = new InboxService({
     outbound,
+    clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
+    incidentDetail: (id) => {
+      const inc = opsWatch?.incident(id);
+      if (inc === undefined) return undefined;
+      const found = inc.timeline.findLast((e) => e.kind === "action" && e.text.startsWith("Captain: "));
+      let task: string | undefined;
+      try {
+        task = inc.finding === undefined ? undefined : findingsStore?.get(inc.finding).task;
+      } catch {
+        // The finding was removed: the incident still shows what it knows.
+      }
+      return {
+        ...(inc.finding === undefined ? {} : { finding: inc.finding }),
+        ...(found === undefined ? {} : { found: found.text.slice("Captain: ".length).slice(0, 600) }),
+        ...(task === undefined ? {} : { task }),
+      };
+    },
     items: () => store.room.waitingDecisions(),
     working: () => runs.workingTasks(),
     changed: (task) => events.emitTask(task),
@@ -1536,6 +1574,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
     recommendations: new RecommendationRepo(store.raw),
     proposalStale: (item) => admin.proposalStale(item),
+    warn: (task, text) =>
+      room.post(task as TaskId, `warn:${randomUUID()}`, { type: "system", level: "warn", text }),
+    supersedeProposals: () => admin.supersedeProposals(),
     orgNames: async () =>
       Object.fromEntries(Object.entries((await config.sections()).orgs).map(([id, o]) => [id, o.name])),
     lastAgentMessage: (task) => {
@@ -1565,7 +1606,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           ...(lead === undefined ? {} : { agent: lead }),
         }),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
-      decideDraft: (id, decision) => outbound.decide(id, decision),
+      decideDraft: async (id, decision) => {
+        const done = await outbound.decide(id, decision);
+        // A client reply that could not go (the chat is unlinked, the app refused) says why instead of vanishing.
+        if (done.channel === "client" && done.status === "failed")
+          throw new UserError(done.result ?? "The reply did not go.", 409);
+        return done;
+      },
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
       ackIncident: async (id) => {
         await opsWatch?.ack(id);
@@ -1579,10 +1626,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
       answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
     },
-    extras: () => [
+    extras: async () => [
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
+      ...failingConnectionDecisions(await connections.list().catch(() => [])),
+      ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
@@ -1609,16 +1658,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       "--format",
       '{{.Names}}\t{{.Label "majhi.task"}}',
     ]);
-    for (const line of rows.split("\n")) {
-      const [name, task] = line.split("\t");
-      if (name === undefined || task === undefined || task === "" || !hot.includes(name)) continue;
-      if (store.tasks.get(task) === undefined) continue;
-      room.post(task as TaskId, `memory:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: "An agent on this task is using almost all of its memory limit and may be slow or get stopped. Ask it to do less at once, or stop the task if it keeps stalling.",
-      });
-    }
+    noteHotContainers({
+      hot,
+      rows,
+      taskExists: (task) => store.tasks.get(task) !== undefined,
+      post: (task, id, text) =>
+        room.post(task as TaskId, id, { type: "system", level: "warn", text, action: "runner-memory" }),
+    });
   };
   /**
    * Run containers a restart or crash left behind keep their CPU while majhi counts no run, and the
@@ -1846,6 +1892,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions: (org) => inbox.list(org),
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
+    incidentOf: (finding) => opsWatch?.incidentOfFinding(finding)?.id,
     goals: () => goals.list({}, agendaOwner),
     running: () =>
       store.tasks
@@ -2699,6 +2746,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       list: () => connections.list(),
       create: (input, command, meta) => connections.create(input as never, command, meta),
       update: (input, command, meta) => connections.update(input as never, command, meta),
+      remove: (id, command, meta) => connections.remove(id, command, meta),
     },
     orgs: async () => (await config.sections()).orgs,
     kindOf: (host) => {
@@ -2978,6 +3026,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   return {
     config,
+    applyRunMemory,
     runtime,
     secrets,
     keyExports: new KeyExports(env.majhiHome, secrets),
@@ -3117,6 +3166,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       automation.scheduler.stop();
       cards.close();
       layaDocker?.close();
+      await inbox.held.flush();
       await runs.closeAll();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.

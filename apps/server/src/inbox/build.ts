@@ -16,8 +16,11 @@ import {
   plainAuthorityText,
   type RoomItem,
   roomDecisionId,
+  SHIP_FAILED_PREFIX,
   signInDecisionId,
+  type TaskId,
 } from "@majhi/shared";
+import type { ClientDraftInfo } from "../chat/replies.ts";
 import { oneLine, PAUSE_TEXT, type Subject } from "../notify/attention.ts";
 
 /** What "Fix with agent" says to the lead of a task whose checks failed. */
@@ -46,6 +49,8 @@ export interface DecisionSources {
   shipBlocked?: ReadonlyMap<string, { why: string; empty: boolean }>;
   /** Drafts that wait for the owner one by one (the outbound gate, Draft mode). */
   drafts?: readonly OutboundDraft[];
+  /** What a client reply draft answers: its chat, who wrote and why it waits. Absent for other channels. */
+  clientDraft?: (draft: OutboundDraft) => ClientDraftInfo | undefined;
   /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
   batches?: readonly { org: string; channel: OutboundChannel; drafts: readonly OutboundDraft[] }[];
   /** High incidents nobody has acknowledged (the ops watch). */
@@ -263,7 +268,9 @@ function draftOf(
         return {
           kind: "ship",
           title: `Finished: ${oneLine(subject.title, 120)}`,
-          sentence: `${who} finished ${name}. It cannot be merged yet.`,
+          sentence: shipBlock.empty
+            ? `${who} finished ${name}. It changed no code, so there is nothing to merge.`
+            : `${who} finished ${name}. It cannot be merged yet.`,
           blocked: why.slice(0, 300),
           options: withPrimary(rest, undefined),
         };
@@ -279,6 +286,14 @@ function draftOf(
               500,
             ),
           options: withPrimary([...fix, done, changes], fix.length > 0 ? "fix" : undefined),
+        };
+      }
+      if (item.why?.startsWith(SHIP_FAILED_PREFIX) === true && repos > 0) {
+        return {
+          kind: "ship",
+          title: `Ship failed: ${oneLine(subject.title, 120)}`,
+          sentence: `${who} finished ${name}. ${item.why}`.slice(0, 500),
+          options: withPrimary(own, undefined),
         };
       }
       if (item.ready === undefined) {
@@ -439,16 +454,36 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       { id: "send", label: "Approve", primary: true },
       { id: "discard", label: "Discard" },
     ];
+    const client = d.channel === "client" ? src.clientDraft?.(d) : undefined;
+    if (client !== undefined) {
+      const who = client.from === undefined ? "a client" : client.from;
+      const said =
+        client.said === undefined
+          ? ""
+          : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
+      const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
+      out.push({
+        id,
+        kind: "reply",
+        org: d.org,
+        title: oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
+        sentence: `A reply to ${who} in ${client.chat} (${client.app}) is ready.${said}${why} Nothing is sent until you approve it.`,
+        ...decorate(id, options, undefined, src.orgName?.(d.org)),
+        at: d.createdAt,
+        link: { kind: "chat", id: client.room as TaskId },
+      });
+      continue;
+    }
     const head = d.subject ?? d.body;
     out.push({
       id,
       kind: "draft",
       org: d.org,
       title: oneLine(`${OUTBOUND_CHANNEL_LABEL[d.channel]} to ${d.target}: ${head}`),
-      sentence: `A ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
+      sentence: `${"aeiou".includes(what.charAt(0)) ? "An" : "A"} ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
       ...decorate(id, options, undefined, src.orgName?.(d.org)),
       at: d.createdAt,
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 
@@ -467,7 +502,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       sentence: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft waits" : "drafts wait"} in this batch. Nothing is sent until you approve.`,
       ...decorate(id, options, undefined, src.orgName?.(b.org)),
       at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 

@@ -1,5 +1,6 @@
 import type { PermissionAsk } from "@majhi/acp";
 import { type CommandMeta, MAJHI_OPTION_PREFIX, type RoomItem } from "@majhi/shared";
+import type { ConfigService } from "../config/service.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { UserError } from "../errors.ts";
@@ -11,6 +12,8 @@ import {
   connectionToolKey,
   connectionVerdict,
   decidePermission,
+  isMajhiTool,
+  mcpToolOf,
   toolAllowKey,
   withoutUnaskedModes,
 } from "./permissions.ts";
@@ -41,13 +44,19 @@ export interface ConnectionToolRules {
  */
 export class PermissionFlow {
   constructor(
-    private readonly deps: { store: Store; room: RoomService; connections?: ConnectionToolRules | undefined },
+    private readonly deps: {
+      store: Store;
+      room: RoomService;
+      connections?: ConnectionToolRules | undefined;
+      /** Where "Always allow this tool" is kept and read: the policy rules, listed on the agent's page. */
+      config?: ConfigService | undefined;
+    },
     private readonly live: RunLive,
     private readonly now: () => Date,
   ) {}
 
   /** The session's permission handler. Resolves with the option id, or undefined when cancelled. */
-  ask(run: AgentRun, request: PermissionAsk, signal: AbortSignal): Promise<string | undefined> {
+  async ask(run: AgentRun, request: PermissionAsk, signal: AbortSignal): Promise<string | undefined> {
     const { store, room } = this.deps;
     const held = run.connections?.gate ?? [];
     // A run that holds connections never lets the CLI stop asking.
@@ -55,8 +64,16 @@ export class PermissionFlow {
     const verdict = connectionVerdict(ask, held, (id) => run.mapper?.toolTitle(id));
     if (verdict.kind === "write") return this.askWrite(run, ask, verdict.writes, signal);
     const once = ask.options.find((o) => o.kind === "allow_once");
+    // An MCP tool of a server that is not majhi's own can be allowed for good, in this workspace.
+    const org = store.tasks.get(run.task)?.org;
+    const alwaysKey =
+      mcpToolOf(ask.title) === undefined || isMajhiTool(ask.title) || org === undefined || once === undefined
+        ? undefined
+        : toolAllowKey(ask.title);
+    const saved =
+      alwaysKey !== undefined && org !== undefined && (await this.savedAlways(run.agent, org, alwaysKey));
     const decision =
-      verdict.kind === "read" && once !== undefined
+      (verdict.kind === "read" || saved) && once !== undefined
         ? ({ action: "allow", option: once.id, via: "perms" } as const)
         : decidePermission(ask, {
             perms: run.perms,
@@ -75,10 +92,26 @@ export class PermissionFlow {
       this.log(run, ask, "allow", "rule");
       return Promise.resolve(decision.option);
     }
-    room.post(run.task, id, { ...base, state: "pending" });
+    const options =
+      alwaysKey === undefined || once === undefined
+        ? ask.options
+        : ask.options.flatMap((o) =>
+            o.id === once.id
+              ? [
+                  o,
+                  ...(ask.options.some((x) => x.kind === "allow_always") ? [] : [TASK_CHOICE]),
+                  ALWAYS_CHOICE,
+                ]
+              : [o],
+          );
+    room.post(run.task, id, { ...base, options, state: "pending" });
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
-      run.pending.set(id, { ask, resolve });
+      run.pending.set(id, {
+        ask: { ...ask, options },
+        resolve,
+        ...(alwaysKey === undefined ? {} : { alwaysKey }),
+      });
       signal.addEventListener("abort", () => this.cancelOne(run, id), { once: true });
     });
   }
@@ -148,8 +181,11 @@ export class PermissionFlow {
     const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
     const mine = chosen.id.startsWith(MAJHI_OPTION_PREFIX);
     const tool = mine ? toolWriteOf(pending.writes ?? []) : undefined;
-    // majhi's own choices are only on a tool write, and the permanent ones are the owner's.
-    if (mine && tool === undefined) throw new UserError("That choice does not fit this prompt.", 409);
+    const keyed = mine && pending.alwaysKey !== undefined ? pending.alwaysKey : undefined;
+    // majhi's own choices are only on a tool write or an MCP tool, and the permanent ones are the owner's.
+    if (mine && tool === undefined && keyed === undefined) {
+      throw new UserError("That choice does not fit this prompt.", 409);
+    }
     if (mine && captain && chosen.id !== TASK_OPTION) {
       throw new UserError("Only the owner can make that choice.", 409);
     }
@@ -163,7 +199,11 @@ export class PermissionFlow {
     run.pending.delete(itemId);
     const by = captain ? "captain" : "owner";
     if (tool !== undefined) this.remember(run, tool, chosen.id);
-    if (pending.writes !== undefined) {
+    if (keyed !== undefined) {
+      this.log(run, pending.ask, allowed ? "allow" : "deny", by);
+      store.permissions.allow(task, keyed);
+      if (chosen.id === ALWAYS_OPTION) this.keepAlways(run, keyed);
+    } else if (pending.writes !== undefined) {
       this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);
     } else {
       this.log(run, pending.ask, allowed ? "allow" : "deny", by);
@@ -184,6 +224,37 @@ export class PermissionFlow {
     const updated = room.get(task, itemId);
     if (updated === undefined) throw new Error("The prompt was not stored");
     return updated;
+  }
+
+  /** Whether the owner already said "Always allow" for this agent, tool and workspace. */
+  private async savedAlways(agent: string, org: string, key: string): Promise<boolean> {
+    const config = this.deps.config;
+    if (config === undefined) return false;
+    const { policy } = await config.settings().catch(() => ({ policy: { rules: [] } }));
+    return policy.rules.some((r) => r.agent === agent && r.command === key && r.org === org);
+  }
+
+  /** Writes the rule. If it cannot be saved, the call is already let through and the next one asks again. */
+  private keepAlways(run: AgentRun, key: string): void {
+    const config = this.deps.config;
+    const org = this.deps.store.tasks.get(run.task)?.org;
+    if (config === undefined || org === undefined) return;
+    void (async () => {
+      const { policy } = await config.settings();
+      if (policy.rules.some((r) => r.agent === run.agent && r.command === key && r.org === org)) return;
+      await config.setSettings(
+        { policy: { rules: [...policy.rules, { agent: run.agent, command: key, org }] } },
+        {
+          command: "policy.set",
+          meta: {
+            actor: { kind: "owner" },
+            reason: "Owner chose Always allow this tool on a card",
+            task: run.task,
+          },
+          summary: `always allow @${run.agent} to use ${key} in ${org}`,
+        },
+      );
+    })().catch(() => undefined);
   }
 
   /** What one of majhi's choices on a tool write keeps: this task's memory, or the connection's own lists. */
@@ -279,6 +350,9 @@ export class PermissionFlow {
     });
   }
 }
+
+const TASK_CHOICE = { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const };
+const ALWAYS_CHOICE = { id: ALWAYS_OPTION, name: "Always allow this tool", kind: "allow_always" as const };
 
 const TOOL_OPTIONS = [
   { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const },

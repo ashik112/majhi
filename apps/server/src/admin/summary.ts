@@ -92,6 +92,15 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "containers.preview.run": (i) => `Run the preview of ${str(i.task)} on port ${str(i.port)}`,
   "containers.services.start": (i) => `Start service ${str(i.name)} (${str(i.image)}) in ${str(i.task)}`,
   "containers.stop": (i) => `Stop ${str(i.name)} in ${str(i.task)}`,
+  "watch.report": (i) => `Write what watch ${str(i.id)} found`,
+  "watch.snooze": (i) => `Snooze watch ${str(i.id)}`,
+  "watch.save": (i) => `Save a watch${i.name ? `: ${str(i.name)}` : ""}`,
+  "ops.ack": (i) => `Acknowledge incident ${str(i.id)}`,
+  "findings.report": (i) => `Report a finding: ${firstLine(str(i.title))}`,
+  "findings.update": (i) => `Change finding ${str(i.id)}`,
+  "findings.dismiss": (i) => `Dismiss finding ${str(i.id)}`,
+  "decisions.recommend": () => "Recommend an option on a decision",
+  "playbooks.report": () => "Close the playbook run it was woken for",
   "backup.now": () => "Back up majhi's data now",
   "backup.restore": (i) => `Restore majhi's data from ${str(i.name)}`,
   "backup.cancelRestore": () => "Cancel the waiting restore",
@@ -104,6 +113,12 @@ function firstSentence(text: string): string {
   return end === -1 ? text : text.slice(0, end);
 }
 
+/** The command's own summary when it is one short line; a tool description reads as the command's name instead. */
+function plainSummary(command: CommandName): string {
+  const first = firstSentence(commands[command].summary);
+  return first.length <= 80 ? first : `Run ${command}`;
+}
+
 function firstLine(text: string): string {
   const line = text.trim().split("\n", 1)[0] ?? "";
   return line.length > 80 ? `${line.slice(0, 77)}...` : line;
@@ -112,7 +127,7 @@ function firstLine(text: string): string {
 export function summarize(command: CommandName, input: unknown): string {
   const record: Input = typeof input === "object" && input !== null ? (input as Input) : {};
   const template = TEMPLATES[command];
-  const text = template === undefined ? firstSentence(commands[command].summary) : template(record);
+  const text = template === undefined ? plainSummary(command) : template(record);
   return redactText(text.trim());
 }
 

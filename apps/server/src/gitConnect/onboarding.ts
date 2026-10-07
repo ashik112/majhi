@@ -30,6 +30,8 @@ export interface OnboardingInput {
   hasCaptain: boolean;
   /** Project count per org. */
   projects: Readonly<Record<string, number>>;
+  /** Git hosts the projects of each org use, by org id. */
+  usedHosts: Readonly<Record<string, readonly string[]>>;
   hostHelper: boolean;
 }
 
@@ -54,17 +56,24 @@ function gitHosts(org: OrgConfig): OnboardingWorkspace["git"] {
 /** `onboarding.status`, from config, cached account health and the host link only: it calls no git host. */
 export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
   const workspaces: OnboardingWorkspace[] = Object.entries(input.orgs)
-    .map(([id, org]) => ({
-      id,
-      name: org.name,
-      ...(org.color === undefined ? {} : { color: org.color }),
-      git: gitHosts(org),
-      projects: input.projects[id] ?? 0,
-    }))
+    .map(([id, org]) => {
+      const git = gitHosts(org);
+      return {
+        id,
+        name: org.name,
+        ...(org.color === undefined ? {} : { color: org.color }),
+        git,
+        projects: input.projects[id] ?? 0,
+        missing: (input.usedHosts[id] ?? []).filter(
+          (host) => !git.some((g) => g.host === host && g.signedIn),
+        ),
+      };
+    })
     .sort((a, b) => (a.id === PRIVATE ? -1 : b.id === PRIVATE ? 1 : a.name.localeCompare(b.name)));
   const others = workspaces.filter((w) => w.id !== PRIVATE);
   const needGit = workspaces.filter((w) => w.id !== PRIVATE || w.projects > 0);
   const signedIn = needGit.filter((w) => w.git.some((g) => g.signedIn));
+  const missing = needGit.flatMap((w) => w.missing);
   const projectCount = Object.values(input.projects).reduce((a, b) => a + b, 0);
   const healthy = input.accounts.filter((a) => USABLE.has(a.status)).length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -73,7 +82,9 @@ export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
     welcome: input.roots.length > 0,
     account: healthy > 0,
     workspaces: others.length > 0,
-    git: signedIn.length === needGit.length,
+    // Every host the projects use has a sign-in. With no project yet, one sign-in per workspace is the step.
+    git:
+      needGit.length > 0 && missing.length === 0 && (projectCount > 0 || signedIn.length === needGit.length),
     projects: projectCount > 0,
     boss: input.hasCaptain,
     finish: false,
@@ -83,7 +94,14 @@ export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
     ...(input.roots.length > 0 ? { welcome: plural(input.roots.length, "project folder") } : {}),
     ...(healthy > 0 ? { account: plural(healthy, "account") } : {}),
     ...(others.length > 0 ? { workspaces: plural(others.length + 1, "workspace") } : {}),
-    ...(needGit.length > 0 ? { git: `Signed in on ${signedIn.length} of ${needGit.length}` } : {}),
+    ...(needGit.length > 0
+      ? {
+          git:
+            missing.length > 0
+              ? `Sign in to ${[...new Set(missing)].join(", ")}`
+              : `Signed in on ${signedIn.length} of ${needGit.length}`,
+        }
+      : {}),
     ...(projectCount > 0 ? { projects: plural(projectCount, "project") } : {}),
   };
   const steps: OnboardingStepStatus[] = ONBOARDING_STEP_IDS.map((id) => ({

@@ -21,6 +21,7 @@ export const KIND_FILTERS = [
   { id: "access", label: DECISION_KIND_LABEL.secret },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
+  { id: "reply", label: DECISION_KIND_LABEL.reply },
   { id: "incident", label: DECISION_KIND_LABEL.incident },
   { id: "trust", label: DECISION_KIND_LABEL.trust },
 ] as const;
@@ -35,6 +36,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   budget: "money",
   paused: "paused",
   draft: "access",
+  reply: "reply",
   batch: "access",
   incident: "incident",
   trust: "trust",
@@ -147,6 +149,10 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/playbooks" };
     case "watch":
       return { kind: "page", to: "/watch" };
+    case "connections":
+      return { kind: "page", to: "/connections" };
+    case "decision":
+      return { kind: "page", to: "/decisions", search: { id: link.id } };
     case "setup":
       return { kind: "page", to: "/setup", search: { section: link.section } };
   }
@@ -168,6 +174,10 @@ export function openLabel(link: DecisionLink): string {
       return "Open Playbooks";
     case "watch":
       return "Open Watch";
+    case "connections":
+      return "Open Connections";
+    case "decision":
+      return "Review";
     case "setup":
       return "Open settings";
   }

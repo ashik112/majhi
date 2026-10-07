@@ -10,6 +10,7 @@ import {
   type ConnectionTestResult,
   type ConnectionType,
   connectionType,
+  FAILURE_LINE,
   type FieldKind,
   failureFromError,
   failureFromExit,
@@ -26,7 +27,7 @@ import { classifyProbe, runSsh, type SshRunFn } from "../ssh/hosts.ts";
 import { type BrowserServer, browserServer } from "./browser.ts";
 import { type PortAnswer, probePort } from "./host-probe.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
-import { imapLogin, smtpGreeting } from "./mail.ts";
+import { imapLogin, MailError, smtpGreeting } from "./mail.ts";
 import {
   annotationsOf,
   callTool,
@@ -245,12 +246,21 @@ export class ConnectionTester {
         secrets = values.secrets;
         outcome = await this.run(found.connection.type, values);
       } catch (err) {
-        // The error's code decides, never its words.
+        // The error's type and code decide, never its words. A raw error is shown as its reason's plain line.
+        const failure: ConnectionFailure =
+          err instanceof CheckFailed
+            ? err.failure
+            : err instanceof MailError
+              ? { reason: err.reason, fix: err.fix }
+              : { reason: failureFromError(err) };
         outcome = {
           ok: false,
-          detail: firstLine(errorMessage(err)),
+          detail:
+            err instanceof CheckFailed || err instanceof MailError
+              ? firstLine(errorMessage(err))
+              : `${FAILURE_LINE[failure.reason]}.`,
           warnings: [],
-          failure: err instanceof CheckFailed ? err.failure : { reason: failureFromError(err) },
+          failure,
         };
       }
     }
@@ -464,7 +474,10 @@ export class ConnectionTester {
         kubectl("auth", "can-i", "patch", "deployments"),
       ]);
       if (notInstalled(list))
-        return fail("kubectl is not installed where agents run.", { reason: "tool-missing" });
+        return fail("kubectl is not installed where agents run.", {
+          reason: "tool-missing",
+          fix: "Install kubectl where agents run, then check again.",
+        });
       if (list.code !== 0) {
         const reason = failureFromExit(list.code, false) ?? "unexpected";
         return fail(`kubectl could not read the cluster: ${firstLine(list.stderr || list.stdout)}`, {
@@ -582,12 +595,16 @@ export class ConnectionTester {
       }
       const reason = failureFromExit(run.code, run.missing) ?? "unexpected";
       if (reason === "tool-missing") {
-        return fail(`${firstWord(test)} is not installed where agents run.`, { reason });
+        return fail(`${firstWord(test)} is not installed where agents run.`, {
+          reason,
+          fix: `Install ${firstWord(test)} where agents run, then check again.`,
+        });
       }
       const why = firstLine(run.stderr || run.stdout);
       const exit = run.code === null ? "did not finish" : `failed with exit ${run.code}`;
       return fail(`${test} ${exit}${why ? `: ${why}` : "."}`, {
-        reason,
+        // A test command that exits non-zero with these values means the values are not accepted.
+        reason: reason === "not-signed-in" ? "rejected" : reason,
         ...(run.code === null ? {} : { status: run.code }),
         fix: "The test command failed with these values. Check them, then check again.",
       });

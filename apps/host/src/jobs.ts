@@ -13,6 +13,7 @@ import type {
   LayaDecideResult,
   LayaStatus,
   MachineHost,
+  MadeSshKey,
   RootSuggestion,
   SecretsKeyBackup,
   SecretsKeyRestore,
@@ -24,9 +25,13 @@ import type { NotifyOutcome } from "./platform/types.ts";
 export interface JobHandlers {
   listDirs(params: { path: string; showHidden: boolean }): Promise<DirListing>;
   suggestRoots(): Promise<RootSuggestion[]>;
+  /** Throws an error whose message is safe to show. */
+  makeDir(params: { path: string }): Promise<{ path: string }>;
   /** Undefined when this helper cannot run `docker compose`. */
   remount: (() => Promise<unknown>) | undefined;
   sshReload(): Promise<SshStatus>;
+  /** Throws an error whose message is safe to show. */
+  sshKeygen(): Promise<MadeSshKey>;
   /** HEAD of the checkout and the subjects after `from`. Throws when there is no checkout. */
   versionChanges(params: { from: string }): Promise<{ head: string; dirty: boolean; changes: string[] }>;
   /** Load, memory and free disk of this computer. Absent in tests that do not read them. */
@@ -129,6 +134,9 @@ export async function runJob(
 ): Promise<void> {
   try {
     switch (job.method) {
+      case "fs.mkdir":
+        await reply({ id: job.id, ok: true, result: await handlers.makeDir(job.params) });
+        return;
       case "listDirs":
         await reply({ id: job.id, ok: true, result: await handlers.listDirs(job.params) });
         return;
@@ -296,6 +304,9 @@ export async function runJob(
       }
       case "git.credential":
         await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
+        return;
+      case "ssh.keygen":
+        await reply({ id: job.id, ok: true, result: await handlers.sshKeygen() });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

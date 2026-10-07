@@ -1,7 +1,6 @@
 import type { HealthCheck } from "@majhi/shared";
 import { type AuthMode, IdSchema, PRIVATE, type ToolId, type ToolInfo } from "@majhi/shared";
 import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
-import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Field } from "@/components/ui/field";
@@ -11,6 +10,7 @@ import { type LoginState, nextLoginState, type TerminalEvent } from "@/features/
 import { describeError } from "@/lib/errors";
 import {
   useAccountHealth,
+  useAccounts,
   useCreateAccount,
   useOrgs,
   useStartLogin,
@@ -35,7 +35,6 @@ export type Stage =
       accountId: string;
       loginHint: string;
       terminalId: string;
-      command: string;
       state: LoginState;
     }
   | { kind: "checking"; accountId: string }
@@ -123,7 +122,17 @@ function AccountForm({
 
   const tool = tools.find((t) => t.id === toolId);
   const suggestion = useSuggestAccountId(toolId ?? "", org === NEW_ORG ? "" : org);
-  const shownId = idEdited ? id : (suggestion.data?.id ?? "");
+  // A sign-in that was started and never finished (the page was left): resumed, never a second account.
+  const accounts = useAccounts().data;
+  const abandoned = (accounts ?? []).find(
+    (a) =>
+      a.tool === toolId &&
+      a.org === org &&
+      a.auth === "login" &&
+      (a.status === "unknown" || a.status === "needs-login") &&
+      a.agentCount === 0,
+  );
+  const shownId = idEdited ? id : (abandoned?.id ?? suggestion.data?.id ?? "");
   const create = useCreateAccount();
   const login = useStartLogin();
   const health = useAccountHealth();
@@ -144,14 +153,18 @@ function AccountForm({
 
     let accountId: string;
     try {
-      const account = await create.mutateAsync({
-        id: parsedId.data,
-        tool: tool.id,
-        org,
-        auth: effectiveAuth,
-        ...(effectiveAuth === "api-key" ? { apiKey: apiKey.trim() } : {}),
-      });
-      accountId = account.id;
+      if (effectiveAuth === "login" && abandoned?.id === parsedId.data) {
+        accountId = abandoned.id;
+      } else {
+        const account = await create.mutateAsync({
+          id: parsedId.data,
+          tool: tool.id,
+          org,
+          auth: effectiveAuth,
+          ...(effectiveAuth === "api-key" ? { apiKey: apiKey.trim() } : {}),
+        });
+        accountId = account.id;
+      }
     } catch (error) {
       return setProblem(describeError(error));
     }
@@ -166,7 +179,6 @@ function AccountForm({
           accountId,
           loginHint: tool.loginHint,
           terminalId: started.terminalId,
-          command: started.command,
           state: { phase: "running" },
         });
       } else {
@@ -290,7 +302,6 @@ export function AccountProgress({
         accountId,
         loginHint,
         terminalId: started.terminalId,
-        command: started.command,
         state: { phase: "running" },
       });
     } catch (error) {
@@ -344,7 +355,6 @@ export function AccountProgress({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-base text-fg-soft text-pretty">{stage.loginHint}</p>
-      <CommandLine command={stage.command} />
       <Suspense fallback={<p className="text-sm text-fg-faint">Opening the terminal</p>}>
         <TerminalView
           key={stage.terminalId}

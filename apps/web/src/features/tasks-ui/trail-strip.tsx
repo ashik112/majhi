@@ -1,4 +1,4 @@
-import type { TrailStep } from "@majhi/shared";
+import type { TrailKind, TrailStep } from "@majhi/shared";
 import { ArrowUpToLine, Check, GitMerge, GitPullRequest, ListChecks, ListTree, Mail } from "lucide-react";
 import { Fragment, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Lamp, type LampState } from "@/components/ui/lamp";
@@ -66,8 +66,8 @@ const stepClass = (view: StepView) =>
 export interface TrailActions {
   /** Open a subtask. */
   onOpenTask?: (id: string) => void;
-  /** Show the room, where the check and the merge are. */
-  onShowRoom?: () => void;
+  /** Show the panel of a step: the room, and the Ship panel for the check and the merge. */
+  onShowStep?: (kind: TrailKind) => void;
 }
 
 function StepButton({ view, actions }: { view: StepView; actions: TrailActions }) {
@@ -127,13 +127,14 @@ function StepButton({ view, actions }: { view: StepView; actions: TrailActions }
     );
   }
   if (
-    actions.onShowRoom !== undefined &&
+    actions.onShowStep !== undefined &&
     (step.kind === "check" || step.kind === "local-merge" || step.kind === "ship" || step.kind === "deploy")
   ) {
+    const show = actions.onShowStep;
     return (
       <button
         type="button"
-        onClick={actions.onShowRoom}
+        onClick={() => show(step.kind)}
         title={title}
         className={cn(stepClass(view), "cursor-pointer hover:bg-raised")}
       >

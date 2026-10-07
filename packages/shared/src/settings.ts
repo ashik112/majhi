@@ -331,6 +331,8 @@ const containersFields = {
   build_cpus: ContainerCpusSchema,
   /** Memory of the preview builder. */
   build_memory: ContainerMemorySchema,
+  /** Most memory one agent run may use, applied from the next run. Unset: MAJHI_RUNNER_MEMORY, else a quarter of the machine, at least 6g where it has room. */
+  run_memory: ContainerMemorySchema,
   /** CPUs of a hand-off check (tests, build, lint of a finished task). Unset: half the machine's cores, at least 2. */
   handoff_cpus: ContainerCpusSchema,
   /** Most memory a hand-off check may use. Unset: a quarter of the machine, at least 6g. A workspace's own limit (`orgs.<id>.checks.memory`) wins. */
@@ -356,6 +358,7 @@ export const ContainersSettingsSchema = z.strictObject({
   build_total: containersFields.build_total.default(1),
   build_cpus: containersFields.build_cpus.default(2),
   build_memory: containersFields.build_memory.default("4g"),
+  run_memory: containersFields.run_memory.optional(),
   handoff_cpus: containersFields.handoff_cpus.optional(),
   handoff_memory: containersFields.handoff_memory.optional(),
   handoff_minutes: containersFields.handoff_minutes.optional(),

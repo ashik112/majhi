@@ -39,6 +39,7 @@ export function beatOf(row: Row): Beat {
     case "team-plan":
     case "client-gap":
     case "same-person":
+    case "who-is":
     case "incident-event":
     case "report":
       return "line";

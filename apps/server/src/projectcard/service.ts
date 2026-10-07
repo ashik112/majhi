@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import type { ProjectCard, ReadinessItem } from "@majhi/shared";
+import type { CardCheck, ProjectCard, ReadinessItem } from "@majhi/shared";
+import { z } from "zod";
+import { readCiChecks } from "../ci/checks.ts";
+import { safeLine } from "../ci/safe.ts";
 import { UserError } from "../errors.ts";
 import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 import { readiness, gaps as readinessGaps } from "./readiness.ts";
 import type { CardRepo } from "./repo.ts";
-import { isCardRelevant, type ScanFacts, scanRepo } from "./scanner.ts";
+import { isCardRelevant, type ScanFacts, safeText, scanRepo } from "./scanner.ts";
 
 /** How often base tips are looked at. */
 export const CARD_WATCH_MS = 60_000;
@@ -46,15 +49,32 @@ export interface CardDeps {
   debounceMs?: number;
 }
 
+const PackageScripts = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
+
+/** The body of a package.json script in a check's folder, for turning a script that writes into its read-only form. */
+async function scriptOf(
+  files: RepoFiles,
+  workdir: string | undefined,
+  name: string,
+): Promise<string | undefined> {
+  try {
+    const text = await files.read(workdir === undefined ? "package.json" : `${workdir}/package.json`);
+    const pkg = text === undefined ? undefined : PackageScripts.safeParse(JSON.parse(text));
+    return pkg?.success ? pkg.data.scripts?.[name] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A remote URL without the user and password part, so a token in it never reaches a card. */
 export function plainUrl(url: string): string {
   return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, "$1");
 }
 
 function hashOf(facts: ScanFacts): string {
-  const { stack, commands, checks, structure, conventions, ci, deploy, readme } = facts;
+  const { stack, commands, structure, conventions, ci, deploy, readme } = facts;
   return createHash("sha1")
-    .update(JSON.stringify({ stack, commands, checks, structure, conventions, ci, deploy, readme }))
+    .update(JSON.stringify({ stack, commands, structure, conventions, ci, deploy, readme }))
     .digest("hex");
 }
 
@@ -87,6 +107,51 @@ export class ProjectCards {
 
   get(project: string): ProjectCard | undefined {
     return this.deps.repo.get(project)?.card;
+  }
+
+  /**
+   * The cards as the page shows them: the stored card with the checks the repo's CI runs now, read
+   * through the one CI reader (cached for a minute), and the remotes read from the repo now, since a
+   * change to origin moves no tip. Both are right without a refresh.
+   */
+  async listLive(project?: string): Promise<ProjectCard[]> {
+    const projects = await this.deps.projects();
+    return Promise.all(
+      this.list(project).map(async (card) => {
+        const path = projects.find((p) => p.id === card.project)?.path;
+        if (path === undefined) return card;
+        const found = await readCiChecks((this.deps.files ?? fsRepoFiles)(path), { key: path }).catch(
+          () => [],
+        );
+        const files = (this.deps.files ?? fsRepoFiles)(path);
+        const checks = await Promise.all(
+          found
+            .filter((c) => safeText(c.command) !== undefined)
+            .map(async (c): Promise<CardCheck> => {
+              // What the hand-off runs: the line in its read-only form, never the CI's `--fix`.
+              const safe = await safeLine(c.command, (name) => scriptOf(files, c.workdir, name));
+              return {
+                kind: c.kind,
+                command: c.command,
+                env: c.env,
+                ...(c.workdir === undefined ? {} : { workdir: c.workdir }),
+                from: c.from,
+                ...(c.minutes === undefined ? {} : { minutes: c.minutes }),
+                services: c.services.map((s) => s.image),
+                ...(safe.ok
+                  ? safe.command === c.command
+                    ? {}
+                    : { runs: safe.command }
+                  : { notRun: safe.why }),
+              };
+            }),
+        );
+        const live = await this.deps.git.remotes(path).catch(() => undefined);
+        const remotes =
+          live === undefined ? card.remotes : live.map((r) => ({ name: r.name, url: plainUrl(r.url) }));
+        return { ...card, checks, remotes };
+      }),
+    );
   }
 
   list(project?: string): ProjectCard[] {
@@ -239,7 +304,7 @@ export class ProjectCards {
       whatItIsBy: by,
       stack: facts.stack,
       commands: facts.commands,
-      checks: facts.checks,
+      checks: [],
       structure: facts.structure,
       conventions: facts.conventions,
       ci: {

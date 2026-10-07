@@ -83,6 +83,7 @@ export function deriveStatus(input: DerivedInput): OnboardingStatus {
       ...(org.color ? { color: org.color } : {}),
       git: workspaceGit(org),
       projects: input.projects.filter((p) => p.org === org.id).length,
+      missing: [],
     }));
   const needGit = workspaces.filter((w) => w.id !== PRIVATE || w.projects > 0);
   const welcome = input.roots.length > 0;

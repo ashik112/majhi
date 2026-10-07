@@ -63,6 +63,8 @@ export const OnboardingWorkspaceSchema = z.object({
   color: z.string().optional(),
   git: z.array(OnboardingGitHostSchema),
   projects: z.number().int().nonnegative(),
+  /** Hosts its projects use that it has no sign-in for yet. */
+  missing: z.array(z.string()).default([]),
 });
 export type OnboardingWorkspace = z.infer<typeof OnboardingWorkspaceSchema>;
 

@@ -201,3 +201,4 @@ export const TgSent = z.object({ message_id: z.number() });
 export const TgFileInfo = z.object({ file_path: z.string().optional(), file_size: z.number().optional() });
 export const TgWebhookInfo = z.object({ url: z.string().default("") });
 export const TgCount = z.number();
+export const TgAdmins = z.array(z.object({ user: z.object({ id: z.number() }) }));

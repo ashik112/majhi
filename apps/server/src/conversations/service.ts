@@ -24,6 +24,11 @@ export class ConversationsService {
     return this.deps.store.conversations.list();
   }
 
+  /** The conversations whose messages hold the words. */
+  search(query: string): string[] {
+    return this.deps.store.conversations.matching(query);
+  }
+
   /** Marks read and tells every tab. False when the id is not a conversation of the dock. */
   markRead(id: string, upTo: string): boolean {
     const known = this.deps.store.conversations.markRead(id, upTo);

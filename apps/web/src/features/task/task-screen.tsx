@@ -1,3 +1,4 @@
+import type { TrailKind } from "@majhi/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
@@ -55,7 +56,12 @@ function TaskView({ taskId }: { taskId: string }) {
   }, [navigate]);
   const [tab, setTab] = useState<TaskTab>("room");
   const showChanges = useCallback(() => setTab("changes"), []);
-  const showRoom = useCallback(() => setTab("room"), []);
+  const [shipAsk, setShipAsk] = useState(0);
+  // The check and the merge live in the Ship panel, from any tab; the deploy lives in the room.
+  const showStep = useCallback((kind: TrailKind) => {
+    setTab("room");
+    if (kind === "check" || kind === "local-merge" || kind === "ship") setShipAsk((n) => n + 1);
+  }, []);
   // Narrower than about 1300 px the right column is a rail, and a click opens it over the page.
   const wide = useMedia("(min-width: 1300px)");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -147,7 +153,8 @@ function TaskView({ taskId }: { taskId: string }) {
             cardAsks={cardAsks}
             brief={brief}
             tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
-            onShowRoom={showRoom}
+            onShowStep={showStep}
+            shipAsk={shipAsk}
           />
           <div
             id={TAB_PANEL_ID}

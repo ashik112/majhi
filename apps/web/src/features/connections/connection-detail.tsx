@@ -2,7 +2,7 @@ import {
   type ConnectionHealth,
   type ConnectionView,
   connectionType,
-  FAILURE_LINE,
+  failureLine,
   GLOBAL_CONNECTIONS,
   hostPorts,
   type OrgView,
@@ -10,6 +10,7 @@ import {
   scopesAt,
   serviceById,
   serviceByUrl,
+  withoutPeriod,
 } from "@majhi/shared";
 import { Check, ExternalLink, Wrench } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -32,6 +33,7 @@ import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useAgents } from "@/lib/studio-queries";
+import { ChatGroups } from "./chat-groups";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
 import { isOauth, useReconnect } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
@@ -41,6 +43,7 @@ import { scopeAudience, scopeName, WorkspaceTag } from "./scope-picker";
 import { SlackChannels } from "./slack-channels";
 import { fixOf, rowStatus } from "./status";
 import { TokenForm } from "./token-form";
+import { ToolGateList } from "./tool-gate-list";
 
 /**
  * The picked connection, in a side panel: its one status and what to do about it, what agents can do
@@ -106,9 +109,7 @@ export function ConnectionPanel({
           {view.fields.service?.value === "slack" ? (
             <SlackChannels connection={view.id} orgs={orgs} />
           ) : (
-            <p className="text-base text-fg-muted text-pretty">
-              majhi reads the groups this bot is added to and sends replies as it. No agent gets its token.
-            </p>
+            <ChatGroups connection={view.id} orgs={orgs} />
           )}
         </DetailSection>
       ) : (
@@ -187,7 +188,7 @@ function StatusBlock({
   onCheck: () => void;
 }) {
   const health = view.health;
-  const status = rowStatus(health, checking, now);
+  const status = rowStatus(view, checking, now);
   const fix = fixOf(health);
   const re = useReconnect(view);
   const [other, setOther] = useState(false);
@@ -201,8 +202,10 @@ function StatusBlock({
       {health?.state === "connected" && <Verified health={health} now={now} />}
       {failed && health !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-sunken p-3">
-          <p className="text-base font-medium text-fg">{FAILURE_LINE[health.reason]}.</p>
-          {fix !== undefined && <p className="text-base text-fg-muted text-pretty">{fix.text}</p>}
+          <p className="text-base font-medium text-fg">{failureLine(view)}.</p>
+          {fix !== undefined && withoutPeriod(fix.text) !== failureLine(view) && (
+            <p className="text-base text-fg-muted text-pretty">{fix.text}</p>
+          )}
           {health.state === "needs-attention" && (
             <p className="text-sm text-fg-faint">
               It last worked <Ago iso={health.lastVerifiedAt} now={now} />.
@@ -430,6 +433,7 @@ function UsageSection({ view, orgs }: { view: ConnectionView; orgs: readonly Org
             .
           </p>
         )}
+        {view.toolGate !== undefined && <ToolGateList tools={view.toolGate} />}
         <p className="text-sm text-fg-faint text-pretty">
           Anything that changes something asks you first, unless the exact action is allowed below.
           {sign?.account !== undefined && (
