@@ -697,7 +697,7 @@ function ShipPanel({
             const o = optionOf(action);
             const label = labels[action];
             const disabled = o === undefined || !o.ok || busy;
-            // One reason that blocks several actions (no SSH alias) is said once, with its fix.
+            // One reason that blocks several actions (no git account for the host) is said once, with its fix.
             const repeated = o?.ok === false && ACTIONS.slice(0, i).some((a) => optionOf(a)?.why === o.why);
             return (
               <li key={action} className="flex flex-col">

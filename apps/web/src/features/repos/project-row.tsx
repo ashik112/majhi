@@ -80,7 +80,7 @@ export function ProjectListRow({
   );
 }
 
-/** Every remote of a repo as a small chip: host, and the SSH alias it goes through. */
+/** Every remote of a repo as a small chip: its host. */
 function Remotes({ repo }: { repo: Repo }) {
   if (repo.remotes.length === 0) return <span className="text-sm text-fg-faint">No remote</span>;
   return (
@@ -93,7 +93,6 @@ function Remotes({ repo }: { repo: Repo }) {
         >
           <HostGlyph host={remote.host} className="size-3" />
           {HOST_LABEL[remote.host]}
-          {remote.sshAlias && <span className="truncate font-mono text-fg-faint">{remote.sshAlias}</span>}
           {repo.remotes.length > 1 && remote.name !== "origin" && (
             <span className="text-fg-faint">{remote.name}</span>
           )}
