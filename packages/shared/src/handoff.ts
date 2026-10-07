@@ -13,6 +13,7 @@ export const HANDOFF_STEP_IDS = [
   "tests",
   "build",
   "lint",
+  "typecheck",
   "acceptance",
   "review",
 ] as const;
@@ -23,8 +24,10 @@ export type HandoffStepId = z.infer<typeof HandoffStepIdSchema>;
  * `pass` and `fail` are as they say. `timeout`: the command did not finish. `flaky`: it failed, then
  * passed on a retry, which is not green. `none`: there is nothing to run (no command on the project
  * card). `skipped`: not run, with the reason in `detail`. `note`: a flag for the owner that blocks nothing.
+ * `existing`: it failed, and fails the same way on the commit the task branched from, so it is not this
+ * task's and blocks nothing.
  */
-export const HandoffStatusSchema = z.enum(["pass", "fail", "timeout", "flaky", "none", "skipped", "note"]);
+export const HandoffStatusSchema = z.enum(["pass", "fail", "timeout", "flaky", "none", "skipped", "note", "existing"]);
 export type HandoffStatus = z.infer<typeof HandoffStatusSchema>;
 
 /** What a failed step says besides its name: how it ended and how long it ran, like "exit 1" and "24 s". */
@@ -36,7 +39,7 @@ export function handoffFailedFacts(failed: Pick<HandoffFailed, "status" | "code"
 }
 
 /** The steps that run a shell line of the project: a person can rerun one of these on its own. */
-export const HANDOFF_COMMAND_STEPS = ["install", "lint", "build", "tests"] as const;
+export const HANDOFF_COMMAND_STEPS = ["install", "lint", "typecheck", "build", "tests"] as const;
 export const HandoffCommandStepSchema = z.enum(HANDOFF_COMMAND_STEPS);
 export type HandoffCommandStep = z.infer<typeof HandoffCommandStepSchema>;
 
@@ -55,6 +58,33 @@ export const HandoffLogSchema = z.object({
 });
 export type HandoffLog = z.infer<typeof HandoffLogSchema>;
 
+/** One command a step ran, and where majhi got it. */
+export const HandoffRanSchema = z.object({
+  project: z.string(),
+  /** The line that ran, in its read-only form. */
+  command: z.string(),
+  /** "from .gitlab-ci.yml job build", "set for this project", or "from the project card". */
+  from: z.string(),
+  /** The environment variables it ran with. */
+  env: z.record(z.string(), z.string()),
+  /** The folder it ran in, relative to the repo, when not the root. */
+  workdir: z.string().optional(),
+  /** What majhi changed about it or did not run, like "eslint ran read-only". */
+  notes: z.array(z.string()),
+});
+export type HandoffRan = z.infer<typeof HandoffRanSchema>;
+
+/** A failure that the commit the task branched from has too. */
+export const HandoffExistingSchema = z.object({
+  /** The base commit, short. */
+  base: z.string(),
+  /** The problems both have, as the tool names them; empty when only pass or fail was compared. */
+  problems: z.array(z.string()),
+  /** The finding that holds it, for the owner to open a task from. */
+  finding: z.number().int().positive().optional(),
+});
+export type HandoffExisting = z.infer<typeof HandoffExistingSchema>;
+
 export const HandoffStepSchema = z.object({
   id: HandoffStepIdSchema,
   label: z.string(),
@@ -71,6 +101,12 @@ export const HandoffStepSchema = z.object({
   log: HandoffLogSchema.optional(),
   /** For the acceptance lines: each line of the brief and what matched it. */
   items: z.array(z.object({ text: z.string(), ok: z.boolean(), note: z.string().optional() })).optional(),
+  /** The commands the step ran. */
+  ran: z.array(HandoffRanSchema).optional(),
+  /** Set when the step failed the same way on the base commit. */
+  existing: HandoffExistingSchema.optional(),
+  /** Set when the check was killed for memory: what it was given, like "6g". */
+  memory: z.object({ limit: z.string() }).optional(),
   /** Only the owner can clear it (a card waits, a protected repo): the lead is not told. */
   owner: z.literal(true).optional(),
 });
@@ -203,6 +239,7 @@ const STEP_WORD: Record<HandoffStepId, string> = {
   tests: "tests",
   build: "build",
   lint: "lint",
+  typecheck: "type check",
   acceptance: "brief",
   review: "review",
 };
@@ -228,6 +265,8 @@ function stepWords(step: HandoffStep): string | undefined {
       return step.id === "ready" ? undefined : `${word} not run`;
     case "note":
       return step.id === "acceptance" ? `brief: ${step.detail}` : undefined;
+    case "existing":
+      return `${word} already failing on the base`;
   }
 }
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ContainerMemorySchema } from "./containers.ts";
 import { AgentToolRefSchema } from "./agent-tools.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
 import { ConversationEventSchema } from "./conversations.ts";
@@ -207,6 +208,8 @@ export const OrgConfigSchema = z.looseObject({
   resume: ResumePatchSchema.optional(),
   /** Overrides whether this org's commits name the agent and the task (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** The most memory one pre-ship check of this workspace may use, like `8g`. Absent: a quarter of the machine, at least 6g. */
+  checks: z.object({ memory: ContainerMemorySchema.optional() }).optional(),
   /** Overrides whether this org has a project wiki. Absent: majhi's `wiki.enabled`. */
   wiki: WikiOrgPatchSchema.optional(),
   /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
@@ -505,6 +508,8 @@ export const OrgViewSchema = z.object({
   commits: OrgConfigSchema.shape.commits,
   /** This org's own `wiki.enabled`, when it overrides majhi's. */
   wiki: OrgConfigSchema.shape.wiki,
+  /** The memory limit of this org's pre-ship checks, when set. */
+  checks: OrgConfigSchema.shape.checks,
   /** This org's own loop guard, when it overrides majhi's. */
   rooms: OrgConfigSchema.shape.rooms,
   /** This org's own turn limits, when it overrides majhi's. */

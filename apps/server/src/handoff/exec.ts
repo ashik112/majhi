@@ -35,6 +35,28 @@ export interface ExecDeps {
     | undefined;
 }
 
+/** Names a check's environment may not set: they decide where the check runs or who it runs as. */
+const FIXED_ENV: ReadonlySet<string> = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "TMPDIR",
+  "PWD",
+  "DOCKER_HOST",
+]);
+
+/** The environment of the CI job a check was read from, without what only majhi sets. */
+export function allowedEnv(env: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env ?? {})) {
+    if (FIXED_ENV.has(name) || name.startsWith("MAJHI_") || name.startsWith("GIT_") || name.startsWith("LD_"))
+      continue;
+    out[name] = value;
+  }
+  return out;
+}
+
 /** Hides what looks like a secret in text that came out of a command. */
 export function maskSecrets(text: string): string {
   const found = detectSecrets(text);
@@ -61,6 +83,7 @@ export function execInTask(deps: ExecDeps) {
     command: string,
     timeoutMs: number,
     limits?: ExecLimits,
+    env?: Record<string, string>,
   ): Promise<ExecResult> => {
     const started = Date.now();
     const task = deps.task(taskId);
@@ -79,6 +102,7 @@ export function execInTask(deps: ExecDeps) {
             ...tools?.env,
             ...taskTerminalEnv(deps.base, store?.home),
             ...shim?.env,
+            ...allowedEnv(env),
           }),
           task.repos.flatMap((r) => r.worktree ?? []),
         ),

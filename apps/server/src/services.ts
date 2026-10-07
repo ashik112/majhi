@@ -113,7 +113,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { HomeChecks } from "./handoff/home-checks.ts";
-import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
+import { defaultHandoffCpus, defaultHandoffMemory } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
 import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
@@ -1886,12 +1886,37 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
     },
     environment: () => `${env.commit}|${env.runner.image}`,
+    baseRunsDir: join(env.majhiHome, "handoff-base"),
+    reportExisting: async (f) => {
+      const project = (await config.sections()).projects[f.project];
+      const found = await reportFinding?.(
+        {
+          org: project?.org ?? PRIVATE,
+          project: f.project,
+          source: "ci",
+          title: `${f.project}: ${f.kind === "tests" ? "tests" : f.kind} fail on ${f.base} before any task`,
+          detail: `\`${f.command}\` fails on the base commit ${f.base}. A hand-off found it while checking ${f.task}, and did not block that task for it.`,
+          evidence: [f.command, ...f.problems.slice(0, 15), f.tail.slice(-400)].filter(
+            (e) => e.trim() !== "",
+          ),
+          severity: "medium",
+          dedupeKey: `base-fails:${f.project}:${f.kind}`,
+        },
+        { kind: "owner" },
+      );
+      return found?.finding.id;
+    },
     handoffCommands: async (project) => (await config.sections()).projects[project]?.handoff,
     limits: async (project) => {
       const c = (await config.settings()).containers;
+      const sections = await config.sections();
+      const orgId = sections.projects[project]?.org;
       return {
         cpus: c.handoff_cpus ?? defaultHandoffCpus(),
-        memory: c.handoff_memory ?? DEFAULT_HANDOFF_MEMORY,
+        memory:
+          (orgId === undefined ? undefined : sections.orgs[orgId]?.checks?.memory) ??
+          c.handoff_memory ??
+          defaultHandoffMemory(),
         minutes: c.handoff_minutes?.[project],
         stepMinutes: c.handoff_step_minutes,
       };

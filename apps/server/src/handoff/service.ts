@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 import {
   HANDOFF_STRIKES,
   type HandoffActivity,
   type HandoffCommandStep,
   type HandoffFailed,
   type HandoffHistoryItem,
+  type HandoffRan,
   type HandoffResult,
   type HandoffReview,
   type HandoffState,
@@ -12,6 +15,7 @@ import {
   handoffSeconds,
   handoffSummary,
 } from "@majhi/shared";
+import { safeLine } from "../ci/safe.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import {
   acceptanceLines,
@@ -28,8 +32,11 @@ import {
   reviewPrompt,
   TRIVIAL_LINES,
 } from "./analysis.ts";
+import type { Checkout } from "./checkout.ts";
 import { substituteBase, usesBase } from "./commands.ts";
+import { impliedMemoryMb, memoryMb, sizeWords } from "./limits.ts";
 import { logPath, newRunId, StepLog } from "./logs.ts";
+import { compareFailures, type ProblemKind, problemsOf } from "./problems.ts";
 import type { DeepRow, HandoffRepo } from "./repo.ts";
 
 /**
@@ -90,6 +97,26 @@ export interface CardCommands {
   test?: string | undefined;
   build?: string | undefined;
   lint?: string | undefined;
+  typecheck?: string | undefined;
+}
+
+/** One check as the project defines it: the line, the environment and folder it runs in, and where it came from. */
+export interface CheckSpec {
+  command: string;
+  env: Record<string, string>;
+  /** Relative to the repo root. Absent: the root. */
+  workdir?: string | undefined;
+  /** "from .gitlab-ci.yml job build", "set for this project", "from the project card". */
+  from: string;
+  /** The minutes the CI gives the job. */
+  minutes?: number | undefined;
+}
+
+/** What a check did on the base commit: kept by the base, the check and its environment. */
+export interface BaseRun {
+  passed: boolean;
+  /** The problems it reported, when they were understood. */
+  problems?: string[] | undefined;
 }
 
 export interface HandoffPorts {
@@ -107,6 +134,40 @@ export interface HandoffPorts {
   needsInstall?(cwd: string): Promise<boolean>;
   /** Saves one step's whole output as a file in the task folder (`logPath(run, step)`). Rejects when it cannot. */
   saveLog?(task: string, run: string, step: HandoffStepId, text: string): Promise<void>;
+  /**
+   * The check of one kind for a project, from its own setting, else its CI, else its card. Absent: the
+   * card's commands (`commands`).
+   */
+  checkSpec?(
+    task: string,
+    project: string,
+    kind: HandoffCommandStep,
+    worktree: string,
+  ): Promise<CheckSpec | undefined>;
+  /** The body of a package.json script in a folder, for turning a script that writes into its read-only form. */
+  script?(cwd: string, name: string): Promise<string | undefined>;
+  /**
+   * A throwaway checkout of a commit, with the worktree's installed packages linked in. Absent: checks
+   * run in the worktree itself.
+   */
+  checkout?(task: string, project: string, commit: string, installedFrom: string): Promise<Checkout>;
+  /** The commit the task's branch is at in one project. */
+  headCommit?(task: string, project: string): Promise<string | undefined>;
+  /** What the same check did on a base commit, kept by `key` (the base, the check, its environment). */
+  baseRuns?: {
+    get(key: string): Promise<BaseRun | undefined>;
+    put(key: string, run: BaseRun): Promise<void>;
+  };
+  /** Files a finding for a check that fails on the base, once per project and check. Returns its id. */
+  reportExisting?(input: {
+    task: string;
+    project: string;
+    kind: HandoffCommandStep;
+    command: string;
+    base: string;
+    problems: string[];
+    tail: string;
+  }): Promise<number | undefined>;
   /** Runs one shell line in a task's worktree, in its runner, with a timeout. */
   exec(
     task: string,
@@ -114,6 +175,7 @@ export interface HandoffPorts {
     command: string,
     timeoutMs: number,
     limits?: ExecLimits,
+    env?: Record<string, string>,
   ): Promise<ExecResult>;
   /** The caps and timeout settings of a project's checks. Absent: majhi's defaults. */
   limits?(project: string): Promise<HandoffLimits>;
@@ -139,6 +201,7 @@ export interface HandoffOptions {
   testMs?: number;
   buildMs?: number;
   lintMs?: number;
+  typecheckMs?: number;
   installMs?: number;
   /** Checks that run at once across majhi, and per workspace. They take no agent slot: no agent runs. */
   parallel?: number;
@@ -202,6 +265,7 @@ const LABEL: Record<HandoffStepId, string> = {
   tests: "Tests",
   build: "Build",
   lint: "Lint",
+  typecheck: "Types",
   acceptance: "Brief",
   review: "Review",
 };
@@ -211,6 +275,46 @@ const step = (id: HandoffStepId, rest: Omit<HandoffStep, "id" | "label">): Hando
   label: LABEL[id],
   ...rest,
 });
+
+/** The container's memory limit killed it (exit 137), or Node ran out of heap. */
+function ranOutOfMemory(res: ExecResult): boolean {
+  return res.code === 137 || res.log.includes("heap out of memory") || res.log.includes("Reached heap limit");
+}
+
+/**
+ * The throwaway checkouts of one hand-off run, one per repo, made when a step first needs one and
+ * removed when the run ends. A check never runs in the task's own worktree.
+ */
+class Checkouts {
+  private readonly made = new Map<string, Promise<Checkout | undefined>>();
+  constructor(
+    private readonly ports: HandoffPorts,
+    private readonly task: string,
+  ) {}
+
+  /** Where a repo's checks run: its copy, or the worktree when majhi cannot make copies. */
+  async path(project: string, worktree: string): Promise<string> {
+    const { checkout, headCommit } = this.ports;
+    if (checkout === undefined || headCommit === undefined) return worktree;
+    let made = this.made.get(project);
+    if (made === undefined) {
+      made = (async () => {
+        const commit = await headCommit(this.task, project);
+        return commit === undefined ? undefined : checkout(this.task, project, commit, worktree);
+      })();
+      this.made.set(project, made);
+    }
+    const copy = await made;
+    if (copy === undefined) throw new Error("the task has no commit to check");
+    return copy.path;
+  }
+
+  async releaseAll(): Promise<void> {
+    const copies = await Promise.all([...this.made.values()].map((p) => p.catch(() => undefined)));
+    await Promise.all(copies.map((c) => c?.release()));
+    this.made.clear();
+  }
+}
 
 export class HandoffService {
   private readonly slots: Slots;
@@ -242,6 +346,7 @@ export class HandoffService {
       tests: options.testMs ?? TEST_TIMEOUT_MS,
       build: options.buildMs ?? BUILD_TIMEOUT_MS,
       lint: options.lintMs ?? LINT_TIMEOUT_MS,
+      typecheck: options.typecheckMs ?? LINT_TIMEOUT_MS,
       install: options.installMs ?? INSTALL_TIMEOUT_MS,
     };
   }
@@ -544,12 +649,34 @@ export class HandoffService {
     const before = (id: HandoffStepId) => prior?.steps.find((s) => s.id === id);
     const redo = (id: HandoffCommandStep) => only === undefined || prior === undefined || only.includes(id);
     const stop = (s: HandoffStep | undefined) => s?.status === "fail" || s?.status === "timeout";
+    const work = new Checkouts(this.ports, task.id);
+    try {
+      return await this.deepSteps(task, force, runId, only, prior, started, { before, redo, stop, work });
+    } finally {
+      await work.releaseAll();
+    }
+  }
 
+  private async deepSteps(
+    task: HandoffTask,
+    force: boolean,
+    runId: string,
+    only: readonly HandoffCommandStep[] | undefined,
+    prior: DeepRow | undefined,
+    started: number,
+    h: {
+      before: (id: HandoffStepId) => HandoffStep | undefined;
+      redo: (id: HandoffCommandStep) => boolean;
+      stop: (s: HandoffStep | undefined) => boolean;
+      work: Checkouts;
+    },
+  ): Promise<{ steps: HandoffStep[]; review: HandoffReview; ms: number }> {
+    const { before, redo, stop, work } = h;
     const asked = only?.includes("install") === true;
     let install: HandoffStep | undefined = before("install");
     if (redo("install")) {
       this.enter(task.id, "install");
-      install = await this.command(task, "install", runId, asked);
+      install = await this.command(task, "install", runId, work, asked);
     }
     const notInstalled = stop(install);
     const skipped = (id: HandoffCommandStep): HandoffStep =>
@@ -559,11 +686,15 @@ export class HandoffService {
     const reuse = (id: HandoffCommandStep) => (redo(id) ? undefined : before(id));
     const lint = notInstalled
       ? skipped("lint")
-      : (reuse("lint") ?? (await this.command(task, "lint", runId)));
+      : (reuse("lint") ?? (await this.command(task, "lint", runId, work)));
+    this.enter(task.id, "typecheck");
+    const typecheck = notInstalled
+      ? skipped("typecheck")
+      : (reuse("typecheck") ?? (await this.command(task, "typecheck", runId, work)));
     this.enter(task.id, "build");
     const build = notInstalled
       ? skipped("build")
-      : (reuse("build") ?? (await this.command(task, "build", runId)));
+      : (reuse("build") ?? (await this.command(task, "build", runId, work)));
     // A build that does not build makes the tests say nothing, unless they were asked for by name.
     const testsBefore = before("tests");
     const asksTests = only?.includes("tests") === true;
@@ -576,7 +707,7 @@ export class HandoffService {
           ? step("tests", { status: "skipped", detail: "not run: the build failed" })
           : await (async () => {
               this.enter(task.id, "tests");
-              return this.command(task, "tests", runId);
+              return this.command(task, "tests", runId, work);
             })();
     const diff = await this.ports.diff(task.id).catch(() => undefined);
     const hasTests = (
@@ -598,7 +729,7 @@ export class HandoffService {
                 : `${unmatched.length} of ${items.length} lines with no evidence`,
             items,
           });
-    const failed = [install, lint, build, tests].some(
+    const failed = [install, lint, typecheck, build, tests].some(
       (s) => s?.status === "fail" || s?.status === "timeout" || s?.status === "flaky",
     );
     // A step rerun alone does not spend on the model again: a review that was read stays.
@@ -635,6 +766,7 @@ export class HandoffService {
         tests,
         build,
         lint,
+        ...(typecheck.status === "none" ? [] : [typecheck]),
         acceptance,
         reviewStep,
       ],
@@ -673,48 +805,119 @@ export class HandoffService {
     }
   }
 
+  /** The check of one kind for one repo: the project's own setting, else its CI, else its card. */
+  private async specOf(
+    task: HandoffTask,
+    r: { project: string; worktree?: string | undefined },
+    kind: HandoffCommandStep,
+  ): Promise<CheckSpec | undefined> {
+    if (this.ports.checkSpec !== undefined && r.worktree !== undefined) {
+      return this.ports.checkSpec(task.id, r.project, kind, r.worktree);
+    }
+    const key = kind === "tests" ? "test" : kind;
+    const command = (await this.ports.commands(r.project))[key];
+    return command === undefined || command.trim() === ""
+      ? undefined
+      : { command, env: {}, from: "from the project card" };
+  }
+
   /**
-   * One kind of command over the task's repos. Tests that fail run once more: pass on retry is
-   * flaky. `install` runs only in a repo whose packages are missing, unless `always`.
+   * One kind of command over the task's repos. Each runs in a throwaway checkout of the task's head, in
+   * the environment of the CI job it was read from, and only in a form that does not write. Tests that
+   * fail run once more: pass on retry is flaky. A failure the base commit has too is "existing", not the
+   * task's. `install` runs only in a repo whose packages are missing, unless `always`.
    */
   private async command(
     task: HandoffTask,
     kind: HandoffCommandStep,
     runId: string,
+    work: Checkouts,
     always = false,
   ): Promise<HandoffStep> {
-    const key = kind === "tests" ? "test" : kind;
-    const runs: { project: string; cwd: string; command: string }[] = [];
+    interface Run {
+      project: string;
+      worktree: string;
+      cwd: string;
+      workdir: string | undefined;
+      command: string;
+      env: Record<string, string>;
+      ran: HandoffRan;
+      minutes: number | undefined;
+    }
+    const runs: Run[] = [];
+    const skipped: string[] = [];
     for (const r of task.repos) {
-      const command = (await this.ports.commands(r.project))[key];
-      if (command === undefined || command.trim() === "" || r.worktree === undefined) continue;
-      if (kind === "install" && !always && (await this.ports.needsInstall?.(r.worktree)) !== true) continue;
-      let line = command;
-      if (usesBase(command)) {
+      if (r.worktree === undefined) continue;
+      const spec = await this.specOf(task, r, kind);
+      if (spec === undefined || spec.command.trim() === "") continue;
+      let where: string;
+      try {
+        where = await work.path(r.project, r.worktree);
+      } catch (err) {
+        return step(kind, {
+          status: "fail",
+          detail: `majhi could not make a copy of ${r.project} to check: ${errorMessage(err)}`,
+          owner: true,
+        });
+      }
+      if (kind === "install" && !always && (await this.ports.needsInstall?.(where)) !== true) continue;
+      let line = spec.command;
+      if (usesBase(line)) {
         const base = await this.ports.mergeBase?.(task.id, r.project).catch(() => undefined);
-        const filled = substituteBase(command, base);
+        const filled = substituteBase(line, base);
         if ("error" in filled) {
           return step(kind, {
             status: "fail",
-            detail: `${command} could not run in ${r.project}: ${filled.error}`,
+            detail: `${spec.command} could not run in ${r.project}: ${filled.error}`,
             owner: true,
           });
         }
         line = filled.command;
       }
-      runs.push({ project: r.project, cwd: r.worktree, command: line });
+      const cwd = spec.workdir === undefined ? where : join(where, spec.workdir);
+      const ports = this.ports;
+      const safe =
+        kind === "install"
+          ? ({ ok: true, command: line, notes: [] } as const)
+          : await safeLine(line, (name) => ports.script?.(cwd, name) ?? Promise.resolve(undefined));
+      if (!safe.ok) {
+        skipped.push(`${spec.command} in ${r.project} was not run: ${safe.why}`);
+        continue;
+      }
+      runs.push({
+        project: r.project,
+        worktree: r.worktree,
+        cwd,
+        workdir: spec.workdir,
+        command: safe.command,
+        env: spec.env,
+        minutes: spec.minutes,
+        ran: {
+          project: r.project,
+          command: safe.command,
+          from: spec.from,
+          env: spec.env,
+          ...(spec.workdir === undefined ? {} : { workdir: spec.workdir }),
+          notes: [...safe.notes],
+        },
+      });
     }
     if (runs.length === 0) {
       return step(kind, {
-        status: "none",
+        status: skipped.length > 0 ? "skipped" : "none",
         detail:
-          kind === "tests"
-            ? "the project card has no test command, so nothing was tested"
-            : kind === "install"
-              ? "the packages are in place"
-              : `the project card has no ${kind} command`,
+          skipped.length > 0
+            ? skipped.join("; ")
+            : kind === "tests"
+              ? "the project card has no test command, so nothing was tested"
+              : kind === "install"
+                ? "the packages are in place"
+                : `the project card has no ${kind === "typecheck" ? "type check" : kind} command`,
       });
     }
+    const ran = runs.map((r) => r.ran);
+    const finish = (rest: Omit<HandoffStep, "id" | "label" | "ran">): HandoffStep =>
+      step(kind, { ...rest, ran });
     const many = task.repos.length > 1;
     const log = new StepLog();
     let total = 0;
@@ -724,17 +927,28 @@ export class HandoffService {
       `==> ${r.command} in ${r.project}${note}: ${res.timedOut ? "stopped, it did not finish" : `exit ${res.code ?? "none"}`} after ${handoffSeconds(res.ms)}`;
     for (const r of runs) {
       const where = many ? ` in ${r.project}` : "";
-      const { ms: timeoutMs, caps } = await this.timeoutOf(r.project, kind);
+      const { ms: ownMs, caps } = await this.timeoutOf(r.project, kind);
+      const ownSet = caps?.minutes !== undefined && (kind === "tests" || kind === "build");
+      const timeoutMs =
+        !ownSet && caps?.stepMinutes?.[kind] === undefined && r.minutes !== undefined
+          ? Math.max(ownMs, r.minutes * MINUTE)
+          : ownMs;
       const more =
         kind === "lint"
           ? ""
           : `. To allow more, set containers.handoff_step_minutes.${kind} or containers.handoff_minutes.${r.project} (now ${Math.round(timeoutMs / MINUTE)}) or containers.handoff_cpus${caps === undefined ? "" : ` (now ${caps.cpus})`}`;
       const limits = caps === undefined ? undefined : { cpus: caps.cpus, memory: caps.memory };
-      const run = () => this.ports.exec(task.id, r.cwd, r.command, timeoutMs, limits);
+      const wantsMb = impliedMemoryMb(r.env);
+      if (limits !== undefined && wantsMb !== undefined && wantsMb > memoryMb(limits.memory)) {
+        r.ran.notes.push(
+          `the CI gives Node a ${sizeWords(`${Math.round(wantsMb / 1024)}g`)} heap and headroom, and the limit here is ${sizeWords(limits.memory)}`,
+        );
+      }
+      const run = () => this.ports.exec(task.id, r.cwd, r.command, timeoutMs, limits, r.env);
       let res = await run();
       total += res.ms;
       if (res.error !== undefined) {
-        return step(kind, {
+        return finish({
           status: "fail",
           detail: `${r.command} could not run${where}: ${res.error}`,
           ms: total,
@@ -749,7 +963,7 @@ export class HandoffService {
           runId,
           kind,
           log,
-          step(kind, {
+          finish({
             status: "timeout",
             detail: `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)}${where}, so it was stopped${more}`,
             ms: total,
@@ -771,7 +985,7 @@ export class HandoffService {
               runId,
               kind,
               log,
-              step(kind, {
+              finish({
                 status: "flaky",
                 detail: `\`${r.command}\` failed, then passed on a retry${where}: flaky, so not green`,
                 ms: total,
@@ -783,16 +997,61 @@ export class HandoffService {
         }
         const tail = outputTail(res.output);
         log.add(header(r, res, kind === "tests" ? " (retry)" : ""), res.log, tail);
+        if (!res.timedOut && ranOutOfMemory(res) && limits !== undefined) {
+          return this.withLog(
+            task,
+            runId,
+            kind,
+            log,
+            finish({
+              status: "fail",
+              detail: `Ran out of memory at ${sizeWords(limits.memory)}${where}: raise it in this project's Check before ship`,
+              ms: total,
+              output: tail,
+              code: res.code,
+              memory: { limit: limits.memory },
+              owner: true,
+            }),
+          );
+        }
+        const existing =
+          kind === "install" || res.timedOut
+            ? undefined
+            : await this.againstBase(task, kind, r, res, timeoutMs, limits, r.worktree);
+        if (existing !== undefined && existing.fresh.length === 0) {
+          return this.withLog(
+            task,
+            runId,
+            kind,
+            log,
+            finish({
+              status: "existing",
+              detail: `\`${r.command}\` fails${where}, and it already failed on ${existing.base} before this task: not blocking`,
+              ms: total,
+              output: tail,
+              code: res.code,
+              existing: {
+                base: existing.base,
+                problems: existing.problems,
+                ...(existing.finding === undefined ? {} : { finding: existing.finding }),
+              },
+            }),
+          );
+        }
+        const fresh =
+          existing === undefined || existing.fresh.length === 0
+            ? ""
+            : `, ${existing.fresh.length} new on this task`;
         return this.withLog(
           task,
           runId,
           kind,
           log,
-          step(kind, {
+          finish({
             status: res.timedOut ? "timeout" : "fail",
             detail: res.timedOut
               ? `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)} on its retry${where}${more}`
-              : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""})`,
+              : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""}${fresh})`,
             ms: total,
             output: tail,
             code: res.code,
@@ -811,13 +1070,81 @@ export class HandoffService {
       runId,
       kind,
       log,
-      step(kind, {
+      finish({
         status: "pass",
         detail: kind === "tests" && countedAny ? `${counted} passed` : "ok",
         ms: total,
         code: 0,
       }),
     );
+  }
+
+  /**
+   * The same check on the commit the task branched from, once for each base and check (kept by base,
+   * command and environment), compared with what failed here. Undefined when the base cannot be run, so
+   * the failure counts as the task's.
+   */
+  private async againstBase(
+    task: HandoffTask,
+    kind: HandoffCommandStep,
+    r: {
+      project: string;
+      workdir: string | undefined;
+      command: string;
+      env: Record<string, string>;
+    },
+    head: ExecResult,
+    timeoutMs: number,
+    limits: ExecLimits | undefined,
+    installedFrom: string,
+  ): Promise<{ base: string; fresh: string[]; problems: string[]; finding?: number } | undefined> {
+    const ports = this.ports;
+    if (ports.checkout === undefined || ports.mergeBase === undefined) return undefined;
+    const commit = await ports.mergeBase(task.id, r.project).catch(() => undefined);
+    if (commit === undefined) return undefined;
+    const problemKind: ProblemKind = kind === "tests" ? "test" : kind === "install" ? "build" : kind;
+    const key = createHash("sha1")
+      .update(JSON.stringify([r.project, commit, kind, r.command, r.env, r.workdir ?? ""]))
+      .digest("hex");
+    let base = await ports.baseRuns?.get(key).catch(() => undefined);
+    if (base === undefined) {
+      let copy: Checkout | undefined;
+      try {
+        copy = await ports.checkout(task.id, r.project, commit, installedFrom);
+        const where = r.workdir === undefined ? copy.path : join(copy.path, r.workdir);
+        const res = await ports.exec(task.id, where, r.command, timeoutMs, limits, r.env);
+        // A base that could not be run says nothing about the task.
+        if (res.error !== undefined || res.timedOut) return undefined;
+        base = {
+          passed: res.code === 0,
+          ...(res.code === 0 ? {} : { problems: problemsOf(problemKind, res.log) }),
+        };
+        await ports.baseRuns?.put(key, base).catch(() => undefined);
+      } catch {
+        return undefined;
+      } finally {
+        await copy?.release();
+      }
+    }
+    const cmp = compareFailures(problemKind, head.log, {
+      passed: base.passed,
+      problems: base.problems,
+    });
+    const short = commit.slice(0, 8);
+    if (cmp.fresh.length > 0 || base.passed)
+      return { base: short, fresh: cmp.fresh.length > 0 ? cmp.fresh : ["failed"], problems: [] };
+    const finding = await ports
+      .reportExisting?.({
+        task: task.id,
+        project: r.project,
+        kind,
+        command: r.command,
+        base: short,
+        problems: cmp.existing,
+        tail: outputTail(head.output),
+      })
+      .catch(() => undefined);
+    return { base: short, fresh: [], problems: cmp.existing, ...(finding === undefined ? {} : { finding }) };
   }
 
   private async review(

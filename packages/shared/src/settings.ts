@@ -333,7 +333,7 @@ const containersFields = {
   build_memory: ContainerMemorySchema,
   /** CPUs of a hand-off check (tests, build, lint of a finished task). Unset: half the machine's cores, at least 2. */
   handoff_cpus: ContainerCpusSchema,
-  /** Memory of a hand-off check. Unset: 4g. */
+  /** Most memory a hand-off check may use. Unset: a quarter of the machine, at least 6g. A workspace's own limit (`orgs.<id>.checks.memory`) wins. */
   handoff_memory: ContainerMemorySchema,
   /** Minutes a project's hand-off tests and build may run before they are stopped, by project. A project left out gets 10. */
   handoff_minutes: z.record(z.string(), z.number().int().min(1).max(240)),
@@ -342,6 +342,7 @@ const containersFields = {
     install: z.number().int().min(1).max(240).optional(),
     lint: z.number().int().min(1).max(240).optional(),
     build: z.number().int().min(1).max(240).optional(),
+    typecheck: z.number().int().min(1).max(240).optional(),
     tests: z.number().int().min(1).max(240).optional(),
   }),
 };

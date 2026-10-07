@@ -30,7 +30,8 @@ const KINDS = [
   ["tests", "test"],
   ["build", "build"],
   ["lint", "lint"],
-] as const satisfies readonly (readonly [HandoffStepId, "test" | "build" | "lint"])[];
+  ["typecheck", "typecheck"],
+] as const satisfies readonly (readonly [HandoffStepId, "test" | "build" | "lint" | "typecheck"])[];
 
 const FAILED = new Set(["fail", "timeout", "flaky"]);
 
@@ -58,6 +59,8 @@ export function decideMerge(facts: MergeFacts): MergeVerdict {
   // A step that was not run (the cheap checks failed first, or the tests waited for a build) is no evidence.
   for (const [id] of KINDS) {
     const step = current.steps.find((s) => s.id === id);
+    // A project with no type check command has no such step.
+    if (id === "typecheck" && step === undefined) continue;
     if (step === undefined || step.status === "skipped") return { kind: "stale", ran: false };
   }
   if (facts.state?.running === true || facts.state?.queued === true) return { kind: "running" };

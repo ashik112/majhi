@@ -1648,7 +1648,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, the memory limit of pre-ship checks, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -1662,6 +1662,8 @@ export const commands = {
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
       /** Overrides majhi's `commits.attribution` for this org's commits. */
       commits: OrgConfigSchema.shape.commits.nullable().optional(),
+      /** The most memory one pre-ship check may use in this workspace, like { memory: "8g" }. null goes back to the machine default. */
+      checks: OrgConfigSchema.shape.checks.nullable().optional(),
       /** Overrides majhi's `wiki.enabled` for this org. */
       wiki: OrgConfigSchema.shape.wiki.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
