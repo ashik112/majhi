@@ -39,6 +39,7 @@ const FAILED_STEP: Record<HandoffStepId, string> = {
   tests: "tests failed",
   build: "build failed",
   lint: "lint failed",
+  typecheck: "type check failed",
   acceptance: "acceptance failed",
   review: "review failed",
 };

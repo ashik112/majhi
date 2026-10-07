@@ -1,4 +1,6 @@
-import { type CardCommands, detectSecrets } from "@majhi/shared";
+import { type CardCheck, type CardCommands, detectSecrets } from "@majhi/shared";
+import { ciChecks } from "../ci/jobs.ts";
+import { readCiFiles } from "../ci/read.ts";
 import { chunkDoc } from "../memory/repo-docs.ts";
 import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 
@@ -6,6 +8,8 @@ import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 export interface ScanFacts {
   stack: string[];
   commands: CardCommands;
+  /** The checks the repo's own CI runs, with their environment. */
+  checks: CardCheck[];
   structure: { path: string; note: string }[];
   conventions: string[];
   ci: { provider?: string | undefined; workflows: string[] };
@@ -224,23 +228,6 @@ function fillFromMake(commands: CardCommands, targets: Set<string>): void {
     const hit = names.find((n) => targets.has(n));
     if (hit !== undefined) commands[key] = `make ${hit}`;
   }
-}
-
-/** The CI workflow lines that run a check, to fill commands a repo did not name elsewhere. */
-function ciCommands(text: string): Partial<Record<keyof CardCommands, string>> {
-  const out: Partial<Record<keyof CardCommands, string>> = {};
-  for (const m of text.matchAll(/^\s*-?\s*run:\s*(.+)$/gm)) {
-    const line = (m[1] ?? "").trim().replace(/^["']|["']$/g, "");
-    if (line === "" || line.includes("${{") || line.length > 120 || line.includes("\n")) continue;
-    if (out.test === undefined && /\b(test|pytest|vitest|jest|cargo test|go test)\b/.test(line))
-      out.test = line;
-    else if (out.lint === undefined && /\b(lint|ruff|eslint|biome|clippy|golangci)\b/.test(line))
-      out.lint = line;
-    else if (out.typecheck === undefined && /\b(typecheck|tsc|mypy|pyright)\b/.test(line))
-      out.typecheck = line;
-    else if (out.build === undefined && /\bbuild\b/.test(line)) out.build = line;
-  }
-  return out;
 }
 
 const slugify = (s: string): string =>
@@ -476,7 +463,6 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
   // CI
   const workflows: string[] = [];
   let provider: string | undefined;
-  let ciText = "";
   const wf = await files.list(".github/workflows");
   for (const e of wf) {
     if (e.dir || !/\.ya?ml$/.test(e.name)) continue;
@@ -484,7 +470,6 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
     workflows.push(e.name);
     const text = await files.read(`.github/workflows/${e.name}`);
     if (text === undefined) continue;
-    ciText += `\n${text}`;
     if (/\bdeploy\b/i.test(e.name) || /^\s*name:.*deploy/im.test(text))
       deploy.push(`Deploy workflow (${e.name})`);
   }
@@ -493,10 +478,19 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
     if (text === undefined) continue;
     provider ??= label;
     if (provider === label) workflows.push(file);
-    ciText += `\n${text}`;
   }
-  const fromCi = ciCommands(ciText);
-  for (const key of ["test", "lint", "typecheck", "build"] as const) commands[key] ??= fromCi[key];
+  const checks = ciChecks(await readCiFiles(files)).map(
+    (c): CardCheck => ({
+      kind: c.kind,
+      command: c.command,
+      env: c.env,
+      ...(c.workdir === undefined ? {} : { workdir: c.workdir }),
+      from: c.from,
+      ...(c.minutes === undefined ? {} : { minutes: c.minutes }),
+      services: c.services,
+    }),
+  );
+  for (const c of checks) if (c.workdir === undefined) commands[c.kind] ??= c.command;
 
   // Deploy hints
   for (const [file, label] of DEPLOY_HINTS) if (has(file)) deploy.push(label);
@@ -591,6 +585,7 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
   return {
     stack: clean(stack),
     commands: safeCommands,
+    checks: checks.filter((c) => safeText(c.command) !== undefined),
     structure,
     conventions: clean(conventions),
     ci: { ...(provider === undefined ? {} : { provider }), workflows },

@@ -7,7 +7,7 @@ import { z } from "zod";
  */
 
 /** A check the rule reads. `secret` is the diff scan: a hard block that nobody can override. */
-export const MERGE_CHECK_NAMES = ["test", "build", "lint", "secret"] as const;
+export const MERGE_CHECK_NAMES = ["test", "build", "lint", "typecheck", "secret"] as const;
 export const MergeCheckNameSchema = z.enum(MERGE_CHECK_NAMES);
 export type MergeCheckName = z.infer<typeof MergeCheckNameSchema>;
 

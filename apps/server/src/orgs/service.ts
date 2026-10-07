@@ -73,6 +73,7 @@ export class OrgService {
       "resume",
       "commits",
       "wiki",
+      "checks",
       "rooms",
       "turns",
       "tiers",
@@ -169,6 +170,7 @@ function view(
   }
   if (org.commits?.attribution !== undefined) out.commits = { attribution: org.commits.attribution };
   if (org.wiki?.enabled !== undefined) out.wiki = { enabled: org.wiki.enabled };
+  if (org.checks?.memory !== undefined) out.checks = { memory: org.checks.memory };
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
   if (org.turns !== undefined && Object.keys(org.turns).length > 0) out.turns = org.turns;
   if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;

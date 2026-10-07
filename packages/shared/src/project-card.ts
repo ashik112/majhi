@@ -18,6 +18,25 @@ export const CardCommandsSchema = z.object({
 });
 export type CardCommands = z.infer<typeof CardCommandsSchema>;
 
+/**
+ * One check the repo's own CI runs, as the hand-off check runs it: the command, the environment and the
+ * folder of the CI job, and where it was read from.
+ */
+export const CardCheckSchema = z.object({
+  kind: z.enum(["lint", "typecheck", "test", "build"]),
+  command: z.string(),
+  env: z.record(z.string(), z.string()),
+  /** The folder it runs in, relative to the repo root. Absent: the root. */
+  workdir: z.string().optional(),
+  /** "from .gitlab-ci.yml job build". */
+  from: z.string(),
+  /** The minutes the CI gives the job, when it says. */
+  minutes: z.number().optional(),
+  /** Services the CI job starts next to it, like a database image. */
+  services: z.array(z.string()),
+});
+export type CardCheck = z.infer<typeof CardCheckSchema>;
+
 export const READINESS_IDS = ["base", "test", "checks", "ci", "docs", "worktree"] as const;
 export const ReadinessIdSchema = z.enum(READINESS_IDS);
 export type ReadinessId = z.infer<typeof ReadinessIdSchema>;
@@ -52,6 +71,8 @@ export const ProjectCardSchema = z.object({
   whatItIsBy: z.enum(["model", "readme", "none"]),
   stack: z.array(z.string()),
   commands: CardCommandsSchema,
+  /** The checks the repo's CI runs, read from its CI files. The hand-off check runs these before the commands above. */
+  checks: z.array(CardCheckSchema).default([]),
   structure: z.array(z.object({ path: z.string(), note: z.string() })),
   conventions: z.array(z.string()),
   ci: z.object({ provider: z.string().optional(), workflows: z.array(z.string()) }),
