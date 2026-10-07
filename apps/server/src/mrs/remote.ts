@@ -1,5 +1,6 @@
 import type { MrHost, RemoteConfig } from "@majhi/shared";
-import { classifyHost, parseRemoteUrl } from "../scan/remote.ts";
+import { classifyHost } from "../scan/remote.ts";
+import type { SshConfig } from "../scan/sshConfig.ts";
 
 /** The remote MRs go to: the one marked `mr: true`, else `origin`. */
 export function mrRemoteName(remotes: Readonly<Record<string, RemoteConfig>> | undefined): string {
@@ -30,7 +31,8 @@ function split(url: string): Parts | undefined {
 }
 
 /**
- * The URL to push to when the project names an SSH alias (a `Host` in ~/.ssh/config): the same
+ * The URL to push to when the workspace's git account for the host names an SSH alias (a `Host` in
+ * ~/.ssh/config): the same
  * repository, reached as `git@<alias>:<path>`, so ssh picks the alias's key and host name. The port
  * of the original URL is dropped, because the alias owns it. A URL already on the alias, and a local
  * path, come back as they are.
@@ -57,15 +59,27 @@ export function repoSlug(url: string): string {
   return (parts === undefined ? segments.slice(-2) : segments).join("/");
 }
 
-/** Which MR host a remote is: its `host` in majhi.yaml, else read from the URL or the SSH alias. */
-export function mrHostOf(remote: RemoteConfig | undefined, url: string): MrHost | undefined {
-  if (remote?.host !== undefined) return remote.host;
-  const address = parseRemoteUrl(url);
-  for (const name of [address.host, remote?.ssh]) {
+/**
+ * The real host name of a remote URL, lowercase: the URL's own, or the `HostName` an `~/.ssh/config`
+ * alias reaches (`github.com` for `git@github-globex:acme/api.git`). Undefined for a local path.
+ */
+export function realHostOf(url: string, ssh: SshConfig): string | undefined {
+  const name = hostNameOf(url)?.toLowerCase();
+  if (name === undefined) return undefined;
+  return ssh.hostNameFor(name)?.toLowerCase() ?? name;
+}
+
+/**
+ * Which MR host a remote is, from its URL and the aliases of ~/.ssh/config. A host whose name says
+ * nothing (a self-hosted `git.acme.example`) counts as GitLab when the workspace has a git account for
+ * it (`hasAccount`), the way every git account of such a host is read. Undefined when nothing says.
+ */
+export function mrHostOf(url: string, ssh: SshConfig, hasAccount = false): MrHost | undefined {
+  for (const name of [hostNameOf(url), realHostOf(url, ssh)]) {
     const host = classifyHost(name);
     if (host !== "other") return host;
   }
-  return undefined;
+  return hasAccount ? "gitlab" : undefined;
 }
 
 /** The host name to reach a self-hosted GitLab or GitHub Enterprise: the URL's, unless it is an alias. */

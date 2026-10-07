@@ -1,4 +1,4 @@
-import type { DeployRecord, DeployTarget } from "@majhi/shared";
+import type { DeployEnvironment, DeployRecord, DeployRunStep } from "@majhi/shared";
 import type { RemoteRunFn } from "../../connections/remote.ts";
 import { Store } from "../../store/index.ts";
 import { createGitHubProvider } from "../github.ts";
@@ -15,13 +15,19 @@ export const C1 = "1111111111111111111111111111111111111111";
 export const C2 = "2222222222222222222222222222222222222222";
 export const C3 = "3333333333333333333333333333333333333333";
 
-export const workflow = (env: string, over: Partial<DeployTarget> = {}): DeployTarget => ({
+/** An environment that answers its check address. `staging` is the staging tier, anything else production. */
+export const environment = (env: string, over: Partial<DeployEnvironment> = {}): DeployEnvironment => ({
   env,
-  via: { kind: "github-workflow", connection: "acme-github", workflow: "deploy.yml", ref: "base" },
-  verify: { health: `https://${env}.acme.example/health`, waitSeconds: 0 },
-  rollback: { kind: "redeploy-previous" },
+  tier: env === "staging" ? "staging" : "production",
+  check: `https://${env}.acme.example/health`,
   ...over,
 });
+
+/** One GitHub workflow run on the project's origin, and the same for GitLab. */
+export const GH: DeployRunStep[] = [
+  { kind: "github-workflow", remote: "origin", workflow: "deploy.yml", ref: "base" },
+];
+export const GL_PIPELINE: DeployRunStep[] = [{ kind: "gitlab-pipeline", remote: "origin", ref: "base" }];
 
 export interface Rig {
   store: Store;
@@ -37,10 +43,15 @@ export interface Rig {
   project: DeployProject;
   tasks: Map<string, { id: string; org: string | undefined }>;
   checks: { configured: boolean };
+  /** False: the workspace is not signed in to the host. */
+  signedIn: { value: boolean };
   remoteRun: { code: number | null; output: string };
 }
 
-export async function rig(targets: DeployTarget[], provider: "github" | "gitlab" = "github"): Promise<Rig> {
+export async function rig(
+  environments: DeployEnvironment[],
+  provider: "github" | "gitlab" = "github",
+): Promise<Rig> {
   const hosts = await startFakeHosts();
   const store = new Store(":memory:");
   const tip = { value: C1 };
@@ -56,15 +67,13 @@ export async function rig(targets: DeployTarget[], provider: "github" | "gitlab"
     path: "/work/storefront",
     base: "main",
     remotes: {},
-    targets,
+    environments,
   };
   const credentials: DeployCredentials = {
-    git: async (org, connection) =>
-      org === "acme" && connection === "acme-github"
-        ? { token: hosts.tokens.github, host: hosts.host }
-        : org === "acme" && connection === "acme-gitlab"
-          ? { token: hosts.tokens.gitlab, host: hosts.host }
-          : { problem: `${org} has no connection ${connection}` },
+    git: async (org, host, kind) =>
+      org === "acme" && signedIn.value && host === hosts.host
+        ? { token: kind === "github" ? hosts.tokens.github : hosts.tokens.gitlab }
+        : { problem: `${org} is not signed in to ${host}` },
     variable: async (org, connection) =>
       org === "acme" && connection === "acme-vercel"
         ? { value: hosts.tokens.vercel }
@@ -86,9 +95,11 @@ export async function rig(targets: DeployTarget[], provider: "github" | "gitlab"
     now: () => new Date(),
     vercelApi: hosts.url,
   };
+  const gitlab = createGitLabProvider(providerDeps);
   const providers: Providers = {
     "github-workflow": createGitHubProvider(providerDeps),
-    "gitlab-pipeline": createGitLabProvider(providerDeps),
+    "gitlab-pipeline": gitlab,
+    "gitlab-job": gitlab,
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
   };
@@ -97,19 +108,20 @@ export async function rig(targets: DeployTarget[], provider: "github" | "gitlab"
     ["GLX-9", { id: "GLX-9", org: "globex" }],
   ]);
   const checks = { configured: true };
+  const signedIn = { value: true };
   const service = new DeployService({
     repo: store.deploys,
-    projects: { get: async () => ({ ...project, targets: project.targets }) },
+    projects: { get: async () => ({ ...project }) },
     tasks: { get: (id) => tasks.get(id), landedCommits: () => landed },
     git: { tip: async () => tip.value },
-    repoRef: async () => ({ provider, slug: "acme/storefront" }),
+    repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
     checksConfigured: () => checks.configured,
     providers,
     providerDeps,
     looks: {
       health: async () => ({ status: health.queue.shift() ?? health.status }),
-      watch: async () => ({ ok: true, detail: "ok" }),
     },
+    checkSeconds: 0,
     openIncident: async (input) => {
       incidents.push({ title: input.title, text: input.text, record: input.record });
       return "ACM-77";
@@ -136,6 +148,7 @@ export async function rig(targets: DeployTarget[], provider: "github" | "gitlab"
     project,
     tasks,
     checks,
+    signedIn,
     remoteRun,
   };
 }

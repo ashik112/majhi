@@ -1,6 +1,8 @@
 import type { ScanContext } from "./context.ts";
+import { scanCi } from "./scan-ci.ts";
 import { scanComponents } from "./scan-components.ts";
 import { scanCompose } from "./scan-compose.ts";
+import { scanDeploy } from "./scan-deploy.ts";
 import { scanDotenv } from "./scan-env.ts";
 import { scanKube } from "./scan-kube.ts";
 import { scanMarkers } from "./scan-markers.ts";
@@ -26,4 +28,6 @@ export const FACT_SOURCES: readonly FactSource[] = [
   { id: "env-example", scan: scanDotenv },
   { id: "kubernetes", scan: scanKube },
   { id: "deploy-files", scan: scanMarkers },
+  { id: "ci", scan: scanCi },
+  { id: "deploy", scan: scanDeploy },
 ];

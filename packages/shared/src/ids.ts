@@ -18,3 +18,11 @@ export const TaskIdSchema = z
   .string()
   .regex(/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/, "Task ids look like GLX-420");
 export type TaskId = z.infer<typeof TaskIdSchema>;
+
+/** A branch name to merge into, push, or open a merge request against. */
+export const LocalBranchSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
+  .refine((b) => !b.includes(".."), "Not a branch name")
+  .max(200);

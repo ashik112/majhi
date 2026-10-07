@@ -15,7 +15,7 @@ export function repoMatches(repo: Repo, terms: readonly string[]): boolean {
   if (terms.length === 0) return true;
   const fields = [repo.name, repo.relPath, repo.path, repo.branch ?? ""];
   for (const remote of repo.remotes) {
-    fields.push(remote.url, remote.host, HOST_LABEL[remote.host], remote.sshAlias ?? "");
+    fields.push(remote.url, remote.host, HOST_LABEL[remote.host]);
   }
   const haystack = fields.join("\n").toLowerCase();
   return terms.every((term) => haystack.includes(term));

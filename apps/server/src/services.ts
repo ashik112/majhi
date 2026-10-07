@@ -137,6 +137,8 @@ import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
+import { remoteUrl } from "./mrs/push.ts";
+import { realHostOf } from "./mrs/remote.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { MacNotifyAccess } from "./notify/mac-access.ts";
@@ -185,6 +187,7 @@ import { toolsFolder } from "./runs/tools-folder.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { classifyHost } from "./scan/remote.ts";
 import { RepoScanner } from "./scan/scanner.ts";
+import { loadSshConfig } from "./scan/sshConfig.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -300,7 +303,7 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
-  /** Deploy targets, deploy records and what follows a deploy. */
+  /** Deploy environments, deploy records and what follows a deploy. */
   deploy: DeployWorld;
   config: ConfigService;
   runtime: AcpRuntime;
@@ -474,6 +477,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(
     () => config.migrateOrgMerge(),
     (err) => console.error(`Could not fold the merge policies into the Merge row: ${errorMessage(err)}`),
+  );
+  background.run(
+    async () => {
+      const moved = await config.migrateRemoteRoutes(async (remote) => {
+        const ssh = await loadSshConfig(env.hostHome);
+        const viaAlias = ssh.hostNameFor(remote.alias);
+        if (viaAlias !== undefined) return viaAlias;
+        const url = await remoteUrl(resolvePath(remote.path, env.hostHome), remote.remote).catch(
+          () => undefined,
+        );
+        return url === undefined ? undefined : realHostOf(url, ssh);
+      });
+      if (moved !== undefined && moved.left.length > 0) console.info(moved.summary);
+    },
+    (err) => console.error(`Could not move project SSH aliases to the git accounts: ${errorMessage(err)}`),
   );
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
@@ -1860,12 +1878,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     settings: async () => (await config.settings()).autonomy,
     mode: () => autonomy.mode(),
     areas: areasReader,
+    environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
     viaMergeRequests: (task) => mrs.viaMergeRequests(task),
     zone: zoneOr,
     now: () => new Date(),
   });
-  // Deploys: targets live in each project's config, records in one table, and the trail is derived. The
-  // connections and the watch engine are built below; each is read only when a deploy asks.
+  // Deploys: environments live in each project's config, records in one table, and the trail is derived. The
+  // connections are built below; each is read only when a deploy asks.
   const deployWorld = createDeploy({
     store,
     config,
@@ -1878,18 +1897,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    watch: async (org, id) => {
-      const view = await opsEngine?.checkNow(id);
-      if (view === undefined) return { ok: false, detail: "the watch is not ready" };
-      if (view.org !== org) return { ok: false, detail: "it belongs to another workspace" };
-      return { ok: view.status === "ok", detail: view.word === "" ? view.status : view.word };
-    },
-    watches: async (org) =>
-      ((await opsEngine?.overview(org))?.watches ?? []).map((w) => ({
-        id: w.id,
-        name: w.def.name,
-        ...(w.def.spec.kind === "website" ? { url: w.def.spec.url } : {}),
-      })),
     checksConfigured: (project) => {
       const commands = cards.get(project)?.commands ?? {};
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");

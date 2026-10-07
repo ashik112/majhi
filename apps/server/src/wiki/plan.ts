@@ -228,7 +228,7 @@ export function flowAlive(flow: PlannedFlow, facts: readonly WikiFact[]): boolea
   return flow.facts.some((id) => ids.has(id));
 }
 
-/** The writer's pages from the plan: overview and infra always, then each component and each flow. */
+/** The writer's pages from the plan: overview, infra and deploys always, then each component and each flow. */
 export function writerPages(
   components: readonly PlannedComponent[],
   flows: readonly PlannedFlow[],
@@ -236,6 +236,7 @@ export function writerPages(
   return [
     { kind: "overview" },
     { kind: "infra" },
+    { kind: "deploys" },
     ...components.map((c): WriterPage => ({ kind: "component", ...c })),
     ...flows.map((f): WriterPage => ({ kind: "flow", ...f })),
   ];

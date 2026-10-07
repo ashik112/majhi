@@ -1,8 +1,16 @@
-import { type DeployRecord, DeployRecordSchema, type DeployState, deployMayMove } from "@majhi/shared";
+import {
+  type DeployRecord,
+  DeployRecordSchema,
+  type DeployRunStep,
+  type DeployState,
+  deployHasCommit,
+  deployMayMove,
+} from "@majhi/shared";
 import type Database from "better-sqlite3";
 
 /**
- * The deploy records (docs/design/ship-without-me.md, section 3): one row per target and commit.
+ * The deploy records (docs/briefs/deploy-v2.md): one row per environment and commit. A step of a task's plan
+ * is a row too, in state `planned`, with a stand-in for the commit until it runs.
  * `UNIQUE (project, env, commit_sha)` is what makes a deploy happen once: a second request for the
  * same pair finds the row. A move between states is a compare-and-set against the state the caller
  * saw, so two callers racing to start or finish one deploy cannot both win.
@@ -19,6 +27,9 @@ interface Row {
   task: string | null;
   by: string;
   run: string | null;
+  runs: string;
+  seq: number;
+  note: string | null;
   check_result: string | null;
   reason: string | null;
   rollback: string | null;
@@ -36,7 +47,10 @@ export interface NewDeploy {
   env: string;
   commit: string;
   previous?: string | undefined;
-  state: Extract<DeployState, "held" | "queued">;
+  state: Extract<DeployState, "planned" | "held" | "queued">;
+  runs?: readonly DeployRunStep[] | undefined;
+  seq?: number | undefined;
+  note?: string | undefined;
   task?: string | undefined;
   by: DeployRecord["by"];
   unchecked?: boolean | undefined;
@@ -46,7 +60,12 @@ export interface NewDeploy {
 
 /** What a move may set besides the state. `undefined` leaves a column alone. */
 export interface DeployPatch {
-  run?: DeployRecord["run"] | undefined;
+  /** The provider's run of each of the record's runs, in order. */
+  handles?: DeployRecord["handles"] | undefined;
+  /** What to run, when the owner started the record with other runs than were planned. */
+  runs?: readonly DeployRunStep[] | undefined;
+  /** The commit a planned step deploys, once it runs. */
+  commit?: string | undefined;
   check?: DeployRecord["check"] | undefined;
   reason?: string | null | undefined;
   rollback?: DeployRecord["rollback"] | undefined;
@@ -65,8 +84,8 @@ export class DeployRepo {
   create(input: NewDeploy): DeployRecord | undefined {
     const done = this.sqlite
       .prepare(
-        `INSERT INTO deploys (org, project, env, commit_sha, previous, state, task, by, reason, unchecked, attempt, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `INSERT INTO deploys (org, project, env, commit_sha, previous, state, task, by, reason, unchecked, runs, seq, note, attempt, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
          ON CONFLICT (project, env, commit_sha) DO NOTHING`,
       )
       .run(
@@ -80,6 +99,9 @@ export class DeployRepo {
         input.by,
         input.reason ?? null,
         input.unchecked === true ? 1 : 0,
+        JSON.stringify(input.runs ?? []),
+        input.seq ?? 0,
+        input.note ?? null,
         input.at,
         input.at,
       );
@@ -104,9 +126,35 @@ export class DeployRepo {
     return this.rows("SELECT * FROM deploys WHERE project = ? ORDER BY id DESC LIMIT ?", project, limit);
   }
 
-  /** The deploys one task started, oldest first. */
+  /** The deploys one task has, in the order of its plan (a plan's steps by `seq`, then oldest first). */
   ofTask(task: string): DeployRecord[] {
-    return this.rows("SELECT * FROM deploys WHERE task = ? ORDER BY id", task);
+    return this.rows("SELECT * FROM deploys WHERE task = ? ORDER BY seq, id", task);
+  }
+
+  /**
+   * Replaces a task's plan: its rows that never started (`planned`, and `held` with a stand-in commit) go, and the
+   * new steps are added, all or none. Rows that ran or were held by the owner on a real commit stay.
+   */
+  replacePlan(task: string, steps: readonly NewDeploy[]): DeployRecord[] {
+    const out: DeployRecord[] = [];
+    this.sqlite.transaction(() => {
+      for (const old of this.ofTask(task)) {
+        if (old.state === "planned" || (old.state === "held" && !deployHasCommit(old))) {
+          this.sqlite.prepare("DELETE FROM deploys WHERE id = ?").run(old.id);
+        }
+      }
+      for (const step of steps) {
+        const made = this.create(step);
+        if (made === undefined) throw new Error("A deploy step of the plan already exists");
+        out.push(made);
+      }
+    })();
+    return out;
+  }
+
+  /** Drops a record that never started: a planned step another deploy made moot. */
+  dropUnstarted(id: number): void {
+    this.sqlite.prepare("DELETE FROM deploys WHERE id = ? AND state IN ('planned', 'held')").run(id);
   }
 
   /** Every deploy a task started, by task: one read for a whole board. */
@@ -166,15 +214,22 @@ export class DeployRepo {
     if ((from === "failed" || from === "rolled-back") && to === "queued") {
       sets.push("attempt = attempt + 1", "finished_at = NULL");
       if (patch.reason === undefined) sets.push("reason = NULL");
-      if (patch.run === undefined) sets.push("run = NULL");
+      if (patch.handles === undefined) sets.push("run = NULL");
       if (patch.check === undefined) sets.push("check_result = NULL");
       if (patch.rollback === undefined) sets.push("rollback = NULL");
       if (patch.incident === undefined) sets.push("incident = NULL");
     }
-    const done = this.sqlite
-      .prepare(`UPDATE deploys SET ${sets.join(", ")} WHERE id = ? AND state = ?`)
-      .run(...values, id, from);
-    return done.changes === 0 ? undefined : this.get(id);
+    try {
+      const done = this.sqlite
+        .prepare(`UPDATE deploys SET ${sets.join(", ")} WHERE id = ? AND state = ?`)
+        .run(...values, id, from);
+      return done.changes === 0 ? undefined : this.get(id);
+    } catch (err) {
+      // A planned step takes the head's commit: another record of that environment and commit may exist already.
+      if (patch.commit !== undefined && err instanceof Error && err.message.includes("UNIQUE"))
+        return undefined;
+      throw err;
+    }
   }
 
   /** Sets what a record carries without moving it (the run link, the rollback, the incident). */
@@ -192,6 +247,13 @@ export class DeployRepo {
     }
     return out;
   }
+}
+
+/** The run column holds the provider's runs as a list; a row from before deploys v2 holds one run. */
+function handlesOf(text: string | null): unknown[] {
+  const value = json(text);
+  if (Array.isArray(value)) return value;
+  return value === undefined || value === null ? [] : [value];
 }
 
 function json(text: string | null): unknown {
@@ -215,7 +277,10 @@ function record(row: Row): DeployRecord | undefined {
     state: row.state,
     ...(row.task === null ? {} : { task: row.task }),
     by: row.by,
-    run: json(row.run),
+    runs: json(row.runs) ?? [],
+    handles: handlesOf(row.run),
+    seq: row.seq,
+    ...(row.note === null ? {} : { note: row.note }),
     check: json(row.check_result),
     ...(row.reason === null ? {} : { reason: row.reason }),
     rollback: json(row.rollback),
@@ -226,7 +291,9 @@ function record(row: Row): DeployRecord | undefined {
     updatedAt: row.updated_at,
     ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
   });
-  return parsed.success ? parsed.data : undefined;
+  if (!parsed.success) return undefined;
+  const run = parsed.data.handles.at(-1);
+  return run === undefined ? parsed.data : { ...parsed.data, run };
 }
 
 function setsOf(patch: DeployPatch, at: string): { sets: string[]; values: (string | number | null)[] } {
@@ -236,7 +303,9 @@ function setsOf(patch: DeployPatch, at: string): { sets: string[]; values: (stri
     sets.push(`${column} = ?`);
     values.push(value);
   };
-  if (patch.run !== undefined) set("run", JSON.stringify(patch.run));
+  if (patch.handles !== undefined) set("run", JSON.stringify(patch.handles));
+  if (patch.runs !== undefined) set("runs", JSON.stringify(patch.runs));
+  if (patch.commit !== undefined) set("commit_sha", patch.commit);
   if (patch.check !== undefined) set("check_result", JSON.stringify(patch.check));
   if (patch.reason !== undefined) set("reason", patch.reason);
   if (patch.rollback !== undefined) set("rollback", JSON.stringify(patch.rollback));

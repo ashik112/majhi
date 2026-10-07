@@ -284,15 +284,6 @@ export function useUseSavedLogin() {
   });
 }
 
-/** How a project pushes its MR remote over SSH. */
-export function usePushRoute(id: string) {
-  return useQuery<CommandOutput<"projects.pushRoute">, ApiRequestError>({
-    queryKey: [...queryKeys.projects, "push-route", id],
-    queryFn: () => cmd("projects.pushRoute", { id }),
-    retry: false,
-  });
-}
-
 /** An org's git accounts per host: push route, token check, hosts still missing one. Never holds a token. */
 export function useGitStatus(id: string) {
   return useQuery<CommandOutput<"orgs.gitStatus">, ApiRequestError>({

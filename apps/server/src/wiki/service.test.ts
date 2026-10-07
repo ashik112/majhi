@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { RuntimeOptions, TurnUsage } from "@majhi/acp";
+import { type WikiPage, wikiPageId } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mergeSettings } from "../config/settings.ts";
 import { Housekeeper } from "../memory/housekeeper.ts";
@@ -41,6 +42,7 @@ beforeEach(async () => {
   store = new Store(":memory:");
 });
 afterEach(async () => {
+  prompts.length = 0;
   store.close();
   await rm(root, { recursive: true, force: true });
 });
@@ -95,7 +97,10 @@ const CITES: Record<string, string> = {
   Overview: "app/main.py",
   "Infra and deploy": "app/util.py",
   "Sign in": "web/index.js",
+  Deploys: ".github/workflows/deploy.yml",
 };
+/** Every prompt the writer was sent, in order. */
+const prompts: string[] = [];
 function reply(prompt: string): string {
   if (prompt.includes("You choose the main flows")) {
     const lead = prompt.split("\n").find((l) => l.startsWith("api:entry:"));
@@ -108,6 +113,7 @@ function reply(prompt: string): string {
     const body = prompt.split("<sentences>\n")[1]?.split("\n</sentences>")[0] ?? "{}";
     return body;
   }
+  prompts.push(prompt);
   const title = prompt.split("## Page: ")[1]?.split("\n")[0] ?? "";
   const path = CITES[title] ?? "app/main.py";
   return JSON.stringify({
@@ -117,6 +123,7 @@ function reply(prompt: string): string {
       citations: [{ path, lines: [1, 2] }],
       status: "proven",
       actor,
+      section: "environments",
     })),
   });
 }
@@ -203,12 +210,15 @@ const ids = () =>
     .map((p) => p.id)
     .sort();
 
+/** The pages a model wrote: the Deploys page of a repo with no deploy file is made by code, at no cost. */
+const byModel = (written: readonly string[] | undefined) => (written ?? []).filter((id) => id !== "deploys");
+
 describe("limits", () => {
   it("stops starting pages at the cost cap and says which are left", async () => {
     const { service } = world({ capUsd: 0.5 }, { turn: { costUsd: 0.6 } });
     const [report] = await service.update("acme", "api");
     expect(report?.stopped).toContain("cost cap of $0.50");
-    expect(report?.written.length).toBe(1);
+    expect(byModel(report?.written).length).toBe(1);
     expect(report?.left.length).toBe(2);
     expect(store.wiki.state("acme", "api").lastError).toContain("Stopped: reached the cost cap");
     expect(store.wiki.state("acme", "api").lastError).toContain("2 pages were not written");
@@ -223,17 +233,45 @@ describe("limits", () => {
     const [report] = await service.update("acme", "api");
     expect(report?.usd).toBe(0);
     expect(report?.stopped).toContain("1,500 tokens");
-    expect(report?.written.length).toBe(2);
+    expect(byModel(report?.written).length).toBe(2);
     expect(report?.left.length).toBe(1);
   });
 
   it("writes nothing while the workspace's budget has no room", async () => {
     const { service, sessions } = world({ rest: async () => "Acme used its daily budget" });
     const [report] = await service.update("acme", "api");
-    expect(report?.written).toEqual([]);
+    expect(byModel(report?.written)).toEqual([]);
     expect(report?.stopped).toContain("Acme used its daily budget");
     // The flows are still chosen: that is one cheap question and it is not a page. No page session was opened.
     expect(sessions()).toBeLessThanOrEqual(2);
-    expect(ids()).toEqual(["gaps"]);
+    expect(ids()).toEqual(["deploys", "gaps"]);
+  });
+});
+
+describe("notes on the Deploys page", () => {
+  const deploys = wikiPageId({ kind: "deploys" });
+  const note = "acme first, then the rest";
+
+  it("survive every rewrite, reach the writer, and belong to one page of one project", async () => {
+    await files({
+      ".github/workflows/deploy.yml":
+        "name: Deploy\non:\n  workflow_dispatch:\n    inputs:\n      version: {}\njobs:\n  ship:\n    runs-on: ubuntu-latest\n    steps: []\n",
+    });
+    commit("deploy workflow");
+    const { service } = world();
+    await service.update("acme", "api");
+    store.wiki.addNote("acme", { project: "api", page: deploys, text: note });
+    store.wiki.addNote("acme", { project: "other", page: deploys, text: "another project's note" });
+    await service.update("acme", "api", { page: deploys });
+    expect(prompts.filter((p) => p.includes("## Page: Deploys")).at(-1)).toContain(
+      `<corrections>\n${note}\n</corrections>`,
+    );
+    for (let again = 0; again < 2; again++) {
+      const stored = store.wiki.page("acme", "api", deploys);
+      expect(stored?.page.body).not.toContain(note);
+      expect(store.wiki.shown(stored?.page as WikiPage).body).toContain(`## Owner notes\n- ${note}`);
+      expect(store.wiki.shown(stored?.page as WikiPage).body).not.toContain("another project");
+      await service.update("acme", "api", { page: deploys });
+    }
   });
 });

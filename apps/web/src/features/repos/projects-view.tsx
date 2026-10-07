@@ -602,7 +602,7 @@ function NoMatches({ query, onClear }: { query: string; onClear: () => void }) {
         No repos match <span className="font-mono">“{query}”</span>
       </h3>
       <p className="text-base text-fg-muted">
-        Search checks names, aliases, paths, branches, remote URLs, hosts and SSH aliases.
+        Search checks names, aliases, paths, branches, remote URLs and hosts.
       </p>
       <div>
         <Button onClick={onClear}>

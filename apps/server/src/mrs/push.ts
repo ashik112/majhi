@@ -13,7 +13,7 @@ export interface PushRequest {
   remote: string;
   branch: string;
   /**
-   * Where to push instead of the remote: the same repo through the project's SSH alias. git pushes
+   * Where to push instead of the remote: the same repo through the SSH alias of the workspace's git account. git pushes
    * straight to it, so a `pushurl` the remote already has cannot add a second destination. The git
    * config is not changed.
    */

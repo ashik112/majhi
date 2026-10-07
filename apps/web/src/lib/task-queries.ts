@@ -285,7 +285,7 @@ export function useSshKeys() {
   });
 }
 
-/** The Host entries of the owner's ~/.ssh/config, for a remote's SSH alias. */
+/** The Host entries of the owner's ~/.ssh/config, for the SSH alias of a connection. */
 export function useSshHosts() {
   return useQuery<CommandOutput<"ssh.hosts">, ApiRequestError>({
     queryKey: ["ssh-hosts"],

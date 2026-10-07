@@ -29,6 +29,7 @@ export function groupsOf(workspace: boolean): readonly { kind: WikiPageKind; lab
         { kind: "component", label: COPY.group.component },
         { kind: "flow", label: COPY.group.flow },
         { kind: "infra", label: COPY.group.infra },
+        { kind: "deploys", label: COPY.group.deploys },
         { kind: "gaps", label: COPY.group.gaps },
       ];
 }
@@ -155,6 +156,8 @@ export function subline(page: WikiPage): string {
     }
     case "infra":
       return COPY.subline.infra;
+    case "deploys":
+      return COPY.subline.deploys;
     case "gaps":
       return COPY.subline.gaps;
   }

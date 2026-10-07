@@ -136,17 +136,17 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import {
-  DeployHideInputSchema,
   DeployHoldInputSchema,
   DeployInputSchema,
   DeployRecordSchema,
-  DeployRemoveInputSchema,
   DeployResultSchema,
-  DeploySetInputSchema,
   DeployViewInputSchema,
   HomeDeploySchema,
+  PlanDeployInputSchema,
+  PlanDeployResultSchema,
   ProjectDeployViewSchema,
   RollbackInputSchema,
+  SetEnvironmentsInputSchema,
 } from "./deploy.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
@@ -192,6 +192,7 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import { LocalBranchSchema } from "./ids.ts";
 import {
   BoardCountsSchema,
   DecisionAnswerInputSchema,
@@ -461,14 +462,6 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
 
 const Empty = z.object({});
 
-/** A branch name to merge into, push, or open a merge request against. */
-const LocalBranchSchema = z
-  .string()
-  .trim()
-  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
-  .refine((b) => !b.includes(".."), "Not a branch name")
-  .max(200);
-
 /**
  * The branch each repo ships into, by project. Repos not named here ship into `into` when given and
  * the repos share one base (or their base is `into`), else into their own base.
@@ -652,7 +645,7 @@ export const commands = {
   "ssh.hosts": {
     risk: "read",
     summary:
-      "The Host entries of the owner's ~/.ssh/config (wildcards left out), with their HostName, User and IdentityFile, to pick a project remote's SSH alias",
+      "The Host entries of the owner's ~/.ssh/config (wildcards left out), with their HostName, User and IdentityFile, to pick the SSH alias of a connection",
     input: Empty,
     output: z.array(
       z.object({
@@ -814,18 +807,6 @@ export const commands = {
       host: z.string().trim().min(1).max(255).optional(),
     }),
     output: RemoteOwnersSchema,
-  },
-  "projects.pushRoute": {
-    risk: "read",
-    summary: "How a project pushes its MR remote over SSH, and the keys that could do it",
-    input: z.object({ id: IdSchema }),
-    output: z.object({
-      host: z.string().optional(),
-      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh", "https"]),
-      /** A plain sentence like "Pushes as acme-dev via github.com key". */
-      label: z.string().optional(),
-      choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),
-    }),
   },
   "ssh.keys": {
     risk: "read",
@@ -1336,7 +1317,7 @@ export const commands = {
   "wiki.update": {
     risk: "change",
     summary:
-      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. Without `project` it also writes the workspace pages (how the projects connect, the cross-repo flows, the gaps). `replan` picks the main flows again. `page` writes only that page. The owner and the captain, never another agent",
+      'Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. Without `project` it also writes the workspace pages (how the projects connect, the cross-repo flows, the gaps). `replan` picks the main flows again. `page` writes only that page. `note` (with `project` and `page`) adds a correction in words to a page, like "acme first, then the rest" on `deploys`: it is kept apart from the page, shows under Owner notes and survives every rewrite, and the page is written again with it; `dropNote` removes one. The owner and the captain, never another agent',
     input: WikiUpdateInputSchema,
     output: WikiViewSchema,
   },
@@ -1701,47 +1682,42 @@ export const commands = {
   "projects.deployView": {
     risk: "read",
     summary:
-      "Where a project is deployed: its targets in the order they go live, the targets majhi found in the project to confirm with one click, and the deploys so far, newest first",
+      "Where a project is deployed: its environments (name, tier, branch that deploys, check address) and the deploys so far, newest first",
     input: DeployViewInputSchema,
     output: ProjectDeployViewSchema,
   },
-  "projects.setDeploy": {
+  "projects.setEnvironments": {
     risk: "change",
     summary:
-      "Add or change one deploy target of a project (an environment, how it is deployed through a connection of the project's workspace, how it is checked and how it goes back). A new environment goes last",
-    input: DeploySetInputSchema,
+      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; only the owner sets a staging tier or removes a production environment. How the project deploys goes in its wiki, not here",
+    input: SetEnvironmentsInputSchema,
     output: ProjectDeployViewSchema,
   },
-  "projects.removeDeploy": {
+  "projects.planDeploy": {
     risk: "change",
-    summary: "Remove one deploy target of a project. Its earlier deploys stay in the history",
-    input: DeployRemoveInputSchema,
-    output: ProjectDeployViewSchema,
-  },
-  "projects.hideDeploySuggestion": {
-    risk: "change",
-    summary: "Stop offering one deploy target majhi found in a project",
-    input: DeployHideInputSchema,
-    output: ProjectDeployViewSchema,
+    summary:
+      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+    input: PlanDeployInputSchema,
+    output: PlanDeployResultSchema,
   },
   "projects.deploy": {
     risk: "outbound",
     summary:
-      "Deploy the head of a project's base branch to one of its targets with that target's connection, follow the run until it ends, then check it. A failed run or check rolls back at once, opens an incident task and tells the owner. The same target and commit twice is one deploy. Never run by an agent",
+      "Run a planned deploy step by its record id, or deploy the head of a project's base branch to an environment with the runs written in the call. Each run is followed until it ends, then the environment's check runs. A failed run or check rolls back at once, opens an incident task and tells the owner. The same environment and commit twice is one deploy. Never run by an agent",
     input: DeployInputSchema,
     output: DeployResultSchema,
   },
   "projects.rollback": {
     risk: "outbound",
     summary:
-      "Go back: run the target's rollback for a deploy that is live, or whose own rollback did not work. Only the newest live deploy of a target can be rolled back",
+      "Go back: run the runs of the earlier live deploy of the environment again at its commit, for a deploy that is live, or whose own rollback did not work. Only the newest live deploy of an environment can be rolled back",
     input: RollbackInputSchema,
     output: DeployResultSchema,
   },
   "projects.holdDeploy": {
     risk: "change",
     summary:
-      "Hold a commit back from a target: no rule deploys it there until the owner deploys it. For the Deploy to production question on a task",
+      "Hold a planned deploy step by its record id, or a commit of an environment: no rule deploys it there until the owner deploys it. For the Deploy to production question on a task",
     input: DeployHoldInputSchema,
     output: DeployRecordSchema,
   },
@@ -2266,7 +2242,7 @@ export const commands = {
   "tasks.push": {
     risk: "outbound",
     summary:
-      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
+      "Push the task branch of each repo to its MR remote (through the SSH route of the workspace's git account), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
     input: z.object({ id: TaskIdSchema, deleteAfter: z.boolean().default(false) }),
     output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
   },
@@ -2337,7 +2313,7 @@ export const commands = {
   "tasks.openMrs": {
     risk: "outbound",
     summary:
-      "Push each repo's branch to its MR remote (through the project's SSH alias) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
+      "Push each repo's branch to its MR remote (through the SSH route of the workspace's git account) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
     input: z.object({
       id: TaskIdSchema,
       /** The branch the merge requests go into. Default: each repo's base branch. */

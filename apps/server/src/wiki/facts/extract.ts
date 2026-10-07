@@ -12,6 +12,7 @@ import {
 import { UserError } from "../../errors.ts";
 import type { FactsReader } from "../../reader/run.ts";
 import { buildContext } from "./context.ts";
+import { readDeploy } from "./deploy-files.ts";
 import { ProjectFiles } from "./files.ts";
 import { readRepo } from "./read.ts";
 import { parseReaderOutput } from "./reader-output.ts";
@@ -77,7 +78,7 @@ export async function extractFacts(input: ExtractInput, reader: FactsReader): Pr
 
   const sink = new FactSink(input.project);
   const scan = await readRepo(files, input.project);
-  const ctx = buildContext(scan, sink);
+  const ctx = buildContext(scan, await readDeploy(files, scan), sink);
   for (const source of FACT_SOURCES) source.scan(ctx);
   const { folded } = addReaderFacts(sink, out);
 

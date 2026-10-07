@@ -1,3 +1,4 @@
+import type { DeployRunStep } from "@majhi/shared";
 import { call, HostUnreachable, num, str } from "../gitConnect/http.ts";
 import {
   apiScheme,
@@ -26,22 +27,29 @@ interface Access {
   slug: string;
 }
 
-function ref(ctx: DeployContext): string {
-  const via = ctx.target.via;
-  return via.kind === "github-workflow" && via.ref !== "base" ? via.ref : ctx.base;
+type Workflow = Extract<DeployRunStep, { kind: "github-workflow" }>;
+
+function workflowOf(step: DeployRunStep): Workflow {
+  if (step.kind !== "github-workflow") throw new DeployProblem("This run is not a GitHub workflow.");
+  return step;
 }
 
-async function access(ctx: DeployContext, deps: ProviderDeps): Promise<Access> {
-  const via = ctx.target.via;
-  if (via.kind !== "github-workflow") throw new DeployProblem("This target is not a GitHub workflow.");
-  if (ctx.repo === undefined || ctx.repo.provider !== "github") {
-    throw new DeployProblem(`${ctx.project} has no GitHub remote, so a GitHub workflow cannot deploy it.`);
+function ref(ctx: DeployContext, step: Workflow): string {
+  return step.ref !== "base" ? step.ref : ctx.base;
+}
+
+async function access(ctx: DeployContext, step: Workflow, deps: ProviderDeps): Promise<Access> {
+  const repo = await ctx.repoOf(step.remote);
+  if (repo === undefined || repo.provider !== "github") {
+    throw new DeployProblem(
+      `The remote ${step.remote} of ${ctx.project} is not on GitHub, so a GitHub workflow cannot deploy it.`,
+    );
   }
-  const got = await deps.credentials.git(ctx.org, via.connection, "github");
+  const got = await deps.credentials.git(ctx.org, repo.host, "github");
   if ("problem" in got) throw new DeployProblem(got.problem);
-  const host = got.host;
+  const host = repo.host;
   const base = host === "github.com" ? "https://api.github.com" : `${apiScheme(host)}://${host}/api/v3`;
-  return { token: got.token, base, slug: ctx.repo.slug };
+  return { token: got.token, base, slug: repo.slug };
 }
 
 const headers = (token: string) => ({
@@ -95,9 +103,10 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
   const segment = (text: string) => encodeURIComponent(text);
 
   return {
-    async preflight(ctx) {
-      const a = await access(ctx, deps);
-      const branch = ref(ctx);
+    async preflight(ctx, run) {
+      const step = workflowOf(run);
+      const a = await access(ctx, step, deps);
+      const branch = ref(ctx, step);
       const answer = await api(deps, a, `/repos/${a.slug}/branches/${segment(branch)}`);
       const tip =
         answer.status === 200
@@ -109,11 +118,10 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
         : `GitHub has ${branch} at ${tip.slice(0, 7)}, not at ${ctx.commit.slice(0, 7)}. Push it first.`;
     },
 
-    async start(ctx) {
-      const a = await access(ctx, deps);
-      const via = ctx.target.via;
-      if (via.kind !== "github-workflow") throw new DeployProblem("This target is not a GitHub workflow.");
-      const branch = ref(ctx);
+    async start(ctx, run) {
+      const via = workflowOf(run);
+      const a = await access(ctx, via, deps);
+      const branch = ref(ctx, via);
       const since = deps.now().getTime() - SKEW_MS;
       const file = segment(via.workflow);
       const sent = await api(deps, a, `/repos/${a.slug}/actions/workflows/${file}/dispatches`, {
@@ -142,8 +150,8 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
       );
     },
 
-    async poll(ctx, run) {
-      const a = await access(ctx, deps);
+    async poll(ctx, step, run) {
+      const a = await access(ctx, workflowOf(step), deps);
       const answer = await api(deps, a, `/repos/${a.slug}/actions/runs/${segment(run.id)}`);
       if (answer.status !== 200) throw new DeployProblem(`GitHub answered ${answer.status} for the run.`);
       const attempt = num(answer.body, "run_attempt") ?? 1;
@@ -155,8 +163,8 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
       return { state: "failed", detail: await failure(deps, a, run, conclusion) };
     },
 
-    async redeploy(ctx, previous: PreviousDeploy): Promise<RunHandle> {
-      const a = await access(ctx, deps);
+    async redeploy(ctx, step, previous: PreviousDeploy): Promise<RunHandle> {
+      const a = await access(ctx, workflowOf(step), deps);
       const run = previous.run;
       if (run === undefined) {
         throw new DeployProblem("The earlier deploy has no workflow run to run again.");

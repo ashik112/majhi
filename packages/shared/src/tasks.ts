@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
-import { DeployTargetsSchema } from "./deploy.ts";
+import { BranchPatternSchema, IdSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import { DeployEnvironmentsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
 import { TaskIdSchema } from "./ids.ts";
@@ -27,12 +27,11 @@ import { DaySchema } from "./usage.ts";
 // ---------------------------------------------------------------------------
 // Projects (majhi.yaml)
 
-/** One git remote of a project, as majhi.yaml describes it (5.5). */
+/**
+ * One git remote of a project, as majhi.yaml describes it (5.5). How a push reaches the host is not
+ * here: it is the workspace's git account for that host (`orgs.<id>.git_accounts`, its `ssh` route).
+ */
 export const RemoteConfigSchema = z.looseObject({
-  /** Which host this remote is. Default: read from the remote's URL. */
-  host: MrHostSchema.optional(),
-  /** A `Host` in ~/.ssh/config. Pushes go through it, whatever host name the remote URL holds. */
-  ssh: z.string().trim().min(1).optional(),
   /** True on the remote MRs are opened against. Default: `origin`. */
   mr: z.boolean().optional(),
   /** Credentials for this remote's host: overrides the org's `mr_tokens`. */
@@ -70,7 +69,7 @@ export const ProjectConfigSchema = z.looseObject({
   aliases: z.array(z.string().trim().toLowerCase().min(1)).default([]),
   /** Base branch for tasks. Default: the org's `base`, then the repo's default branch. */
   base: z.string().trim().min(1).optional(),
-  /** Git remotes by name, with the host, SSH alias and which one takes MRs. */
+  /** Git remotes by name: which one takes MRs, and its own token. */
   remotes: z.record(z.string().trim().min(1), RemoteConfigSchema).optional(),
   /** Other projects this one depends on. Sets the merge order of a multi-repo task. */
   links: z.array(ProjectLinkSchema).optional(),
@@ -86,10 +85,8 @@ export const ProjectConfigSchema = z.looseObject({
   protected: z.boolean().optional(),
   /** Hand-off check commands that win over the project card's. */
   handoff: HandoffCommandsSchema.optional(),
-  /** Where this project is deployed, in the order the environments go live. Set once, here, and nowhere else. */
-  deploy: DeployTargetsSchema.optional(),
-  /** Suggested deploy targets the owner hid, by suggestion id. */
-  deploy_hidden: z.array(z.string().min(1).max(200)).max(50).optional(),
+  /** The environments this project is deployed to. Set once, here, and nowhere else. How it deploys is in its wiki. */
+  deploy: DeployEnvironmentsSchema.optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -113,8 +110,8 @@ export const ProjectViewSchema = z.object({
   protected: z.boolean().default(false),
   /** This project's own hand-off check commands, when set. */
   handoff: HandoffCommandsSchema.optional(),
-  /** Where this project is deployed, in order. */
-  deploy: DeployTargetsSchema.optional(),
+  /** The environments this project is deployed to. */
+  deploy: DeployEnvironmentsSchema.optional(),
   /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
   looksLikeInfra: z.boolean().optional(),
 });

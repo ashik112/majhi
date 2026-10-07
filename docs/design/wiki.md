@@ -123,7 +123,7 @@ Roles are picked from the fixed list, and only when a fact backs them. Otherwise
 
 ## 5. Pages
 
-Project wiki: **Overview** (roles table, each cell linked to its proof, empty cells say "not found"), **Components** (one page each), **Flows** (one page per main flow, steps with file:line), **Infra and deploy**, **Gaps** (guessed roles, unlinked calls, could-not-confirm claims, questions for the owner).
+Project wiki: **Overview** (roles table, each cell linked to its proof, empty cells say "not found"), **Components** (one page each), **Flows** (one page per main flow, steps with file:line), **Infra and deploy**, **Deploys** (how the code reaches each place it runs, from the CI and deploy files: what starts each deploy and with which inputs, the parts that deploy separately, order, guards, rollback, migrations; owner notes survive rewrites), **Gaps** (guessed roles, unlinked calls, could-not-confirm claims, questions for the owner).
 
 Workspace wiki: **System overview** (which repo is what, how they connect), **Cross-repo flows** (repo A entry, the link and its basis, handler in repo B), **Gaps**.
 

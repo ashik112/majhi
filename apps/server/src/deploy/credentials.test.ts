@@ -6,8 +6,6 @@ const conn = (c: Partial<ConnectionConfig> & Pick<ConnectionConfig, "type">): Co
   ({ name: "c", ...c }) as ConnectionConfig;
 
 const all: Record<string, { org: string; connection: ConnectionConfig }> = {
-  "acme-github": { org: "acme", connection: conn({ type: "git", fields: { provider: "github" } }) },
-  "globex-github": { org: "globex", connection: conn({ type: "git", fields: { provider: "github" } }) },
   "acme-vercel": {
     org: "acme",
     connection: conn({
@@ -31,10 +29,9 @@ const credentials = createDeployCredentials({
 });
 
 describe("deploy credentials", () => {
-  it("come from a connection of the project's own workspace", async () => {
-    expect(await credentials.git("acme", "acme-github", "github")).toEqual({
+  it("come from the project's own workspace", async () => {
+    expect(await credentials.git("acme", "github.com", "github")).toEqual({
       token: "acme-token-for-github.com",
-      host: "github.com",
     });
     expect(await credentials.variable("acme", "acme-vercel", "VERCEL_TOKEN")).toEqual({
       value: "vc-secret-value",
@@ -46,9 +43,10 @@ describe("deploy credentials", () => {
   });
 
   it("never reach another workspace's connection, whatever its kind", async () => {
+    expect(await credentials.git("globex", "github.com", "github")).toEqual({
+      problem: "globex is not signed in to github.com",
+    });
     for (const result of [
-      await credentials.git("acme", "globex-github", "github"),
-      await credentials.git("globex", "acme-github", "github"),
       await credentials.variable("globex", "acme-vercel", "VERCEL_TOKEN"),
       await credentials.ssh("globex", "acme-host"),
     ]) {
@@ -58,12 +56,9 @@ describe("deploy credentials", () => {
     }
   });
 
-  it("refuse a connection of the wrong kind, and a host the workspace did not sign in to", async () => {
-    expect(await credentials.git("acme", "acme-host", "github")).toEqual({
-      problem: "acme-host is not a git host connection.",
-    });
-    expect(await credentials.git("acme", "acme-github", "gitlab")).toEqual({
-      problem: "acme-github is a github connection, not gitlab.",
+  it("refuse a connection of the wrong kind and a variable it does not have", async () => {
+    expect(await credentials.variable("acme", "acme-host", "VERCEL_TOKEN")).toEqual({
+      problem: "acme-host is not a variables connection.",
     });
     expect(await credentials.variable("acme", "acme-vercel", "OTHER")).toEqual({
       problem: "acme-vercel has no OTHER.",

@@ -1,11 +1,4 @@
-import {
-  IdSchema,
-  type MrHost,
-  type ProjectLink,
-  type ProjectView,
-  type RemoteConfig,
-  type Repo,
-} from "@majhi/shared";
+import { IdSchema, type ProjectLink, type ProjectView, type RemoteConfig, type Repo } from "@majhi/shared";
 import { repoMatches } from "./filter";
 
 /** A project id from a folder name: `Globex API` becomes `globex-api`. Empty when nothing usable is left. */
@@ -86,17 +79,11 @@ export function groupByOrg<T extends { org: string }>(
 export interface MrRemoteChoice {
   /** The remote's name in git, like `origin`. */
   name: string;
-  /** `""`: read the host from the remote's URL. */
-  host: MrHost | "";
-  /** A `Host` from ~/.ssh/config; `""` for none. */
-  ssh: string;
 }
 
-/** The remote MRs go to and its saved host and alias, from the project's config. */
+/** The remote MRs go to, from the project's config. */
 export function choiceFromProject(project: ProjectView | undefined): MrRemoteChoice {
-  const name = project?.mrRemote ?? "origin";
-  const saved = project?.remotes[name];
-  return { name, host: saved?.host ?? "", ssh: saved?.ssh ?? "" };
+  return { name: project?.mrRemote ?? "origin" };
 }
 
 /** Remote names to pick from: the ones git has, the ones the config names, and always `origin`. */
@@ -121,11 +108,6 @@ export function buildRemotes(
   }
   const { mr: _cleared, ...kept } = next[choice.name] ?? {};
   const entry: RemoteConfig = { ...kept };
-  if (choice.host === "") delete entry.host;
-  else entry.host = choice.host;
-  const ssh = choice.ssh.trim();
-  if (ssh === "") delete entry.ssh;
-  else entry.ssh = ssh;
   // `origin` is the default: it needs the flag only to take it back from another remote.
   if (choice.name !== "origin" || flagged) entry.mr = true;
   next[choice.name] = entry;

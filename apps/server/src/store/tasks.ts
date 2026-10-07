@@ -412,7 +412,7 @@ export class TaskRepo {
             mrs: mine.flatMap(mrFactOf),
             merged: mine.filter((r) => r.shippedHead !== null).map((r) => r.project),
             pendingShip: pending === undefined ? [] : shipProjects(pending, mine),
-            deploys: (deploys.get(row.id) ?? []).map(deployStepOfRecord),
+            deploys: (deploys.get(row.id) ?? []).map((r) => deployStepOfRecord(r)),
           }),
         };
         const typing = typingOf(row);

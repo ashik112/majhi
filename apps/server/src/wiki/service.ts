@@ -44,6 +44,7 @@ import type { WikiEnabled } from "./switch.ts";
 import { readFactsFile } from "./system/load.ts";
 import { WorkspaceWiki } from "./workspace.ts";
 import { checkPage } from "./writer/check.ts";
+import { deploysNotFound, hasDeployFiles } from "./writer/deploys.ts";
 import { type DraftPage, type WriterPage, writerPageId } from "./writer/draft.ts";
 import { hintFacts } from "./writer/hints.ts";
 import { plainWords } from "./writer/plain.ts";
@@ -334,7 +335,8 @@ export class WikiService {
     const tip = p.base === undefined ? undefined : await branchTip(p.path, p.base);
     if (tip === undefined) return 0;
     const changes = new Changes(p.path, tip);
-    let n = 0;
+    // A wiki built before the Deploys page existed gets it on the next update.
+    let n = stored.some((page) => page.kind === "deploys") ? 0 : 1;
     for (const page of stored) {
       const sources = state.sources[page.id] ?? citedPaths(page);
       if ((await staleReason(page, sources, [], p.id, state.rules, changes)) !== undefined) n += 1;
@@ -420,6 +422,7 @@ export class WikiService {
       state.lastError === undefined &&
       !replan &&
       stored.size > 0 &&
+      stored.has(wikiPageId({ kind: "deploys" })) &&
       (await readFactsFile(cacheDir))?.reader === FACTS_READER
     ) {
       return report;
@@ -565,8 +568,14 @@ export class WikiService {
       couldNot: [] as WikiGaps["couldNot"],
       failed: [] as WikiGaps["failed"],
     };
-    if (pages.length === 0) return out;
-    this.step(p, "write", 0, pages.length);
+    // A project with no deploy file gets a Deploys page made by code, with no model and no spend.
+    const bare = !hasDeployFiles(facts);
+    const asked = pages.filter((page) => !(bare && page.kind === "deploys"));
+    const done: WikiPage[] =
+      pages.some((page) => page.kind === "deploys") && bare ? [deploysNotFound(p.org, p.id, tip)] : [];
+    out.pages.push(...done);
+    if (asked.length === 0) return out;
+    this.step(p, "write", 0, asked.length);
     const wrote = await writePages({
       housekeeper: this.deps.housekeeper,
       org: p.org,
@@ -574,7 +583,8 @@ export class WikiService {
       sha: tip,
       exportDir,
       facts,
-      pages,
+      pages: asked,
+      notes: (page) => this.deps.repo.notes(p.org, p.id, writerPageId(page)),
       capUsd: this.deps.capUsd ?? WIKI_COST_CAP_USD,
       capTokens: this.deps.capTokens ?? WIKI_TOKEN_CAP,
       stop: () => this.deps.rest(p.org),

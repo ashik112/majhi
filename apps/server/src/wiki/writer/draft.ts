@@ -8,6 +8,8 @@ import { wikiPageId } from "@majhi/shared";
 export type WriterPage =
   | { kind: "overview" }
   | { kind: "infra" }
+  /** How the project deploys: written from the CI, host and deploy files. */
+  | { kind: "deploys" }
   /** `folder`: where the component lives. `facts`: the tool facts the plan starts from. */
   | { kind: "component"; slug: string; title: string; folder: string; facts: readonly WikiFactId[] }
   /** `trigger`: where it starts, in plain words, like "a person signs in on the web console". */
@@ -18,6 +20,22 @@ export function writerPageId(page: WriterPage): WikiPageId {
     ? wikiPageId({ kind: page.kind, slug: page.slug })
     : wikiPageId({ kind: page.kind });
 }
+
+/**
+ * The sections of the Deploys page, in the order the page shows them, with the heading of each. A claim of that page
+ * names its section; a section with no claim is left out, and a topic the files do not show is listed as not found.
+ */
+export const DEPLOY_SECTIONS = {
+  environments: "Where it deploys",
+  parts: "Parts that deploy separately",
+  order: "What runs first",
+  guards: "Guards",
+  rollback: "Rollback",
+  migrations: "Migrations",
+  unusual: "Unusual",
+} as const;
+export type DeploySection = keyof typeof DEPLOY_SECTIONS;
+export const DEPLOY_SECTION_KEYS = Object.keys(DEPLOY_SECTIONS) as [DeploySection, ...DeploySection[]];
 
 /** A place the writer cited, before the checker has looked. The path may be anything the model wrote. */
 export interface RawCitation {
@@ -36,6 +54,8 @@ export interface DraftClaim {
   actor?: string | undefined;
   /** Flow steps: the arrow's label in the sequence diagram, a few words. */
   label?: string | undefined;
+  /** Deploys page: the section the claim is under. */
+  section?: DeploySection | undefined;
 }
 
 /** A tile of an overview: the role, where it lives and its technology, backed by the claim at `claim` (an index into `claims`). */

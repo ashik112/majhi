@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+  DEFAULT_SSH_ROUTE,
+  type GitAccount,
   type GitAuth,
   type MarkMergedResult,
   type MergeMethod,
@@ -31,6 +33,7 @@ import { isSshAuthFailure, removeWorktree, syncBranch } from "../git/worktrees.t
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
 import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
+import { loadSshConfig, type SshConfig } from "../scan/sshConfig.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { readRepoStyle, taskBranchType, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
@@ -51,7 +54,7 @@ import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
 import { nextMerge, type RepoMrState } from "./policy.ts";
 import { commitsAhead, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
-import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
+import { hostNameOf, mrHostOf, mrRemoteName, realHostOf, repoSlug, rewriteRemoteUrl } from "./remote.ts";
 import {
   chooseRoute,
   describeLogin,
@@ -64,7 +67,9 @@ import {
 import { ShipQueue } from "./ship-queue.ts";
 
 export interface MrDeps {
-  /** Which accounts the owner's keys log in as per git host. Without it https remotes need an alias. */
+  /** Overrides how a remote URL maps to its MR host. For tests whose remotes are local paths. */
+  hostOf?: (url: string) => MrHost | undefined;
+  /** Which accounts the owner's keys log in as per git host. Without it https remotes need the account's SSH route. */
   gitLogins?: Pick<GitLoginService, "list">;
   store: Store;
   config: ConfigService;
@@ -125,17 +130,10 @@ interface RepoContext {
   client: MrHostClient;
 }
 
-/** The host an alias reaches, read from the logins found for it. */
-function aliasHost(
-  alias: string,
-  hosts:
-    | readonly {
-        host: string;
-        logins: readonly { alias?: string | undefined }[];
-      }[]
-    | undefined,
-): string | undefined {
-  return hosts?.find((h) => h.logins.some((l) => l.alias === alias))?.host;
+/** The `~/.ssh/config` alias a git account's SSH route names. None for the default key or no route. */
+function sshAliasOf(account: GitAccount | undefined): string | undefined {
+  const route = account?.ssh;
+  return route === undefined || route === DEFAULT_SSH_ROUTE ? undefined : route;
 }
 
 /** A refusal the owner fixes on another page: Ship links straight to it. */
@@ -323,17 +321,23 @@ export class MrService {
     const url = await remoteUrl(repo.source, remote).catch((err: unknown) => {
       throw new UserError(errorMessage(err));
     });
-    const host = mrHostOf(remoteConfig, url);
+    const ssh = await loadSshConfig(this.deps.config.paths.hostHome);
+    const account = await this.accountFor(project.org, url, ssh);
+    const host =
+      this.deps.hostOf === undefined ? mrHostOf(url, ssh, account !== undefined) : this.deps.hostOf(url);
     if (host === undefined) {
       throw new UserError(
-        `Cannot tell which git host ${project.id} is on (${remote} is ${url}). Set host to github, gitlab or bitbucket on the remote in the project.`,
+        `Cannot tell which git host ${project.id} is on (${remote} is ${url}). Use a github, gitlab or bitbucket address for the remote, or add its alias to ~/.ssh/config.`,
       );
     }
-    const hostName = remoteConfig?.ssh === undefined ? hostNameOf(url) : undefined;
-    let pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
+    const alias = sshAliasOf(account);
+    const real = realHostOf(url, ssh);
+    // An alias the config cannot resolve is not a host name the API answers on.
+    const hostName = alias !== undefined && real === alias.toLowerCase() ? undefined : real;
+    let pushUrl = rewriteRemoteUrl(url, alias);
     let viaHost = false;
     if (/^https?:\/\//i.test(pushUrl)) {
-      const routed = await this.routeFor(url, undefined, project.org);
+      const routed = await this.routeFor(url, project.org, ssh);
       pushUrl = routed.url ?? pushUrl;
       viaHost = routed.route.state === "https";
     }
@@ -929,7 +933,7 @@ export class MrService {
     });
   }
 
-  /** Where a repo's branches are pushed: the MR remote, through the project's SSH alias. */
+  /** Where a repo's branches are pushed: the MR remote, through the SSH route of the workspace's git account for its host. */
   private async pushTarget(repo: Pick<TaskRepo, "project" | "source">): Promise<PushTarget> {
     const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     if (project === undefined)
@@ -944,9 +948,10 @@ export class MrService {
         `${project.id} has no MR remote: there is no remote named ${remote}. Pick its MR remote in Projects.`,
         { page: "projects", project: project.id },
       );
-    const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
+    const ssh = await loadSshConfig(this.deps.config.paths.hostHome);
+    const pushUrl = rewriteRemoteUrl(url, sshAliasOf(await this.accountFor(project.org, url, ssh)));
     if (/^https?:\/\//i.test(pushUrl)) {
-      const routed = await this.routeFor(url, undefined, project.org);
+      const routed = await this.routeFor(url, project.org, ssh);
       if (routed.url !== undefined)
         return {
           org: project.org,
@@ -954,7 +959,7 @@ export class MrService {
           pushUrl: routed.url,
           viaHost: routed.route.state === "https",
         };
-      const fix = { page: "projects", project: project.id } as const;
+      const fix = { page: "orgs", org: project.org } as const;
       if (routed.route.state === "org-missing") {
         throw new FixableError(
           `${project.org} uses the git account ${routed.route.account}, but no SSH key on this computer logs in as it. Fix it in the org's Git accounts.`,
@@ -965,12 +970,12 @@ export class MrService {
         const host = hostNameOf(url) ?? "the host";
         const choices = routed.route.choices.map((c) => describeLogin(host, c)).join(", ");
         throw new FixableError(
-          `${project.id}'s ${remote} remote is https, and more than one key could push it (${choices}). Pick one in Projects.`,
+          `${project.id}'s ${remote} remote is https, and more than one key could push it (${choices}). Pick one in ${project.org}'s Git accounts.`,
           fix,
         );
       }
       throw new FixableError(
-        `No SSH alias for ${project.id}'s ${remote} remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.`,
+        `${project.org} has no git account with an SSH key for ${hostNameOf(url) ?? "this host"}, and majhi pushes over SSH, not https. Add one in the workspace's Git accounts.`,
         fix,
       );
     }
@@ -997,13 +1002,20 @@ export class MrService {
     };
   }
 
+  /** The workspace's git account for the host a remote reaches (an `~/.ssh/config` alias resolved). */
+  private async accountFor(orgId: string, url: string, ssh: SshConfig): Promise<GitAccount | undefined> {
+    const host = realHostOf(url, ssh);
+    if (host === undefined) return undefined;
+    return (await this.deps.config.sections()).orgs[orgId]?.git_accounts?.find((a) => a.host === host);
+  }
+
   /** The SSH route for an https remote, from the keys this computer's logins show. `url` is the push address when one fits. */
   private async routeFor(
     url: string,
-    explicit: string | undefined,
-    orgId?: string,
+    orgId: string,
+    ssh: SshConfig,
   ): Promise<{ route: PushRoute; url: string | undefined }> {
-    const host = hostNameOf(url);
+    const host = realHostOf(url, ssh);
     const found =
       host === undefined
         ? undefined
@@ -1011,80 +1023,17 @@ export class MrService {
             (r) => r.hosts,
             () => undefined,
           );
-    const bound =
-      host === undefined || orgId === undefined
-        ? undefined
-        : (await this.deps.config.sections()).orgs[orgId]?.git_accounts?.find((a) => a.host === host);
+    const bound = await this.accountFor(orgId, url, ssh);
     const route = chooseRoute({
       host,
-      explicit,
       org: bound === undefined ? undefined : { account: bound.account, ssh: bound.ssh },
       owner: ownerOf(url),
       logins: host === undefined || found === undefined ? [] : loginsOf(found, host),
       httpsOk: this.deps.hostGit?.connected() === true && /^https:\/\//i.test(url),
     });
     if (route.state === "auto") return { route, url: httpsToSsh(url, route.alias) };
-    if (route.state === "picked") return { route, url: httpsToSsh(url, route.alias) };
     if (route.state === "https") return { route, url: httpsPushUrl(url, route.account) };
     return { route, url: undefined };
-  }
-
-  /** How `project` pushes its MR remote, for the project page. */
-  async pushRoute(id: string): Promise<{
-    host: string | undefined;
-    state: Exclude<PushRoute["state"], "org-missing"> | "ssh";
-    label?: string;
-    choices: Array<{ alias?: string; account: string; label: string }>;
-  }> {
-    const project = await this.deps.projects.get(id);
-    const remote = mrRemoteName(project.remotes);
-    const url = await remoteUrl(project.path, remote).catch(() => undefined);
-    const host = url === undefined ? undefined : hostNameOf(url);
-    if (url === undefined || host === undefined) return { host: undefined, state: "none", choices: [] };
-    const explicit = project.remotes[remote]?.ssh;
-    const https = /^https?:\/\//i.test(url);
-    if (!https && explicit === undefined) return { host, state: "ssh", choices: [] };
-    const { route } = await this.routeFor(url, explicit, project.org);
-    const logins = (await this.deps.gitLogins?.list().catch(() => undefined))?.hosts;
-    const hostKey = explicit === undefined ? host : (aliasHost(explicit, logins) ?? host);
-    const choices = (logins === undefined ? [] : loginsOf(logins, hostKey))
-      .filter((l) => l.via === "ssh")
-      .map((l) => ({
-        ...(l.alias === undefined ? {} : { alias: l.alias }),
-        account: l.account,
-        label: describeLogin(hostKey, l),
-      }));
-    if (route.state === "auto") {
-      return {
-        host,
-        state: "auto",
-        label: `Pushes as ${route.account} via ${route.alias ?? hostKey} key`,
-        choices,
-      };
-    }
-    if (route.state === "https") {
-      return {
-        host,
-        state: "https",
-        label: `Pushes over https from this computer${route.account === undefined ? "" : ` as ${route.account}`}, with its saved login`,
-        choices,
-      };
-    }
-    if (route.state === "picked") {
-      const account = choices.find((c) => c.alias === route.alias)?.account;
-      return {
-        host,
-        state: "picked",
-        label:
-          account === undefined ? `Pushes via ${route.alias}` : `Pushes as ${account} via ${route.alias} key`,
-        choices,
-      };
-    }
-    return {
-      host,
-      state: route.state === "org-missing" ? "none" : route.state,
-      choices,
-    };
   }
 
   /**
@@ -1766,7 +1715,7 @@ interface Plan {
   into?: string;
 }
 
-/** Where a repo's branches are pushed. `pushUrl` is the SSH alias's address, when it differs. */
+/** Where a repo's branches are pushed. `pushUrl` is the git account's SSH alias address, when it differs. */
 interface PushTarget {
   /** The project's org: an https push uses its own token when it signed in. */
   org: string;
