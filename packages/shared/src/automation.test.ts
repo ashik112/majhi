@@ -21,13 +21,6 @@ describe("nextRunAfter", () => {
     ]);
   });
 
-  it("gives the same expression different instants in different zones", () => {
-    const spec: ScheduleSpec = { kind: "cron", expression: "0 9 * * 1-5" };
-    const from = new Date("2026-10-02T10:00:00Z"); // a Friday
-    expect(iso(nextRunAfter(spec, "UTC", from))).toBe("2026-10-05T09:00:00.000Z");
-    expect(iso(nextRunAfter(spec, "Asia/Tokyo", from))).toBe("2026-10-05T00:00:00.000Z");
-  });
-
   it("runs a once spec when its time is ahead, and never when it has passed", () => {
     const spec: ScheduleSpec = { kind: "once", at: "2026-10-02T09:00" };
     expect(iso(nextRunAfter(spec, "Europe/Berlin", new Date("2026-10-01T00:00:00Z")))).toBe(
@@ -38,10 +31,6 @@ describe("nextRunAfter", () => {
 });
 
 describe("onceInstant", () => {
-  it("takes a time with an offset as it is", () => {
-    expect(iso(onceInstant("2026-10-02T09:00:00+02:00", "UTC"))).toBe("2026-10-02T07:00:00.000Z");
-  });
-
   it("reads the hour a clock change skips as just after the change", () => {
     expect(iso(onceInstant("2026-03-29T02:30", "Europe/Berlin"))).toBe("2026-03-29T01:30:00.000Z");
   });

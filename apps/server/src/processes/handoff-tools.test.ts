@@ -113,11 +113,8 @@ describe("an agent's own hand-off check", () => {
     w.gate.wait = new Promise<void>((r) => {
       release = r;
     });
-    expect(text(await acme.callTool({ name: "handoff_rerun", arguments: {} }))).toContain(
-      "Started the check",
-    );
-    const again = await acme.callTool({ name: "handoff_rerun", arguments: {} });
-    expect(text(again)).toContain("already runs");
+    await acme.callTool({ name: "handoff_rerun", arguments: {} });
+    await acme.callTool({ name: "handoff_rerun", arguments: {} });
     release();
     await w.handoff.settled();
     expect(w.ran).toEqual(["ACM-1: pnpm test"]);

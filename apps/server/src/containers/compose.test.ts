@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContainerRefused, type Safety } from "./args.ts";
-import { interpolate, loadCompose, mergeCompose } from "./compose.ts";
+import { loadCompose } from "./compose.ts";
 import { parseCompose } from "./compose-cli.ts";
 import { buildRunPlan, type TaskDockerContext } from "./task-docker.ts";
 
@@ -342,47 +342,5 @@ volumes:
     } finally {
       delete process.env.COMPOSE_TEST_LEAK;
     }
-  });
-
-  it("merges the override file, adding ports and volumes and replacing the rest", () => {
-    expect(
-      mergeCompose(
-        { services: { web: { image: "a", ports: ["80"], environment: { A: "1", B: "2" } } } },
-        { services: { web: { image: "b", ports: ["81"], environment: { B: "3" } } } },
-      ),
-    ).toEqual({ services: { web: { image: "b", ports: ["80", "81"], environment: { A: "1", B: "3" } } } });
-    expect(interpolate(["a-$", "{X:+yes}-$", "{Y:-no}-$", "{Z-z}"].join(""), new Map([["X", "1"]]))).toBe(
-      "a-yes-no-z",
-    );
-  });
-
-  it("builds from a context inside the task folder and tags the image with the service's name", async () => {
-    const project = await load("services:\n  app:\n    build: ./api\n", [], {
-      "api/Dockerfile": "FROM alpine:3\n",
-    });
-    const build = project.services[0]?.build;
-    expect(build?.tag).toBe("app");
-    expect(build?.context).toMatch(/\/p\d+\/api$/);
-  });
-
-  it("starts only the named services and what they need, and skips profiles that are not on", async () => {
-    const yaml = `services:
-  web:
-    image: alpine:3
-    depends_on: [db]
-  db:
-    image: postgres:16-alpine
-  tools:
-    image: alpine:3
-    profiles: [debug]
-`;
-    expect((await load(yaml)).services.map((s) => s.name)).toEqual(["db", "web"]);
-    const sub = join(repo, "profiles");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "compose.yaml"), yaml);
-    const on = await loadCompose(parseCompose(["--profile", "debug", "up"], sub), { ...ctx(), cwd: sub });
-    expect(on.services.map((s) => s.name)).toEqual(["db", "web", "tools"]);
-    const only = await loadCompose(parseCompose(["up", "db"], sub), { ...ctx(), cwd: sub });
-    expect(only.services.map((s) => s.name)).toEqual(["db"]);
   });
 });

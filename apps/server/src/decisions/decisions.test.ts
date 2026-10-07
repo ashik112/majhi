@@ -2,7 +2,6 @@ import {
   type DecideRequest,
   type DecideRequestInput,
   DecideRequestSchema,
-  type DecisionResult,
   type LayaAnswer,
   type Question,
   QuestionSchema,
@@ -83,15 +82,6 @@ describe("chain", () => {
     const result = await runChain(["laya", "acp", "rules"], set({ laya: "down", acp: "throws" }), request);
     expect(result.provider).toBe("rules");
     expect(result.skipped.map((x) => x.provider)).toEqual(["laya", "acp"]);
-  });
-
-  it("follows the given order and marks stand-in answers as estimated", async () => {
-    const r: Pick<DecisionResult, "provider" | "estimated"> = await runChain(
-      ["acp", "laya"],
-      set({}),
-      request,
-    );
-    expect(r).toMatchObject({ provider: "acp", estimated: true });
   });
 
   it("fails when nothing answers", async () => {

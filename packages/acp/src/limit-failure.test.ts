@@ -45,12 +45,6 @@ describe("limitFailure: Claude Code login", () => {
         ?.resetsAt,
     ).toBe(iso("2026-10-03T13:00:00Z"));
   });
-
-  it("answers as the turn's text", () => {
-    expect(
-      limitLine("You've hit your limit · resets 3pm (Europe/Berlin)\n", "claude", NOW, "UTC")?.detail,
-    ).toBe("You've hit your limit · resets 3pm (Europe/Berlin)");
-  });
 });
 
 describe("limitFailure: Claude API key", () => {

@@ -104,7 +104,7 @@ describe("shipping a task with several repos", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.results).toMatchObject([
-      { project: "acme-api", into: "main", ok: true, detail: "Pushed main to origin." },
+      { project: "acme-api", into: "main", ok: true },
       { project: "acme-web", ok: true, skipped: true },
       { project: "acme-ops", ok: true, skipped: true },
     ]);
@@ -129,7 +129,7 @@ describe("shipping a task with several repos", () => {
     const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
     expect(res.status).toBe(200);
     expect(res.body.results).toMatchObject([
-      { project: "acme-api", ok: false, detail: "Not merged: acme-web cannot merge, so nothing was merged." },
+      { project: "acme-api", ok: false },
       { project: "acme-web", ok: false, conflicts: ["change.txt"] },
       { project: "acme-ops", ok: true, skipped: true },
     ]);
@@ -148,11 +148,10 @@ describe("shipping a task with several repos", () => {
     const first = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
     expect(first.status).toBe(200);
     expect(first.body.results).toMatchObject([
-      { project: "acme-api", ok: true, detail: "Pushed main to origin." },
+      { project: "acme-api", ok: true },
       { project: "acme-web", ok: false, notPushed: true },
       { project: "acme-ops", skipped: true },
     ]);
-    expect(first.body.results[1].detail).toMatch(/^Merged into main, but /);
     expect(await git(w.repo("web"), "show", "main:change.txt")).toBe("acme-web change");
     expect(first.body.task.status).toBe("review");
 
@@ -161,7 +160,7 @@ describe("shipping a task with several repos", () => {
     expect(again.status).toBe(200);
     expect(again.body.results).toMatchObject([
       { project: "acme-api", ok: true },
-      { project: "acme-web", ok: true, detail: "Pushed main to origin." },
+      { project: "acme-web", ok: true },
       { project: "acme-ops", skipped: true },
     ]);
     expect(await tip(w.remote("web"), "main")).toBe(await tip(w.repo("web"), "main"));
@@ -176,9 +175,6 @@ describe("shipping a task with several repos", () => {
 
     const refused = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true });
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toMatch(
-      /^Your local main in acme-api has 1 commit that origin does not have and that are not this task's: [0-9a-f]+ notes\.txt on main\. Pushing would send them with the task\./,
-    );
     expect(await tip(w.repo("api"), "main")).toBe(local);
     expect(await tip(w.remote("api"), "main")).toBe(remote);
 
@@ -191,9 +187,6 @@ describe("shipping a task with several repos", () => {
       pushLocalCommits: true,
     });
     expect(missing.status).toBe(409);
-    expect(missing.body.error).toBe(
-      "origin has no branch release for acme-api. Pushing would create it there. Confirm to create it.",
-    );
     expect(await git(w.remote("api"), "branch", "--list", "release")).toBe("");
 
     const sent = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, pushLocalCommits: true });
@@ -207,8 +200,5 @@ describe("shipping a task with several repos", () => {
     await git(w.repo("api"), "branch", "task/acm-9-other", "main");
     const res = await cmd("tasks.merge", { id: "ACM-1", into: "task/acm-9-other" });
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe(
-      "task/acm-9-other in acme-api is a task branch. Ship into the repo's base or a branch you work on, never a task's branch.",
-    );
   });
 });

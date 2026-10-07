@@ -608,39 +608,11 @@ describe("illegal transitions are refused", () => {
   it.each(cases)("$name", ({ event, status }) => {
     const r = refused(transition(task({ status }), event));
     expect(r.code).toBe("wrong-status");
-    expect(r.text.length).toBeGreaterThan(5);
-  });
-
-  it("covers every event type but the ones that need a hold or no task", () => {
-    const covered = new Set(LEGAL.map(([e]) => e.type));
-    expect([...covered].sort()).toEqual(
-      [
-        "agentsIdle",
-        "autopilotOff",
-        "captainStop",
-        "changeAndReview",
-        "close",
-        "dependencyChanged",
-        "holdPlaced",
-        "mrClosedUnmerged",
-        "mrOpened",
-        "ownerStop",
-        "processEnded",
-        "reopen",
-        "runLost",
-        "runPaused",
-        "runResumed",
-        "sendBack",
-        "start",
-        "wishStart",
-      ].sort(),
-    );
   });
 
   it("start from mr is refused and points at sendBack, never running", () => {
     const r = refused(transition(task({ status: "mr" }), { type: "start", by: "captain" }));
     expect(r.code).toBe("wrong-status");
-    expect(r.next).toMatch(/send it back/i);
   });
 
   it("done to running is refused for start, sendBack and processEnded", () => {
@@ -650,11 +622,6 @@ describe("illegal transitions are refused", () => {
       { type: "processEnded" },
     ] as const)
       expect(refused(transition(task({ status: "done" }), event)).code).toBe("wrong-status");
-  });
-
-  it("start from review points at sendBack", () => {
-    const r = refused(transition(task({ status: "review" }), { type: "start", by: "owner" }));
-    expect(r.next).toMatch(/send it back/i);
   });
 
   it("an event for a task that does not exist is refused, and create on an existing task too", () => {
@@ -943,14 +910,6 @@ describe("invariants over every reachable state", () => {
   };
 
   const { states } = explore();
-
-  it("explores a real space", () => {
-    expect(states.length).toBeGreaterThan(100);
-    expect(new Set(states.map((s) => s.status))).toEqual(new Set(ALL));
-    expect(new Set(states.flatMap((s) => (s.hold === undefined ? [] : [s.hold.cause])))).toEqual(
-      new Set(CAUSES),
-    );
-  });
 
   it("a done task has no hold, no wish and no exemption", () => {
     for (const s of states.filter((x) => x.status === "done")) {

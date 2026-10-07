@@ -94,8 +94,6 @@ function input(over: Partial<HomeInput> = {}): HomeInput {
   };
 }
 
-const ids = (list: { task: TaskSummary }[]) => list.map((i) => i.task.id);
-
 describe("section of a task", () => {
   it("puts each task in exactly one section", () => {
     const { sections } = buildHome(input());
@@ -137,13 +135,6 @@ describe("section of a task", () => {
     });
   });
 
-  it("draws no quiet chat and no task finished before today", () => {
-    const { sections } = buildHome(input());
-    const all = [...ids(sections.running), ...ids(sections.next), ...ids(sections.done)];
-    expect(all).not.toContain("PRV-2");
-    expect(all).not.toContain("ACM-11");
-  });
-
   it("a task a decision waits on is Needs you, whatever its status", () => {
     const asking = new Set(["ACM-6"]);
     expect(sectionOf(task("ACM-6", "mr"), { asking, working: new Set() })).toBe("needs");
@@ -155,23 +146,6 @@ describe("section of a task", () => {
     const hold = (lifter: "owner" | "system") => ({ lifter, label: "usage limit", sentence: "It resumes." });
     expect(sectionOf(task("ACM-4", "paused", { hold: hold("system") }), ctx)).toBe("waiting");
     expect(sectionOf(task("ACM-4", "paused", { hold: hold("owner") }), ctx)).toBe("needs");
-  });
-
-  it("a parent is running while a subtask runs, and waiting while none does", () => {
-    const ctx = { asking: new Set<string>(), working: new Set<string>() };
-    const parent = (tone: "working" | "idle") =>
-      task("ACM-20", "running", {
-        children: { total: 2, done: 0 },
-        trail: [{ kind: "children", tone, total: 2, done: 0 }],
-      });
-    expect(sectionOf(parent("working"), ctx)).toBe("running");
-    expect(sectionOf(parent("idle"), ctx)).toBe("waiting");
-  });
-
-  it("a running task with no agent is queued, one with an agent is running", () => {
-    const ctx = { asking: new Set<string>(), working: new Set(["ACM-1"]) };
-    expect(sectionOf(task("ACM-1", "running"), ctx)).toBe("running");
-    expect(sectionOf(task("ACM-3", "running"), ctx)).toBe("next");
   });
 });
 

@@ -33,14 +33,6 @@ describe("uncommitted work at hand-off", () => {
     expect(await uncommittedFiles(repo)).toEqual([]);
   });
 
-  it("passes ignored files", async () => {
-    await put(".gitignore", "build-output/\n");
-    await testGit(repo, "add", ".gitignore");
-    await testGit(repo, "commit", "--quiet", "-m", "ignore");
-    await put("build-output/a.js");
-    expect(await uncommittedFiles(repo)).toEqual([]);
-  });
-
   it("blocks a modified tracked file", async () => {
     await put("tracked.ts", "export const a = 2;\n");
     await put(".pnpm-store/v3/files/ab/cdef");

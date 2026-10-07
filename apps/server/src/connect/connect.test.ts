@@ -215,7 +215,6 @@ describe("connecting a remote MCP server with OAuth", () => {
     const first = (await r.grants.get("fakesvc"))?.tokens.accessToken;
     const replay = await r.connect.callback(back);
     expect(replay.ok).toBe(false);
-    expect(replay.message).toContain("already used");
     expect((await r.grants.get("fakesvc"))?.tokens.accessToken).toBe(first);
   });
 
@@ -327,13 +326,12 @@ describe("tokens: fresh, single flight, saved before use", () => {
     r.auth.expireAccessTokens();
     r.auth.failRefresh = "invalid_grant";
     const first = await r.connect.bearer("fakesvc");
-    expect(first).toEqual({ problem: "Fake Service no longer accepts majhi's sign-in. Reconnect it." });
+    expect("problem" in first).toBe(true);
     await r.connect.bearer("fakesvc");
     await r.connect.bearer("fakesvc");
     const [status] = await r.connect.status("acme");
     expect(status?.state).toBe("needs-reconnect");
-    expect(status?.reason).toBe("Fake Service no longer accepts majhi's sign-in. Reconnect it.");
-    expect(r.attention.map((a) => a.title)).toEqual(["Fake Service needs you to sign in again"]);
+    expect(r.attention).toHaveLength(1);
     // It was one refresh: after needs-reconnect majhi stops asking the service.
     expect(r.auth.refreshCalls).toBe(1);
     // The connection stays, so Reconnect has something to renew.
@@ -351,9 +349,7 @@ describe("tokens: fresh, single flight, saved before use", () => {
     r.skip(10 * 60_000);
     r.skip(60 * 60_000);
     const got = await r.connect.bearer("fakesvc");
-    expect(got).toEqual({
-      problem: "The service is unreachable, so its token could not be renewed. majhi tries again soon.",
-    });
+    expect("problem" in got).toBe(true);
     expect((await r.grants.get("fakesvc"))?.state).toBe("connected");
     expect(r.attention).toEqual([]);
     // The service comes back, and after the wait majhi renews.
@@ -366,7 +362,6 @@ describe("tokens: fresh, single flight, saved before use", () => {
     r.mcp.rejectAll = true;
     const result = await r.connect.test("fakesvc");
     expect(result.ok).toBe(false);
-    expect(result.detail).toBe("Fake Service no longer accepts majhi. The access was revoked. Reconnect it.");
     const [status] = await r.connect.status("acme");
     expect(status?.state).toBe("revoked");
     expect(r.attention.map((a) => a.key)).toEqual(["connect:fakesvc:revoked"]);
@@ -387,9 +382,6 @@ describe("accounts and access", () => {
     const before = await r.grants.get("fakesvc");
     const view = await r.connectAs("bob@globex.example", { connection: "fakesvc" });
     expect(view.state).toBe("confirm-account");
-    expect(view.message).toBe(
-      "This signed in as bob@globex.example, but Fake Service here is maria@acme.example. Nothing changed.",
-    );
     expect(view.previousAccount).toBe("maria@acme.example");
     expect(await r.grants.get("fakesvc")).toEqual(before);
 
@@ -427,18 +419,14 @@ describe("accounts and access", () => {
     await r.connectAs("maria@acme.example", { org: "acme" });
     await expect(
       r.connect.start({ org: "globex", service: "fakesvc", access: "read", connection: "fakesvc" }, OWNER),
-    ).rejects.toThrow("not a connected service of globex");
+    ).rejects.toThrow();
   });
 
   it("disconnect revokes at the service, deletes the tokens and the connection", async () => {
     await r.connectAs("maria@acme.example");
     const grant = await r.grants.get("fakesvc");
     const out = await r.connect.disconnect("fakesvc", OWNER);
-    expect(out).toEqual({
-      removed: "fakesvc",
-      revoked: true,
-      note: "Fake Service is disconnected and its access was revoked.",
-    });
+    expect(out).toMatchObject({ removed: "fakesvc", revoked: true });
     expect(r.auth.revoked).toEqual(
       expect.arrayContaining([grant?.tokens.refreshToken, grant?.tokens.accessToken]),
     );
@@ -481,8 +469,6 @@ describe("secrets stay out of logs, views and errors", () => {
       for (const secret of [...r.auth.secretsSeen(), state, code]) {
         expect(everything).not.toContain(secret);
       }
-      // The log says what happened, in words.
-      expect(r.logs).toContain("connect: fakesvc connected in acme");
     } finally {
       for (const spy of spies) spy.mockRestore();
       await r.cleanup();

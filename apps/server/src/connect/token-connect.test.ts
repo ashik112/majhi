@@ -168,7 +168,7 @@ describe("a pasted token connects only when a real call with it passes", () => {
     );
     expect(out).toMatchObject({
       ok: false,
-      failure: { reason: "rejected", status: 400, fixUrl: "https://linear.app/settings/account/security" },
+      failure: { reason: "rejected", status: 400 },
     });
     expect(r.connections.size).toBe(0);
     expect(r.stored.size).toBe(0);

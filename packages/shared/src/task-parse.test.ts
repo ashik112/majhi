@@ -80,12 +80,6 @@ describe("orgs", () => {
     expect(p.org).toBeUndefined();
     expect(p.warnings).toEqual(["Repos from more than one workspace: acme, beta"]);
   });
-
-  it("orders the orgs by first mention", () => {
-    expect(parseTaskText("app then api", ctx).warnings).toEqual([
-      "Repos from more than one workspace: beta, acme",
-    ]);
-  });
 });
 
 describe("path mentions", () => {

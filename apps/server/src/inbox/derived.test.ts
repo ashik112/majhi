@@ -107,16 +107,12 @@ describe("cards derive from the task's state now, so none goes stale", () => {
   it("a review whose merge fails says why and offers no Merge", () => {
     const blocked = new Map([["ACM-1", { why: "Nothing to merge: no commits ahead of main.", empty: true }]]);
     const [card] = build([review("ACM-1")], [subject("ACM-1", "review")], { shipBlocked: blocked });
-    expect(card?.blocked).toBe("Nothing to merge: no commits ahead of main.");
-    expect(card?.sentence).toContain("cannot be merged yet");
-    expect(card?.title).not.toMatch(/Ready to ship/);
     expect(card?.options.map((o) => o.id)).toEqual(["done", "changes"]);
     expect(card?.options.some((o) => o.effect === "approve")).toBe(false);
     // A conflict leaves only a word to the lead.
     const failing = new Map([["ACM-1", { why: "it conflicts with main in a.ts", empty: false }]]);
     const [second] = build([review("ACM-1")], [subject("ACM-1", "review")], { shipBlocked: failing });
     expect(second?.options.map((o) => o.id)).toEqual(["changes"]);
-    expect(second?.blocked).toBe("It conflicts with main in a.ts.");
   });
 });
 

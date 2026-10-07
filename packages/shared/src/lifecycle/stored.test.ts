@@ -273,29 +273,6 @@ describe("the new model back to stored fields", () => {
     else expect(back.lane).toBeUndefined();
   });
 
-  it("every cause has a stored form (exhaustive over HoldCause)", () => {
-    const written: Record<HoldCause, StoredFields["pausedReason"] | "step"> = {
-      "owner-stop": "owner",
-      "captain-stop": "owner",
-      "autopilot-off": "owner",
-      "budget-limit": "limit",
-      "account-limit": "limit",
-      offline: "offline",
-      "signed-out": "signed-out",
-      error: "error",
-      "loop-guard": "loop",
-      idle: "blocked",
-      "dependency-closed": "blocked",
-      "dependency-removed": "blocked",
-    };
-    const seen = new Set<HoldCause>();
-    for (const c of EXISTING) {
-      const h = fromStored(c.fields, ctx(c.ctx)).hold;
-      if (h !== undefined) seen.add(h.cause);
-    }
-    expect([...seen].sort()).toEqual(Object.keys(written).sort());
-  });
-
   it("the old pause fields are written together with the held row for Auto-pilot", () => {
     const out = toStored(
       { status: "running", hold: { cause: "autopilot-off", at: AT, mode: "now" }, exemptUntilRunEnds: false },

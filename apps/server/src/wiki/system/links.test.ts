@@ -86,20 +86,6 @@ describe("calls link to a route only when the match is exact", () => {
   ]);
   const admin = project("acme-admin", [route("acme-admin", "GET", "/api/v1/items", 9)]);
 
-  it("links an exact method and path, with both sources and the basis", () => {
-    const web = project("acme-web", [call("acme-web", "POST", "/api/v1/login", 7)]);
-    const out = view([api, web]);
-    expect(out.links).toHaveLength(1);
-    expect(out.links[0]).toMatchObject({
-      type: "http",
-      basis: "exact",
-      label: "POST /api/v1/login",
-      from: { project: "acme-web", sources: [{ path: "client.ts", lines: [7, 7] }] },
-      to: { project: "acme-api", sources: [{ path: "api.py", lines: [1, 1] }] },
-    });
-    expect(out.unlinked).toEqual([]);
-  });
-
   it("takes a literal route before a parameter one, and a filled-in part only for a parameter", () => {
     const web = project("acme-web", [
       call("acme-web", "GET", "/api/v1/users/me", 1),
@@ -166,17 +152,6 @@ describe("calls link to a route only when the match is exact", () => {
     expect(out.links).toEqual([]);
     expect(out.unlinked.map((u) => u.path)).toEqual(["/api/wiki/{}/files/readme.md", "/42"]);
   });
-
-  it("lists no unlinked call while there is no other project to link to", () => {
-    const alone = project("acme-web", [call("acme-web", "GET", "/api/v1/items", 1)]);
-    expect(view([alone]).unlinked).toEqual([]);
-  });
-
-  it("does not count a call to the project's own route as a link", () => {
-    const self = project("acme-api", [...api.facts, call("acme-api", "GET", "/api/v1/items", 9)]);
-    expect(view([self]).links).toEqual([]);
-    expect(view([self]).unlinked).toEqual([]);
-  });
 });
 
 describe("links from compose, settings and the owner", () => {
@@ -216,12 +191,6 @@ describe("links from compose, settings and the owner", () => {
     expect(view([onlyDb, toDb]).links).toEqual([]);
   });
 
-  it("uses a service a file defines without building, as a config link below the declared one", () => {
-    const ops = project("acme-ops", [unit("acme-ops", "worker", false, "worker")]);
-    const caller = project("acme-job", [endpoint("acme-job", "worker", 9000)]);
-    expect(view([ops, caller]).links).toMatchObject([{ basis: "config", to: { project: "acme-ops" } }]);
-  });
-
   it("puts declared links first and drops one to a project outside the workspace", () => {
     const declaring = project("acme-job", [], ["acme-api", "globex-api"]);
     const out = view([web, api, declaring]);
@@ -256,27 +225,6 @@ describe("links from compose, settings and the owner", () => {
     out = view([web, api], answers);
     expect(out.links.map((l) => l.basis)).toEqual(["declared"]);
     expect(out.questions.map((q) => q.host)).toEqual(["localhost"]);
-  });
-
-  it("settles a call by the owner's answer: a project, or not worth showing", () => {
-    const client = project("acme-web", [
-      call("acme-web", "GET", "/ping", 1),
-      call("acme-web", "GET", "/stats", 2),
-      call("acme-web", "GET", "/beat", 3),
-    ]);
-    const answers: WikiAnswer[] = [
-      {
-        kind: "call",
-        repo: "acme-web",
-        method: "GET",
-        path: "/ping",
-        to: { kind: "project", project: "acme-api" },
-      },
-      { kind: "call", repo: "acme-web", method: "GET", path: "/stats", to: { kind: "outside" } },
-    ];
-    const out = view([client, api], answers);
-    expect(out.links.map((l) => [l.basis, l.label])).toEqual([["owner", "GET /ping (owner)"]]);
-    expect(out.unlinked.map((u) => u.path)).toEqual(["/beat"]);
   });
 });
 

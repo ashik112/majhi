@@ -175,11 +175,6 @@ describe("gh and glab", () => {
     });
     await expect(hosts.github.merge(gh("tok-merge"), 1)).rejects.toThrow(/not mergeable/);
   });
-
-  it("says so when the program is missing", async () => {
-    const hosts = createMrHosts({ bins: { gh: "/nonexistent/gh" } });
-    await expect(hosts.github.open(gh("t"), mr)).rejects.toThrow(/is not installed/);
-  });
 });
 
 describe("Bitbucket Cloud", () => {

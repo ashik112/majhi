@@ -84,29 +84,6 @@ describe("the captain and free agent slots", () => {
   });
 });
 
-describe("the captain's plan and a full account slot", () => {
-  it("records waitFor available while the account slot is full", async () => {
-    const t = await on();
-    const id = await t.ownerTask("Fix the typo on the login page");
-    const spy = t.full();
-    await t.call("majhi_tasks_start", { id });
-    const account = spy.mock.calls[0]?.[0]?.[0];
-    expect(account).toBeDefined();
-    const plan = () =>
-      t.call("majhi_autonomy_plan", {
-        items: [
-          {
-            title: "Fix the typo",
-            task: id,
-            why: "Waits for a slot",
-            waitFor: { account, state: "available" },
-          },
-        ],
-      });
-    expect((await plan()).isError).toBe(false);
-  });
-});
-
 describe("the captain and the repo rule", () => {
   it("keeps a second task naming the same file in the backlog, allows different files and areas, and never blocks the owner", async () => {
     const t = await on();

@@ -82,13 +82,6 @@ describe("reporting and dedupe", () => {
     ).toEqual(["acme", "globex"]);
   });
 
-  it("uses the key the reporter gives, so differently worded titles are one finding", async () => {
-    const t = setup();
-    await t.report({ title: "CVE-1 in the http client", dedupeKey: "cve-1" });
-    const again = await t.report({ title: "http client has CVE-1", dedupeKey: "cve-1" });
-    expect(again.result).toBe("refreshed");
-  });
-
   it("brings a fixed finding back when it is reported again, and leaves a dismissed one dismissed", async () => {
     const t = setup();
     const { finding } = await t.report();

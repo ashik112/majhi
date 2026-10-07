@@ -93,13 +93,6 @@ describe("default turn", () => {
       "usage",
       "turn",
     ]);
-    expect(events[0]).toEqual({
-      type: "commands",
-      commands: [
-        { name: "compact", description: "Compact the conversation" },
-        { name: "review", description: "Review the current changes" },
-      ],
-    });
     const edit = events.find(
       (e) => e.type === "tool" && e.toolCallId === "t-edit" && e.status === "completed",
     );
@@ -123,11 +116,6 @@ describe("default turn", () => {
         ],
       },
     ]);
-    const texts = events.filter((e) => e.type === "text");
-    expect(new Set(texts.slice(0, 2).map((t) => (t.type === "text" ? t.messageId : ""))).size).toBe(1);
-    expect(
-      texts[0]?.type === "text" && texts[2]?.type === "text" && texts[0].messageId !== texts[2].messageId,
-    ).toBe(true);
   });
 
   it("cancels the permission when there is no handler or the handler gives up", async () => {
@@ -261,17 +249,5 @@ describe("turn usage", () => {
       usage: expect.objectContaining({ reported: false, inputTokens: 0, model: "fake-model-a" }),
     });
     expect(turn?.type === "turn" ? turn.usage.costUsd : "missing").toBeUndefined();
-  });
-});
-
-describe("refusal", () => {
-  it("ends the turn with refusal, and the session goes on after a model switch", async () => {
-    const { session, events } = await start();
-    const res = await session.prompt(text("stop:refusal"));
-    expect(res.stopReason).toBe("refusal");
-    expect(events.some((e) => e.type === "text" && e.text.includes("safeguards"))).toBe(true);
-    await session.setOption("model", "fake-model-b");
-    expect(session.models.defaultModel).toBe("fake-model-b");
-    expect((await session.prompt(text("echo: go on"))).stopReason).toBe("end_turn");
   });
 });

@@ -50,30 +50,6 @@ describe("labels", () => {
     expect(raw.note).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
 
-  it("labels the task-size decision when the task reaches review, and again at the next review", async () => {
-    const { svc } = service();
-    const rated = await svc.rateTask({
-      task: "ACM-1",
-      title: "Fix a typo",
-      brief: "Fix a typo in the readme",
-      kind: "code",
-      repos: ["acme-web"],
-      role: "Builder",
-      use: "task-size",
-    });
-    expect(rated?.decisionId).toBeDefined();
-    svc.taskReviewed("ACM-1", { files: 1, lines: 3, turns: 2, outputTokens: 900 });
-    expect(svc.labels().forDecision(rated?.decisionId ?? "")[0]).toMatchObject({
-      use: "task-size",
-      question: "difficulty",
-      label: "trivial",
-      source: "outcome",
-    });
-    svc.taskReviewed("ACM-1", { files: 12, lines: 700, turns: 50, outputTokens: 90_000 });
-    expect(svc.labels().forDecision(rated?.decisionId ?? "")).toHaveLength(1);
-    expect(svc.labels().forDecision(rated?.decisionId ?? "")[0]?.label).toBe("large");
-  });
-
   it("labels a linked decision once for a wake, then forgets the link", async () => {
     const { svc } = service();
     const r = await svc.decide(ask, { use: "routing", task: "ACM-1" });

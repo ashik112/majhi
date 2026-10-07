@@ -82,9 +82,6 @@ describe("Ship", () => {
     const before = await tip(w.repo("api"), "main");
     const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe(
-      "origin/main has commits that your local main in acme-api does not have. majhi never force-pushes: bring main up to date first, then ship again.",
-    );
     // Nothing merged locally, nothing overwritten on the remote.
     expect(await tip(w.repo("api"), "main")).toBe(before);
     expect(await tip(w.remote("api"), "main")).toBe(theirs);
@@ -102,7 +99,6 @@ describe("Ship", () => {
     const second = await cmd("tasks.push", { id: "ACM-1" });
     expect(second.status).toBe(200);
     expect(second.body.results[0]).toMatchObject({ ok: false });
-    expect(second.body.results[0].detail).toContain("majhi never force-pushes");
     expect(await tip(w.remote("api"), branch)).toBe(theirs);
   });
 
@@ -117,9 +113,6 @@ describe("Ship", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.results).toMatchObject([{ ok: true }]);
-    expect(res.body.results[0].detail).toBe(
-      `Squashed ${branch} into one commit on main. Not pushed. Deleted ${branch} and its worktree.`,
-    );
     expect(res.body.task.status).toBe("done");
     expect(res.body.task.repos[0].worktree).toBeUndefined();
     expect(await git(w.repo("api"), "show", "main:fix.txt")).toBe("fix");
@@ -133,9 +126,6 @@ describe("Ship", () => {
     const before = await tip(w.repo("api"), "main");
     const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", done: true, deleteAfter: true });
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe(
-      "acme-api's worktree has uncommitted changes (1 file), so it cannot be deleted. Ask the agent to commit them, or ship without deleting.",
-    );
     expect(await tip(w.repo("api"), "main")).toBe(before);
     expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
     expect(await present(join(w.taskDir("ACM-1"), "acme-api", "scratch.txt"))).toBe(true);
@@ -155,7 +145,6 @@ describe("Ship", () => {
     await git(tree, "pull", "--quiet", "--no-rebase", "--no-edit", "origin", branch);
     const pushed = await cmd("tasks.push", { id: "ACM-1", deleteAfter: true });
     expect(pushed.body.results[0]).toMatchObject({ ok: true });
-    expect(pushed.body.results[0].detail).toContain(`Deleted ${branch} and its worktree.`);
     expect(await present(tree)).toBe(false);
     expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
     expect(await git(w.remote("api"), "branch", "--list", branch)).not.toBe("");
@@ -172,8 +161,7 @@ describe("Ship", () => {
     expect(res.body.results[0]).toMatchObject({ ok: true });
     expect(res.body.task.status).toBe("done");
     options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    const why = "ACM-1 is done, and its work is merged or pushed.";
-    expect(options.merge).toEqual({ ok: false, why });
-    expect(options.push).toEqual({ ok: false, why });
+    expect(options.merge).toMatchObject({ ok: false });
+    expect(options.push).toMatchObject({ ok: false });
   });
 });

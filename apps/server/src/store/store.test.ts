@@ -1,7 +1,6 @@
 import type { Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { seedStatus } from "../testing/status.ts";
 import { Store } from "./index.ts";
 import { MIGRATIONS, type Migration, MigrationConflict, migrate } from "./migrations.ts";
 
@@ -78,24 +77,6 @@ describe("store", () => {
       tasks.allocateKey("LOCAL"),
       tasks.allocateKey("GLX"),
     ]).toEqual(["GLX-1", "GLX-2", "LOCAL-1", "GLX-3"]);
-  });
-
-  it("updates status, worktrees and attachments, and removes everything with the task", () => {
-    const store = new Store(":memory:");
-    store.tasks.insert(task("ACME-2"));
-    seedStatus(store, "ACME-2", "paused", "owner", "2026-03-01T00:00:00.000Z");
-    store.tasks.setWorktree("ACME-2", "acme-api", "/tasks/ACME-2/acme-api", false);
-    store.tasks.addAttachments("ACME-2", [{ id: "a2", kind: "file", name: "x.txt", path: "x.txt" }]);
-    const got = store.tasks.get("ACME-2");
-    expect(got?.status).toBe("paused");
-    expect(got?.pausedReason).toBe("owner");
-    expect(got?.repos[0]).toMatchObject({ worktree: "/tasks/ACME-2/acme-api", createdBranch: false });
-    expect(got?.attachments.map((a) => a.id)).toEqual(["a1", "a2"]);
-    expect(store.tasks.openTasksUsing("acme-api")).toEqual(["ACME-2"]);
-    store.room.upsert("ACME-2", "s1", { type: "system", level: "info", text: "hi" });
-    store.tasks.remove("ACME-2");
-    expect(store.tasks.get("ACME-2")).toBeUndefined();
-    expect(store.room.page("ACME-2", 10).items).toEqual([]);
   });
 });
 

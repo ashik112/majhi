@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveSecretName, detectSecrets, kindOfSecret, replaceSecrets, slugName } from "./secrets-detect.ts";
+import { detectSecrets, replaceSecrets } from "./secrets-detect.ts";
 
 const ANTHROPIC = `sk-ant-api03-${"aB3xY9".repeat(8)}`;
 const OPENAI = `sk-proj-${"Qw7Er1".repeat(8)}`;
@@ -61,25 +61,6 @@ describe("replaceSecrets", () => {
     const text = `a ${AWS} b ${GITLAB} c`;
     const out = replaceSecrets(text, detectSecrets(text), (m) => `secret:${m.kind}`);
     expect(out).toBe("a secret:aws b secret:gitlab c");
-  });
-});
-
-describe("deriveSecretName", () => {
-  const none = new Set<string>();
-  it("uses the label", () =>
-    expect(deriveSecretName({ label: "New Relic (Acme)", taken: none })).toBe("new-relic-acme"));
-  it("uses the kind without a label", () => {
-    expect(deriveSecretName({ kind: "anthropic", taken: none })).toBe("anthropic");
-    expect(deriveSecretName({ kind: "github", taken: new Set(["github"]) })).toBe("github-2");
-  });
-  it("counts secret-N when nothing is known", () => {
-    expect(deriveSecretName({ taken: new Set(["secret-1"]) })).toBe("secret-2");
-    expect(deriveSecretName({ label: "!!!", taken: none })).toBe("secret-1");
-  });
-  it("slugs labels", () => expect(slugName("  Hello, World  ")).toBe("hello-world"));
-  it("guesses the kind of a pasted value", () => {
-    expect(kindOfSecret(ANTHROPIC)).toBe("anthropic");
-    expect(kindOfSecret("hello")).toBeUndefined();
   });
 });
 

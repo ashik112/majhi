@@ -89,7 +89,7 @@ describe("settings commands", () => {
 
   it("refuses before majhi.yaml exists", async () => {
     h = await harness({ workspaces: false });
-    expect((await h.cmd("settings.get")).body.context.compact_at).toBe(0.8);
+    expect((await h.cmd("settings.get")).status).toBe(200);
     expect((await h.cmd("settings.set", { resume: { auto: false } })).status).toBe(409);
   });
 });

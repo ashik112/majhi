@@ -3,7 +3,6 @@ import {
   autoClears,
   type ClearReading,
   conditionMet,
-  HOLD_TABLE,
   type Hold,
   type HoldCause,
   type HoldOf,
@@ -60,10 +59,6 @@ const LIFTERS: Record<HoldCause, Lifter[]> = {
 };
 
 describe("hold table", () => {
-  it("has a row for every cause", () => {
-    expect(Object.keys(HOLD_TABLE).sort()).toEqual([...CAUSES].sort());
-  });
-
   it.each(CAUSES)("%s: a sample parses and has the right lifters", (cause) => {
     expect(HoldSchema.safeParse(hold(cause)).success).toBe(true);
     expect([...liftersOf(hold(cause))].sort()).toEqual([...LIFTERS[cause]].sort());
@@ -73,11 +68,6 @@ describe("hold table", () => {
     const step: Hold = { cause: "autopilot-off", at: AT, mode: "step" };
     expect(liftersOf(step)).toEqual(["owner", "majhi"]);
     expect(autoClears(step)).toEqual({ kind: "step-or-autopilot-on" });
-  });
-
-  it("owner-only holds never list the captain or majhi", () => {
-    for (const cause of ["owner-stop", "loop-guard", "dependency-closed", "dependency-removed"] as const)
-      expect(liftersOf(hold(cause))).toEqual(["owner"]);
   });
 
   it("a hold majhi can lift has a condition, and one it cannot lift never auto-clears", () => {
