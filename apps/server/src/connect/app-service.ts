@@ -243,7 +243,7 @@ export class AppService {
     return {
       app: "slack",
       connection,
-      message: `Slack is connected${account === "" ? "" : ` as ${account}`}. Add the app to each client channel. The channels show up under New chats.`,
+      message: `Slack is connected${account === "" ? "" : ` as ${account}`}. Pick its client channels in this connection.`,
     };
   }
 
