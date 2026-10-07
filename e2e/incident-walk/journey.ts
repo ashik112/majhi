@@ -170,10 +170,16 @@ async function recovers(w: World, id: string): Promise<string> {
     300_000,
   );
   const task = await cmd("tasks.get", { id });
-  const told = w.slack.sent.map((m) => m.text);
   if (task.status !== "done") throw new Error(`task is ${task.status}, not done`);
-  if (!told.some((t) => t.includes("resolved")))
-    throw new Error(`the client was never told Resolved: ${JSON.stringify(told)}`);
+  // The client hears of it on the next incident sweep (every 20 s), not at the instant the status flips.
+  await until(
+    "the client to be told Resolved",
+    async () => w.slack.sent.some((m) => m.text.includes("resolved")),
+    60_000,
+  ).catch(() => {
+    throw new Error(`the client was never told Resolved: ${JSON.stringify(w.slack.sent.map((m) => m.text))}`);
+  });
+  const told = w.slack.sent.map((m) => m.text);
   return `monitoring (${view.facts}), then Resolved; task ${task.status}; client was told ${told.length} messages, the last: "${told.at(-1)}"`;
 }
 
