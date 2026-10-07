@@ -595,7 +595,7 @@ export class IncidentEngine {
             await this.deps.tasks.close(task.id, {
               by: "majhi",
               whenSubtasksOpen: "stay",
-              whenUnshipped: "stay",
+              whenUnshipped: "keep",
             });
             changed = true;
           } else if (
