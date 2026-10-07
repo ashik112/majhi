@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -131,11 +131,24 @@ describe("the container of a run", () => {
 
   it("has its own process, IPC, UTS and user namespaces: nothing of the host, the server or another task shows", () => {
     const args = dockerRunArgs(req, cfg, "majhi-run-test");
-    for (const flag of ["--pid", "--ipc", "--uts", "--userns", "--privileged", "--cap-add"]) {
+    for (const flag of ["--pid", "--ipc", "--uts", "--userns", "--privileged"]) {
       expect(args.some((a) => a === flag || a.startsWith(`${flag}=`))).toBe(false);
     }
     expect(args[args.indexOf("--network") + 1]).toBe("majhi-runners");
     expect(args).toContain("--init");
     expect(args).toContain("no-new-privileges");
+  });
+
+  it("holds only the guard's capabilities, and the guard drops them all before the agent starts", async () => {
+    const args = dockerRunArgs(req, cfg, "majhi-run-test");
+    const after = (flag: string) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
+    expect(after("--cap-drop")).toEqual(["ALL"]);
+    expect(after("--cap-add")).toEqual(["NET_ADMIN", "SETUID", "SETGID", "SETPCAP"]);
+    const entry = await readFile(join(import.meta.dirname, "../../../docker/majhi-netguard"), "utf8");
+    const lines = entry.split("\n");
+    const exec = lines.filter((l) => l.startsWith("exec "));
+    expect(exec).toEqual([
+      'exec /usr/bin/setpriv --reuid "${who%%:*}" --regid "${who##*:}" --clear-groups --bounding-set -all --inh-caps -all --no-new-privs -- "$@"',
+    ]);
   });
 });
