@@ -123,7 +123,7 @@ import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
-import { MemoryWatch } from "./machine/memwatch.ts";
+import { MemoryWatch, noteHotContainers } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
@@ -313,6 +313,8 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
+  /** Re-reads the run memory limit from Settings, for the next run. */
+  applyRunMemory: () => Promise<void>;
   /** Deploy environments, deploy records and what follows a deploy. */
   deploy: DeployWorld;
   config: ConfigService;
@@ -597,6 +599,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     server: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
   });
   const sessionOptions = runner.sessionOptions;
+  const fallbackRunMemory = runner.runner?.config.memory;
+  /** The memory limit of the next run: Settings, else what the server started with. Runs already going keep theirs. */
+  const applyRunMemory = async (): Promise<void> => {
+    if (runner.runner === undefined) return;
+    const set = (await config.settings()).containers.run_memory;
+    runner.runner.config.memory = set ?? fallbackRunMemory;
+  };
+  void applyRunMemory().catch(() => undefined);
   const usageRepo = new UsageRepo(store.raw);
   const budgets = new BudgetMonitor({
     usage: usageRepo,
@@ -1089,7 +1099,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         }),
     project: async (id) => (await projectList()).find((p) => p.id === id),
     registry: memoryRegistry,
-    say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
+    say: (id, level, text, action) =>
+      room.post(id, `${level}:${randomUUID()}`, {
+        type: "system",
+        level,
+        text,
+        ...(action === undefined ? {} : { action }),
+      }),
   });
   let chatMemory: ChatMemory | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
@@ -1599,16 +1615,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       "--format",
       '{{.Names}}\t{{.Label "majhi.task"}}',
     ]);
-    for (const line of rows.split("\n")) {
-      const [name, task] = line.split("\t");
-      if (name === undefined || task === undefined || task === "" || !hot.includes(name)) continue;
-      if (store.tasks.get(task) === undefined) continue;
-      room.post(task as TaskId, `memory:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: "An agent on this task is using almost all of its memory limit and may be slow or get stopped. Ask it to do less at once, or stop the task if it keeps stalling.",
-      });
-    }
+    noteHotContainers({
+      hot,
+      rows,
+      taskExists: (task) => store.tasks.get(task) !== undefined,
+      post: (task, id, text) =>
+        room.post(task as TaskId, id, { type: "system", level: "warn", text, action: "runner-memory" }),
+    });
   };
   /**
    * Run containers a restart or crash left behind keep their CPU while majhi counts no run, and the
@@ -2867,6 +2880,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   return {
     config,
+    applyRunMemory,
     runtime,
     secrets,
     keyExports: new KeyExports(env.majhiHome, secrets),

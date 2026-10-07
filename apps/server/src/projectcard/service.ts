@@ -94,6 +94,21 @@ export class ProjectCards {
     return project === undefined ? all : all.filter((c) => c.project === project);
   }
 
+  /** The cards as the owner views them: the remotes are read from the repo now, since a change to origin moves no tip. */
+  async listLive(project?: string): Promise<ProjectCard[]> {
+    const paths = new Map((await this.deps.projects()).map((p) => [p.id, p.path]));
+    return Promise.all(
+      this.list(project).map(async (card) => {
+        const path = paths.get(card.project);
+        if (path === undefined) return card;
+        const live = await this.deps.git.remotes(path).catch(() => undefined);
+        return live === undefined
+          ? card
+          : { ...card, remotes: live.map((r) => ({ name: r.name, url: plainUrl(r.url) })) };
+      }),
+    );
+  }
+
   /** The owner's Refresh (or the captain's): reads the files now and rewrites the card. */
   refresh(id: string): Promise<ProjectCard> {
     return this.run(id, { auto: false });
