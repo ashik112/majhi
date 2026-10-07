@@ -26,8 +26,8 @@ import type { ConnectConnections } from "./service.ts";
 /**
  * The guided app setup behind the Connections page (SPEC 5.14): shows the sheet for a service, saves
  * what the owner pastes or drops (a client ID and secret, Google's client file, Slack's and
- * Discord's tokens) in secrets.age, and for Slack and Discord also makes the connection, since a
- * bot token is the whole sign-in. Values are never logged, returned or put in an error.
+ * Discord's tokens) in secrets.age, and for Slack, Telegram and Discord also makes the connection, since a
+ * bot token is the whole sign-in. Slack and Telegram make a `chat` connection: only majhi reads it. Values are never logged, returned or put in an error.
  */
 
 const SLACK = "https://slack.com/api";
@@ -43,6 +43,8 @@ export interface AppServiceDeps {
   fetch: () => Fetch;
   /** Telegram's Bot API address. Only a trial against a fake bot server changes it. */
   telegramApi?: string | undefined;
+  /** Slack's Web API address. Only a trial against a fake Slack changes it. */
+  slackApi?: string | undefined;
   connections: ConnectConnections;
   connectionIds: () => Promise<{ org: string; id: string; connection: ConnectionConfig }[]>;
   /** The value of a secret entry of a connection's `vars`. */
@@ -173,7 +175,8 @@ export class AppService {
     token: string,
   ): Promise<{ ok: boolean } & T> {
     try {
-      const res = await this.deps.fetch()(`${SLACK}/${method}`, {
+      const base = (this.deps.slackApi ?? SLACK).replace(/\/+$/, "");
+      const res = await this.deps.fetch()(`${base}/${method}`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/x-www-form-urlencoded" },
         redirect: "error",
@@ -214,6 +217,7 @@ export class AppService {
         SLACK_APP_TOKEN: { kind: "secret" },
       },
       account,
+      "chat",
     );
     await this.deps.connections.setSecret?.(
       { id: connection, field: "SLACK_BOT_TOKEN", list: "vars", value: bot },
@@ -225,12 +229,21 @@ export class AppService {
       "connect.appSave",
       meta,
     );
+    this.deps.observe?.(connection, {
+      ok: true,
+      detail: `Slack: ${account === "" ? "the app" : account}.`,
+      warnings: [],
+      at: new Date().toISOString(),
+      durationMs: 0,
+      checked: ["Asked Slack which workspace the app is in (auth.test)", "Opened a Socket Mode connection"],
+      account,
+    });
     this.deps.changed();
     this.deps.log?.(`connect: slack connected in ${input.org}`);
     return {
       app: "slack",
       connection,
-      message: `Slack is connected${account === "" ? "" : ` as ${account}`}. Add the app to the channels it should read.`,
+      message: `Slack is connected${account === "" ? "" : ` as ${account}`}. Add the app to each client channel. The channels show up under New chats.`,
     };
   }
 
