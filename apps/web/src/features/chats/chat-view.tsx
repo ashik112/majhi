@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { ClientRoom } from "@/features/clients/client-room";
 import { permissionDomId } from "@/features/room/items";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
 import { firstPendingPermission } from "@/features/task/model";
+import { TrailStrip } from "@/features/tasks-ui/trail-strip";
 import { useAgentIndex } from "@/lib/agent-index";
 import { setPendingPermission } from "@/lib/attention";
 import { useRenameChat } from "@/lib/chat-queries";
@@ -22,7 +24,7 @@ import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useLaneRedirect } from "@/lib/lane-link";
 import { useOrgs } from "@/lib/studio-queries";
-import { useTask } from "@/lib/task-queries";
+import { useTask, useTaskDetail, useTaskRow, useTasks } from "@/lib/task-queries";
 import { chatTitle } from "./model";
 
 /** One conversation: a header with the agent and the title, then the room with its composer. */
@@ -103,6 +105,15 @@ function OpenChat({
   const agent = task.team[0];
   const info = useAgentIndex().get(agent ?? "");
   const org = useOrgs().data?.find((o) => o.id === task.org);
+  // A chat that became a task keeps this conversation and shows the task's state in its header.
+  const promoted = task.kind !== "chat";
+  const row = useTaskRow(task.id);
+  const taskDetail = useTaskDetail(task.id, promoted).data;
+  const trail = taskDetail?.trail ?? row?.trail ?? [];
+  // Work this chat started as a separate task: one line each, with a link.
+  const moved = (useTasks().data ?? []).filter(
+    (t) => t.id !== task.id && t.origin?.kind === "chat" && t.origin.room === task.id,
+  );
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -143,8 +154,29 @@ function OpenChat({
                 {org.name}
               </span>
             )}
-            {task.status === "done" && <span className="shrink-0">Archived. Write to continue it.</span>}
+            {task.status === "done" && !promoted && (
+              <span className="shrink-0">Archived. Write to continue it.</span>
+            )}
           </div>
+          {promoted && (
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs">
+              <Link
+                to="/t/$taskId"
+                params={{ taskId: task.id }}
+                title="Open the task: changes, ship, team"
+                className="shrink-0 rounded-xs font-mono text-fg-muted hover:text-fg"
+              >
+                {task.id}
+              </Link>
+              <StatusBadge
+                status={task.status}
+                pausedReason={task.pausedReason}
+                pausedBy={task.pausedBy}
+                className="shrink-0"
+              />
+              <TrailStrip steps={trail} variant="chips" className="min-w-0" />
+            </div>
+          )}
         </div>
         {agent && (
           <Button size="sm" disabled={creating} onClick={() => onNew(agent)}>
@@ -153,7 +185,20 @@ function OpenChat({
           </Button>
         )}
       </header>
-      {empty && (
+      {moved.map((t) => (
+        <p key={t.id} className="shrink-0 px-1 text-sm text-fg-muted">
+          Work moved to{" "}
+          <Link
+            to="/t/$taskId"
+            params={{ taskId: t.id }}
+            title={t.title}
+            className="rounded-xs font-mono text-fg underline-offset-2 hover:underline"
+          >
+            {t.id}
+          </Link>
+        </p>
+      ))}
+      {empty && !promoted && (
         <p className="shrink-0 px-1 text-sm text-fg-faint text-pretty">
           Just chatting: nothing here becomes a task unless you ask {agent ? `@${agent}` : "the agent"} to
           make one.
