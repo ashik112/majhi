@@ -80,6 +80,28 @@ export function useIgnoreChat() {
   });
 }
 
+/** Stops a linked chat: its history stays, read only; it can be linked again as a fresh room. */
+export function useUnlinkChat() {
+  const done = useRefetch();
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"chat.unlink">, ApiRequestError, { room: string }>({
+    mutationFn: (input) => cmd("chat.unlink", input),
+    onSuccess: async () => {
+      await done();
+      await client.invalidateQueries({ queryKey: [...queryKeys.clients, "channels"] });
+    },
+  });
+}
+
+/** Watch an ignored chat again. */
+export function useUnignoreChat() {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.unignore">, ApiRequestError, { room: string }>({
+    mutationFn: (input) => cmd("chat.unignore", input),
+    onSuccess: done,
+  });
+}
+
 export function useChatHolder() {
   const done = useRefetch();
   return useMutation<

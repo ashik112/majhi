@@ -27,6 +27,7 @@ import {
   useMarkUs,
   useSamePerson,
   useUndoMerge,
+  useUnlinkChat,
 } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -93,7 +94,13 @@ export function ClientRoom({ taskId }: { taskId: string }) {
       <Header row={row} />
       <section aria-label="Client chat" className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 outline-none">
         <Log row={row} items={room.state.items} more={room.state.more} loadOlder={room.loadOlder} />
-        <Box row={row} />
+        {row.archived === true ? (
+          <p className="shrink-0 text-center text-sm text-fg-faint">
+            Unlinked. This history is read only. Link the channel again to talk in it.
+          </p>
+        ) : (
+          <Box row={row} />
+        )}
       </section>
     </div>
   );
@@ -104,6 +111,7 @@ function Header({ row }: { row: ClientRow }) {
   const org = orgs?.find((o) => o.id === row.org);
   const toast = useToast();
   const holder = useChatHolder();
+  const unlink = useUnlinkChat();
   const set = (next: "captain" | "you") => {
     if (next === row.holder) return;
     holder.mutate(
@@ -127,29 +135,49 @@ function Header({ row }: { row: ClientRow }) {
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-fg-faint">Replies</span>
-        <fieldset
-          aria-label="Who replies"
-          className="m-0 inline-flex rounded-md border border-line-control bg-field p-0.5 text-sm"
-        >
-          {(["captain", "you"] as const).map((h) => (
-            <button
-              key={h}
-              type="button"
-              aria-pressed={row.holder === h}
-              disabled={holder.isPending}
-              onClick={() => set(h)}
-              className={cn(
-                "cursor-pointer rounded px-2 py-0.5 transition-colors",
-                row.holder === h ? "bg-selected text-fg" : "text-fg-muted hover:text-fg",
-              )}
-            >
-              {h === "captain" ? "Captain" : "You"}
-            </button>
-          ))}
-        </fieldset>
-      </div>
+      {row.archived !== true && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-fg-faint">Replies</span>
+          <fieldset
+            aria-label="Who replies"
+            className="m-0 inline-flex rounded-md border border-line-control bg-field p-0.5 text-sm"
+          >
+            {(["captain", "you"] as const).map((h) => (
+              <button
+                key={h}
+                type="button"
+                aria-pressed={row.holder === h}
+                disabled={holder.isPending}
+                onClick={() => set(h)}
+                className={cn(
+                  "cursor-pointer rounded px-2 py-0.5 transition-colors",
+                  row.holder === h ? "bg-selected text-fg" : "text-fg-muted hover:text-fg",
+                )}
+              >
+                {h === "captain" ? "Captain" : "You"}
+              </button>
+            ))}
+          </fieldset>
+          <Menu
+            label="Chat actions"
+            items={[
+              {
+                label: "Unlink",
+                disabled: unlink.isPending,
+                onSelect: () =>
+                  unlink.mutate(
+                    { room: row.id },
+                    {
+                      onError: (error) =>
+                        toast("Could not unlink", { detail: describeError(error), tone: "error" }),
+                    },
+                  ),
+              },
+            ]}
+          />
+        </div>
+      )}
+      {row.archived === true && <span className="shrink-0 text-xs text-fg-faint">Unlinked</span>}
     </header>
   );
 }
