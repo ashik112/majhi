@@ -63,6 +63,8 @@ export function WatchDetail({
   incident,
   now,
   workspace,
+  phoneOn,
+  onSetUpPhone,
   onEdit,
   onBack,
 }: {
@@ -70,6 +72,9 @@ export function WatchDetail({
   incident: OpsIncident | undefined;
   now: number;
   workspace: string;
+  /** Pushes to the phone go out: it is set up and switched on. */
+  phoneOn: boolean;
+  onSetUpPhone: () => void;
   onEdit: () => void;
   onBack: (() => void) | undefined;
 }) {
@@ -238,6 +243,14 @@ export function WatchDetail({
               checked={fire.alert.phone}
               onChange={(phone) => setFire({ alert: { ...fire.alert, phone } })}
             />
+          )}
+          {fire.alert.on && fire.alert.phone && !phoneOn && (
+            <>
+              <span className="text-sm text-amber">No phone is set up, so nothing reaches it.</span>
+              <Button size="sm" onClick={onSetUpPhone}>
+                Set up phone
+              </Button>
+            </>
           )}
         </Row>
         <Switch
