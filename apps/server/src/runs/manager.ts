@@ -72,7 +72,7 @@ import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
 import { type ConnectionToolRules, PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
-import { briefBlocks, ownerBlocks } from "./prompt.ts";
+import { briefBlocks, OWNER_EARLIER, OWNER_LATEST, ownerBlocks } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
@@ -505,13 +505,12 @@ export class RunManager {
   ): RoomItem {
     // The run exists before the item: a run made later reads queued items back from the store.
     const run = this.runFor(task, agent);
-    const behind = run.turning || run.queue.length > 0 || this.deliveries.has(task);
     const id = `owner:${randomUUID()}`;
     this.deps.room.post(task, id, {
       type: "owner",
       text: input.text,
       attachments: input.attachments,
-      queued: behind && input.mode === "queue",
+      queued: true,
       to: agent,
     });
     const item = this.deps.room.get(task, id);
@@ -566,11 +565,19 @@ export class RunManager {
   unqueue(task: Task["id"], itemId: string): RoomItem {
     const item = this.queuedOwner(task, itemId);
     if (item.to !== undefined) this.runFor(task, item.to);
+    this.deps.room.post(task, itemId, ownerPayload(item, { queued: false, removed: true }));
     for (const run of this.holders(task, itemId)) {
-      run.queue = run.queue.filter((e) => !(e.kind === "owner" && e.itemId === itemId));
+      const other = (e: QueueEntry) => !(e.kind === "owner" && e.itemId === itemId);
+      const taken = run.sending?.kind === "owner" && run.sending.itemId === itemId;
+      run.queue = run.queue.filter(other);
+      run.merged = run.merged.filter(other);
+      // The loop took it and waits for the worktree: start over without it.
+      if (taken && run.lockWait !== undefined) {
+        run.lockRestart = true;
+        run.lockWait.abort();
+      }
       this.live.refreshQueued(run);
     }
-    this.deps.room.post(task, itemId, ownerPayload(item, { queued: false, removed: true }));
     const stored = this.deps.room.get(task, itemId);
     if (stored === undefined) throw new Error("The message was not stored");
     return stored;
@@ -596,12 +603,26 @@ export class RunManager {
    * cancelled then (a cancel before the first prompt would hold the queue, this message too).
    */
   private async sendFirst(run: AgentRun, itemId: string): Promise<void> {
-    run.queue = run.queue.filter((e) => !(e.kind === "owner" && e.itemId === itemId));
-    run.queue.unshift({ kind: "owner", itemId });
+    const taken = run.sending?.kind === "owner" && run.sending.itemId === itemId;
+    if (!taken) {
+      run.queue = run.queue.filter((e) => !(e.kind === "owner" && e.itemId === itemId));
+      run.queue.unshift({ kind: "owner", itemId });
+    }
     run.held = false;
     run.cancelBeforePrompt = false;
+    if (run.lockWait !== undefined) {
+      // Waiting for another agent's worktree: stop waiting and tell the agent now, without it.
+      run.skipLock = true;
+      const sending = run.sending;
+      if (!taken && sending !== undefined) {
+        run.queue.splice(1, 0, sending);
+        run.lockRestart = true;
+      }
+      run.lockWait.abort();
+    } else if (!taken && run.turning && run.session !== undefined && !run.settling) {
+      await this.cancelRun(run);
+    }
     this.live.refreshQueued(run);
-    if (run.turning && run.session !== undefined && !run.settling) await this.cancelRun(run);
     void this.drive(run);
   }
 
@@ -1244,7 +1265,53 @@ export class RunManager {
   }
 
   private async runQueue(run: AgentRun): Promise<void> {
+    try {
+      await this.runLoop(run);
+    } finally {
+      this.releaseHeld(run);
+      run.skipLock = false;
+      run.lockRestart = false;
+    }
+  }
+
+  /** Marks the owner messages in the prompt about to go out as sent. */
+  private markDelivered(run: AgentRun): void {
+    const ids = run.toDeliver;
+    run.toDeliver = [];
+    for (const id of ids) {
+      const item = this.deps.room.get(run.task, id);
+      if (item?.type === "owner" && item.queued && item.removed !== true)
+        this.deps.room.post(run.task, id, ownerPayload(item, { queued: false }));
+    }
+    run.merged = [];
+    this.live.refreshQueued(run);
+  }
+
+  /** True when the owner message was removed or is gone. */
+  private ownerGone(task: Task["id"], itemId: string): boolean {
+    const item = this.deps.room.get(task, itemId);
+    return item === undefined || item.type !== "owner" || item.removed === true;
+  }
+
+  /** Lets go of the worktree locks taken for a prompt that did not reach its turn. */
+  private releaseHeld(run: AgentRun): void {
+    const release = run.lockHeld;
+    run.lockHeld = undefined;
+    release?.();
+  }
+
+  /** Puts the entry the loop took, and the owner messages folded into it, back first in the queue. */
+  private putBack(run: AgentRun, entry: QueueEntry): void {
+    run.queue.unshift(entry, ...run.merged);
+    run.merged = [];
+  }
+
+  private async runLoop(run: AgentRun): Promise<void> {
     while (run.queue.length > 0 && !run.held && !run.closing && run.paused === undefined) {
+      this.releaseHeld(run);
+      run.merged = [];
+      run.toDeliver = [];
+      run.bypassNote = undefined;
       if (await this.pauseIfLimited(run)) break;
       if (run.session === undefined) {
         if (!(await this.startSession(run))) {
@@ -1270,6 +1337,21 @@ export class RunManager {
         continue;
       }
       if (entry.kind !== "continue") run.compactions = 0;
+      // Wait for the worktree before building the prompt, so it holds what the owner said meanwhile.
+      const lock = await this.lockWorktrees(run);
+      if (lock === "restart") {
+        run.sending = undefined;
+        this.live.refreshQueued(run);
+        continue;
+      }
+      if (lock === undefined) {
+        // Stopped while waiting: the prompt stays queued for the next start.
+        this.putBack(run, entry);
+        run.sending = undefined;
+        this.live.refreshQueued(run);
+        break;
+      }
+      run.lockHeld = lock.release;
       // Read before `blocksFor` resets it: an owner or handoff prompt on a session that has not
       // seen the brief starts with "First read TASK.md".
       const unbriefed = run.needsBrief;
@@ -1283,6 +1365,7 @@ export class RunManager {
         this.withNotes(run, this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry)))),
       );
       if (raw === undefined) continue;
+      if (lock.bypassed !== undefined) raw.push({ type: "text", text: bypassText(lock.bypassed) });
 
       // One read of the settings per turn: before the prompt and after it.
       const budget = await this.compaction.budget(run);
@@ -1292,16 +1375,22 @@ export class RunManager {
         const done = await this.compaction.compact(run, "threshold", budget);
         if (done === undefined || run.session === undefined) {
           // Paused, or handed off: the prompt goes to the next session.
-          run.queue.unshift(entry);
+          this.putBack(run, entry);
           continue;
         }
       }
       // Esc while the prompt was being prepared: keep it queued, send nothing.
       if (run.cancelBeforePrompt) {
-        run.queue.unshift(entry);
+        this.putBack(run, entry);
         this.live.refreshQueued(run);
         this.stoppedBeforePrompt(run);
         break;
+      }
+      // The owner removed a message while the prompt was being prepared: build it again without it.
+      if (run.toDeliver.some((id) => this.ownerGone(run.task, id))) {
+        this.putBack(run, entry);
+        run.sending = undefined;
+        continue;
       }
       const stopReason = await this.turn(
         run,
@@ -1315,7 +1404,7 @@ export class RunManager {
         // Failed on the sign-in and paused: the same prompt goes out once the account works again.
         if (run.requeue) {
           run.requeue = false;
-          run.queue.unshift(entry);
+          this.putBack(run, entry);
           this.live.refreshQueued(run);
         }
         // The account is signed out: a fallback or a teammate takes the queue over, or the run waits for the sign-in.
@@ -1338,7 +1427,7 @@ export class RunManager {
         if (said !== undefined) {
           const mark = await this.markAccountLimit(run.account, said);
           this.markTurn(run, false, false);
-          run.queue.unshift(entry);
+          this.putBack(run, entry);
           this.live.refreshQueued(run);
           await this.handOffOrPause(run, run.account, mark);
           return;
@@ -1390,48 +1479,74 @@ export class RunManager {
   /**
    * Sends one prompt and ends the turn: room items, checkpoint, in-flight mark. Returns the stop
    * reason, `recovered` when a full context was handed off and the loop goes on, or undefined
-   * when the loop must stop (an error, a lost connection, a pause).
+   * when the loop must stop (an error, a lost connection, a pause). The worktree locks the loop
+   * took for this prompt go back when the turn ends.
    */
   private async turn(
     run: AgentRun,
     session: NonNullable<AgentRun["session"]>,
     blocks: PromptBlock[],
   ): Promise<string | undefined> {
-    const release = await this.lockWorktrees(run);
-    if (release === undefined) return undefined;
     try {
       await this.startWatch(run);
       return await this.promptTurn(run, session, blocks);
     } finally {
       this.stopWatch(run);
-      release();
+      this.releaseHeld(run);
     }
   }
 
   /**
    * Takes the locks of the worktrees the agent may edit, waiting while another agent holds one
-   * (5.3). Agents without the edit permission take none. Undefined when stopped while waiting.
+   * (5.3). Agents without the edit permission take none. `restart` when the wait was cut to
+   * change the queue, undefined when stopped while waiting. After Send now the agent goes on
+   * without the lock, and `bypassed` names who holds the worktree.
    */
-  private async lockWorktrees(run: AgentRun): Promise<(() => void) | undefined> {
+  private async lockWorktrees(
+    run: AgentRun,
+  ): Promise<{ release: () => void; bypassed?: string } | "restart" | undefined> {
+    const none = { release: () => {} };
     const task = this.deps.store.tasks.get(run.task);
-    if (task === undefined || !run.perms.includes("edit")) return () => {};
+    if (task === undefined || !run.perms.includes("edit")) return none;
     const repos = task.overrides[run.agent]?.repos;
     const paths = task.repos.flatMap((r) =>
       r.worktree === undefined || (repos !== undefined && !repos.includes(r.project)) ? [] : [r.worktree],
     );
-    if (paths.length === 0) return () => {};
+    if (paths.length === 0) return none;
+    if (run.skipLock) {
+      run.skipLock = false;
+      const holder = paths.map((p) => this.locks.holder(p)).find((h) => h !== undefined);
+      const other = holder?.split("\u0000")[1];
+      return other === undefined ? none : { release: () => {}, bypassed: other };
+    }
     const wait = new AbortController();
     run.lockWait = wait;
+    run.lockedBy = undefined;
     try {
-      return await this.locks.acquire(paths, this.key(run.task, run.agent), {
-        signal: wait.signal,
-        onWait: (path, holder) => {
-          const other = holder.split("\u0000")[1] ?? "another agent";
-          const repo = task.repos.find((r) => r.worktree === path)?.project ?? path;
-          this.setLive(run, { status: "waiting", nowDoing: `Waiting for @${other} to finish in ${repo}` });
-        },
-      });
+      return {
+        release: await this.locks.acquire(paths, this.key(run.task, run.agent), {
+          signal: wait.signal,
+          onWait: (path, holder) => {
+            const other = holder.split("\u0000")[1] ?? "another agent";
+            const repo = task.repos.find((r) => r.worktree === path)?.project ?? path;
+            run.lockedBy = other;
+            this.setLive(run, {
+              status: "waiting",
+              nowDoing: `Waiting for @${other} to finish in ${repo}`,
+              lockedBy: other,
+            });
+          },
+        }),
+      };
     } catch {
+      if (run.lockRestart) {
+        run.lockRestart = false;
+        return "restart";
+      }
+      if (run.skipLock && !run.closing) {
+        run.skipLock = false;
+        return { release: () => {}, bypassed: run.lockedBy ?? "another agent" };
+      }
       return undefined;
     } finally {
       run.lockWait = undefined;
@@ -1443,13 +1558,20 @@ export class RunManager {
     session: NonNullable<AgentRun["session"]>,
     blocks: PromptBlock[],
   ): Promise<string | undefined> {
-    this.setLive(run, { status: "working", nowDoing: undefined, turnAt: this.now().toISOString() });
+    this.setLive(run, {
+      status: "working",
+      nowDoing: undefined,
+      lockedBy: undefined,
+      turnAt: this.now().toISOString(),
+    });
     run.costAtTurnStart = run.costNow;
     run.mapper?.beginTurn();
     this.markTurn(run, true);
     let stopReason: string;
     run.prompting = true;
     try {
+      // The owner's words reach the agent now: the room shows them as sent.
+      this.markDelivered(run);
       stopReason = (await session.prompt(blocks)).stopReason;
     } catch (err) {
       run.prompting = false;
@@ -1814,7 +1936,9 @@ export class RunManager {
           this.live.system(
             run,
             "info",
-            `${ids} ended, but @${run.agent} already read ${read.length === 1 ? "it" : "them"}, so @${run.agent} is not told again.`,
+            read.length === 1
+              ? `Process ${ids} ended; @${run.agent} already read its output.`
+              : `Processes ${ids} ended; @${run.agent} already read their output.`,
           );
         }
         const { current, replaced } = splitCurrent(ends, this.deps.processes?.list(run.task) ?? []);
@@ -1862,20 +1986,43 @@ export class RunManager {
         ];
       }
       case "owner": {
-        const item = this.deps.room.get(run.task, entry.itemId);
-        if (item === undefined || item.type !== "owner" || item.removed === true) return undefined;
-        if (item.queued) this.deps.room.post(item.task, item.id, ownerPayload(item, { queued: false }));
-        const built = await ownerBlocks({
-          folder: task.folder,
-          attachments: item.attachments,
-          text: item.text,
-          needsBrief: run.needsBrief && run.carry === undefined,
+        // Newest first: messages still queued behind this one join it, so a correction never
+        // waits behind an older prompt.
+        const queuedOwners = run.queue.filter((e) => e.kind === "owner");
+        const asked = [entry, ...queuedOwners].flatMap((e) => {
+          if (e.kind !== "owner") return [];
+          const item = this.deps.room.get(run.task, e.itemId);
+          return item?.type === "owner" && item.removed !== true ? [{ entry: e, item }] : [];
         });
-        if (built.briefSent) {
+        const first = asked[0];
+        if (first === undefined) return undefined;
+        const slash = asked.some((a) => a.item.text.trim().startsWith("/"));
+        const fold = slash ? [first] : asked;
+        run.queue = run.queue.filter((e) => !fold.some((f) => f.entry === e));
+        run.merged = fold.filter((f) => f.entry !== entry).map((f) => f.entry);
+        run.toDeliver = fold.map((f) => f.item.id).reverse();
+        this.live.refreshQueued(run);
+        const blocks: PromptBlock[] = [];
+        let briefSent = false;
+        const newestFirst = fold
+          .map((f, order) => ({ ...f, order }))
+          .sort((a, b) => (a.item.at === b.item.at ? b.order - a.order : a.item.at < b.item.at ? 1 : -1));
+        for (const [i, { item }] of newestFirst.entries()) {
+          const built = await ownerBlocks({
+            folder: task.folder,
+            attachments: item.attachments,
+            text: item.text,
+            needsBrief: i === 0 && run.needsBrief && run.carry === undefined,
+            heading: slash ? undefined : i === 0 ? OWNER_LATEST : OWNER_EARLIER,
+          });
+          briefSent ||= built.briefSent;
+          blocks.push(...built.blocks);
+        }
+        if (briefSent) {
           run.needsBrief = false;
           await this.noteBrief(run, task);
         }
-        return built.blocks;
+        return blocks;
       }
     }
   }
@@ -2692,7 +2839,13 @@ export class RunManager {
   }
 }
 
-/** True when the run already has this owner message queued. */
+/** Tells an agent that was sent on without its worktree that another agent still uses it. */
+function bypassText(other: string): string {
+  return `@${other} is still using your worktree. Do not edit files there until it is done. Answer the owner now, and stop or adjust your plan if the owner's message asks for it.`;
+}
+
+/** True when the run has this owner message queued, or took it and has not sent it yet. */
 function hasOwnerEntry(run: AgentRun, itemId: string): boolean {
-  return run.queue.some((e) => e.kind === "owner" && e.itemId === itemId);
+  const isIt = (e: QueueEntry | undefined) => e?.kind === "owner" && e.itemId === itemId;
+  return run.queue.some(isIt) || isIt(run.sending) || run.merged.some(isIt);
 }

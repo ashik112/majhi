@@ -18,13 +18,19 @@ export async function briefBlocks(input: PromptInput): Promise<PromptBlock[]> {
   return [{ type: "text", text: BRIEF_PROMPT }, ...(await imageBlocks(input))];
 }
 
+/** Heads the owner's newest message in a prompt: it wins over whatever came before. */
+export const OWNER_LATEST =
+  "The owner's latest instruction follows. It overrides earlier instructions, including what you were doing or waiting for. Say in your reply how you will follow it.";
+/** Heads an owner message that the newest one follows up. */
+export const OWNER_EARLIER = "An earlier owner message that you have not answered yet:";
+
 /**
  * An owner message. Files are named by path in the text, images are sent as image blocks.
  * A session that has not seen the brief gets a line first pointing at TASK.md, except for
  * slash commands, which must stay whole.
  */
 export async function ownerBlocks(
-  input: PromptInput & { text: string; needsBrief: boolean },
+  input: PromptInput & { text: string; needsBrief: boolean; heading?: string | undefined },
 ): Promise<{ blocks: PromptBlock[]; briefSent: boolean }> {
   const files = input.attachments.filter((a) => a.kind === "file" && a.path !== undefined);
   let text = input.text.trim();
@@ -35,9 +41,10 @@ export async function ownerBlocks(
   if (text === "") text = "See the attached images.";
   const slash = text.startsWith("/");
   const prefix = input.needsBrief && !slash;
+  const headed = input.heading === undefined || slash ? text : `${input.heading}\n\n${text}`;
   return {
     blocks: [
-      { type: "text", text: prefix ? `${CONTEXT_PROMPT}\n\n${text}` : text },
+      { type: "text", text: prefix ? `${CONTEXT_PROMPT}\n\n${headed}` : headed },
       ...(await imageBlocks(input)),
     ],
     briefSent: prefix,
