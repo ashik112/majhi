@@ -14,11 +14,14 @@ export function TaskAction({
   task,
   yourTurn,
   cardAsks = false,
+  shipAsk = 0,
 }: {
   task: Task;
   yourTurn: boolean;
   /** A card in the room's dock asks for the same decision and holds the primary button. */
   cardAsks?: boolean;
+  /** Counts up each time something outside asks for the Ship panel. */
+  shipAsk?: number;
 }) {
   const start = useStartTask();
   const stop = useStopTask();
@@ -43,7 +46,7 @@ export function TaskAction({
 
   return (
     <>
-      {canShip && <Ship task={task} run={ship} />}
+      {canShip && <Ship task={task} run={ship} openAsk={shipAsk} />}
       {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-lamp-paused">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button

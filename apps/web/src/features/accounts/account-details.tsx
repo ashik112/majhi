@@ -317,7 +317,11 @@ function Limits({
   return (
     <DetailSection
       title="Limits"
-      note={usage && hasWindows ? `Read ${formatAgo(usage.updatedAt, now)}` : undefined}
+      note={
+        usage && hasWindows && account.status !== "needs-login"
+          ? `Read ${formatAgo(usage.updatedAt, now)}`
+          : undefined
+      }
       actions={
         <>
           <Button asChild size="sm" variant="ghost">
@@ -330,7 +334,9 @@ function Limits({
         </>
       }
     >
-      {hasWindows ? (
+      {account.status === "needs-login" ? (
+        <p className="text-sm text-fg-faint">Signed out. Sign in to read usage.</p>
+      ) : hasWindows ? (
         <div className="grid gap-x-8 gap-y-3.5 @[720px]:grid-cols-2">
           {usage?.window && <WindowMeter label="5 hours" window={usage.window} now={now} />}
           {usage?.weekly && <WindowMeter label="Week" window={usage.weekly} now={now} />}
