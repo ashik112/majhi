@@ -23,6 +23,15 @@ const LISTED = sql`NOT (t.kind = 'chat' AND t.brief = ${AUTONOMY_CHAT_BRIEF})`;
 /** The chats the owner started with an agent: they stay listed after they are done. */
 const AGENT_CHAT = sql`(t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF}))`;
 
+/**
+ * Whether a client's message counts as unread, by the chat's Notify setting: every message, only what needs the
+ * owner (it waits for them, or failed), or none. An urgent one always counts. Used where `r` is the message and `t` its room.
+ */
+const NOTIFIES = sql`(json_extract(r.payload, '$.outcome.urgent') = 1
+  OR coalesce(json_extract(t.client, '$.notify'), 'needs-me') = 'every'
+  OR (coalesce(json_extract(t.client, '$.notify'), 'needs-me') = 'needs-me'
+      AND json_extract(r.payload, '$.outcome.state') IN ('waits', 'failed')))`;
+
 interface Row {
   id: string;
   title: string;
@@ -106,7 +115,8 @@ export class ConversationsRepo {
         json_extract(t.client, '$.app') AS app, json_extract(t.team, '$[0]') AS agent,
         (a.archived_at IS NOT NULL) AS archived,
         (SELECT count(*) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')) AS unread,
+          WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
+            AND (r.type = 'agent' OR ${NOTIFIES})) AS unread,
         (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('agent', 'client')) AS agent_at,
         (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
             || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r

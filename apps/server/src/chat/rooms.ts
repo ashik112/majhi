@@ -9,6 +9,7 @@ import {
   type ClientRow,
   LOCAL_TASK_PREFIX,
   type RoomItem,
+  sendAsMeProblem,
   type Task,
   type TaskId,
 } from "@majhi/shared";
@@ -150,6 +151,9 @@ export class ClientRooms {
   }
 
   sendAs(id: string, sendAs: "bot" | "me"): RoomRow {
+    const room = this.room(id);
+    const problem = sendAs === "me" ? sendAsMeProblem(room.chat.app, room.chat.kind) : undefined;
+    if (problem !== undefined) throw new UserError(`${problem}.`, 409);
     return this.patch(this.room(id), { sendAs });
   }
 

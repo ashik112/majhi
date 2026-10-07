@@ -16,6 +16,7 @@ import { renderPlain } from "../format.ts";
 import { ChatIngest } from "../ingest.ts";
 import { ClientReplies } from "../replies.ts";
 import { ClientRooms } from "../rooms.ts";
+import { ChatSettings } from "../settings.ts";
 
 export const CONN: ChatConnection = {
   id: "telegram-acme",
@@ -125,6 +126,14 @@ export function world(options: WorldOptions = {}) {
     },
     majhiHome: "/tmp/majhi-chat-home",
   });
+  const settings = new ChatSettings({
+    store,
+    rooms,
+    contacts,
+    holds: async () => state.holds,
+    tz: async () => "UTC",
+    changed: () => undefined,
+  });
   /** A linked room of Acme for the chat `-100`. */
   async function linked(chat = "-100"): Promise<string> {
     await ingest.deliver(CONN, envelope({ chatId: chat, message: "0", text: "hello" }));
@@ -140,5 +149,20 @@ export function world(options: WorldOptions = {}) {
     severalClients: false,
     ...over,
   });
-  return { store, room, rooms, contacts, gate, replies, ingest, sent, triaged, state, linked, flags, hub };
+  return {
+    store,
+    room,
+    rooms,
+    contacts,
+    gate,
+    replies,
+    ingest,
+    sent,
+    triaged,
+    state,
+    linked,
+    flags,
+    hub,
+    settings,
+  };
 }

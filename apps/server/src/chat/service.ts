@@ -6,11 +6,15 @@ import {
   type ChatPermissionState,
   type ChatReplyInput,
   type ChatSendAs,
+  type ChatSettingsInput,
+  type ChatSettingsView,
   type ClientList,
   type ClientRow,
   type CommandMeta,
   type ContactView,
   type HoldsPatch,
+  type Keep,
+  type PersonRole,
   REPLY_HOLD_LABEL,
   SLACK_SCOPE_USE,
   SLACK_USER_SCOPE_USE,
@@ -27,6 +31,7 @@ import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
 import type { ChatIngest } from "./ingest.ts";
 import type { ClientReplies } from "./replies.ts";
 import type { ClientRooms } from "./rooms.ts";
+import type { ChatSettings } from "./settings.ts";
 
 export interface ClientChatDeps {
   store: Store;
@@ -35,6 +40,9 @@ export interface ClientChatDeps {
   contacts: Contacts;
   replies: ClientReplies;
   ingest: ChatIngest;
+  settings: ChatSettings;
+  /** Laya did not answer the last time it read a client message: the captain's triage stood in. */
+  layaDown?: () => boolean;
   hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou">;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
@@ -327,6 +335,26 @@ export class ClientChat {
     if (out.state === "sent") return { state: "sent" };
     if (out.state === "failed") return { state: "failed", why: out.why };
     return { state: "held", why: REPLY_HOLD_LABEL[out.why] };
+  }
+
+  layaDown(): boolean {
+    return this.deps.layaDown?.() ?? false;
+  }
+
+  settingsOf(room: string): Promise<ChatSettingsView> {
+    return this.deps.settings.view(room);
+  }
+
+  setSettings(input: ChatSettingsInput): Promise<ChatSettingsView> {
+    return this.deps.settings.set(input);
+  }
+
+  keepCount(room: string, keep: Keep): { remove: number } {
+    return { remove: this.deps.settings.keepCount(room, keep) };
+  }
+
+  setPerson(room: string, sender: string, role: PersonRole): void {
+    this.deps.settings.person(room, sender, role);
   }
 
   /** Whether a chat app of a kind exists. */

@@ -108,6 +108,8 @@ export const ClientOutcomeSchema = z.strictObject({
   state: z.enum(["working", "replied", "ignored", "waits", "failed", "handled"]),
   why: z.string().max(400).optional(),
   draft: z.number().int().positive().optional(),
+  /** Laya read it as urgent: the owner is told whatever the chat's Notify setting says. */
+  urgent: z.boolean().optional(),
 });
 export type ClientOutcome = z.infer<typeof ClientOutcomeSchema>;
 
@@ -128,12 +130,80 @@ export type ChatCursor = z.infer<typeof ChatCursorSchema>;
 export const ChatTroubleSchema = z.enum(["unreachable", "needs-token", "webhook"]);
 export type ChatTrouble = z.infer<typeof ChatTroubleSchema>;
 
+/**
+ * What the owner holds for themselves even when the captain decides Tell (docs/briefs/client-chats.md,
+ * "Permission"). Each can be switched off by the owner; all are on until then. Two more always hold and
+ * have no switch: a reply with a secret, and a reply that names another client or another workspace's data.
+ */
+export const HOLD_CLASSES = [
+  "promisedTime",
+  "firstContact",
+  "severalClients",
+  "afterGap",
+  "money",
+  "security",
+] as const;
+export const HoldClassSchema = z.enum(HOLD_CLASSES);
+export type HoldClass = z.infer<typeof HoldClassSchema>;
+
+export const HOLD_LABEL: Record<HoldClass, string> = {
+  promisedTime: "A reply that promises a time",
+  firstContact: "The first reply to someone new",
+  severalClients: "A chat with more than one client",
+  afterGap: "Replies after majhi was offline",
+  money: "A reply about money or a contract",
+  security: "A reply about a security incident",
+};
+
+/** The fixed holds: they have no switch. */
+export const FixedHoldSchema = z.enum(["secret", "other-client", "report", "unchecked"]);
+export type FixedHold = z.infer<typeof FixedHoldSchema>;
+
+/** The Hold list of a workspace: `false` switches a class off. Absent means on. */
+export const HoldsSchema = z.strictObject({
+  promisedTime: z.boolean(),
+  firstContact: z.boolean(),
+  severalClients: z.boolean(),
+  afterGap: z.boolean(),
+  money: z.boolean(),
+  security: z.boolean(),
+});
+export type Holds = z.infer<typeof HoldsSchema>;
+
+export const HoldsPatchSchema = HoldsSchema.partial();
+export type HoldsPatch = z.infer<typeof HoldsPatchSchema>;
+
 // ---------------------------------------------------------------------------
 // Rooms
 
 /** Who writes to the client: the captain, or the owner (and teammates). One holder per room. */
 export const ChatHolderSchema = z.enum(["captain", "you"]);
 export type ChatHolder = z.infer<typeof ChatHolderSchema>;
+
+/** When the captain reads a message of the chat: only those that name it, those that need a reply, or all. */
+export const REPLY_WHEN = ["mentioned", "needs-reply", "every"] as const;
+export const ReplyWhenSchema = z.enum(REPLY_WHEN);
+export type ReplyWhen = z.infer<typeof ReplyWhenSchema>;
+export const DEFAULT_REPLY_WHEN: ReplyWhen = "needs-reply";
+
+/** The captain's replies a day in one chat. "none": no limit. */
+export const REPLY_LIMITS = [20, 50, 100, "none"] as const;
+export const ReplyLimitSchema = z.union([z.literal(20), z.literal(50), z.literal(100), z.literal("none")]);
+export type ReplyLimit = z.infer<typeof ReplyLimitSchema>;
+export const DEFAULT_REPLY_LIMIT: ReplyLimit = 50;
+
+/** How much of a chat majhi keeps: all, or the newest 500 or 100 messages. */
+export const KEEP_CHOICES = ["all", 500, 100] as const;
+export const KeepSchema = z.union([z.literal("all"), z.literal(500), z.literal(100)]);
+export type Keep = z.infer<typeof KeepSchema>;
+
+/** When the owner is told of a message: when it needs them, for every one, or never. Urgent always tells. */
+export const NOTIFY_CHOICES = ["needs-me", "every", "never"] as const;
+export const NotifySchema = z.enum(NOTIFY_CHOICES);
+export type Notify = z.infer<typeof NotifySchema>;
+
+/** The longest rules text of a chat. */
+export const CHAT_RULES_MAX = 1500;
 
 /** The chat a client room is, stored on its task row. `ignored` rooms drop what arrives. */
 export const ClientRoomSchema = z.strictObject({
@@ -146,6 +216,17 @@ export const ClientRoomSchema = z.strictObject({
   holder: ChatHolderSchema.default("captain"),
   /** Slack: whose name replies in this chat go out under. Me needs the owner's user token on the connection. */
   sendAs: z.enum(["bot", "me"]).default("bot"),
+  /** The chat's own settings (the sheet "Chat settings"). Absent: the default, or the workspace's. */
+  replyWhen: ReplyWhenSchema.optional(),
+  dailyLimit: ReplyLimitSchema.optional(),
+  /** The owner's instructions for this chat. They never loosen the Ask-me cases or the fixed holds. */
+  rules: z.string().max(CHAT_RULES_MAX).optional(),
+  /** Ask-me cases set for this chat: true asks the owner, false lets the captain send. Unset: the workspace's. */
+  holds: HoldsPatchSchema.optional(),
+  keep: KeepSchema.optional(),
+  notify: NotifySchema.optional(),
+  /** Senders (the app's user ids) whose messages are stored and never read by the captain. */
+  muted: z.array(z.string().min(1).max(200)).max(500).optional(),
   ignored: z.boolean().optional(),
   /** Unlinked by the owner: its history stays under its workspace, read only, and nothing is read or sent. */
   archived: z.boolean().optional(),
@@ -349,49 +430,6 @@ export const SamePersonAnswerInputSchema = z.object({
 // ---------------------------------------------------------------------------
 // What the captain may do without asking
 
-/**
- * What the owner holds for themselves even when the captain decides Tell (docs/briefs/client-chats.md,
- * "Permission"). Each can be switched off by the owner; all are on until then. Two more always hold and
- * have no switch: a reply with a secret, and a reply that names another client or another workspace's data.
- */
-export const HOLD_CLASSES = [
-  "promisedTime",
-  "firstContact",
-  "severalClients",
-  "afterGap",
-  "money",
-  "security",
-] as const;
-export const HoldClassSchema = z.enum(HOLD_CLASSES);
-export type HoldClass = z.infer<typeof HoldClassSchema>;
-
-export const HOLD_LABEL: Record<HoldClass, string> = {
-  promisedTime: "Promised times",
-  firstContact: "First message to a contact",
-  severalClients: "A group with several clients",
-  afterGap: "Anything after a gap",
-  money: "Money or contract",
-  security: "Security incident",
-};
-
-/** The fixed holds: they have no switch. */
-export const FixedHoldSchema = z.enum(["secret", "other-client", "report", "unchecked"]);
-export type FixedHold = z.infer<typeof FixedHoldSchema>;
-
-/** The Hold list of a workspace: `false` switches a class off. Absent means on. */
-export const HoldsSchema = z.strictObject({
-  promisedTime: z.boolean(),
-  firstContact: z.boolean(),
-  severalClients: z.boolean(),
-  afterGap: z.boolean(),
-  money: z.boolean(),
-  security: z.boolean(),
-});
-export type Holds = z.infer<typeof HoldsSchema>;
-
-export const HoldsPatchSchema = HoldsSchema.partial();
-export type HoldsPatch = z.infer<typeof HoldsPatchSchema>;
-
 /** Every class on, then what the owner switched off. */
 export function effectiveHolds(stored: HoldsPatch | undefined): Holds {
   return {
@@ -414,12 +452,19 @@ export const ReplyFlagsSchema = z.strictObject({
 });
 export type ReplyFlags = z.infer<typeof ReplyFlagsSchema>;
 
-export const ReplyHoldSchema = z.union([HoldClassSchema, FixedHoldSchema, z.literal("tell")]);
+export const ReplyHoldSchema = z.union([
+  HoldClassSchema,
+  FixedHoldSchema,
+  z.literal("tell"),
+  /** The chat's replies for the day were all sent. */
+  z.literal("limit"),
+]);
 export type ReplyHold = z.infer<typeof ReplyHoldSchema>;
 
 /** The line a held reply shows beside "Reply waits for you": what in the reply made it wait. */
 export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
   tell: "You decide replies here",
+  limit: "Daily limit reached",
   secret: "Holds a secret",
   "other-client": "Names another client",
   report: "A report to a client",
@@ -453,3 +498,123 @@ export type ChatReplyInput = z.infer<typeof ChatReplyInputSchema>;
 export const TRIAGE_ACTIONS = ["ignore", "answer", "ask", "attach", "update", "task"] as const;
 export const TriageActionSchema = z.enum(TRIAGE_ACTIONS);
 export type TriageAction = z.infer<typeof TriageActionSchema>;
+
+// ---------------------------------------------------------------------------
+// Chat settings (the sheet opened from a client room's header)
+
+/** What the chat's settings are when the owner set nothing: the default of each, filled in. */
+export interface ChatRoomSettings {
+  replyWhen: ReplyWhen;
+  sendAs: "bot" | "me";
+  dailyLimit: ReplyLimit;
+  rules: string;
+  /** The Ask-me cases set for this chat only. */
+  holds: HoldsPatch;
+  keep: Keep;
+  notify: Notify;
+}
+
+export function chatRoomSettings(chat: ClientRoom): ChatRoomSettings {
+  return {
+    replyWhen: chat.replyWhen ?? DEFAULT_REPLY_WHEN,
+    sendAs: chat.sendAs,
+    dailyLimit: chat.dailyLimit ?? DEFAULT_REPLY_LIMIT,
+    rules: chat.rules ?? "",
+    holds: chat.holds ?? {},
+    keep: chat.keep ?? "all",
+    notify: chat.notify ?? "needs-me",
+  };
+}
+
+/** The Ask-me list that applies to a chat: the workspace's, with the cases the chat sets for itself. */
+export function holdsForRoom(workspace: Holds, chat: ClientRoom): Holds {
+  const own = chat.holds;
+  return {
+    promisedTime: own?.promisedTime ?? workspace.promisedTime,
+    firstContact: own?.firstContact ?? workspace.firstContact,
+    severalClients: own?.severalClients ?? workspace.severalClients,
+    afterGap: own?.afterGap ?? workspace.afterGap,
+    money: own?.money ?? workspace.money,
+    security: own?.security ?? workspace.security,
+  };
+}
+
+/** Why "Me" cannot be chosen in a chat of an app, or undefined when it can. */
+export function sendAsMeProblem(app: ChatApp, kind: ChatKind): string | undefined {
+  if (app === "telegram" && kind !== "private") return "Telegram bots cannot post as you in groups";
+  if (app !== "slack" && app !== "telegram") return `${CHAT_APP_LABEL[app]} cannot post as you`;
+  return undefined;
+}
+
+export const PERSON_ROLES = ["client", "us", "muted"] as const;
+export const PersonRoleSchema = z.enum(PERSON_ROLES);
+export type PersonRole = z.infer<typeof PersonRoleSchema>;
+
+export const ChatPersonSchema = z.object({
+  /** The app's user id: the sender's identity. */
+  id: z.string(),
+  name: z.string(),
+  role: PersonRoleSchema,
+  /** Whether the sender can be one of us: only a verified sender has a contact to mark. */
+  canUs: z.boolean(),
+});
+export type ChatPerson = z.infer<typeof ChatPersonSchema>;
+
+export const ChatSettingsViewSchema = z.object({
+  room: z.string(),
+  title: z.string(),
+  app: ChatAppSchema,
+  kind: ChatKindSchema,
+  org: IdSchema,
+  holder: ChatHolderSchema,
+  replyWhen: ReplyWhenSchema,
+  sendAs: z.enum(["bot", "me"]),
+  dailyLimit: ReplyLimitSchema,
+  rules: z.string(),
+  keep: KeepSchema,
+  notify: NotifySchema,
+  /** The Ask-me cases this chat sets itself. */
+  holds: HoldsPatchSchema,
+  /** The workspace's Ask-me list, which the other cases follow. */
+  workspaceHolds: HoldsSchema,
+  /** Whether "Me" can be chosen here, and why not. */
+  me: z.object({ allowed: z.boolean(), why: z.string().optional() }),
+  /** The captain's replies sent today in the workspace's time zone. */
+  repliesToday: z.number().int().nonnegative(),
+  people: z.array(ChatPersonSchema),
+  archived: z.boolean().optional(),
+});
+export type ChatSettingsView = z.infer<typeof ChatSettingsViewSchema>;
+
+/** A change to the Ask-me cases of one chat: `null` follows the workspace again. */
+export const ChatHoldsChangeSchema = z.strictObject({
+  promisedTime: z.boolean().nullable().optional(),
+  firstContact: z.boolean().nullable().optional(),
+  severalClients: z.boolean().nullable().optional(),
+  afterGap: z.boolean().nullable().optional(),
+  money: z.boolean().nullable().optional(),
+  security: z.boolean().nullable().optional(),
+});
+
+/** What the owner changes in the sheet: only the fields named. Who replies now is `chat.holder`. */
+export const ChatSettingsInputSchema = z.strictObject({
+  room: z.string().min(1),
+  replyWhen: ReplyWhenSchema.optional(),
+  dailyLimit: ReplyLimitSchema.optional(),
+  /** Empty clears it. A secret in it is refused. */
+  rules: z.string().max(CHAT_RULES_MAX).optional(),
+  holds: ChatHoldsChangeSchema.optional(),
+  keep: KeepSchema.optional(),
+  notify: NotifySchema.optional(),
+});
+export type ChatSettingsInput = z.infer<typeof ChatSettingsInputSchema>;
+
+export const ChatKeepCountInputSchema = z.object({ room: z.string().min(1), keep: KeepSchema });
+export const ChatKeepCountSchema = z.object({ remove: z.number().int().nonnegative() });
+
+export const ChatPersonInputSchema = z.object({
+  room: z.string().min(1),
+  /** The sender's user id in the app. */
+  sender: z.string().min(1).max(200),
+  role: PersonRoleSchema,
+});

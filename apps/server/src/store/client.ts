@@ -124,6 +124,87 @@ export class ClientRepo {
     });
   }
 
+  /** Everyone who wrote in a room (verified or not), newest writer first. Bots are left out. */
+  senders(room: string): { id: string; name: string; verified: boolean }[] {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT json_extract(payload, '$.sender.id') AS id,
+                max(json_extract(payload, '$.sender.name')) AS name,
+                min(coalesce(json_extract(payload, '$.sender.verified'), 1)) AS verified,
+                max(seq) AS last
+           FROM room_items
+          WHERE task = ? AND type = 'client' AND coalesce(json_extract(payload, '$.sender.bot'), 0) = 0
+          GROUP BY id ORDER BY last DESC`,
+      )
+      .all(room) as { id: string; name: string | null; verified: number }[];
+    return rows.map((r) => ({ id: r.id, name: r.name ?? "", verified: r.verified === 1 }));
+  }
+
+  /** How many replies the captain sent in a room since a time (ISO). */
+  captainRepliesSince(room: string, since: string): number {
+    const row = this.sqlite
+      .prepare(
+        `SELECT count(*) AS n FROM room_items
+          WHERE task = ? AND type = 'client-reply' AND at >= ?
+            AND json_extract(payload, '$.by') = 'captain' AND json_extract(payload, '$.state') = 'sent'`,
+      )
+      .get(room, since) as { n: number };
+    return row.n;
+  }
+
+  /**
+   * The items of a room that something else points to, so no clean-up may delete them: the message a task or
+   * incident came from, and the replies an incident update or a report was sent as.
+   */
+  pointedItems(room: string): Set<string> {
+    const out = new Set<string>();
+    const origins = this.sqlite
+      .prepare(
+        `SELECT json_extract(origin, '$.item') AS item FROM tasks
+          WHERE origin IS NOT NULL AND json_extract(origin, '$.kind') = 'client' AND json_extract(origin, '$.room') = ?`,
+      )
+      .all(room) as { item: string | null }[];
+    for (const o of origins) if (o.item !== null) out.add(o.item);
+    const told = this.sqlite
+      .prepare(
+        `SELECT json_extract(payload, '$.detail.draft') AS draft FROM room_items
+          WHERE type = 'incident-event' AND json_extract(payload, '$.detail.event') = 'told'
+            AND json_extract(payload, '$.detail.room') = ?`,
+      )
+      .all(room) as { draft: number | null }[];
+    for (const t of told) if (t.draft !== null) out.add(`reply:${t.draft}`);
+    const sent = this.sqlite
+      .prepare(
+        `SELECT json_extract(e.value, '$.draft') AS draft
+           FROM room_items r, json_each(r.payload, '$.sent') e
+          WHERE r.type = 'report' AND json_extract(e.value, '$.room') = ?`,
+      )
+      .all(room) as { draft: number | null }[];
+    for (const t of sent) if (t.draft !== null) out.add(`reply:${t.draft}`);
+    return out;
+  }
+
+  /** The messages of a room (a client's, and a reply that is not waiting for the owner), newest first. */
+  messageIds(room: string): string[] {
+    const rows = this.sqlite
+      .prepare(
+        `SELECT id FROM room_items
+          WHERE task = ? AND (type = 'client' OR (type = 'client-reply' AND json_extract(payload, '$.state') != 'held'))
+          ORDER BY seq DESC`,
+      )
+      .all(room) as { id: string }[];
+    return rows.map((r) => r.id);
+  }
+
+  removeItems(room: string, ids: readonly string[]): number {
+    const del = this.sqlite.prepare("DELETE FROM room_items WHERE task = ? AND id = ?");
+    let n = 0;
+    this.sqlite.transaction(() => {
+      for (const id of ids) n += del.run(room, id).changes;
+    })();
+    return n;
+  }
+
   /** The rooms with a reply that waits for the owner. */
   heldRooms(): Set<string> {
     const rows = this.sqlite

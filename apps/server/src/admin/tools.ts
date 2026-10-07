@@ -59,6 +59,8 @@ const PROPOSE_NOTE: Partial<Record<CommandName, string>> = {
     " The captain in its workspace lane only. This does not run: it proposes the change, the owner applies it with one click. Nothing changes until then.",
   "autonomy.configure":
     " The captain in its workspace lane only, for its own workspace (orgs.<its id> and nothing else). This does not run: it proposes the change, the owner applies it with one click. Nothing changes until then.",
+  "chat.settingsSet":
+    " The captain in its workspace lane only, for a client chat of its own workspace. This does not run: it proposes the change, the owner applies it with one click. Nothing changes until then.",
   "projects.setEnvironments":
     " A change you may not make alone (a staging tier, removing a production environment) does not run: it is proposed to the owner, who applies it with one click.",
 };

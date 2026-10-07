@@ -9,6 +9,7 @@ import {
 } from "@majhi/shared";
 import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
+import { readClientMessage } from "../decisions/uses/client-message.ts";
 import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -24,6 +25,7 @@ import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
 import { ClientRooms } from "./rooms.ts";
 import { ClientChat, type ClientChatDeps } from "./service.ts";
+import { ChatSettings, dayBegins } from "./settings.ts";
 import { ClientTriage, type ToolLessModel } from "./triage.ts";
 
 /** Where each chat app keeps its tokens among the connection's secret entries. */
@@ -78,6 +80,7 @@ export interface ClientChatParts {
   replies: ClientReplies;
   triage: ClientTriage;
   incidents: ClientIncidents;
+  settings: ChatSettings;
 }
 
 /** Builds the client chat parts and joins them. The gate is made first and calls `replies` through the closures given to it. */
@@ -111,6 +114,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     }
     return out;
   };
+  let layaDown = false;
   // Ingest needs the hub (to fetch files) and the hub needs ingest (to deliver): the hub is given closures.
   let ingest: ChatIngest | undefined;
   const hub = new ChatHub({
@@ -174,6 +178,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     rooms,
     tell,
     holds,
+    dayBegins: async (org) => dayBegins(w.now?.() ?? new Date(), await w.tz(org)),
     orgNames: async () =>
       new Map(
         Object.entries((await w.config.sections()).orgs).map(([id, o]) => [id, o.name] as [string, string]),
@@ -209,6 +214,19 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     incidents: (org, room) => incidents.candidates(org, room),
     incident: incidents,
     injects: async (text) => (await classifyInjection(w.decisions, text, "social")).flagged,
+    read: async (text) => readClientMessage(w.decisions, text),
+    layaAnswered: (answered) => {
+      layaDown = !answered;
+    },
+  });
+  const settings = new ChatSettings({
+    store: w.store,
+    rooms,
+    contacts,
+    holds,
+    tz: w.tz,
+    changed: w.changed,
+    ...(w.now === undefined ? {} : { now: w.now }),
   });
   ingest = new ChatIngest({
     store: w.store,
@@ -231,11 +249,13 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     ingest,
     hub,
     connections: chatConnections,
+    settings,
+    layaDown: () => layaDown,
     savedHolds: async (org) => (await w.config.settings()).autonomy.orgs[org]?.holds,
     tell,
     lane: w.lane,
     deleteWebhook: w.deleteWebhook,
     saveUserToken: w.saveUserToken,
   });
-  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents };
+  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings };
 }
