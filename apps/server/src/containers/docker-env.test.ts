@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { type Limits, type Safety, serviceRunArgs } from "./args.ts";
 import { DockerCli } from "./docker.ts";
 
@@ -87,7 +88,6 @@ describe("the environment of majhi's docker CLI", () => {
       "OTEL_EXPORTER_OTLP_ENDPOINT=http://collector.example:4318",
       "POSTGRES_PASSWORD=pg-secret-1234",
     ]);
-    for (let i = 0; i < 50 && existsSync(path); i++) await new Promise((done) => setTimeout(done, 20));
-    expect(existsSync(path)).toBe(false);
+    await until(() => !existsSync(path));
   });
 });

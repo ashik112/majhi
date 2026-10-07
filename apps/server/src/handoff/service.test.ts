@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../store/migrations.ts";
+import { until } from "../testing/until.ts";
 import type { DiffFacts } from "./analysis.ts";
 import { HandoffRepo } from "./repo.ts";
 import {
@@ -166,16 +167,15 @@ describe("a green hand-off", () => {
 
   it("two readers of the same head at once share one run", async () => {
     const w = world();
-    let release: (r: ExecResult) => void = () => undefined;
-    w.state.exec = () => new Promise<ExecResult>((r) => (release = r));
+    const asked: ((r: ExecResult) => void)[] = [];
+    w.state.exec = () => new Promise<ExecResult>((r) => asked.push(r));
     const a = w.service.ensure("ACM-1", { force: false });
     const b = w.service.ensure("ACM-1", { force: false });
-    await new Promise((r) => setTimeout(r, 5));
-    release(ok());
-    await new Promise((r) => setTimeout(r, 5));
-    release(ok());
-    await new Promise((r) => setTimeout(r, 5));
-    release(ok());
+    // Each of the three checks asks for its command only after the one before it ended.
+    for (const n of [1, 2, 3]) {
+      await until(() => asked.length === n);
+      asked[n - 1]?.(ok());
+    }
     const [x, y] = await Promise.all([a, b]);
     expect(x.at).toBe(y.at);
     expect(w.calls.exec).toHaveLength(3);

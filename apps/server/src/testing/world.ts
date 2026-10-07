@@ -9,7 +9,7 @@ import type { Probe } from "../runs/network.ts";
 import type { LinkOptions } from "../tasks/links.ts";
 import { git, tempDir } from "./fixtures.ts";
 import { type Harness, type HarnessOptions, harness, harnessOver } from "./harness.ts";
-import { copyTemplate } from "./template.ts";
+import { type BuiltTemplate, buildTemplate, copyTemplate, useTemplateRoot } from "./template.ts";
 
 export interface World {
   h: Harness;
@@ -37,6 +37,8 @@ export interface WorldOptions {
   containerDocker?: ContainerDocker;
   connectionsRemote?: RemoteRunFn;
   idleWatchMs?: number;
+  /** Write the card of `acme-api` in the background, as registering the project does. */
+  cards?: boolean;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
   skillsCommand?: HarnessOptions["skillsCommand"];
@@ -62,16 +64,50 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.noAgent === undefined ? {} : { noAgent: options.noAgent }),
   };
   const { dir, cleanup } = await tempDir();
-  await copyTemplate(JSON.stringify(setup), dir, async () => {
-    const built = await freshWorld(setup);
-    await built.h.majhi.close();
-    return { dir: built.h.dir, patch: [join("Work", "api", ".git", "config")] };
-  });
+  await copyTemplate(JSON.stringify(setup), dir, () => builtWorld(setup));
   const h = harnessOver(dir, cleanup, harnessOptionsOf(options));
-  // Registering the project writes its card in the background, and some tests wait for it. The template
-  // has none (its paths would be the template's), so each world starts it, as registering did.
-  h.majhi.services.cards.onRegistered("acme-api");
+  // Registering the project writes its card in the background (a scan of the repo, a dozen git runs).
+  // The template has none (its paths would be the template's), and most tests never read it, so a world
+  // starts it only when asked.
+  if (options.cards === true) h.majhi.services.cards.onRegistered("acme-api");
   return worldOver(h);
+}
+
+async function builtWorld(setup: Pick<WorldOptions, "agent" | "noAgent">): Promise<BuiltTemplate> {
+  const built = await freshWorld(setup);
+  await built.h.majhi.close();
+  return { dir: built.h.dir, patch: [join("Work", "api", ".git", "config")] };
+}
+
+async function builtRepo(name: string): Promise<BuiltTemplate> {
+  const { dir } = await tempDir();
+  await makeSampleRepo(dir, name);
+  return { dir, patch: [join("Work", name, ".git", "config")] };
+}
+
+/** The repos tests add to a world, made once for the run. */
+const COMMON_REPOS = ["web", "ops"];
+
+/**
+ * Builds the templates nearly every test world copies (the plain world and the common repos) under
+ * `root`, before the first test, so the first test of a file does not pay for them. Run by the global
+ * setup, which has no world of its own: git runs without the machine's config here too.
+ */
+export async function prebuildTemplates(root: string): Promise<void> {
+  const keep = { global: process.env.GIT_CONFIG_GLOBAL, system: process.env.GIT_CONFIG_NOSYSTEM };
+  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  useTemplateRoot(root);
+  try {
+    await buildTemplate(root, JSON.stringify({}), () => builtWorld({}));
+    for (const name of COMMON_REPOS) await buildTemplate(root, `repo:${name}`, () => builtRepo(name));
+  } finally {
+    useTemplateRoot(undefined);
+    if (keep.global === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = keep.global;
+    if (keep.system === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
+    else process.env.GIT_CONFIG_NOSYSTEM = keep.system;
+  }
 }
 
 function harnessOptionsOf(options: WorldOptions): HarnessOptions {
@@ -101,11 +137,7 @@ function worldOver(h: Harness): World {
     remote: (name) => join(h.dir, "remotes", `${name}.git`),
     async addRepo(name) {
       // The same repo every time for a name, so it is made once per run and copied.
-      await copyTemplate(`repo:${name}`, h.dir, async () => {
-        const { dir } = await tempDir();
-        await makeSampleRepo(dir, name);
-        return { dir, patch: [join("Work", name, ".git", "config")] };
-      });
+      await copyTemplate(`repo:${name}`, h.dir, () => builtRepo(name));
       return world.repo(name);
     },
     taskDir: (id) => join(h.dir, "Work", ".majhi", id),

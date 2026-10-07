@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
+import { errorCode } from "../errors.ts";
 
 /** Level 3 keeps a database-sized backup quick; SQLite pages compress about as well at 3 as at 9. */
 const GZIP_LEVEL = 3;
@@ -35,6 +36,9 @@ export function packDir(dir: string): Readable {
   );
 }
 
+/** What writing to a tar that already exited reports, by platform and timing. */
+const TAR_CLOSED = new Set(["EPIPE", "ENOTCONN", "ERR_STREAM_PREMATURE_CLOSE", "ERR_STREAM_DESTROYED"]);
+
 /**
  * Unpacks a gzip-compressed tar stream into an existing, empty folder. Entries that climb out of the
  * folder (`..`, absolute paths) are refused by `tar` itself; the caller checks the result against the
@@ -60,6 +64,13 @@ export async function unpackTo(source: Readable, dir: string): Promise<void> {
   try {
     await pipeline(source, createGunzip(), tar.stdin);
   } catch (err) {
+    // tar stops reading at the end-of-archive marker and exits; the padding still being written then
+    // meets a closed pipe. That is a whole archive when tar says it exited cleanly, and tar's own error
+    // (from `exited`) when it did not.
+    if (TAR_CLOSED.has(errorCode(err) ?? "")) {
+      await exited;
+      return;
+    }
     tar.kill();
     await exited.catch(() => undefined);
     throw err;

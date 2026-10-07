@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Script } from "../testing/fakeSession.ts";
 import { git } from "../testing/fixtures.ts";
 import type { Harness } from "../testing/harness.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World, type WorldOptions } from "../testing/world.ts";
 
 /**
@@ -23,14 +24,6 @@ afterEach(async () => {
   }
   await w?.cleanup();
 });
-
-const until = async (check: () => boolean | Promise<boolean>, what: string): Promise<void> => {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-};
 
 /** A turn that writes a file into the worktree and then stays open until released or cancelled. */
 function working(file: string): { script: Script; release: () => void } {

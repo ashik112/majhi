@@ -344,11 +344,7 @@ if (process.argv[2] === "run") process.stdin.pipe(process.stdout);
     expect(await echoed).toBe("ping\n");
     run.kill();
     run.kill();
-    for (let i = 0; i < 200; i++) {
-      const lines = (await readFile(log, "utf8").catch(() => "")).trim().split("\n");
-      if (lines.length >= 2) break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    await waitFor(async () => (await readFile(log, "utf8").catch(() => "")).trim().split("\n").length >= 2);
     const calls = (await readFile(log, "utf8"))
       .trim()
       .split("\n")
@@ -426,12 +422,9 @@ if (args[0] === "run") {
   };
 }
 
+/** Waits until `check` holds. It has no deadline of its own: the test's timeout is the only clock. */
 async function waitFor(check: () => Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 300; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error("timed out");
+  while (!(await check())) await new Promise((r) => setTimeout(r, 10));
 }
 
 describe("runner containers converge to one per live run", () => {
@@ -576,9 +569,7 @@ describe("a task terminal in a runner", () => {
     expect(launch.env).toMatchObject({ TERM: "xterm-256color", LANG: "C.UTF-8" });
     launch.stop();
     launch.stop();
-    for (let i = 0; i < 200 && !(await readFile(log, "utf8").catch(() => "")).includes("rm"); i++) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    await waitFor(async () => (await readFile(log, "utf8").catch(() => "")).includes("rm"));
     await new Promise((r) => setTimeout(r, 50));
     const calls = (await readFile(log, "utf8"))
       .trim()

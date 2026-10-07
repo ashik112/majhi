@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { redactDeep, redactSecrets } from "./redact.ts";
 
@@ -34,13 +35,6 @@ describe("a run's secret values", () => {
   async function items(task: string): Promise<RoomItem[]> {
     const page = await w.h.cmd("room.items", { task, limit: 500 });
     return page.body.items as RoomItem[];
-  }
-  async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-    for (let i = 0; i < 400; i++) {
-      if (await check()) return;
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    throw new Error(`Timed out waiting for ${what}`);
   }
 
   it("never reach the room, the audit log, a process's output or the report", async () => {

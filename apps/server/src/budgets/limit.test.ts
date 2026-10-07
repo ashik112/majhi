@@ -2,6 +2,7 @@ import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World;
@@ -60,11 +61,6 @@ const turns = async (task: string) =>
   ((await w.h.cmd("usage.turns", { filters: { task }, limit: 500 })).body as unknown[]).length;
 const task = (id: string) => services().store.tasks.get(id);
 const budget = (b: object) => w.h.cmd("settings.set", { budgets: b });
-
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 1000 && !(await check()); i++) await new Promise((r) => setTimeout(r, 10));
-  if (!(await check())) throw new Error(`Timed out waiting for ${what}`);
-}
 
 async function create(text: string, agent?: string): Promise<string> {
   const project = text.includes(" web ") ? "globex-web" : "acme-api";

@@ -25,15 +25,12 @@ const exists = (p: string) =>
   );
 
 /**
- * Polls `read` until it returns a value. Waits for the state, not a fixed number of tries: the
- * device flow alone sleeps GitHub's 1 s interval, and a loaded test run stretches every step.
+ * Polls `read` until it returns a value. It has no deadline of its own: the test's timeout is the only clock.
  */
-async function until<T>(what: string, read: () => Promise<T | undefined>, ms = 15_000): Promise<T> {
-  const end = Date.now() + ms;
+async function until<T>(_what: string, read: () => Promise<T | undefined>): Promise<T> {
   for (;;) {
     const value = await read();
     if (value !== undefined) return value;
-    if (Date.now() > end) throw new Error(`${what} did not end in ${ms} ms`);
     await new Promise((r) => setTimeout(r, 30));
   }
 }

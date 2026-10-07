@@ -1672,6 +1672,13 @@ export class RunManager {
    * the turn stops there and the run pauses with `limit`; "continue" waits in the queue for the cap
    * to lift.
    */
+  private readonly capChecks = new Set<Promise<void>>();
+
+  /** Resolves when no cap check is under way, so a test can spend and then look, with no clock. */
+  async capChecked(): Promise<void> {
+    while (this.capChecks.size > 0) await Promise.all([...this.capChecks]);
+  }
+
   private async checkCap(run: AgentRun): Promise<void> {
     if (run.capChecking) return;
     if (!run.prompting || run.paused !== undefined || run.closing || run.internal !== undefined) return;
@@ -2255,7 +2262,10 @@ export class RunManager {
         if (event.type === "tool" && run.prompting && !run.turnTools.has(event.toolCallId)) {
           run.turnTools.add(event.toolCallId);
           if (run.turnLimits?.maxToolCalls !== undefined) this.checkTurnLimit(run);
-          if (this.deps.overCap !== undefined) void this.checkCap(run);
+          if (this.deps.overCap !== undefined) {
+            const check = this.checkCap(run).finally(() => this.capChecks.delete(check));
+            this.capChecks.add(check);
+          }
         }
         break;
       }

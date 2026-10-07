@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { localSpawner, type SpawnRequest } from "@majhi/acp";
 import type { ProcessInfo } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { ProcessManager } from "./manager.ts";
 
 let dir: string;
@@ -33,14 +34,6 @@ afterEach(async () => {
   await manager.stopAll();
   await rm(dir, { recursive: true, force: true });
 });
-
-const until = async (check: () => boolean, what: string): Promise<void> => {
-  for (let i = 0; i < 400; i++) {
-    if (check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-};
 
 const start = (command: string, more: { wait?: boolean; cwd?: string; agent?: string } = {}) =>
   manager.start({

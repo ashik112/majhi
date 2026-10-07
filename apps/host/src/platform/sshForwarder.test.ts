@@ -5,13 +5,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reachable, serveAgent } from "./sshForwarder.ts";
 
-/** Waits up to 3 s for `check` to hold. */
+/** Waits until `check` holds. It has no deadline of its own: the test's timeout is the only clock. */
 async function until(check: () => boolean | Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 300; i++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error("timed out");
+  while (!(await check())) await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
 /**

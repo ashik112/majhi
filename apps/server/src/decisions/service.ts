@@ -59,6 +59,8 @@ const NAMES: Record<ProviderId, string> = {
 };
 
 export interface DecisionServiceDeps {
+  /** Decision ids. Tests count up: the calibration splits labels by id, so random ids split them differently each run. */
+  newId?: () => string;
   config: ConfigService;
   log: DecisionLog;
   labels: LabelStore;
@@ -200,7 +202,7 @@ export class DecisionService implements Decisions {
       const answers = gated(chain.answers, chain.provider);
       const { sent, version, ...rest } = chain;
       const result: DecisionResult = {
-        id: `dec_${randomUUID().slice(0, 8)}`,
+        id: this.deps.newId?.() ?? `dec_${randomUUID().slice(0, 8)}`,
         ...rest,
         answers,
         durationMs: Math.round(performance.now() - started),

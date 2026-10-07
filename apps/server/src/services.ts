@@ -356,6 +356,8 @@ export interface Services {
   roomAccess: RoomAccess;
   /** Routes agent messages in team rooms (5.3). */
   coordinator: RoomCoordinator;
+  /** Looks at a room that went quiet. Its timer runs it; a test calls `check` instead of waiting for it. */
+  idleWatch: IdleWatch;
   orgs: OrgService;
   accounts: AccountService;
   terminals: TerminalManager;
@@ -2826,6 +2828,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decideTokens,
     roomAccess,
     coordinator,
+    idleWatch,
     store,
     backup,
     uploads,

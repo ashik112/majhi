@@ -5,6 +5,7 @@ import type { RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
 import { type FakeBitbucket, type FakeHosts, fakeBitbucket, fakeHosts } from "../testing/mrHosts.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import type { MrDeps } from "./service.ts";
 
@@ -24,14 +25,6 @@ afterEach(async () => {
   for (const c of cleanups) await c();
   cleanups = [];
 });
-
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 800; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
 const get = async (id: string): Promise<Task> => (await cmd("tasks.get", { id })).body;

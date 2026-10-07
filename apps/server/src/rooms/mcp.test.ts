@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World | undefined;
@@ -20,14 +21,6 @@ afterEach(async () => {
   w = undefined;
   server = undefined;
 });
-
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 /** Acme with a lead (Codex) and the builder, served on a real port; the lead's turns wait for `release`. */
 async function world() {

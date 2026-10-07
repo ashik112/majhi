@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { HostLink } from "../host/link.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World | undefined;
@@ -54,7 +55,7 @@ async function world(laya: Parameters<typeof playHelper>[1]) {
   const jobs = playHelper(link, laya);
   w = await taskWorld({ hostLink: link });
   // Let the first poll register.
-  await new Promise((r) => setTimeout(r, 30));
+  await until(() => link.isConnected());
   return { w, h: w.h, jobs };
 }
 

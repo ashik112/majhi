@@ -11,11 +11,15 @@ import { ensureHooks, gitAttribution } from "./attribution.ts";
 const run = promisify(execFile);
 
 let dir: string;
+/** A global git config that stops every commit from starting a background `git maintenance`. */
+let quietConfig: string;
 let cleanup: () => Promise<void>;
 beforeEach(async () => {
-  vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
-  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
   ({ dir, cleanup } = await tempDir());
+  quietConfig = join(dir, "gitconfig");
+  await writeFile(quietConfig, "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n");
+  vi.stubEnv("GIT_CONFIG_GLOBAL", quietConfig);
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
 });
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -62,7 +66,7 @@ async function runEnv(
   );
   return {
     ...buildEnv({ tool: "claude", home: dir }, { PATH: process.env.PATH ?? "" }, attribution.git),
-    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_GLOBAL: quietConfig,
     GIT_CONFIG_NOSYSTEM: "1",
   };
 }
@@ -110,7 +114,7 @@ describe("another task's branch", () => {
     const hooks = await ensureHooks(join(dir, "home"));
     const as = (task?: string) => ({
       PATH: process.env.PATH ?? "",
-      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_GLOBAL: quietConfig,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_COUNT: "1",
       GIT_CONFIG_KEY_0: "core.hooksPath",

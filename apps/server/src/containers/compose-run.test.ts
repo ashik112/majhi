@@ -6,6 +6,7 @@ import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@m
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProcessManager } from "../processes/manager.ts";
 import { FakeDocker } from "../testing/fakeDocker.ts";
+import { until } from "../testing/until.ts";
 import { ContainerService } from "./service.ts";
 
 /**
@@ -563,7 +564,9 @@ describe("a script's own containers", () => {
       release = resolve;
     });
     const waits = Array.from({ length: 17 }, (_, i) => call("ACM-1", repo, "wait", `c${i}`));
-    await new Promise((r) => setTimeout(r, 30));
+    // The sixteen that fit are inside docker, held at the gate; the last is refused at once.
+    await until(() => docker.taskCalls.filter((c) => c[0] === "wait").length === 16);
+    expect((await waits[16])?.error?.code).toBe("limit_reached");
     release();
     const done = await Promise.all(waits);
     expect(done.filter((r) => r?.error?.code === "limit_reached")).toHaveLength(1);

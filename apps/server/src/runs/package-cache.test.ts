@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { tempDir } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { cacheEnv, cacheRoot, packageCache } from "./package-cache.ts";
 
@@ -9,14 +10,6 @@ afterEach(async () => {
   await w?.cleanup();
   w = undefined;
 });
-
-async function until(check: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 400; i++) {
-    if (check()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 describe("a workspace's package store", () => {
   it("keeps two workspaces apart: each gets its own folder, and every variable points inside it", async () => {

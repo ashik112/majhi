@@ -4,6 +4,7 @@ import type { McpServerSpec } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { cacheEnv } from "../runs/package-cache.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { runFilesRoot } from "./run-files.ts";
 
@@ -119,8 +120,7 @@ describe("a run's connections", () => {
         () => false,
         () => true,
       );
-    for (let i = 0; i < 50 && !(await gone()); i++) await new Promise((r) => setTimeout(r, 20));
-    expect(await gone()).toBe(true);
+    await until(gone);
   });
 
   it("gives an org agent nothing of another org, even where it may work", async () => {

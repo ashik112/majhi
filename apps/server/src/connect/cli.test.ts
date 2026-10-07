@@ -119,12 +119,8 @@ async function rig(): Promise<Rig> {
   };
 }
 
-const until = async (check: () => boolean, ms = 5_000) => {
-  const end = Date.now() + ms;
-  while (!check()) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
+const until = async (check: () => boolean) => {
+  while (!check()) await new Promise((r) => setTimeout(r, 10));
 };
 
 let r: Rig;

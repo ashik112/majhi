@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { git } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /**
@@ -23,14 +24,6 @@ const must = (res: { status: number; body: unknown }) => {
   if (res.status !== 200) throw new Error(`unexpected ${res.status}: ${JSON.stringify(res.body)}`);
   return res.body;
 };
-
-async function until(check: () => Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 1000; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 async function commitOn(repo: string, branch: string, file: string, text: string): Promise<void> {
   await git(repo, "checkout", "--quiet", branch);

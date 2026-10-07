@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeDocker } from "../testing/fakeDocker.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /**
@@ -49,16 +50,15 @@ async function world(): Promise<{ w: World; env: Record<string, Record<string, s
     const res = await h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: true });
     expect(res.status).toBe(200);
   }
-  for (let i = 0; i < 600 && Object.keys(env).length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+  await until(() => Object.keys(env).length >= 2);
   expect(Object.keys(env).sort()).toEqual(["ACM-1", "ACM-2"]);
   // The fake agent ends its turn at once and the task moves to review, which stops the task's containers.
   // Wait for that before a test starts one, or the move removes it mid-test.
   for (const id of ["ACM-1", "ACM-2"]) {
-    for (let i = 0; i < 1000; i++) {
+    await until(async () => {
       const status = (await h.cmd("tasks.get", { id })).body.status;
-      if (status !== "running" && status !== "queued") break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
+      return status !== "running" && status !== "queued";
+    });
   }
   return { w, env };
 }

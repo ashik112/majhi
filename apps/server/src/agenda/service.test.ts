@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import { until } from "../testing/until.ts";
 import { decision, finding } from "./fixtures.ts";
 import type { Overnight } from "./overnight.ts";
 import { AgendaRepo } from "./repo.ts";
@@ -90,11 +91,15 @@ describe("the brief is made once per day", () => {
   it("shares one making between two open tabs and the sweep at the same moment", async () => {
     const w = world("2026-10-04T09:00:00.000Z");
     let release: (v: string) => void = () => undefined;
-    w.state.write = () => new Promise<string>((r) => (release = r));
+    let asked = 0;
+    w.state.write = () => {
+      asked += 1;
+      return new Promise<string>((r) => (release = r));
+    };
     const agenda = w.make({ modelTimeoutMs: 5_000 });
     const all = Promise.all([agenda.today(), agenda.today(), agenda.sweep(), agenda.ensureBrief()]);
     // Let every caller reach the model call, then answer once.
-    await new Promise((r) => setTimeout(r, 30));
+    await until(() => asked > 0);
     release("Shipped 1. 1 needs you.");
     const [a, b] = await all;
     expect(w.calls.write).toBe(1);

@@ -204,7 +204,6 @@ describe("compose: what a file may never ask for", () => {
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, "compose.yaml"), "services:\n  x:\n    image: alpine:3\n    env_file: .env\n");
     execFileSync("mkfifo", [join(sub, ".env")]);
-    const started = Date.now();
     const inv = parseCompose(["up"], sub);
     await expect(loadCompose(inv, { ...ctx(), cwd: sub })).rejects.toThrow(/not a regular file/);
     // The compose file itself as a FIFO.
@@ -223,8 +222,7 @@ describe("compose: what a file may never ask for", () => {
     await expect(
       loadCompose(parseCompose(["-f", "big.yaml", "up"], repo), { ...ctx(), cwd: repo }),
     ).rejects.toThrow(/too big/);
-    expect(Date.now() - started).toBeLessThan(4_000);
-  }, 15_000);
+  });
 
   it("does not read a compose file above the task folder", async () => {
     const stray = parseCompose(["up"], dir);

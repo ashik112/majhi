@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HostLink } from "../host/link.ts";
 import { SystemService, UPDATE_WAIT_FILE } from "../system/service.ts";
 import { tempDir } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 
 const RUNNING = "aaaaaaa1111111111111111111111111111111aa";
 const ON_DISK = "bbbbbbb2222222222222222222222222222222bb";
@@ -60,9 +61,6 @@ describe("Update when they finish", () => {
     });
     services.push(s);
     return s;
-  };
-  const until = async (check: () => boolean) => {
-    for (let i = 0; i < 400 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5));
   };
 
   beforeEach(async () => {

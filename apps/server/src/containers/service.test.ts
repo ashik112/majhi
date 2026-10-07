@@ -6,6 +6,7 @@ import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@m
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProcessManager } from "../processes/manager.ts";
 import { FakeDocker } from "../testing/fakeDocker.ts";
+import { until } from "../testing/until.ts";
 import { type ContainerDocker, ContainerService } from "./service.ts";
 
 let dir: string;
@@ -349,11 +350,3 @@ describe("ContainerService", () => {
     });
   });
 });
-
-async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 400; i++) {
-    if (check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error("Timed out");
-}
