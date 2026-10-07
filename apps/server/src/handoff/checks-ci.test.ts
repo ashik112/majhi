@@ -186,7 +186,7 @@ describe("services of the CI job", () => {
     expect(w.ran.map((r) => r.command)).toHaveLength(1);
     expect(tests).toMatchObject({ status: "fail", owner: true });
     expect(tests?.detail).toContain("The postgres service (postgres:16)");
-    expect(tests?.detail).toContain("Docker is not available where checks run");
+    expect(tests?.detail).toContain("Docker is not running where majhi runs checks");
     expect(out.failures).toEqual([]);
   });
 

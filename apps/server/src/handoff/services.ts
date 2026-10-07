@@ -61,17 +61,26 @@ export function waitLine(name: string, svc: CiService): string {
   return `i=0; while [ "$i" -lt ${tries} ]; do s=$(docker inspect -f ${quote(state)} ${quote(name)} 2>/dev/null); if [ "$s" = ${quote(want)} ]; then ${settle}exit 0; fi; i=$((i+1)); sleep ${POLL_SECONDS}; done; exit 1`;
 }
 
-/** What a failed start says, in a line: the last thing docker printed, or why it could not be called. */
-function reason(res: ExecResult): string {
+/** Why a start failed, in a line, and what to do about it. docker's own text is only kept when it is not about docker being absent. */
+function reason(res: ExecResult): { why: string; fix: string } {
   const last = res.log
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l !== "")
     .pop();
-  const said = res.error ?? last ?? "no reason given";
-  const text = said.length > 200 ? `${said.slice(0, 199)}…` : said;
+  const said = res.error ?? last ?? "";
   const missing = ["not found", "Cannot connect", "daemon", "no such file"].some((w) => said.includes(w));
-  return missing ? `Docker is not available where checks run (${text})` : text;
+  if (missing) {
+    return {
+      why: "Docker is not running where majhi runs checks",
+      fix: "Start Docker there, then check again",
+    };
+  }
+  const text = said.length > 160 ? `${said.slice(0, 159)}…` : said;
+  return {
+    why: text === "" ? "docker gave no reason" : text,
+    fix: "If majhi asked you in the room to allow the image, answer there. Then check again",
+  };
 }
 
 /**
@@ -89,26 +98,30 @@ export async function startServices(exec: Exec, services: readonly CiService[]):
   };
   for (const svc of services) {
     const name = containerName(run, svc.name);
-    const failed = async (why: string): Promise<StartedServices> => {
+    const failed = async (why: string, fix: string): Promise<StartedServices> => {
       await stop();
       return {
         ok: false,
-        why: `The ${svc.name} service (${svc.image}) that the CI starts for this check did not start: ${why}. The check was not run. Docker has to work where majhi runs checks. If majhi asked you in the room to allow the image, answer there, then check again`,
+        why: `The ${svc.name} service (${svc.image}) that the CI starts for this check did not start, so the check was not run. ${why}. ${fix}.`,
       };
     };
     const up = await exec(runLine(name, svc), CALL_MS);
     if (up.error !== undefined || up.timedOut || up.code !== 0) {
-      return failed(up.timedOut ? "docker did not answer in time" : reason(up));
+      const r = up.timedOut
+        ? { why: "Docker did not answer in time", fix: "Check that Docker is running, then check again" }
+        : reason(up);
+      return failed(r.why, r.fix);
     }
     started.push(name);
     const ready = await exec(waitLine(name, svc), READY_MS + CALL_MS);
     if (ready.error !== undefined || ready.timedOut || ready.code !== 0) {
+      if (ready.code !== 1) {
+        const r = reason(ready);
+        return failed(r.why, r.fix);
+      }
       return failed(
-        ready.code === 1
-          ? svc.health === undefined
-            ? "it did not stay up"
-            : "it did not become healthy in time"
-          : reason(ready),
+        svc.health === undefined ? "It did not stay up" : "It did not become healthy in time",
+        "Look at its image and health check in the CI file, then check again",
       );
     }
     notes.push(`started ${svc.name} (${svc.image}) as the CI does`);
