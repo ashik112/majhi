@@ -2,6 +2,7 @@ import {
   type DiagramEdge,
   type DiagramNode,
   type DiagramSpec,
+  WIKI_OWNER_NOTES_HEADING,
   type WikiClaim,
   type WikiDropReason,
   WikiFactIdSchema,
@@ -293,6 +294,13 @@ export function openItems(pages: readonly { summary: WikiPageSummary; page: Wiki
  */
 export function leadOf(body: string): string {
   return body.split("\n\n## ")[0] ?? "";
+}
+
+/** The page without its "Owner notes" section: the notes are drawn from the data, with a way to drop each. */
+export function withoutNotes(page: WikiPage): WikiPage {
+  const [lead = "", ...sections] = page.body.split("\n\n## ");
+  const kept = sections.filter((s) => s.split("\n")[0]?.trim() !== WIKI_OWNER_NOTES_HEADING);
+  return kept.length === sections.length ? page : { ...page, body: [lead, ...kept].join("\n\n## ") };
 }
 
 /** How many things on the Gaps page need a look: guesses, claims the checker dropped, calls that link nowhere and open questions. */

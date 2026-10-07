@@ -2,7 +2,12 @@ import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { ClientIncidents } from "./incidents.ts";
 
-type IncidentCommand = "incident.view" | "incident.cause" | "incident.editReport" | "incident.sendReport";
+type IncidentCommand =
+  | "incident.askCaptain"
+  | "incident.view"
+  | "incident.cause"
+  | "incident.editReport"
+  | "incident.sendReport";
 
 /** What the commands need to know of who asks: whose task it is and which captain lane it is in. */
 export interface IncidentHandlerDeps {
@@ -10,6 +15,8 @@ export interface IncidentHandlerDeps {
   /** The workspace of a task, and the captain whose lane is that workspace's. */
   lane: (task: string) => Promise<{ boss: string; org: string } | undefined>;
   orgOf: (task: string) => string | undefined;
+  /** The owner's message in the captain's lane of the workspace. */
+  askCaptain: (org: string, text: string) => Promise<void>;
 }
 
 /** What clients saw and what is sent to them are the owner's: no agent reads, edits or sends them. */
@@ -28,6 +35,16 @@ export function incidentHandlers(deps: IncidentHandlerDeps): Pick<CommandHandler
     "incident.view": async (input, ctx) => {
       ownerOnly(ctx);
       return deps.incidents.view(input.task);
+    },
+    "incident.askCaptain": async (input, ctx) => {
+      ownerOnly(ctx);
+      const org = deps.orgOf(input.task);
+      if (org === undefined) throw new UserError(`${input.task} has no workspace.`, 409);
+      await deps.askCaptain(
+        org,
+        `Please look at incident ${input.task} now: open or join its task and get it fixed within the owner's rows.`,
+      );
+      return { ok: true as const };
     },
     "incident.cause": async (input, ctx) => {
       const actor = ctx.meta.actor;

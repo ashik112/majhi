@@ -21,6 +21,8 @@ export interface WikiToolsDeps {
   repo: WikiRepo;
   enabled: WikiEnabled;
   index: Pick<WikiIndex, "search">;
+  /** Ids of a workspace's registered projects. A project taken out of majhi keeps its pages, but no agent finds them. */
+  projects: (org: string) => Promise<readonly string[]>;
 }
 
 /** The place of the workspace's own pages: they have no project. */
@@ -46,7 +48,7 @@ export class WikiTools {
     const org = scope.org;
     if (org === undefined) throw new WikiToolRefusal("This task has no workspace, so it has no wiki.");
     if (!(await this.deps.enabled(org))) throw new WikiToolRefusal("The wiki is off for this workspace.");
-    const projects = this.projectsOf(scope, org, input.project);
+    const projects = this.projectsOf(scope, org, input.project, new Set(await this.deps.projects(org)));
     // The workspace's own pages are stored with no project, and searched under the empty name.
     const places =
       input.workspace === true
@@ -67,10 +69,15 @@ export class WikiTools {
   }
 
   /** The projects an answer covers: the one named when it is this workspace's, else every project of the workspace that has pages. */
-  private projectsOf(scope: AgentScope, org: string, named: string | undefined): string[] {
+  private projectsOf(
+    scope: AgentScope,
+    org: string,
+    named: string | undefined,
+    registered: ReadonlySet<string>,
+  ): string[] {
     const own = scope.scopes.flatMap((s) => {
       const parsed = parseScope(s);
-      return parsed?.kind === "project" ? [parsed.id] : [];
+      return parsed?.kind === "project" && registered.has(parsed.id) ? [parsed.id] : [];
     });
     if (named !== undefined) {
       if (!own.includes(named)) {

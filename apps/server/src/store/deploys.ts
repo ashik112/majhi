@@ -169,6 +169,15 @@ export class DeployRepo {
     return out;
   }
 
+  /** Deploys of a workspace that failed or were rolled back since a time, newest first. */
+  failedSince(org: string, since: string): DeployRecord[] {
+    return this.rows(
+      "SELECT * FROM deploys WHERE org = ? AND state IN ('failed', 'rolled-back') AND updated_at >= ? ORDER BY id DESC",
+      org,
+      since,
+    );
+  }
+
   /** Deploys that were running when majhi stopped: they are followed again at start. */
   active(): DeployRecord[] {
     return this.rows("SELECT * FROM deploys WHERE state IN ('queued', 'running', 'verifying') ORDER BY id");
