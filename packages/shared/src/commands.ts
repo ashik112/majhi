@@ -119,18 +119,6 @@ import {
 } from "./containers.ts";
 import { ConversationListSchema, ConversationMarkReadInputSchema } from "./conversations.ts";
 import {
-  DeployHideInputSchema,
-  DeployHoldInputSchema,
-  DeployInputSchema,
-  DeployRecordSchema,
-  DeployRemoveInputSchema,
-  DeployResultSchema,
-  DeploySetInputSchema,
-  DeployViewInputSchema,
-  ProjectDeployViewSchema,
-  RollbackInputSchema,
-} from "./deploy.ts";
-import {
   DecisionLabelSchema,
   EvalInputSchema,
   EvalReportSchema,
@@ -147,6 +135,19 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
+import {
+  DeployHideInputSchema,
+  DeployHoldInputSchema,
+  DeployInputSchema,
+  DeployRecordSchema,
+  DeployRemoveInputSchema,
+  DeployResultSchema,
+  DeploySetInputSchema,
+  DeployViewInputSchema,
+  HomeDeploySchema,
+  ProjectDeployViewSchema,
+  RollbackInputSchema,
+} from "./deploy.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -1839,6 +1840,8 @@ export const commands = {
       checks: z.array(HomeCheckSchema),
       /** What runs without an agent turn: hand-off checks, background processes, builds, previews, services. */
       background: z.array(HomeBackgroundSchema),
+      /** The deploy steps of recently merged tasks that are not all live yet, for the Shipping column and Needs you. */
+      deploys: z.array(HomeDeploySchema),
     }),
   },
   "tasks.get": {

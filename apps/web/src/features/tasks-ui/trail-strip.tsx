@@ -113,9 +113,22 @@ function StepButton({ view, actions }: { view: StepView; actions: TrailActions }
       </a>
     );
   }
+  if (step.kind === "deploy" && step.run !== undefined) {
+    return (
+      <a
+        href={step.run}
+        target="_blank"
+        rel="noreferrer"
+        title={title}
+        className={cn(stepClass(view), "cursor-pointer hover:bg-raised")}
+      >
+        {body}
+      </a>
+    );
+  }
   if (
     actions.onShowRoom !== undefined &&
-    (step.kind === "check" || step.kind === "local-merge" || step.kind === "ship")
+    (step.kind === "check" || step.kind === "local-merge" || step.kind === "ship" || step.kind === "deploy")
   ) {
     return (
       <button

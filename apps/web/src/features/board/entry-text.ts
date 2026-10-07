@@ -1,4 +1,4 @@
-import type { TaskSummary } from "@majhi/shared";
+import type { DeployStepView, HomeDeploy, TaskSummary } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
 import { rowTitle } from "../decisions/model";
 import { openDue, shortAgo } from "../tasks/schedule";
@@ -106,8 +106,55 @@ function needsLine(
   return { text: d.blocked ?? d.sentence ?? d.title, tone: "needs", hover: undefined };
 }
 
+const capital = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+/** The step of a task's deploys the owner reads first: what failed, what waits for them, what moves, what is next. */
+function leadStep(steps: readonly DeployStepView[]): DeployStepView | undefined {
+  const order: DeployStepView["state"][][] = [
+    ["failed", "rolled-back"],
+    ["waits-for-owner"],
+    ["running", "verifying", "queued"],
+    ["captain-next"],
+    ["blocked"],
+    ["waits-for-previous"],
+  ];
+  for (const states of order) {
+    const found = steps.find((s) => states.includes(s.state));
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** The status line of merged work that is being deployed. */
+export function deployLine(deploy: HomeDeploy): Pick<EntryLine, "lamp" | "text" | "tone"> {
+  const step = leadStep(deploy.steps);
+  if (step === undefined) return { lamp: "done", text: "Live", tone: "ok" };
+  switch (step.state) {
+    case "failed":
+    case "rolled-back":
+      return { lamp: "needs", text: `${capital(step.env)} failed, rolled back`, tone: "needs" };
+    case "waits-for-owner":
+      return { lamp: "needs", text: `${capital(step.env)} deploy waits for you`, tone: "needs" };
+    case "verifying":
+      return { lamp: "working", text: `Checking ${step.env}`, tone: "working" };
+    case "running":
+    case "queued":
+      return { lamp: "working", text: `Deploying to ${step.env}`, tone: "working" };
+    case "captain-next":
+      return { lamp: "idle", text: `Deploys to ${step.env} next`, tone: undefined };
+    case "blocked":
+      return { lamp: "paused", text: `${capital(step.env)}: ${step.why ?? "blocked"}`, tone: "paused" };
+    default:
+      return { lamp: "idle", text: `${capital(step.env)} waits for the one before`, tone: undefined };
+  }
+}
+
 function shippingLine(item: ShippingItem): Pick<EntryLine, "lamp" | "text" | "cardText" | "tone"> {
   const { task, mr, extra } = item;
+  if (item.deploy !== undefined) {
+    const line = deployLine(item.deploy);
+    return { ...line, cardText: line.text };
+  }
   const ci = mr?.ci;
   const lamp: LampState =
     ci === "failing" ? "needs" : ci === "pending" ? "working" : ci === "passing" ? "done" : "idle";
@@ -171,13 +218,14 @@ export function lineOf(entry: RowEntry, ctx: LineContext): EntryLine {
     }
     case "held": {
       const t = entry.item.task;
+      const deploy = entry.item.deploy === undefined ? undefined : deployLine(entry.item.deploy);
       return {
         ...base,
         lamp: "needs",
         word,
-        text: `Held: ${t.hold?.label ?? "paused"}`,
+        text: deploy?.text ?? `Held: ${t.hold?.label ?? "paused"}`,
         tone: "needs",
-        why: t.hold?.sentence,
+        why: deploy === undefined ? t.hold?.sentence : undefined,
         age: shortAgo(t.updatedAt, ctx.now),
         agent: agentOf(t),
         title: plainTitle(t.title),

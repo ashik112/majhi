@@ -133,17 +133,21 @@ export function buildTrail(facts: TrailFacts): Trail {
     });
   }
   if (facts.owner !== undefined) steps.push({ kind: "ship", tone: "needs", step: facts.owner });
-  for (const d of facts.deploys ?? []) {
-    steps.push({
-      kind: "deploy",
-      tone: deployTone(d.state),
-      env: d.env,
-      project: d.project,
-      state: d.state,
-      ...(d.commit === undefined ? {} : { commit: d.commit }),
-      ...(d.run === undefined ? {} : { run: d.run }),
-      ...(d.why === undefined ? {} : { why: d.why }),
-    });
-  }
+  for (const d of facts.deploys ?? []) steps.push(deployTrailStep(d));
   return steps;
+}
+
+/** One deploy step as the trail draws it. */
+export function deployTrailStep(d: DeployStepView): Extract<TrailStep, { kind: "deploy" }> {
+  return {
+    kind: "deploy",
+    tone: deployTone(d.state),
+    env: d.env,
+    project: d.project,
+    state: d.state,
+    ...(d.commit === undefined ? {} : { commit: d.commit }),
+    ...(d.run === undefined ? {} : { run: d.run }),
+    ...(d.why === undefined ? {} : { why: d.why }),
+    ...(d.incident === undefined ? {} : { incident: d.incident }),
+  };
 }

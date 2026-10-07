@@ -1015,6 +1015,8 @@ function originView(
       const name = titleOf(origin.task);
       return name === undefined ? origin : { ...origin, name };
     }
+    case "deploy":
+      return { ...origin, name: `${origin.project} ${origin.env}` };
     case "owner":
     case "captain":
     case "watch":

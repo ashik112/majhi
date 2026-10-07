@@ -666,6 +666,7 @@ export function createHandlers({
         })),
         checks,
         background,
+        deploys: await services.deploy.board(),
       };
     },
     "tasks.get": async (input) => services.tasks.get(input.id),

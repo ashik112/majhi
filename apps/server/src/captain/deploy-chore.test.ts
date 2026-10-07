@@ -23,7 +23,10 @@ const step = (over: Partial<DeployNext> = {}): DeployNext => ({
   ...over,
 });
 
-function setup(steps: DeployNext[], over: { stillNext?: () => string | undefined; rulesOff?: string[] } = {}) {
+function setup(
+  steps: DeployNext[],
+  over: { stillNext?: () => string | undefined; rulesOff?: string[] } = {},
+) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const started: string[] = [];
   const ports = {
@@ -86,7 +89,9 @@ describe("deploying merged work", () => {
     const actions = t.repo.allActions();
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ outcome: "asked" });
-    expect(actions[0]?.reason).toBe("In Acme the rule for a bug up to 200 lines leaves Deploy production to you");
+    expect(actions[0]?.reason).toBe(
+      "In Acme the rule for a bug up to 200 lines leaves Deploy production to you",
+    );
   });
 
   it("does not deploy when a guard no longer lets it go, read right before the step", async () => {

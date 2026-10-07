@@ -1,4 +1,11 @@
-import { type DeployRecord, PRIVATE, type ProjectDeployView, textValue } from "@majhi/shared";
+import {
+  type DeployRecord,
+  deployPhase,
+  type HomeDeploy,
+  PRIVATE,
+  type ProjectDeployView,
+  textValue,
+} from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
 import type { DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigSections } from "../config/sections.ts";
@@ -47,6 +54,8 @@ export interface DeployWorldDeps {
   watches: (org: string) => Promise<{ id: string; name: string; url?: string | undefined }[]>;
   checksConfigured: (project: string) => boolean;
   tellOwner: (key: string, text: string) => void;
+  /** One line in a task's room. */
+  taskNote: (task: string, key: string, level: "info" | "warn", text: string) => void;
   /** A deploy went live: the captain's ship chore of the workspace looks again. */
   onLive: (org: string) => void;
   changed: () => void;
@@ -64,9 +73,14 @@ export interface DeployWorld {
   ports: DeployPorts;
   /** The project's page: targets, what majhi found, history. */
   view(project: string): Promise<ProjectDeployView>;
+  /** The deploy steps of recently merged tasks that are not all live yet, for the board. Kept briefly. */
+  board(): Promise<HomeDeploy[]>;
 }
 
 const HEALTH_TIMEOUT_MS = 10_000;
+/** The board's deploy facts are kept this long, and cover at most this many tasks. */
+const BOARD_KEEP_MS = 5_000;
+const BOARD_TASKS = 40;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -191,6 +205,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     },
     changed: deps.changed,
     onLive: (record) => deps.onLive(record.org),
+    taskNote: deps.taskNote,
     now,
     sleep,
     ...timing,
@@ -275,5 +290,25 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     };
   };
 
-  return { service, planner, ports, view };
+  // The board reads this every few seconds: the answer is kept for a moment and dropped when a deploy changes.
+  let board: { at: number; value: HomeDeploy[] } | undefined;
+  service.onChange(() => {
+    board = undefined;
+  });
+  const boardNow = async (): Promise<HomeDeploy[]> => {
+    if (board !== undefined && now().getTime() - board.at < BOARD_KEEP_MS) return board.value;
+    const since = new Date(now().getTime() - DEPLOY_WINDOW_MS).toISOString();
+    const value: HomeDeploy[] = [];
+    for (const id of deps.store.tasks.landedSince(since).slice(0, BOARD_TASKS)) {
+      const task = deps.store.tasks.get(id);
+      if (task === undefined) continue;
+      const steps = await planner.stepsOf(task).catch(() => []);
+      if (steps.length === 0 || deployPhase(steps) === "done") continue;
+      value.push({ task: id, steps: steps.map(({ task: _task, ...step }) => step) });
+    }
+    board = { at: now().getTime(), value };
+    return value;
+  };
+
+  return { service, planner, ports, view, board: boardNow };
 }

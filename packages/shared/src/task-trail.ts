@@ -81,6 +81,8 @@ export const TrailStepSchema = z.discriminatedUnion("kind", [
     run: z.string().optional(),
     /** What blocks it or why it failed, in a sentence. */
     why: z.string().optional(),
+    /** The incident task a failure opened. */
+    incident: TaskIdSchema.optional(),
   }),
   z.object({ kind: z.literal("reply"), ...tone }),
 ]);

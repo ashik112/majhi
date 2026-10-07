@@ -1895,6 +1895,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
     },
     tellOwner: (key, text) => notifier.captain(key, text),
+    taskNote: (task, key, level, text) => room.post(task as TaskId, key, { type: "system", level, text }),
     onLive: (org) => captainRef.current?.deployChanged(org),
     changed: () => events.emit(["tasks", "projects", "captain"]),
     fetch: options.deploy?.fetch,

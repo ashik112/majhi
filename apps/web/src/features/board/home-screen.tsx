@@ -162,6 +162,7 @@ export function BoardScreen() {
       doing: facts.doing,
       checks: facts.checks,
       background: facts.background,
+      deploys: facts.deploys,
       captain: captainActions ?? [],
       undoOf,
       areas,

@@ -4,6 +4,7 @@ import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
+import { DeployAskBar, useDeployAsk } from "./deploy-bar";
 import { dockItems, waitsForOwner } from "./dock";
 import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
 import { RoomTaskContext } from "./media";
@@ -266,6 +267,8 @@ export function Timeline({
     () => dockItems(state.items, owner?.task.status),
     [state.items, owner?.task.status],
   );
+  const deployAsk = useDeployAsk(task.id);
+  const typed = owner?.task.typing?.type;
 
   return (
     <RoomTaskContext.Provider value={task.id}>
@@ -360,7 +363,7 @@ export function Timeline({
             )
           )}
         </div>
-        {waiting.length > 0 && (
+        {(waiting.length > 0 || deployAsk !== undefined) && (
           // Whatever waits for the owner stays here, above the message box, until it is answered,
           // so new messages never bury it. Answered, it goes back into the log in its place.
           <section
@@ -375,6 +378,15 @@ export function Timeline({
               {waiting.map((item: RoomItem) => (
                 <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
               ))}
+              {deployAsk !== undefined && (
+                <li className="list-none">
+                  <DeployAskBar
+                    task={task.id}
+                    ask={deployAsk}
+                    change={typed === "bug" || typed === "incident" ? "fix" : "change"}
+                  />
+                </li>
+              )}
             </ol>
           </section>
         )}

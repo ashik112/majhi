@@ -89,6 +89,8 @@ export interface DeployDeps {
   changed(): void;
   /** A deploy went live: the next environment of the project may go now. */
   onLive?: (record: DeployRecord) => void;
+  /** One line in the room of the task a deploy belongs to, keyed so a repeat says nothing new. */
+  taskNote?: (task: string, key: string, level: "info" | "warn", text: string) => void;
   now(): Date;
   sleep(ms: number): Promise<void>;
   /** Time between looks at a run, and between looks of the check. */
@@ -117,6 +119,7 @@ export class DeployService {
   private readonly flying = new Set<Promise<void>>();
   private readonly lanes = new Map<string, Promise<void>>();
   private readonly rollingBack = new Set<number>();
+  private readonly listeners: (() => void)[] = [];
 
   constructor(private readonly deps: DeployDeps) {}
 
@@ -220,7 +223,7 @@ export class DeployService {
       return { record: winner, repeat: true };
     }
     this.audit(record, true, `Started by ${actor}`);
-    this.deps.changed();
+    this.changed();
     this.kick(record.id);
     return { record, repeat: false };
   }
@@ -251,7 +254,7 @@ export class DeployService {
     });
     const made = record ?? this.deps.repo.find(input.project, input.env, input.commit);
     if (made === undefined) throw new Error("A deploy record vanished");
-    this.deps.changed();
+    this.changed();
     return made;
   }
 
@@ -281,13 +284,18 @@ export class DeployService {
       const moved = done.ok
         ? this.deps.repo.move(record.id, record.state, "rolled-back", at, { rollback: done, finished: true })
         : this.deps.repo.annotate(record.id, at, { rollback: done });
-      this.deps.changed();
+      this.changed();
       if (moved === undefined) throw new UserError(`Deploy ${id} changed while it was rolled back.`, 409);
       if (!done.ok) throw new UserError(`The rollback did not work: ${done.detail}`, 409);
       return { record: moved, repeat: false };
     } finally {
       this.rollingBack.delete(id);
     }
+  }
+
+  /** Calls `listener` whenever a deploy record changes. */
+  onChange(listener: () => void): void {
+    this.listeners.push(listener);
   }
 
   /** A project's deploys, newest first. */
@@ -372,7 +380,7 @@ export class DeployService {
       ...(previous === undefined ? {} : { previous }),
     });
     if (running === undefined) return { record: undefined };
-    this.deps.changed();
+    this.changed();
     const known = await this.contextOf(running);
     if (known === undefined) {
       return {
@@ -385,7 +393,7 @@ export class DeployService {
       const handle = await known.provider.start(known.ctx);
       const { outcome: _over, ...run } = handle;
       this.deps.repo.annotate(running.id, this.deps.now().toISOString(), { run });
-      this.deps.changed();
+      this.changed();
       return { record: this.deps.repo.get(running.id), handle };
     } catch (err) {
       // Nothing was deployed, so there is nothing to roll back.
@@ -410,7 +418,7 @@ export class DeployService {
         : progressOf(run.outcome);
     if (!ended.ok) return this.fail(record, ended.detail, { rollback: true });
     const verifying = this.deps.repo.move(record.id, "running", "verifying", this.deps.now().toISOString());
-    this.deps.changed();
+    this.changed();
     return verifying;
   }
 
@@ -458,7 +466,15 @@ export class DeployService {
     const live = this.deps.repo.move(record.id, "verifying", "live", at, { check, finished: true });
     if (live === undefined) return;
     this.audit(live, true, `Live: ${result.detail}`);
-    this.deps.changed();
+    this.changed();
+    if (live.task !== undefined) {
+      this.deps.taskNote?.(
+        live.task,
+        `deploy:${live.id}:live`,
+        "info",
+        `${live.env} is live at ${live.commit.slice(0, 7)}. ${result.detail}.`,
+      );
+    }
     this.deps.onLive?.(live);
   }
 
@@ -498,7 +514,7 @@ export class DeployService {
     );
     if (failed === undefined) return undefined;
     this.audit(failed, false, reason);
-    this.deps.changed();
+    this.changed();
     let current = failed;
     if (opts.rollback) {
       const done = await this.goBack(failed).catch((err: unknown) => ({
@@ -512,7 +528,7 @@ export class DeployService {
           ? this.deps.repo.move(failed.id, "failed", "rolled-back", when, { rollback: done })
           : this.deps.repo.annotate(failed.id, when, { rollback: done })) ?? failed;
       this.audit(current, done.ok, `Rollback: ${done.detail}`);
-      this.deps.changed();
+      this.changed();
     }
     const brief = incidentBrief({ record: current, log: opts.check?.detail ?? reason });
     const incident = await this.deps
@@ -520,9 +536,13 @@ export class DeployService {
       .catch(() => undefined);
     if (incident !== undefined) {
       current = this.deps.repo.annotate(current.id, this.deps.now().toISOString(), { incident }) ?? current;
-      this.deps.changed();
+      this.changed();
     }
-    this.deps.tellOwner(current.org, `deploy:${current.id}:failed`, tellLine(current, reason));
+    const line = tellLine(current, reason);
+    this.deps.tellOwner(current.org, `deploy:${current.id}:failed`, line);
+    if (current.task !== undefined) {
+      this.deps.taskNote?.(current.task, `deploy:${current.id}:failed`, "warn", line);
+    }
     return undefined;
   }
 
@@ -561,6 +581,11 @@ export class DeployService {
       run: handle,
       at: at(),
     };
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
+    this.deps.changed();
   }
 
   private audit(record: DeployRecord, ok: boolean, detail: string): void {

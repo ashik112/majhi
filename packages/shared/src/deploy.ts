@@ -310,6 +310,8 @@ export const DeployStepViewSchema = z.object({
   run: z.string().optional(),
   /** What blocks it or why it failed, in a sentence. */
   why: z.string().optional(),
+  /** The incident task a failure opened. */
+  incident: TaskIdSchema.optional(),
 });
 export type DeployStepView = z.infer<typeof DeployStepViewSchema>;
 
@@ -324,8 +326,33 @@ export function deployStepOfRecord(r: DeployRecord): DeployStepView {
     record: r.id,
     ...(r.run?.url === undefined ? {} : { run: r.run.url }),
     ...(r.reason === undefined ? {} : { why: r.reason }),
+    ...(r.incident === undefined ? {} : { incident: r.incident }),
   };
 }
+
+/**
+ * Where a task with deploy steps sits on the board. `asks`: a deploy waits for the owner. `failed`: a deploy
+ * failed or was rolled back. `moving`: something is going out or is next. `done`: every environment is live, or
+ * held by the owner. Pure, so the board and the tests read it one way.
+ */
+export type DeployPhase = "asks" | "failed" | "moving" | "done";
+
+export function deployPhase(steps: readonly Pick<DeployStepView, "state">[]): DeployPhase {
+  const has = (...states: DeployStepState[]) => steps.some((s) => states.includes(s.state));
+  if (has("failed", "rolled-back")) return "failed";
+  if (has("waits-for-owner")) return "asks";
+  if (has("queued", "running", "verifying", "captain-next", "waits-for-previous", "blocked", "none")) {
+    return "moving";
+  }
+  return "done";
+}
+
+/** What the board reads about the deploys of one recently merged task. */
+export const HomeDeploySchema = z.object({
+  task: TaskIdSchema,
+  steps: z.array(DeployStepViewSchema),
+});
+export type HomeDeploy = z.infer<typeof HomeDeploySchema>;
 
 /**
  * The question the task page asks when a deploy waits for the owner: "Deploy to production? Staging is healthy
