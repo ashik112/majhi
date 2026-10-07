@@ -116,6 +116,13 @@ const attempt = (run: Promise<unknown>): Promise<boolean> =>
 /** The most the Docker build cache may hold after an update; older layers above it are trimmed. */
 export const BUILD_CACHE_CAP = "15gb";
 
+/**
+ * Ages the cache is trimmed by, oldest first. Docker 29's `--max-used-space` and `--keep-storage` free
+ * nothing in practice, so the cap is kept by age: drop unused cache older than each step until the
+ * cache is under the cap. Never an unfiltered prune.
+ */
+export const BUILD_CACHE_AGES = ["168h", "72h", "48h", "24h", "12h", "6h", "3h"] as const;
+
 export async function removeOwnLeftovers(
   step: Step,
   majhiHome: string,
@@ -207,18 +214,38 @@ export async function removeOwnLeftovers(
     );
   }
 
-  // The build cache is capped, not cleared: the newest layers keep updates fast, and only the least
-  // recently used ones above the cap go. Never `--all`, never a full prune (the owner's rule).
-  if (
-    await attempt(
-      step(
-        "cap the build cache",
-        ["builder", "prune", "-f", "--max-used-space", BUILD_CACHE_CAP],
-        STEP_TIMEOUT_MS,
-      ),
-    )
-  ) {
-    gone.push(`build cache trimmed to at most ${BUILD_CACHE_CAP.toUpperCase()}`);
+  // The build cache is capped, not cleared: the newest layers keep updates fast, and only the oldest
+  // unused ones above the cap go, by age, never an unfiltered prune (the owner's rule).
+  const cap = sizeBytes(BUILD_CACHE_CAP.toUpperCase());
+  const cacheSize = async (): Promise<number | undefined> => {
+    const out = await step(
+      "measure the build cache",
+      ["system", "df", "--format", "{{.Type}}\t{{.Size}}"],
+      STEP_TIMEOUT_MS,
+    ).catch(() => "");
+    const row = lines(out)
+      .map((l) => l.split("\t"))
+      .find(([type]) => type === "Build Cache");
+    return row?.[1] === undefined ? undefined : sizeBytes(row[1]);
+  };
+  const before = await cacheSize();
+  if (before !== undefined && before > cap) {
+    let now = before;
+    for (const age of BUILD_CACHE_AGES) {
+      if (now <= cap) break;
+      await attempt(
+        step(
+          "cap the build cache",
+          ["builder", "prune", "-f", "-a", "--filter", `until=${age}`],
+          STEP_TIMEOUT_MS,
+        ),
+      );
+      now = (await cacheSize()) ?? now;
+    }
+    if (now < before) {
+      total += before - now;
+      gone.push(`build cache trimmed from ${sizeText(before)} to ${sizeText(now)}`);
+    }
   }
 
   await say(
