@@ -11,6 +11,40 @@ export function useClients() {
   });
 }
 
+/** `chat.channels`: the channels of a chat connection's workspace. The `clients` topic refetches it. */
+export function useChannels(connection: string, enabled: boolean) {
+  return useQuery<CommandOutput<"chat.channels">, ApiRequestError>({
+    queryKey: [...queryKeys.clients, "channels", connection],
+    queryFn: () => cmd("chat.channels", { connection }),
+    enabled,
+  });
+}
+
+/** Reads the channels from the app again, now. */
+export function useRefreshChannels(connection: string) {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"chat.channels">, ApiRequestError, void>({
+    mutationFn: () => cmd("chat.channels", { connection, refresh: true }),
+    onSuccess: (data) => client.setQueryData([...queryKeys.clients, "channels", connection], data),
+  });
+}
+
+export function useLinkChannel(connection: string) {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.channelLink">, ApiRequestError, { channel: string; org: string }>({
+    mutationFn: (input) => cmd("chat.channelLink", { connection, ...input }),
+    onSuccess: done,
+  });
+}
+
+export function useIgnoreChannel(connection: string) {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.channelIgnore">, ApiRequestError, { channel: string }>({
+    mutationFn: (input) => cmd("chat.channelIgnore", { connection, ...input }),
+    onSuccess: done,
+  });
+}
+
 /** `contacts.list`: the contacts of a workspace. The `clients` topic refetches it. */
 export function useContacts(org: string | undefined) {
   return useQuery<CommandOutput<"contacts.list">, ApiRequestError>({

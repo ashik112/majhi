@@ -27,9 +27,7 @@ function scopesOf(headers: Headers): string[] | undefined {
 function refused(err: unknown): never {
   if (err instanceof SlackError) {
     if (err.badToken) throw new ChatSendError("Slack no longer accepts the bot token.", "needs-token");
-    if (err.code === "missing_scope")
-      throw new ChatSendError("The Slack app lacks a permission for that. Reinstall it.", "rejected");
-    throw new ChatSendError(err.message, "rejected");
+    throw new ChatSendError(err.plain, "rejected");
   }
   throw err;
 }

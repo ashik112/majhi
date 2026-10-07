@@ -16,8 +16,17 @@ export class SlackError extends Error {
     /** Slack's own error name, like `invalid_auth` or `channel_not_found`, or `http_<status>`. */
     readonly code: string,
     readonly retryAfter?: number,
+    /** Of `missing_scope`: the scope the method needs. */
+    readonly needed?: string,
   ) {
     super(`Slack refused: ${code}`);
+  }
+
+  /** Plain words for a refusal for want of a scope, else Slack's own error. */
+  get plain(): string {
+    if (this.code !== "missing_scope") return this.message;
+    const what = this.needed === undefined ? "a permission" : this.needed;
+    return `Slack needs ${what} ${this.needed === "chat:write" ? "to post replies" : "for that"}. Reinstall the app with it.`;
   }
 
   /** The token is not accepted, and will not be by trying again. */
@@ -52,7 +61,12 @@ const UNREACHABLE: ReadonlySet<string> = new Set([
 /** The network failed or the answer was not Slack's. Worth trying again later. */
 export class SlackNetworkError extends Error {}
 
-const ErrorBody = z.object({ ok: z.literal(false), error: z.string().default("unknown_error") });
+const ErrorBody = z.object({
+  ok: z.literal(false),
+  error: z.string().default("unknown_error"),
+  /** Of `missing_scope`: the scope the method needs. */
+  needed: z.string().optional(),
+});
 const OkBody = z.object({ ok: z.literal(true) }).loose();
 
 export interface SlackApiOptions {
@@ -129,7 +143,7 @@ export class SlackApi {
       return { data: result.data, headers: res.headers };
     }
     const failed = ErrorBody.safeParse(body);
-    if (failed.success) throw new SlackError(failed.data.error);
+    if (failed.success) throw new SlackError(failed.data.error, undefined, failed.data.needed);
     throw new SlackNetworkError(`Slack's answer to ${method} was not recognised (HTTP ${res.status}).`);
   }
 

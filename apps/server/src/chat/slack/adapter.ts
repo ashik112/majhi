@@ -883,7 +883,7 @@ export class SlackAdapter implements ChatAdapter {
           if (err.badToken) throw new ChatSendError("Slack no longer accepts the bot token.", "needs-token");
           if (err.unreachable)
             throw new ChatSendError("The app cannot write to that channel any more.", "unreachable");
-          throw new ChatSendError(err.message, "rejected");
+          throw new ChatSendError(err.plain, "rejected");
         }
         throw err;
       }

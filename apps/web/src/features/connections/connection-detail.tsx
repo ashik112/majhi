@@ -38,6 +38,7 @@ import { ConnectionFields } from "./connection-fields";
 import { type ConnectionDraft, draftOf, updateInput } from "./model";
 import { ProductPicker } from "./product-picker";
 import { scopeAudience, scopeName, WorkspaceTag } from "./scope-picker";
+import { SlackChannels } from "./slack-channels";
 import { fixOf, rowStatus } from "./status";
 import { TokenForm } from "./token-form";
 
@@ -102,9 +103,13 @@ export function ConnectionPanel({
       <StatusBlock view={view} orgs={orgs} checking={checking} now={now} onCheck={onCheck} />
       {view.type === "chat" ? (
         <DetailSection title="Client chats" className="border-t border-line">
-          <p className="text-base text-fg-muted text-pretty">
-            majhi reads the groups this bot is added to and sends replies as it. No agent gets its token.
-          </p>
+          {view.fields.service?.value === "slack" ? (
+            <SlackChannels connection={view.id} orgs={orgs} />
+          ) : (
+            <p className="text-base text-fg-muted text-pretty">
+              majhi reads the groups this bot is added to and sends replies as it. No agent gets its token.
+            </p>
+          )}
         </DetailSection>
       ) : (
         <>

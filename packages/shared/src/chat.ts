@@ -205,8 +205,8 @@ export const ChatChannelLinkInputSchema = z.object({
 });
 export const ChatChannelIgnoreInputSchema = z.object({ connection: IdSchema, channel: z.string().min(1) });
 
-/** The Slack permissions majhi needs beyond reading messages: files, group chats and joining public channels. */
-export const SLACK_NEEDED_SCOPES = ["files:read", "mpim:read", "channels:join"] as const;
+/** The Slack permissions majhi needs beyond reading channel messages: posting, files, group chats and joining public channels. */
+export const SLACK_NEEDED_SCOPES = ["chat:write", "files:read", "mpim:read", "channels:join"] as const;
 export const ChatHolderInputSchema = z.object({ room: z.string().min(1), holder: ChatHolderSchema });
 export const ChatSendInputSchema = z.object({
   room: z.string().min(1),
