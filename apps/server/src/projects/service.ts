@@ -140,6 +140,11 @@ export class ProjectService {
     return found;
   }
 
+  /** One project as the pages see it. */
+  async view(id: string): Promise<ProjectView> {
+    return toView(await this.get(id));
+  }
+
   async register(input: RegisterInput, command: string, meta: CommandMeta): Promise<ProjectView> {
     const loaded = await this.config.load();
     if (loaded.state.status !== "loaded") {

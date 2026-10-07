@@ -69,21 +69,15 @@ async function reviewed(setup: Setup = {}) {
   must(await cmd("projects.register", { id: "acme-web", org: "acme", path: "~/Work/web", aliases: ["web"] }));
   must(
     await cmd("projects.update", {
-      id: "acme-api",
-      org: "acme",
-      aliases: ["api"],
-      remotes: { origin: { host: "github" } },
-    }),
-  );
-  must(
-    await cmd("projects.update", {
       id: "acme-web",
       org: "acme",
       aliases: ["web"],
-      remotes: { origin: { host: webHost } },
       links: [{ to: "acme-api", type: "depends-on" }],
     }),
   );
+  // The remotes are local folders, which name no host: say which host each one is.
+  const deps = (w.h.majhi.services.mrs as unknown as { deps: MrDeps }).deps;
+  deps.hostOf = (url) => (url === w.remote("api") ? "github" : webHost);
   await fake.addRepo("remotes/api", w.remote("api"));
   await fake.addRepo("remotes/web", w.remote("web"));
   if (bitbucket) bitbucket.repos["remotes/web"] = w.remote("web");
@@ -100,7 +94,6 @@ async function reviewed(setup: Setup = {}) {
   if (setup.captain === true) {
     // Who merges is the ship decision's, tested on its own; here the merge request mechanics run as if
     // it said the captain does.
-    const deps = (w.h.majhi.services.mrs as unknown as { deps: MrDeps }).deps;
     deps.captainMerges = async () => ({ yes: true });
   }
 

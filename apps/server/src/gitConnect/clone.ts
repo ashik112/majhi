@@ -10,7 +10,6 @@ import {
   type MrHost,
   normalizeSshRoute,
   type ProjectView,
-  type RemoteConfig,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { UserError } from "../errors.ts";
@@ -141,7 +140,6 @@ export class CloneService {
       url,
       via,
       tokenRef: cred.tokenRef,
-      sshAlias,
       register: {
         id,
         org: input.org,
@@ -162,8 +160,7 @@ export class CloneService {
       url: string;
       via: "ssh" | "https";
       tokenRef: string | undefined;
-      sshAlias: string | undefined;
-      register: Omit<RegisterInput, "base" | "remotes">;
+      register: Omit<RegisterInput, "base">;
       root: string;
       createdFolder: boolean;
       change: { command: string; meta: CommandMeta };
@@ -194,11 +191,7 @@ export class CloneService {
       cloned = true;
       this.deps.repo.registering(clone);
       this.deps.changed(false);
-      const origin: RemoteConfig = {
-        host: job.kind,
-        ...(job.sshAlias === undefined ? {} : { ssh: job.sshAlias }),
-      };
-      await this.deps.register({ ...job.register, base: result.branch, remotes: { origin } }, job.change);
+      await this.deps.register({ ...job.register, base: result.branch }, job.change);
       this.deps.repo.done(clone, result.branch);
       this.deps.changed(true);
     } catch (err) {

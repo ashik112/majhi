@@ -39,13 +39,10 @@ export function classifyHost(host: string | undefined): GitHost {
 /** Classifies a remote, resolving the host through ~/.ssh/config when the URL uses an alias. */
 export function describeRemote(name: string, url: string, ssh: SshConfig): Remote {
   const address = parseRemoteUrl(url);
-  if (address.ssh && address.host !== undefined) {
-    const real = ssh.hostNameFor(address.host);
-    if (real !== undefined && real.toLowerCase() !== address.host.toLowerCase()) {
-      return { name, url, host: classifyHost(real), sshAlias: address.host };
-    }
-  }
-  return { name, url, host: classifyHost(address.host) };
+  if (address.host === undefined) return { name, url, host: "other" };
+  const real = address.ssh ? ssh.hostNameFor(address.host) : undefined;
+  const hostName = (real ?? address.host).toLowerCase();
+  return { name, url, host: classifyHost(hostName), hostName };
 }
 
 function stripPort(hostPort: string): string {

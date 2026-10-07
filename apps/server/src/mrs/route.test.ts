@@ -8,7 +8,6 @@ describe("chooseRoute with an org git account", () => {
   it("the org's account wins over the automatic choice", () => {
     expect(
       chooseRoute({
-        explicit: undefined,
         org: { account: "globex-dev" },
         owner: "acme",
         logins: [acme, globex],
@@ -21,7 +20,7 @@ describe("chooseRoute with an org git account", () => {
   });
 
   it("an org without a binding ignores other orgs' accounts", () => {
-    expect(chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [acme] })).toEqual({
+    expect(chooseRoute({ org: undefined, owner: "acme", logins: [acme] })).toEqual({
       state: "auto",
       account: "acme-dev",
     });
@@ -30,15 +29,14 @@ describe("chooseRoute with an org git account", () => {
 
 describe("https route through the host helper", () => {
   it("falls back to https without an account when nothing else fits, and never borrows another org's", () => {
-    expect(
-      chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [], httpsOk: true }),
-    ).toEqual({ state: "https" });
-    expect(
-      chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [], httpsOk: false }),
-    ).toEqual({ state: "none" });
+    expect(chooseRoute({ org: undefined, owner: "acme", logins: [], httpsOk: true })).toEqual({
+      state: "https",
+    });
+    expect(chooseRoute({ org: undefined, owner: "acme", logins: [], httpsOk: false })).toEqual({
+      state: "none",
+    });
     expect(
       chooseRoute({
-        explicit: undefined,
         org: { account: "globex-dev" },
         owner: "x",
         logins: [],

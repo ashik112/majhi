@@ -15,9 +15,10 @@ import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 import { remoteUrl } from "../mrs/push.ts";
-import { mrHostOf, mrRemoteName, repoSlug } from "../mrs/remote.ts";
+import { mrHostOf, mrRemoteName, realHostOf, repoSlug } from "../mrs/remote.ts";
 import { fsRepoFiles } from "../projectcard/files.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
+import { loadSshConfig } from "../scan/sshConfig.ts";
 import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -123,7 +124,11 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     const remote = mrRemoteName(p.remotes);
     const url = await remoteUrl(p.path, remote).catch(() => undefined);
     if (url === undefined) return undefined;
-    const provider = mrHostOf(p.remotes[remote], url);
+    const ssh = await loadSshConfig(deps.config.paths.hostHome);
+    const account = (await deps.config.sections()).orgs[p.org]?.git_accounts?.some(
+      (a) => a.host === realHostOf(url, ssh),
+    );
+    const provider = mrHostOf(url, ssh, account === true);
     return provider === undefined ? undefined : { provider, slug: repoSlug(url) };
   };
 

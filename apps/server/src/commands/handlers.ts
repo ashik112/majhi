@@ -458,8 +458,6 @@ export function createHandlers({
       );
     },
 
-    "projects.pushRoute": (input) => services.mrs.pushRoute(input.id),
-
     "ssh.reload": async () => {
       const ssh = await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS);
       hostLink.noteSsh(ssh);

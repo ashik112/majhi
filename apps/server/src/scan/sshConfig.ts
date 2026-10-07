@@ -11,7 +11,7 @@ interface HostBlock {
   identityFile?: string;
 }
 
-/** One `Host` alias of `~/.ssh/config` (no wildcards), for picking a remote's SSH alias. */
+/** One `Host` alias of `~/.ssh/config` (no wildcards), for picking the SSH alias of a connection. */
 export interface SshAlias {
   alias: string;
   hostName?: string;
