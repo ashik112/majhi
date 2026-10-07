@@ -3,7 +3,7 @@
  * SSH keys each host or `~/.ssh/config` alias accepts. Every probe is short and fails alone.
  * `detectGitLogins` never reads a token. `readGitToken` is the only code that does.
  */
-import type { GitHostLogins, GitLogin } from "@majhi/shared";
+import type { GitAcceptedKey, GitHostLogins, GitLogin } from "@majhi/shared";
 import type { RunFn } from "./ssh.ts";
 
 const KNOWN_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"];
@@ -22,6 +22,29 @@ export function parseGreeting(output: string): string | undefined {
   const bitbucket = /logged in as ([^\s.]+(?:\.[^\s.]+)*?)\.?(?:\s|$)/i.exec(output);
   if (bitbucket?.[1]) return bitbucket[1];
   return undefined;
+}
+
+/**
+ * True when the host took the key but its greeting names no account: Bitbucket answers
+ * "authenticated via ssh key." and nothing else.
+ */
+export function acceptedWithoutAccount(output: string): boolean {
+  if (/permission denied|could not resolve|connection (refused|timed out)/i.test(output)) return false;
+  return /authenticated via ssh key/i.test(output) && parseGreeting(output) === undefined;
+}
+
+/**
+ * The SHA256 fingerprint of the key the server accepted, from `ssh -v` output. ssh prints the
+ * public key's fingerprint itself ("Server accepts key: <path> ED25519 SHA256:..."), so no key file is read.
+ */
+export function acceptedFingerprint(verbose: string): string | undefined {
+  let found: string | undefined;
+  for (const line of verbose.split(/\r?\n/)) {
+    if (!line.includes("Server accepts key:")) continue;
+    const word = line.split(/\s+/).find((w) => w.startsWith("SHA256:"));
+    if (word !== undefined && word.length > "SHA256:".length) found = word;
+  }
+  return found;
 }
 
 /** Accounts per host from `gh auth status` or `glab auth status` output (stdout and stderr together). */
@@ -75,6 +98,7 @@ export async function detectGitLogins(
   extraHosts: readonly string[],
 ): Promise<GitHostLogins[]> {
   const byHost = new Map<string, GitLogin[]>();
+  const keysByHost = new Map<string, GitAcceptedKey[]>();
   const add = (host: string, login: GitLogin): void => {
     const list = byHost.get(host) ?? [];
     if (!list.some((l) => l.via === login.via && l.alias === login.alias && l.account === login.account)) {
@@ -122,16 +146,35 @@ export async function detectGitLogins(
           { env, timeoutMs: SSH_TIMEOUT_MS },
         );
         const account = parseGreeting(`${run.stdout}\n${run.stderr}`);
-        if (account !== undefined)
+        const output = `${run.stdout}\n${run.stderr}`;
+        if (account !== undefined) {
           add(host, { via: "ssh", ...(alias === undefined ? {} : { alias }), account });
+        } else if (acceptedWithoutAccount(output)) {
+          const verbose = await deps.run(
+            "/usr/bin/ssh",
+            ["-T", "-v", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", `git@${target}`],
+            { env, timeoutMs: SSH_TIMEOUT_MS },
+          );
+          const fingerprint = acceptedFingerprint(`${verbose.stdout}\n${verbose.stderr}`);
+          const keys = keysByHost.get(host) ?? [];
+          keys.push({
+            ...(alias === undefined ? {} : { alias }),
+            ...(fingerprint === undefined ? {} : { fingerprint }),
+          });
+          keysByHost.set(host, keys);
+        }
       } catch {
         // Unreachable host: no login to report.
       }
     }),
   );
-  return [...byHost.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([host, logins]) => ({ host, logins }));
+  const names = new Set([...byHost.keys(), ...keysByHost.keys()]);
+  return [...names]
+    .sort((a, b) => a.localeCompare(b))
+    .map((host) => {
+      const keys = keysByHost.get(host);
+      return { host, logins: byHost.get(host) ?? [], ...(keys === undefined ? {} : { keys }) };
+    });
 }
 
 /** Reads one CLI login's token. The caller hands it to the org's secrets and keeps no copy. */
