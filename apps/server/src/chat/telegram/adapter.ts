@@ -1,6 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { Body, ChatCursor, ChatEnvelope, ChatFileRef, ChatKind, ChatMention } from "@majhi/shared";
 import { errorMessage } from "../../errors.ts";
 import {
@@ -13,6 +10,7 @@ import {
   type ChatTarget,
   FILE_CAP_BYTES,
 } from "../adapter.ts";
+import { saveFetched } from "../files.ts";
 import { type People, packBody, renderPlain, renderTelegramHtml } from "../format.ts";
 import {
   type Fetch,
@@ -212,23 +210,6 @@ function mentionsOf(msg: TgMessage, text: string): ChatMention[] {
     }
   }
   return out;
-}
-
-/** A name safe to put in a path: letters, digits, dot, dash and underscore. */
-function safeName(name: string): string {
-  let out = "";
-  for (const ch of name.split("/").pop() ?? "file") {
-    const ok =
-      (ch >= "a" && ch <= "z") ||
-      (ch >= "A" && ch <= "Z") ||
-      (ch >= "0" && ch <= "9") ||
-      ch === "." ||
-      ch === "-" ||
-      ch === "_";
-    out += ok ? ch : "_";
-  }
-  while (out.startsWith(".")) out = out.slice(1);
-  return out === "" ? "file" : out.slice(0, 80);
 }
 
 /**
@@ -462,13 +443,11 @@ export class TelegramAdapter implements ChatAdapter {
     const res = await api.download(info.file_path);
     const data = Buffer.from(await res.arrayBuffer());
     if (data.byteLength > FILE_CAP_BYTES) throw new ChatSendError("The file is over 20 MB.", "rejected");
-    await mkdir(conn.filesDir, { recursive: true });
-    const path = join(conn.filesDir, `${randomUUID().slice(0, 8)}-${safeName(ref.name)}`);
-    await writeFile(path, data, { mode: 0o600 });
-    return {
-      path,
-      type: ref.type ?? res.headers.get("content-type") ?? "application/octet-stream",
-      bytes: data.byteLength,
-    };
+    return saveFetched(
+      conn.filesDir,
+      ref.name,
+      data,
+      ref.type ?? res.headers.get("content-type") ?? "application/octet-stream",
+    );
   }
 }

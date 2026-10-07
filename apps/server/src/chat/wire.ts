@@ -26,8 +26,11 @@ import { ClientRooms } from "./rooms.ts";
 import { ClientChat, type ClientChatDeps } from "./service.ts";
 import { ClientTriage, type ToolLessModel } from "./triage.ts";
 
-/** Where each chat app keeps its token among the connection's secret entries. */
-export const TOKEN_VARIABLE: Partial<Record<ChatApp, string>> = { telegram: "TELEGRAM_BOT_TOKEN" };
+/** Where each chat app keeps its tokens among the connection's secret entries. */
+export const TOKEN_VARIABLES: Partial<Record<ChatApp, { token: string; appToken?: string }>> = {
+  telegram: { token: "TELEGRAM_BOT_TOKEN" },
+  slack: { token: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
+};
 
 export interface ClientChatWiring {
   store: Store;
@@ -50,6 +53,10 @@ export interface ClientChatWiring {
   createIncident: IncidentsDeps["create"];
   /** A workspace's time zone. */
   tz: IncidentsDeps["tz"];
+  /** Moves a done incident task back to an open state through the task lifecycle. */
+  reopenIncident: IncidentsDeps["reopen"];
+  /** Tells an incident task's lead something, as majhi. */
+  askLead: IncidentsDeps["askLead"];
   decisions: LayaDecisions | undefined;
   lane: ClientChatDeps["lane"];
   deleteWebhook: ClientChatDeps["deleteWebhook"];
@@ -103,10 +110,16 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
   const hub = new ChatHub({
     adapters: w.adapters,
     connections: chatConnections,
-    token: async (connection) => {
+    tokens: async (connection) => {
       const found = (await chatConnections()).find((c) => c.id === connection);
-      const name = found === undefined ? undefined : TOKEN_VARIABLE[found.app];
-      return name === undefined ? undefined : w.secretOf(connection, name);
+      const names = found === undefined ? undefined : TOKEN_VARIABLES[found.app];
+      if (names === undefined) return undefined;
+      const token = await w.secretOf(connection, names.token);
+      if (token === undefined) return undefined;
+      if (names.appToken === undefined) return { token };
+      // A token the app needs and the owner has not saved is a connection that cannot be read.
+      const appToken = await w.secretOf(connection, names.appToken);
+      return appToken === undefined ? undefined : { token, appToken };
     },
     majhiHome: w.majhiHome,
     cursors: {
@@ -161,6 +174,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     settings: async (org) => effectiveIncident((await w.config.settings()).autonomy.orgs[org]?.incident),
     tz: w.tz,
     create: w.createIncident,
+    reopen: w.reopenIncident,
+    askLead: w.askLead,
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });

@@ -85,6 +85,8 @@ const EnvSchema = z.object({
   MAJHI_CHATS: z.enum(["on", "off"]).optional(),
   /** Where Telegram's Bot API is. Only a test or a trial against a fake bot server sets it. */
   MAJHI_TELEGRAM_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
+  /** Where Slack's Web API is. Only a test or a trial against a fake Slack sets it. */
+  MAJHI_SLACK_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Memory cap per run. */
   MAJHI_RUNNER_MEMORY: z
     .string()
@@ -127,7 +129,7 @@ export interface ServerEnv {
   /** `MAJHI_ORIGIN` without a trailing slash: where the browser reaches majhi. */
   origin: string;
   /** Chat apps: whether this server reads them, and where Telegram's API is when it is not Telegram's own. */
-  chats?: { polling: boolean; telegramApi?: string };
+  chats?: { polling: boolean; telegramApi?: string; slackApi?: string };
 }
 
 export interface RunnerEnv {
@@ -188,6 +190,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
       ...(env.MAJHI_TELEGRAM_API === undefined
         ? {}
         : { telegramApi: env.MAJHI_TELEGRAM_API.replace(/\/+$/, "") }),
+      ...(env.MAJHI_SLACK_API === undefined ? {} : { slackApi: env.MAJHI_SLACK_API.replace(/\/+$/, "") }),
     },
     runner: {
       mode: env.MAJHI_RUNNER,

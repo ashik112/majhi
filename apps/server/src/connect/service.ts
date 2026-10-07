@@ -153,6 +153,8 @@ export interface ConnectDeps {
   builtInApps?: Readonly<Record<string, string>>;
   /** Telegram's Bot API address, when it is not Telegram's own (a trial against a fake bot server). */
   telegramApi?: string | undefined;
+  /** Slack's Web API address, when it is not Slack's own (a trial against a fake Slack). */
+  slackApi?: string | undefined;
   /** The client ID of the workspace-wide GitHub OAuth app git sign-in already uses, if any. */
   githubClientId?: () => Promise<string | undefined>;
   /** Command-line tool sign-ins through the host helper. */
@@ -287,6 +289,7 @@ export class ConnectService {
       redirect: deps.redirect,
       fetch: () => this.fetchFn,
       telegramApi: deps.telegramApi,
+      slackApi: deps.slackApi,
       observe: (id, result) => this.deps.health?.observe(id, result),
       connections: deps.connections,
       connectionIds: deps.connectionIds,

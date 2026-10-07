@@ -11,6 +11,15 @@ export function useClients() {
   });
 }
 
+/** `contacts.list`: the contacts of a workspace. The `clients` topic refetches it. */
+export function useContacts(org: string | undefined) {
+  return useQuery<CommandOutput<"contacts.list">, ApiRequestError>({
+    queryKey: [...queryKeys.clients, "contacts", org],
+    queryFn: () => cmd("contacts.list", { org: org ?? "" }),
+    enabled: org !== undefined,
+  });
+}
+
 function useRefetch() {
   const client = useQueryClient();
   return () =>

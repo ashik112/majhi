@@ -1,5 +1,25 @@
 # Progress
 
+## Client chats, phase 3: Slack (branch `feat/chat-slack`, built, not merged)
+
+Slack channels of the owner's own workspace are client chats like Telegram groups. Brief: `docs/briefs/client-chats.md`, phase 3.
+
+**Plan.** Migrate the saved Slack connection to `chat`, then the adapter against a fake Slack (Web API plus Socket Mode), then the catch-up, then the screens, then a throwaway majhi with the fake Slack.
+
+**What works.**
+- Slack saves as a `chat` connection (service `slack`, `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` in secrets.age); the same setup sheet as before. A Slack `env` connection saved earlier moves to it at startup with its token references untouched.
+- The adapter (`apps/server/src/chat/slack/`): Socket Mode with the app token, each envelope acknowledged at once, events deduped on event id and on (channel, ts), a new socket opened before the old one closes on `refresh_requested` or a warning, edits and deletes as revisions, threads by `thread_ts` (a reply goes to the thread; a reply to a message in a thread goes to its root), our own and other bots' messages ignored, names from `users.info` (cached), files fetched with the bot token (20 MB cap, only from Slack's own host), mrkdwn replies with `<@U..>` mentions split at 3,500 characters, a send queue per channel that honours `Retry-After`. A refused token marks the connection "needs a new token"; `not_in_channel` and `channel_not_found` mark the chat unreachable.
+- After a gap the channel is read from the saved position (`conversations.history`, and `conversations.replies` for threads written in lately), through the same keys, so nothing is stored twice. If Slack limits the calls the rooms show the gap marker and it is tried again every minute.
+- New chats, linking, contacts, "same person?" across Telegram and Slack, triage, replies, Tell, holds and incidents run on the shared code; the only shared changes are two tokens per connection, an optional `gap` on the sink, a Slack mention that reads `T:U`, and the Slack mark in the lists.
+
+**How to try it.** Connections, Add connection, Slack: the manifest, the two tokens. Add the app to a channel; it shows under New chats. Without Slack: `FakeSlack` (`apps/server/src/chat/testing/fake-slack.ts`) serves Slack's Web API and a Socket Mode socket; `MAJHI_SLACK_API=<its api address> MAJHI_CHATS=on` points a throwaway majhi at it.
+
+**Checked.** Typecheck, biome, the three tests of the brief (a repeated event stores one item; a gap is filled from the history from the read position and nothing is stored twice; the migration moves the references and leaves no `env` Slack connection), the unit suite and e2e once. A throwaway majhi against the fake Slack: connected through `connect.appSave`, the channel arrived under New chats, linked in the browser, a message, a thread reply, an edit, the owner's reply and two thread replies reached the fake with the right `thread_ts`, the socket was dropped and the messages written meanwhile were filled from history. By script against the adapter: the refresh opened the new socket before closing the old with no history read, a 429 on send waited and went, a message over 3,500 characters split, a refused app token showed "needs a new token", a limited history gave the gap marker, a file outside Slack's host was refused.
+
+**Left.** Not run against real Slack. A reinstalled app is needed for the new `files:read` scope. Edits and deletes made during a gap are not found (the history shows only new messages). Direct messages from a stranger are ignored, as for Telegram.
+
+**Known issues.** The channel list is whatever the app has seen: a channel the app is in but nobody wrote in does not appear until someone writes.
+
 ## Client chats, phase 2: incidents and RCA (branch `feat/chat-incidents`, built, not merged)
 
 A client who reports an outage is told what is happening, in their own chat, until it is resolved, and the owner can send them a short report after. Brief: `docs/briefs/client-chats.md`, phase 2.
