@@ -36,7 +36,13 @@ import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import { loadSshConfig, type SshConfig } from "../scan/sshConfig.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
-import { readRepoStyle, taskBranchType, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
+import {
+  mergeSubject,
+  readRepoStyle,
+  taskBranchType,
+  titleFor,
+  typeOfBranch,
+} from "../tasks/branch-naming.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   HELD,
@@ -91,6 +97,7 @@ export interface MrDeps {
     | "assertDeletable"
     | "shipPlan"
     | "deleteAfterShip"
+    | "cleanForShip"
   >;
   /** True while an agent of the task works. */
   working: (task: string) => boolean;
@@ -378,7 +385,7 @@ export class MrService {
       );
     }
     return this.exclusive(id, async () => {
-      const { repos } = await this.ordered(task);
+      const { repos } = await this.ordered(await this.deps.tasks.cleanForShip(id));
       const plans = await this.preflight(repos, pick, task.repos);
       const results: OpenMrsResult["repos"] = [];
       const opened: { ctx: RepoContext; target: MrTarget; number: number }[] = [];
@@ -521,11 +528,11 @@ export class MrService {
       }));
   }
 
-  /** `feat(acm-1): add login` when the repo's commits follow Conventional Commits, else `ACM-1: Add login`. */
+  /** `feat: add login` when the repo's commits follow Conventional Commits, else `Add login`. */
   private async titleOf(task: Task, repo: TaskRepo): Promise<string> {
     const { commits } = await readRepoStyle(repo.source);
     const type = typeOfBranch(repo.branch) ?? taskBranchType(task);
-    return titleFor({ id: task.id, title: task.title, type }, commits);
+    return titleFor({ title: task.title, type }, commits);
   }
 
   private body(
@@ -534,7 +541,6 @@ export class MrService {
     siblings: { project: string; url?: string | undefined }[],
   ): string {
     return renderMrDescription({
-      taskId: task.id,
       title: task.title,
       brief: task.brief,
       project,
@@ -707,7 +713,7 @@ export class MrService {
   async push(id: string, deleteAfter = false, by = "owner"): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(id);
     return this.exclusive(id, async () => {
-      const plan = await this.deps.tasks.shipPlan(task, {});
+      const plan = await this.deps.tasks.shipPlan(await this.deps.tasks.cleanForShip(id), {});
       const ready = await this.pushReady(
         task,
         plan.ship.map((s) => s.repo),
@@ -803,7 +809,7 @@ export class MrService {
       .filter((r) => input.project === undefined || r.project === input.project)
       .map((r) => ShipQueue.key(r.project, into(r.project, r.base)));
     return this.exclusive(input.id, keys, async () => {
-      const plan = await this.deps.tasks.shipPlan(task, input);
+      const plan = await this.deps.tasks.shipPlan(await this.deps.tasks.cleanForShip(input.id), input);
       const ready = await this.pushReady(
         task,
         plan.ship.map((s) => s.repo),
@@ -819,7 +825,7 @@ export class MrService {
         const into = targets[repo.project] ?? repo.base;
         const state = await this.remoteState(repo.source, target, into, {
           branch: repo.branch,
-          subject: `Merge ${task.id}: `,
+          subject: mergeSubject(repo.branch),
         });
         if (state.behind) behind.push({ project: repo.project, remote: target.remote, into });
         if (state.missing && input.createRemoteBranch !== true) {
