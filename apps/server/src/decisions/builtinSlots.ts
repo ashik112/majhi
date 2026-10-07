@@ -163,6 +163,9 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     use: "task-size",
     question: /^difficulty$/,
     target: 0.9,
+    // A wrong size moves a model pick one step and the owner can change it, so it acts from the first day on a sure answer.
+    startMode: "live",
+    startBar: 0.9,
     fixtures: SIZES,
   },
   {
@@ -201,8 +204,28 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     target: 0.95,
     fixtures: VERDICTS,
   },
-  { id: "team-pick", title: "Team for a new task", use: "routing", question: /^team$/, target: 0.9 },
-  { id: "task-type", title: "Type of a new task", use: "routing", question: /^type$/, target: 0.9 },
+  {
+    id: "team-pick",
+    title: "Team for a new task",
+    use: "routing",
+    question: /^team$/,
+    target: 0.9,
+    // The owner can change the team of a task; a doubtful pick falls back to the default team.
+    startMode: "live",
+    startBar: 0.9,
+    teacher: true,
+  },
+  {
+    id: "task-type",
+    title: "Type of a new task",
+    use: "routing",
+    question: /^type$/,
+    target: 0.9,
+    // The type is a label the owner or the captain can change; a doubtful pick falls back to the rules' reading.
+    startMode: "live",
+    startBar: 0.9,
+    teacher: true,
+  },
   {
     id: "memory-verdict",
     title: "Keep or drop a fact",

@@ -263,6 +263,9 @@ export const LAYA_USE_SLOTS: readonly SlotDef[] = [
     use: "captain",
     question: /^triage$/,
     target: 0.95,
+    // A hint on a finding: the owner still sees and can reopen every finding, so it acts on a sure answer.
+    startMode: "live",
+    startBar: 0.9,
     fixtures: TRIAGE,
   },
   {
@@ -283,6 +286,7 @@ export const LAYA_USE_SLOTS: readonly SlotDef[] = [
     question: /^client-message$/,
     // Unsure counts as "needs a reply", so a wrong guess costs a reply the owner can see, never a dropped message.
     startMode: "live",
+    startBar: 0.9,
     target: 0.95,
     classOf: (value) => (value === "urgent" ? "needs-reply" : value),
     fixtures: CLIENT_MESSAGES,

@@ -44,7 +44,14 @@ import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { readDecisionSettings } from "./settings.ts";
-import { MIN_LABELS, type SlotDef, type SlotRegistry } from "./slots.ts";
+import {
+  MIN_LABELS,
+  READ_BY_HAND,
+  REFIT_EVERY,
+  type SlotDef,
+  type SlotRegistry,
+  TEACHER_PER_DAY,
+} from "./slots.ts";
 import type { DecideTokens } from "./tokens.ts";
 import { regressionOf } from "./uses/weekly-eval.ts";
 
@@ -96,6 +103,8 @@ export class DecisionService implements Decisions {
   private readonly runner: EvalRunner;
   /** The bar the eval scores with: refreshed when an eval starts. */
   private barSettings: DecisionSettings | undefined;
+  /** The label count of each slot when a fit was last tried, so a fit that finds nothing is not retried on every label. */
+  private readonly triedAt = new Map<string, number>();
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -230,6 +239,7 @@ export class DecisionService implements Decisions {
         ...(version === undefined ? {} : { version }),
       });
       settle(chain.provider === "laya" ? entry : undefined);
+      if (chain.provider === "laya") this.askTeacher(request, use, result.id);
       return result;
     } catch (err) {
       settle(undefined);
@@ -321,6 +331,7 @@ export class DecisionService implements Decisions {
       source: "owner",
       note: input.note,
     });
+    this.refitDue();
     const stored = this.deps.labels
       .forDecision(input.id)
       .find((l) => l.question === question && l.source === "owner");
@@ -409,17 +420,76 @@ export class DecisionService implements Decisions {
     // Labels are in the slot's classes ("not-keep" for every kind of drop), as its answers are compared.
     const classed = this.deps.slots.of(use, question).classOf?.(label) ?? label;
     this.deps.labels.add({ decisionId, question, label: classed, source: "teacher", note });
+    this.refitDue();
+  }
+
+  /**
+   * A bigger model labels some of Laya's answers on a slot that asks for it, a few a day (the stand-in
+   * agent, within `TEACHER_PER_DAY` answers a day for the use) and only until the slot has plenty of
+   * labels. Runs behind the caller and never fails it.
+   */
+  private askTeacher(request: DecideRequest, use: Use, decisionId: string): void {
+    if (use.order?.[0] === "acp" || READ_BY_HAND.has(use.use)) return;
+    const names = Object.keys(request.questions).filter((name) => {
+      const slot = this.deps.slots.of(use.use, name);
+      return slot.teacher === true && this.labelCount(slot) < MIN_LABELS * 3;
+    });
+    if (names.length === 0) return;
+    const ask: DecideRequestInput = {
+      state: request.state,
+      questions: Object.fromEntries(
+        names.flatMap((n) => (request.questions[n] === undefined ? [] : [[n, request.questions[n]]])),
+      ),
+    };
+    void this.decide(ask, {
+      use: use.use,
+      order: ["acp"],
+      perDay: TEACHER_PER_DAY,
+      ...(use.task === undefined ? {} : { task: use.task }),
+    })
+      .then((taught) => {
+        if (taught.provider !== "acp") return;
+        for (const name of names) {
+          const a = taught.answers[name];
+          if (a?.gate?.accepted === true)
+            this.teach(decisionId, name, String(a.value), "the stand-in agent answered");
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Fits every slot that has gathered enough new labels since its last fit, in the background. A fit
+   * that passes its target moves the slot to live; one that falls short, or a slot that lost
+   * precision, goes back to shadow. Never fails the caller.
+   */
+  private refitDue(): void {
+    for (const slot of this.deps.slots.all()) {
+      const n = this.labelCount(slot);
+      if (n < MIN_LABELS) continue;
+      const last = this.triedAt.get(slot.id) ?? this.deps.calibrations.get(slot.id)?.labels ?? 0;
+      if (n - last < REFIT_EVERY) continue;
+      this.triedAt.set(slot.id, n);
+      void this.settings()
+        .then((settings) => {
+          this.barSettings = settings;
+          return this.runner.run(slot.id, "labels");
+        })
+        .catch(() => undefined);
+    }
   }
 
   /** The outcome of `ref` is known. The links go: a fact kept once stays kept. */
   resolve(kind: LinkKind, ref: string, label: string, note?: string): void {
     this.deps.labels.resolve(kind, ref, { label, note }, true);
+    this.refitDue();
   }
 
   /** A task reached review: its size decisions get the size it turned out to be. Again at the next review. */
   taskReviewed(task: string, outcome: TaskOutcome): void {
     const size = sizeBucket(outcome);
     this.deps.labels.resolve("task", task, { label: size.label, note: size.note });
+    this.refitDue();
   }
 
   ask(request: DecideRequest): Promise<DecisionResult> {

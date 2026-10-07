@@ -104,7 +104,7 @@ describe("shadow mode", () => {
       kind: "code",
       repos: ["acme-web"],
       role: "Builder",
-      use: "task-size",
+      use: "model-pick",
     });
     expect(rating).toMatchObject({ level: "large", counted: false });
   });
