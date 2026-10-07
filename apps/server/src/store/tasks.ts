@@ -11,6 +11,7 @@ import {
   type CoordinationMode,
   CoordinationModeSchema,
   DaySchema,
+  deployStepOfRecord,
   FINDING_SOURCE_LABEL,
   IdSchema,
   isCaptainLane,
@@ -43,11 +44,12 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
 import type { Db } from "./db.ts";
+import type { DeployRepo } from "./deploys.ts";
 import { attachments, autonomyTasks, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
 import { parseRows } from "./tolerant.ts";
 
@@ -132,7 +134,11 @@ export class TaskRepo {
   private subjectQueries: ReturnType<typeof subjectStatements> | undefined;
   private prepared: ReturnType<typeof taskStatements> | undefined;
 
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** The deploy records, for the deploy steps of a trail. */
+    private readonly deploys: Pick<DeployRepo, "ofTasks">,
+  ) {}
 
   /** The hot queries, built and prepared once (Drizzle builds and prepares a plain query on every call). */
   private get q(): ReturnType<typeof taskStatements> {
@@ -264,6 +270,9 @@ export class TaskRepo {
             pushedAt: r.pushedAt ?? null,
             shippedHead: r.shipped?.head ?? null,
             shippedInto: r.shipped?.into ?? null,
+            landedCommit: r.landed?.commit ?? null,
+            landedInto: r.landed?.into ?? null,
+            landedAt: r.landed?.at ?? null,
             startCommit: r.startCommit ?? null,
             startRef: r.startRef ?? null,
             writes: r.writes === true,
@@ -359,6 +368,7 @@ export class TaskRepo {
     const linkRows = this.allLinks();
     const facts = this.statusFacts();
     const unmerged = this.unmergedMrs();
+    const deploys = this.deploys.ofTasks();
     const autonomous = new Set(this.q.autonomous.all().map((r) => r.task));
     const linksBy = new Map<string, LinkRow[]>();
     const childFacts = new Map<string, ChildFact[]>();
@@ -402,6 +412,7 @@ export class TaskRepo {
             mrs: mine.flatMap(mrFactOf),
             merged: mine.filter((r) => r.shippedHead !== null).map((r) => r.project),
             pendingShip: pending === undefined ? [] : shipProjects(pending, mine),
+            deploys: (deploys.get(row.id) ?? []).map(deployStepOfRecord),
           }),
         };
         const typing = typingOf(row);
@@ -838,6 +849,36 @@ export class TaskRepo {
       .run();
   }
 
+  /** The commits the work of tasks landed in on a project's branches, newest first, with the task. */
+  landings(project: string, limit: number): { task: string; commit: string; into: string; at: string }[] {
+    return this.db
+      .select({
+        task: taskRepos.task,
+        commit: taskRepos.landedCommit,
+        into: taskRepos.landedInto,
+        at: taskRepos.landedAt,
+      })
+      .from(taskRepos)
+      .where(and(eq(taskRepos.project, project), isNotNull(taskRepos.landedCommit)))
+      .orderBy(desc(taskRepos.landedAt))
+      .limit(limit)
+      .all()
+      .flatMap((r) =>
+        r.commit === null || r.into === null || r.at === null
+          ? []
+          : [{ task: r.task, commit: r.commit, into: r.into, at: r.at }],
+      );
+  }
+
+  /** The work of a repo landed in `commit` of `into`: what a deploy of it ships. */
+  setLanded(task: string, project: string, landed: { commit: string; into: string; at: string }): void {
+    this.db
+      .update(taskRepos)
+      .set({ landedCommit: landed.commit, landedInto: landed.into, landedAt: landed.at })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
   /** The branch a repo's worktree is cut from. Only before the worktree exists. */
   setRepoBase(task: string, project: string, base: string, at: string): void {
     this.db.transaction((tx) => {
@@ -1203,6 +1244,9 @@ function buildTask(
       ...(r.shippedHead === null || r.shippedInto === null
         ? {}
         : { shipped: { head: r.shippedHead, into: r.shippedInto } }),
+      ...(r.landedCommit === null || r.landedInto === null || r.landedAt === null
+        ? {}
+        : { landed: { commit: r.landedCommit, into: r.landedInto, at: r.landedAt } }),
       ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
       ...(r.startRef === null ? {} : { startRef: r.startRef }),
       ...(r.writes ? { writes: true } : {}),

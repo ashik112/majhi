@@ -7,6 +7,7 @@ import { ChatStateRepo } from "./chat-state.ts";
 import { ConnectionHealthRepo } from "./connection-health.ts";
 import { ConversationsRepo } from "./conversations.ts";
 import { createDb, type SqliteBaseline } from "./db.ts";
+import { DeployRepo } from "./deploys.ts";
 import { PlanRepo } from "./plans.ts";
 import { RoomRepo } from "./room.ts";
 import { PermissionRepo, RunRepo } from "./runs.ts";
@@ -34,6 +35,8 @@ export class Store {
   readonly conversations: ConversationsRepo;
   /** What majhi put into contexts, for the token receipts. */
   readonly usageEvents: UsageEvents;
+  /** The deploy records: one row per target and commit. */
+  readonly deploys: DeployRepo;
   /** The project wiki's pages, their versions and each project's state. */
   readonly wiki: WikiRepo;
   /** The SQLite version and pragmas the connection runs with. */
@@ -44,7 +47,8 @@ export class Store {
     const { sqlite, db, baseline } = createDb(file);
     this.sqlite = sqlite;
     this.baseline = baseline;
-    this.tasks = new TaskRepo(db);
+    this.deploys = new DeployRepo(sqlite);
+    this.tasks = new TaskRepo(db, this.deploys);
     this.lifecycle = new LifecycleRows(db);
     this.room = new RoomRepo(db);
     this.runs = new RunRepo(db);

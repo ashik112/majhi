@@ -1,3 +1,4 @@
+import { type DeployStepView, deployTone } from "./deploy.ts";
 import type { HandoffStepId } from "./handoff.ts";
 import type { CiState, MrState } from "./mr-state.ts";
 import type { Trail, TrailStep, TrailTone } from "./task-trail.ts";
@@ -63,6 +64,8 @@ export interface TrailFacts {
   pendingShip: readonly string[];
   /** The step of shipping the rules leave to the owner now, when the task waits for them. */
   owner?: "merge" | "push" | undefined;
+  /** One entry per target of the projects the task changed that has a deploy record or a pending decision. */
+  deploys?: readonly DeployStepView[];
   /** The hand-off check of the task's head now, when it has one. */
   check?: { result: "green" | "red" | "running" | "queued"; failedStep?: HandoffStepId | undefined };
 }
@@ -130,5 +133,17 @@ export function buildTrail(facts: TrailFacts): Trail {
     });
   }
   if (facts.owner !== undefined) steps.push({ kind: "ship", tone: "needs", step: facts.owner });
+  for (const d of facts.deploys ?? []) {
+    steps.push({
+      kind: "deploy",
+      tone: deployTone(d.state),
+      env: d.env,
+      project: d.project,
+      state: d.state,
+      ...(d.commit === undefined ? {} : { commit: d.commit }),
+      ...(d.run === undefined ? {} : { run: d.run }),
+      ...(d.why === undefined ? {} : { why: d.why }),
+    });
+  }
   return steps;
 }

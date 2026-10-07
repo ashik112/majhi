@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import { DeployTargetsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
 import { TaskIdSchema } from "./ids.ts";
@@ -85,6 +86,10 @@ export const ProjectConfigSchema = z.looseObject({
   protected: z.boolean().optional(),
   /** Hand-off check commands that win over the project card's. */
   handoff: HandoffCommandsSchema.optional(),
+  /** Where this project is deployed, in the order the environments go live. Set once, here, and nowhere else. */
+  deploy: DeployTargetsSchema.optional(),
+  /** Suggested deploy targets the owner hid, by suggestion id. */
+  deploy_hidden: z.array(z.string().min(1).max(200)).max(50).optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -108,6 +113,8 @@ export const ProjectViewSchema = z.object({
   protected: z.boolean().default(false),
   /** This project's own hand-off check commands, when set. */
   handoff: HandoffCommandsSchema.optional(),
+  /** Where this project is deployed, in order. */
+  deploy: DeployTargetsSchema.optional(),
   /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
   looksLikeInfra: z.boolean().optional(),
 });
@@ -280,6 +287,12 @@ export const TaskRepoSchema = z.object({
   pushedAt: z.string().optional(),
   /** The branch tip majhi itself merged, and the branch it went into. Squash merges keep no commits. */
   shipped: z.object({ head: z.string(), into: z.string() }).optional(),
+  /**
+   * The commit this repo's work landed in, on the branch it went into, and when: the base tip right
+   * after majhi merged it, or the base tip fetched once its merge request was merged. What a deploy
+   * ships. Absent on work that landed before deploys, so none of it is ever deployed by itself.
+   */
+  landed: z.object({ commit: z.string().min(7), into: z.string(), at: z.string() }).optional(),
   /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
   startCommit: z.string().optional(),
   /** The ref that commit was taken from: the local base branch or its remote-tracking branch. */

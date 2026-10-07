@@ -77,6 +77,10 @@ export const taskRepos = sqliteTable(
     /** The branch tip majhi merged, and the branch it merged into. */
     shippedHead: text("shipped_head"),
     shippedInto: text("shipped_into"),
+    /** The commit this repo's work landed in on its base, the branch, and when (migration 177). */
+    landedCommit: text("landed_commit"),
+    landedInto: text("landed_into"),
+    landedAt: text("landed_at"),
     /** The commit the branch was cut from. Null on tasks made before it was recorded. */
     startCommit: text("start_commit"),
     /** The ref that commit was taken from (`main` or `origin/main`). */

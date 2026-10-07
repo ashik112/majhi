@@ -1955,6 +1955,16 @@ export class TaskService {
   }
 
   /**
+   * Remembers the commit a repo's work landed in: the tip of the branch it went into right after the merge.
+   * That commit is what a deploy of this work ships, so it is read now, before anything else can move the branch.
+   */
+  private async recordLanded(task: string, repo: { project: string; source: string }, into: string) {
+    const commit = (await git(repo.source, ["rev-parse", `refs/heads/${into}`]).catch(() => "")).trim();
+    if (commit === "") return;
+    this.deps.store.tasks.setLanded(task, repo.project, { commit, into, at: this.now().toISOString() });
+  }
+
+  /**
    * A task no agent runs: majhi makes its worktrees, `change` edits them, each changed worktree gets
    * one commit, and the task waits in review for the owner to merge. Nothing is pushed. A failed
    * change leaves the task in the inbox, with the reason in its room.
@@ -2136,6 +2146,7 @@ export class TaskService {
       if (outcome.ok) {
         heads.set(repo.project, outcome.head);
         this.deps.store.tasks.setShipped(task.id, repo.project, outcome.head, into);
+        await this.recordLanded(task.id, repo, into);
         void Promise.resolve(this.deps.onMerged?.({ task: task.id, project: repo.project, into })).catch(
           () => undefined,
         );

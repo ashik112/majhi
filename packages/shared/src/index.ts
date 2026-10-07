@@ -26,6 +26,7 @@ export * from "./containers.ts";
 export * from "./conversations.ts";
 export * from "./decision-learning.ts";
 export * from "./decisions.ts";
+export * from "./deploy.ts";
 export * from "./diagram.ts";
 export * from "./download.ts";
 export * from "./emoji.ts";

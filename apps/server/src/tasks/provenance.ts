@@ -6,7 +6,7 @@ import { UserError } from "../errors.ts";
  * What a creator tells `TaskService.create` about where the new task came from. Every creator says,
  * so no task is made without an origin by accident:
  *  - `owner` and `captain`: made by hand or by the captain, with its reason.
- *  - `ref`: made from something that lives in a workspace (a finding, a watch, a schedule). The
+ *  - `ref`: made from something that lives in a workspace (a finding, a watch, a schedule, a deploy). The
  *    workspace is the one the creator found the thing in; the task must be in the same one.
  *  - `child`: made under a parent (`input.parent`); its origin is that link, never stored twice.
  *  - `chat`: a chat has no origin and no type.
@@ -16,7 +16,7 @@ export type Provenance =
   | { kind: "captain"; reason: string }
   | {
       kind: "ref";
-      origin: Extract<StoredOrigin, { kind: "finding" | "watch" | "schedule" }>;
+      origin: Extract<StoredOrigin, { kind: "finding" | "watch" | "schedule" | "deploy" }>;
       workspace: string;
     }
   | { kind: "child" }

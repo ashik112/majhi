@@ -1628,6 +1628,18 @@ export class MrService {
           `${repo.project}: could not fetch ${repo.base} from ${remote} (${failed}). Tasks waiting on this one use the last copy on this machine.`,
           "error",
         );
+      } else {
+        // What the host merged into the base: the commit a deploy of this work ships.
+        const landed = (
+          await git(repo.source, ["rev-parse", `refs/remotes/${remote}/${repo.base}`]).catch(() => "")
+        ).trim();
+        if (landed !== "") {
+          this.deps.store.tasks.setLanded(task.id, repo.project, {
+            commit: landed,
+            into: repo.base,
+            at: this.now().toISOString(),
+          });
+        }
       }
     }
     for (const repo of task.repos) {
