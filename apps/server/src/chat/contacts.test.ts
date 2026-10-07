@@ -7,10 +7,17 @@ describe("contacts", () => {
   it("asks whether two contacts are one person and never merges by name alone", async () => {
     const w = world();
     const room = await w.linked();
-    await w.ingest.deliver(CONN, envelope({ message: "2", text: "Hi", sender: { id: "u1", name: "Sara", bot: false, verified: true } }));
+    await w.ingest.deliver(
+      CONN,
+      envelope({ message: "2", text: "Hi", sender: { id: "u1", name: "Sara", bot: false, verified: true } }),
+    );
     w.contacts.ensure("acme", { app: "slack", account: "acme-workspace", native: "U9" }, "Sara Khan");
     // The second identity appears in the same room as a new contact: the captain asks.
-    const second = w.contacts.ensure("acme", { app: "telegram", account: CONN.account, native: "u2" }, "Sara Khan");
+    const second = w.contacts.ensure(
+      "acme",
+      { app: "telegram", account: CONN.account, native: "u2" },
+      "Sara Khan",
+    );
     const card = w.contacts.propose(room, second.contact);
     expect(card).toMatchObject({ type: "same-person", state: "asking" });
     expect(w.contacts.list("acme")).toHaveLength(3);
@@ -27,8 +34,16 @@ describe("contacts", () => {
   it("puts both contacts back exactly when a merge is undone, and keeps what the kept one gained since", async () => {
     const w = world();
     const room = await w.linked();
-    const a = w.contacts.ensure("acme", { app: "telegram", account: CONN.account, native: "u1" }, "Sara").contact;
-    const b = w.contacts.ensure("acme", { app: "slack", account: "acme-workspace", native: "U9" }, "Sara Khan").contact;
+    const a = w.contacts.ensure(
+      "acme",
+      { app: "telegram", account: CONN.account, native: "u1" },
+      "Sara",
+    ).contact;
+    const b = w.contacts.ensure(
+      "acme",
+      { app: "slack", account: "acme-workspace", native: "U9" },
+      "Sara Khan",
+    ).contact;
     w.store.client.setUs(b.id, true);
     const before = { a: w.contacts.view(a.id), b: w.contacts.view(b.id) };
 
@@ -46,14 +61,24 @@ describe("contacts", () => {
     w.contacts.undo(merge, room);
     expect(w.contacts.view(a.id)).toEqual(before.a);
     expect(w.contacts.view(b.id)).toEqual(before.b);
-    expect(w.store.client.byIdentity("acme", { app: "slack", account: "acme-workspace", native: "U9" })?.id).toBe(b.id);
+    expect(
+      w.store.client.byIdentity("acme", { app: "slack", account: "acme-workspace", native: "U9" })?.id,
+    ).toBe(b.id);
     expect(() => w.contacts.undo(merge)).toThrow(/undone already/);
   });
 
   it("never merges contacts of two workspaces", () => {
     const w = world();
-    const a = w.contacts.ensure("acme", { app: "telegram", account: CONN.account, native: "u1" }, "Sara").contact;
-    const b = w.contacts.ensure("globex", { app: "telegram", account: CONN.account, native: "u1" }, "Sara").contact;
+    const a = w.contacts.ensure(
+      "acme",
+      { app: "telegram", account: CONN.account, native: "u1" },
+      "Sara",
+    ).contact;
+    const b = w.contacts.ensure(
+      "globex",
+      { app: "telegram", account: CONN.account, native: "u1" },
+      "Sara",
+    ).contact;
     expect(a.id).not.toBe(b.id);
     expect(() => w.contacts.merge(a.id, b.id)).toThrow(/two workspaces/);
     expect(w.contacts.view(a.id).ids).toHaveLength(1);

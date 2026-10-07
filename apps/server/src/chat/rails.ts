@@ -39,7 +39,7 @@ export interface RailsInput {
 
 export type RailsVerdict =
   | { send: true; text: string }
-  | { send: false; why: ReplyHold; /** The text as it is kept: a secret is taken out. */ text: string };
+  | { send: false; why: ReplyHold /** The text as it is kept: a secret is taken out. */; text: string };
 
 const REMOVED = "[removed]";
 

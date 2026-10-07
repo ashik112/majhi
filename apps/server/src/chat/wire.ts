@@ -8,7 +8,7 @@ import {
 } from "@majhi/shared";
 import { authorityOf, effectiveAuthority } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
-import { type LayaDecisions } from "../decisions/uses/common.ts";
+import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
@@ -104,7 +104,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     majhiHome: w.majhiHome,
     cursors: {
       get: (connection) => w.store.client.cursor(connection),
-      set: (connection, cursor) => w.store.client.setCursor(connection, cursor, (w.now?.() ?? new Date()).toISOString()),
+      set: (connection, cursor) =>
+        w.store.client.setCursor(connection, cursor, (w.now?.() ?? new Date()).toISOString()),
     },
     deliver: async (conn, envelope) => {
       if (ingest === undefined) throw new Error("Chats are not ready.");
@@ -135,7 +136,9 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     tell,
     holds,
     orgNames: async () =>
-      new Map(Object.entries((await w.config.sections()).orgs).map(([id, o]) => [id, o.name] as [string, string])),
+      new Map(
+        Object.entries((await w.config.sections()).orgs).map(([id, o]) => [id, o.name] as [string, string]),
+      ),
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });

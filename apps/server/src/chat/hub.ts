@@ -1,7 +1,13 @@
 import { join } from "node:path";
 import type { ChatAccount, ChatApp, ChatCursor, ChatEnvelope, ChatFileRef, ChatTrouble } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
-import { type ChatAdapter, type ChatConnection, ChatSendError, type ChatSink, type ChatTarget } from "./adapter.ts";
+import {
+  type ChatAdapter,
+  type ChatConnection,
+  ChatSendError,
+  type ChatSink,
+  type ChatTarget,
+} from "./adapter.ts";
 
 /** A chat app connection as the connections store lists it. */
 export interface ChatConnectionInfo {
@@ -64,9 +70,11 @@ export class ChatHub {
 
   /** Makes the running loops match the connections. Safe to call often: calls queue. */
   sync(): Promise<void> {
-    this.syncing = this.syncing.then(() => this.syncNow()).catch((err) => {
-      this.deps.log?.(`chat: sync failed: ${errorMessage(err)}`);
-    });
+    this.syncing = this.syncing
+      .then(() => this.syncNow())
+      .catch((err) => {
+        this.deps.log?.(`chat: sync failed: ${errorMessage(err)}`);
+      });
     return this.syncing;
   }
 
@@ -153,7 +161,10 @@ export class ChatHub {
     await this.sync();
   }
 
-  private async resolve(app: ChatApp, account: string): Promise<{ adapter: ChatAdapter; conn: ChatConnection }> {
+  private async resolve(
+    app: ChatApp,
+    account: string,
+  ): Promise<{ adapter: ChatAdapter; conn: ChatConnection }> {
     const adapter = this.adapter(app);
     const info = (await this.deps.connections()).find((c) => c.app === app && c.account === account);
     if (adapter === undefined || info === undefined) {
@@ -170,7 +181,8 @@ export class ChatHub {
     try {
       return await adapter.send(conn, target, text);
     } catch (err) {
-      if (err instanceof ChatSendError && err.kind === "unreachable") this.deps.unreachable(conn, target.chat);
+      if (err instanceof ChatSendError && err.kind === "unreachable")
+        this.deps.unreachable(conn, target.chat);
       if (err instanceof ChatSendError && err.kind === "needs-token") {
         this.troubles.set(conn.id, "needs-token");
         this.deps.changed();

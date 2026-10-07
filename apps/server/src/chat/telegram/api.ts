@@ -80,7 +80,8 @@ export class TelegramApi {
     const ok = OkBody.safeParse(body);
     if (ok.success) {
       const result = schema.safeParse(ok.data.result);
-      if (!result.success) throw new TelegramNetworkError(`Telegram's answer to ${method} had an unexpected shape.`);
+      if (!result.success)
+        throw new TelegramNetworkError(`Telegram's answer to ${method} had an unexpected shape.`);
       return result.data;
     }
     const failed = ErrorBody.safeParse(body);

@@ -155,9 +155,9 @@ export class Contacts {
     if (record.undoneAt !== undefined) throw new UserError("That merge was undone already.", 409);
     this.deps.store.client.undoMerge(merge, this.at());
     if (room !== undefined) {
-      const cards = this.deps.store.room.page(room, 200).items.filter(
-        (i) => i.type === "same-person" && i.merge === merge,
-      );
+      const cards = this.deps.store.room
+        .page(room, 200)
+        .items.filter((i) => i.type === "same-person" && i.merge === merge);
       for (const card of cards) {
         if (card.type !== "same-person") continue;
         // The owner said same, then took it back: that is Not same, and the pair is not asked again.

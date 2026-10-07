@@ -19,8 +19,8 @@ import {
   TelegramNetworkError,
   TgCount,
   TgFileInfo,
-  TgSent,
   type TgMessage,
+  TgSent,
   TgUpdate,
   TgUpdates,
 } from "./api.ts";
@@ -92,15 +92,28 @@ function kindOf(type: string): ChatKind {
   return "group";
 }
 
-function nameOf(user: { first_name?: string | undefined; last_name?: string | undefined; username?: string | undefined }): string {
-  const full = [user.first_name, user.last_name].filter((p): p is string => p !== undefined && p !== "").join(" ");
+function nameOf(user: {
+  first_name?: string | undefined;
+  last_name?: string | undefined;
+  username?: string | undefined;
+}): string {
+  const full = [user.first_name, user.last_name]
+    .filter((p): p is string => p !== undefined && p !== "")
+    .join(" ");
   return full !== "" ? full : (user.username ?? "Unknown");
 }
 
 function fileRefs(msg: TgMessage): ChatFileRef[] {
   const out: ChatFileRef[] = [];
   const add = (
-    file: { file_id: string; file_size?: number | undefined; file_name?: string | undefined; mime_type?: string | undefined } | undefined,
+    file:
+      | {
+          file_id: string;
+          file_size?: number | undefined;
+          file_name?: string | undefined;
+          mime_type?: string | undefined;
+        }
+      | undefined,
     fallback: string,
   ) => {
     if (file === undefined) return;
@@ -169,7 +182,12 @@ export function toEnvelope(
           bot: false,
           verified: false,
         }
-      : { id: String(msg.from?.id), name: nameOf(msg.from ?? { first_name: "Unknown" }), bot: msg.from?.is_bot === true, verified: true };
+      : {
+          id: String(msg.from?.id),
+          name: nameOf(msg.from ?? { first_name: "Unknown" }),
+          bot: msg.from?.is_bot === true,
+          verified: true,
+        };
   const at = edit === undefined ? msg.date : (edit.edit_date ?? edit.date);
   return {
     kind: edit === undefined ? "new" : "edit",
@@ -192,7 +210,12 @@ function safeName(name: string): string {
   let out = "";
   for (const ch of name.split("/").pop() ?? "file") {
     const ok =
-      (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch === "." || ch === "-" || ch === "_";
+      (ch >= "a" && ch <= "z") ||
+      (ch >= "A" && ch <= "Z") ||
+      (ch >= "0" && ch <= "9") ||
+      ch === "." ||
+      ch === "-" ||
+      ch === "_";
     out += ok ? ch : "_";
   }
   while (out.startsWith(".")) out = out.slice(1);
@@ -267,7 +290,10 @@ export class TelegramAdapter implements ChatAdapter {
         if (raw.length === 0) continue;
         let top = offset;
         for (const entry of raw) {
-          const id = typeof entry === "object" && entry !== null && "update_id" in entry ? Number(entry.update_id) : NaN;
+          const id =
+            typeof entry === "object" && entry !== null && "update_id" in entry
+              ? Number(entry.update_id)
+              : NaN;
           if (!Number.isFinite(id)) continue;
           const update = TgUpdate.safeParse(entry);
           if (update.success) {
@@ -337,7 +363,11 @@ export class TelegramAdapter implements ChatAdapter {
     return run;
   }
 
-  private async sendNow(conn: ChatConnection, target: ChatTarget, text: string): Promise<{ message: string }> {
+  private async sendNow(
+    conn: ChatConnection,
+    target: ChatTarget,
+    text: string,
+  ): Promise<{ message: string }> {
     const api = this.api(conn);
     let last = "";
     let first = true;
@@ -348,7 +378,12 @@ export class TelegramAdapter implements ChatAdapter {
     return { message: last };
   }
 
-  private async sendPart(api: TelegramApi, target: ChatTarget, text: string, first: boolean): Promise<string> {
+  private async sendPart(
+    api: TelegramApi,
+    target: ChatTarget,
+    text: string,
+    first: boolean,
+  ): Promise<string> {
     const base: Record<string, unknown> = {
       chat_id: target.chat,
       ...(target.thread === undefined ? {} : { message_thread_id: Number(target.thread) }),
@@ -376,7 +411,8 @@ export class TelegramAdapter implements ChatAdapter {
           html = false;
           continue;
         }
-        if (err.code === 401) throw new ChatSendError("Telegram no longer accepts the bot token.", "needs-token");
+        if (err.code === 401)
+          throw new ChatSendError("Telegram no longer accepts the bot token.", "needs-token");
         if (err.code === 403 || (err.code === 400 && err.message.toLowerCase().includes("chat not found"))) {
           throw new ChatSendError("The bot cannot write to that chat any more.", "unreachable");
         }
@@ -394,7 +430,8 @@ export class TelegramAdapter implements ChatAdapter {
     }
     const api = this.api(conn);
     const info = await api.call("getFile", { file_id: ref.id }, TgFileInfo);
-    if (info.file_path === undefined) throw new ChatSendError("Telegram gave no path for the file.", "rejected");
+    if (info.file_path === undefined)
+      throw new ChatSendError("Telegram gave no path for the file.", "rejected");
     if (info.file_size !== undefined && info.file_size > FILE_CAP_BYTES) {
       throw new ChatSendError("The file is over 20 MB.", "rejected");
     }
@@ -404,6 +441,10 @@ export class TelegramAdapter implements ChatAdapter {
     await mkdir(conn.filesDir, { recursive: true });
     const path = join(conn.filesDir, `${randomUUID().slice(0, 8)}-${safeName(ref.name)}`);
     await writeFile(path, data, { mode: 0o600 });
-    return { path, type: ref.type ?? res.headers.get("content-type") ?? "application/octet-stream", bytes: data.byteLength };
+    return {
+      path,
+      type: ref.type ?? res.headers.get("content-type") ?? "application/octet-stream",
+      bytes: data.byteLength,
+    };
   }
 }

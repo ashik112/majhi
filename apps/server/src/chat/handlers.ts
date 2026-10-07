@@ -19,7 +19,10 @@ type ChatCommand =
 /** Client chats are the owner's: what the clients wrote and who they are never reaches an agent's tools. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(`${ctx.command} is the owner's. Client chats are never read or changed by an agent.`, 409);
+    throw new UserError(
+      `${ctx.command} is the owner's. Client chats are never read or changed by an agent.`,
+      409,
+    );
   }
 }
 

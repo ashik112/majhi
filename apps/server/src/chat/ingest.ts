@@ -95,7 +95,11 @@ export class ChatIngest {
     const files = await this.files(env);
     const sender = env.sender;
     const contact = sender.verified
-      ? this.deps.contacts.ensure(org, { app: env.external.app, account: env.external.account, native: sender.id }, sender.name)
+      ? this.deps.contacts.ensure(
+          org,
+          { app: env.external.app, account: env.external.account, native: sender.id },
+          sender.name,
+        )
       : undefined;
     const us = contact?.contact.us === true;
     const key = externalKeyText(env.external);
@@ -194,7 +198,8 @@ export class ChatIngest {
   /** Messages are missing between two times in every linked chat of an account. */
   gap(conn: ChatConnection, from: string, to: string): void {
     for (const room of this.deps.store.client.rooms()) {
-      if (room.chat.app !== conn.app || room.chat.account !== conn.account || room.org === undefined) continue;
+      if (room.chat.app !== conn.app || room.chat.account !== conn.account || room.org === undefined)
+        continue;
       this.deps.room.post(room.id as TaskId, `gap:${from}`, { type: "client-gap", from, to });
     }
   }
@@ -207,6 +212,8 @@ export class ChatIngest {
 
   /** The rooms and their account, for a caller that needs them. */
   roomsOf(conn: ChatConnection): RoomRow[] {
-    return this.deps.store.client.rooms().filter((r) => r.chat.app === conn.app && r.chat.account === conn.account);
+    return this.deps.store.client
+      .rooms()
+      .filter((r) => r.chat.app === conn.app && r.chat.account === conn.account);
   }
 }

@@ -46,7 +46,11 @@ describe("a delivery of a chat app", () => {
     await w.ingest.deliver(CONN, envelope({ chatId: "-300", message: "5", text: "A real question" }));
     await w.ingest.deliver(
       CONN,
-      envelope({ chatId: "-300", message: "2", sender: { id: "b1", name: "Bot", bot: true, verified: true } }),
+      envelope({
+        chatId: "-300",
+        message: "2",
+        sender: { id: "b1", name: "Bot", bot: true, verified: true },
+      }),
     );
     expect(w.store.room.page(room, 10).items.filter((i) => i.type === "client")).toHaveLength(1);
   });

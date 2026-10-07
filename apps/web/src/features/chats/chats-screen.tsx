@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useNewChat } from "@/lib/chat-queries";
+import { useClients } from "@/lib/client-queries";
 import { describeError } from "@/lib/errors";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
@@ -24,6 +25,7 @@ export function ChatsScreen() {
   const agents = useAgents();
   const orgs = useOrgs();
   const chats = useChats();
+  const clients = useClients();
   const { org } = useOrgFilter();
   const now = useNow(60_000);
   const newChat = useNewChat();
@@ -72,6 +74,8 @@ export function ChatsScreen() {
     <div className="flex min-h-0 min-w-0 flex-1 gap-3">
       <ChatList
         groups={groups}
+        clients={clients.data}
+        orgs={orgList}
         orgKeys={orgKeys}
         selected={taskId}
         query={query}

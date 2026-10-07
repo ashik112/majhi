@@ -147,7 +147,9 @@ export class ClientChat {
     const parts: string[] = [];
     if (input.tell !== undefined) {
       parts.push(
-        input.tell === "decide" ? "let the captain tell the clients" : "make every reply to the clients wait for you",
+        input.tell === "decide"
+          ? "let the captain tell the clients"
+          : "make every reply to the clients wait for you",
       );
     }
     for (const kind of HOLD_CLASSES) {

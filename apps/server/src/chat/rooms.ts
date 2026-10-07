@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import {
   CHAT_APP_LABEL,
-  CLIENT_CHAT_BRIEF,
   type ChatApp,
   type ChatHolder,
+  CLIENT_CHAT_BRIEF,
   type ClientList,
   type ClientRoom,
   type ClientRow,
@@ -14,8 +14,8 @@ import {
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
-import type { Store } from "../store/index.ts";
 import type { RoomRow } from "../store/client.ts";
+import type { Store } from "../store/index.ts";
 
 export interface RoomsDeps {
   store: Store;
@@ -124,7 +124,8 @@ export class ClientRooms {
   /** The owner does not want this chat read. What arrives from it is dropped. */
   ignore(id: string): RoomRow {
     const room = this.room(id);
-    if (room.org !== undefined) throw new UserError("A linked chat is not ignored. Remove the bot from it instead.", 409);
+    if (room.org !== undefined)
+      throw new UserError("A linked chat is not ignored. Remove the bot from it instead.", 409);
     return this.patch(room, { ignored: true });
   }
 
@@ -152,7 +153,9 @@ export class ClientRooms {
         ...(r.org === undefined ? {} : { org: r.org }),
         holder: r.chat.holder,
         ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
-        ...(conversation === undefined ? {} : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
+        ...(conversation === undefined
+          ? {}
+          : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
         unread: conversation?.unread ?? 0,
         waiting: held.has(r.id),
       };
@@ -164,6 +167,9 @@ export class ClientRooms {
 
   /** The text of a room's newest items of a type, newest first. */
   items(room: string, type: RoomItem["type"], limit: number): RoomItem[] {
-    return this.deps.store.room.page(room, 200).items.filter((i) => i.type === type).slice(0, limit);
+    return this.deps.store.room
+      .page(room, 200)
+      .items.filter((i) => i.type === type)
+      .slice(0, limit);
   }
 }

@@ -31,7 +31,9 @@ export const ORGS = new Map([
 ]);
 
 /** A message of a client in a group, as an adapter delivers it. */
-export function envelope(over: Partial<ChatEnvelope> & { message?: string; chatId?: string } = {}): ChatEnvelope {
+export function envelope(
+  over: Partial<ChatEnvelope> & { message?: string; chatId?: string } = {},
+): ChatEnvelope {
   const { message, chatId, ...rest } = over;
   return {
     kind: "new",
@@ -56,9 +58,13 @@ export interface WorldOptions {
 export function world(options: WorldOptions = {}) {
   const store = new Store(":memory:");
   const room = new RoomService(store);
-  const sent: { chat: string; text: string; thread?: string | undefined; replyTo?: string | undefined }[] = [];
+  const sent: { chat: string; text: string; thread?: string | undefined; replyTo?: string | undefined }[] =
+    [];
   const triaged: RoomItem[] = [];
-  const state = { tell: options.tell ?? ("ask" as AuthorityChoice), holds: effectiveHolds(options.holds) as Holds };
+  const state = {
+    tell: options.tell ?? ("ask" as AuthorityChoice),
+    holds: effectiveHolds(options.holds) as Holds,
+  };
   const rooms = new ClientRooms({
     store,
     room,
@@ -68,7 +74,12 @@ export function world(options: WorldOptions = {}) {
   });
   const contacts = new Contacts({ store, room, changed: () => undefined });
   const hub = {
-    send: async (_app: string, _account: string, target: { chat: string; thread?: string; replyTo?: string }, text: string) => {
+    send: async (
+      _app: string,
+      _account: string,
+      target: { chat: string; thread?: string; replyTo?: string },
+      text: string,
+    ) => {
       if (options.failSend === true) throw new Error("Telegram is down");
       sent.push({ chat: target.chat, text, thread: target.thread, replyTo: target.replyTo });
       return { message: String(500 + sent.length) };

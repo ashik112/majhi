@@ -1,10 +1,4 @@
-import type {
-  ChatApp,
-  ChatCursor,
-  ChatEnvelope,
-  ChatFileRef,
-  ChatTrouble,
-} from "@majhi/shared";
+import type { ChatApp, ChatCursor, ChatEnvelope, ChatFileRef, ChatTrouble } from "@majhi/shared";
 
 /**
  * One chat app account as the adapters see it. The token is read from secrets.age when the hub starts the adapter

@@ -26,6 +26,8 @@ export function beatOf(row: Row): Beat {
       return ownerNotice(row.item) === undefined ? "message" : "line";
     case "agent":
     case "diagram":
+    case "client":
+    case "client-reply":
       return "message";
     case "tool":
     case "thought":
@@ -35,6 +37,8 @@ export function beatOf(row: Row): Beat {
     case "context":
     case "handoff":
     case "team-plan":
+    case "client-gap":
+    case "same-person":
       return "line";
     case "permission":
     case "approval":

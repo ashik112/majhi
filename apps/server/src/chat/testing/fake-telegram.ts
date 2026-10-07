@@ -95,7 +95,9 @@ export class FakeTelegram {
 
   /** The `offset` of each getUpdates call, in order. */
   offsets(): (number | undefined)[] {
-    return this.calls.filter((c) => c.method === "getUpdates").map((c) => c.params.offset as number | undefined);
+    return this.calls
+      .filter((c) => c.method === "getUpdates")
+      .map((c) => c.params.offset as number | undefined);
   }
 
   /** What is still held, unconfirmed. */
@@ -111,13 +113,12 @@ export class FakeTelegram {
       const data = this.files.get(parts.slice(2).join("/"));
       return data === undefined
         ? new Response("not found", { status: 404 })
-        : new Response(data, { headers: { "content-type": "application/octet-stream" } });
+        : new Response(Buffer.from(data), { headers: { "content-type": "application/octet-stream" } });
     }
     const method = parts[1] ?? "";
-    const params = (init?.body === undefined || init.body === null ? {} : JSON.parse(String(init.body))) as Record<
-      string,
-      unknown
-    >;
+    const params = (
+      init?.body === undefined || init.body === null ? {} : JSON.parse(String(init.body))
+    ) as Record<string, unknown>;
     this.calls.push({ method, params });
     const failure = this.failures.get(method)?.shift();
     if (failure !== undefined) return json({ ok: false, ...failure });
@@ -125,7 +126,11 @@ export class FakeTelegram {
     return json({ ok: true, result });
   };
 
-  private async answer(method: string, params: Record<string, unknown>, signal: AbortSignal | undefined): Promise<unknown> {
+  private async answer(
+    method: string,
+    params: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+  ): Promise<unknown> {
     switch (method) {
       case "getMe":
         return { id: this.bot.id, is_bot: true, first_name: "Majhi test", username: this.bot.username };

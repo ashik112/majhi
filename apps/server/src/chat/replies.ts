@@ -95,7 +95,11 @@ export class ClientReplies {
     for (const item of this.deps.store.room.page(room, 200).items) {
       if (item.type === "client-gap") return true;
       if (item.type === "client" && item.us === true) return false;
-      if (item.type === "client-reply" && item.state === "sent" && (item.by === "you" || item.hold !== undefined)) {
+      if (
+        item.type === "client-reply" &&
+        item.state === "sent" &&
+        (item.by === "you" || item.hold !== undefined)
+      ) {
         return false;
       }
     }
@@ -156,13 +160,15 @@ export class ClientReplies {
   /** The owner changes the words of a reply that waits. */
   edit(draft: number, text: string): Draft {
     const found = this.deps.gate.get(draft);
-    if (found === undefined || found.channel !== "client") throw new UserError(`There is no client reply ${draft}.`, 404);
+    if (found === undefined || found.channel !== "client")
+      throw new UserError(`There is no client reply ${draft}.`, 404);
     return this.deps.gate.edit(draft, text);
   }
 
   private resultOf(draft: Draft, why: ReplyHold | undefined): ReplyResult {
     if (draft.status === "sent") return { state: "sent", draft: draft.id };
-    if (draft.status === "failed") return { state: "failed", draft: draft.id, why: draft.result ?? "It did not go." };
+    if (draft.status === "failed")
+      return { state: "failed", draft: draft.id, why: draft.result ?? "It did not go." };
     return { state: "held", draft: draft.id, why: why ?? "tell" };
   }
 
@@ -182,7 +188,13 @@ export class ClientReplies {
   private post(
     room: RoomRow,
     draft: Draft,
-    more: { by: "captain" | "you"; to?: string | undefined; replyTo?: string | undefined; thread?: string | undefined; hold?: ReplyHold },
+    more: {
+      by: "captain" | "you";
+      to?: string | undefined;
+      replyTo?: string | undefined;
+      thread?: string | undefined;
+      hold?: ReplyHold;
+    },
   ): void {
     this.deps.room.post(room.id as TaskId, `reply:${draft.id}`, {
       type: "client-reply",
@@ -200,7 +212,10 @@ export class ClientReplies {
   }
 
   /** The same reply with some fields changed. */
-  private replace(item: ReplyItem, change: Partial<Pick<ReplyItem, "text" | "state" | "result" | "external">>): void {
+  private replace(
+    item: ReplyItem,
+    change: Partial<Pick<ReplyItem, "text" | "state" | "result" | "external">>,
+  ): void {
     const { id: _id, task, seq: _seq, at: _at, ...payload } = item;
     this.deps.room.post(task as TaskId, item.id, { ...payload, ...change });
     this.deps.changed();
@@ -238,7 +253,12 @@ export class ClientReplies {
         );
         if (reply !== undefined) {
           this.replace(reply, {
-            external: { app: room.chat.app, account: room.chat.account, chat: room.chat.chat, message: sent.message },
+            external: {
+              app: room.chat.app,
+              account: room.chat.account,
+              chat: room.chat.chat,
+              message: sent.message,
+            },
           });
         }
         return { ok: true, detail: `Sent to ${room.chat.title}.` };

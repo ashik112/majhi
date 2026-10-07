@@ -1,8 +1,8 @@
 import { AGENT_BLOCKED_COMMANDS } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { toolName } from "../admin/tools.ts";
-import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { RUNS } from "../captain/authority-fixtures.ts";
+import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { CONN, envelope } from "./testing/world.ts";
 
 /**
@@ -31,11 +31,17 @@ describe("a client room of another workspace", () => {
     const services = h.majhi.services;
     const parts = services.chatParts;
     const conn = { ...CONN, org: "globex" };
-    await parts.ingest.deliver(conn, envelope({ chatId: "-900", message: "1", chat: { title: "Kinbe ops", kind: "group" } }));
+    await parts.ingest.deliver(
+      conn,
+      envelope({ chatId: "-900", message: "1", chat: { title: "Kinbe ops", kind: "group" } }),
+    );
     const found = parts.rooms.find("telegram", conn.account, "-900");
     if (found === undefined) throw new Error("no room");
     await parts.rooms.link(found.id, "globex");
-    await parts.ingest.deliver(conn, envelope({ chatId: "-900", message: "2", text: "Quarterly pricing sheet is wrong" }));
+    await parts.ingest.deliver(
+      conn,
+      envelope({ chatId: "-900", message: "2", text: "Quarterly pricing sheet is wrong" }),
+    );
     expect(parts.rooms.list().clients.map((r) => r.org)).toEqual(["globex"]);
 
     const lane = (await services.lanes.ensure("acme")).id;
@@ -62,10 +68,19 @@ describe("a client room of another workspace", () => {
       expect(res.text, command).not.toContain(found.id);
     }
     // What clients wrote and who they are are never an agent's tools.
-    for (const command of ["chat.list", "chat.send", "chat.link", "contacts.list", "contacts.merge"] as const) {
+    for (const command of [
+      "chat.list",
+      "chat.send",
+      "chat.link",
+      "contacts.list",
+      "contacts.merge",
+    ] as const) {
       expect(AGENT_BLOCKED_COMMANDS.has(command), command).toBe(true);
     }
-    const blocked = await call("chat.list", {}).catch((err: unknown) => ({ isError: true, text: String(err) }));
+    const blocked = await call("chat.list", {}).catch((err: unknown) => ({
+      isError: true,
+      text: String(err),
+    }));
     expect(blocked.isError).toBe(true);
     // Its proposal for another workspace is refused too.
     const proposal = await call("chat.proposeRules", { org: "globex", tell: "decide", why: "try" });
@@ -80,7 +95,11 @@ describe("a client room of another workspace", () => {
     const lane = (await services.lanes.ensure("acme")).id;
     const call = (command: string, input: Record<string, unknown>) =>
       services.admin.call({ task: lane, agent: "boss" }, toolName(command), { reason: "reading", ...input });
-    const res = await call("chat.proposeRules", { org: "acme", tell: "decide", why: "Replies are always fine." });
+    const res = await call("chat.proposeRules", {
+      org: "acme",
+      tell: "decide",
+      why: "Replies are always fine.",
+    });
     expect(res.isError).toBe(false);
     const cards = (await w.items(lane)).filter((i) => i.type === "approval");
     expect(cards).toHaveLength(1);
@@ -90,7 +109,11 @@ describe("a client room of another workspace", () => {
     // The captain cannot apply it itself.
     const direct = await call("autonomy.configure", { orgs: { acme: { authority: { tell: "decide" } } } });
     expect(direct.isError).toBe(true);
-    const approved = await h.cmd("room.approve", { task: lane, item: cards[0]?.id ?? "", decision: "approve" });
+    const approved = await h.cmd("room.approve", {
+      task: lane,
+      item: cards[0]?.id ?? "",
+      decision: "approve",
+    });
     expect(approved.status).toBe(200);
     expect(JSON.stringify(await must(h.cmd("settings.get")))).toContain('"tell":"decide"');
   });
