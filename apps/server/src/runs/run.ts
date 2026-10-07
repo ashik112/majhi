@@ -198,6 +198,22 @@ export class AgentRun {
   queuedNoted = false;
   /** Aborts a wait for another agent's worktree lock (5.3). */
   lockWait: AbortController | undefined;
+  /** The worktree lock this loop took for the prompt it is about to send, until the turn ends. */
+  lockHeld: (() => void) | undefined;
+  /** The next lock wait is skipped: the owner pressed Send now, so the agent is told without the worktree. */
+  skipLock = false;
+  /** The lock wait was aborted to start over with a changed queue, not to stop the run. */
+  lockRestart = false;
+  /** Who held the worktree when the last wait began. */
+  lockedBy: string | undefined;
+  /** Why the agent is told without the worktree: rides with that prompt. */
+  bypassNote: string | undefined;
+  /** Owner messages folded into the prompt being built, after the one in `sending`. */
+  merged: QueueEntry[] = [];
+  /** The loop waited for a worktree before this prompt: owner messages queued meanwhile join it. */
+  foldOwners = false;
+  /** Owner messages in the prompt being built, newest first, marked sent when the prompt goes out. */
+  toDeliver: string[] = [];
 
   constructor(
     readonly task: Task["id"],

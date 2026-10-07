@@ -1123,6 +1123,8 @@ export const AgentLiveSchema = z.object({
   turns: z.number().int().nonnegative().optional(),
   /** One line: what it is doing now. */
   nowDoing: z.string().optional(),
+  /** While `waiting` for a worktree: the agent whose turn holds it. */
+  lockedBy: IdSchema.optional(),
   /** When the agent last sent anything (text, thought, tool call), sent at most every few seconds. */
   activeAt: z.string().optional(),
   /** When the current turn started, while it runs. */
