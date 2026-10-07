@@ -824,8 +824,11 @@ function RetryMemory({ task }: { task: string }) {
           { task },
           {
             onSuccess: () => toast("Memory saved", { detail: task }),
-            onError: (error) =>
-              toast("Memory was not saved", { detail: describeError(error), tone: "error" }),
+            onError: () =>
+              toast("Memory was not saved", {
+                detail: "The answer could not be used. Try again.",
+                tone: "error",
+              }),
           },
         )
       }

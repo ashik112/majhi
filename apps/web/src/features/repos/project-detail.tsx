@@ -48,6 +48,23 @@ import { CopyPath } from "./project-row";
 const GRID = "grid gap-3 @[460px]:grid-cols-2";
 const IDLE: SaveState = { kind: "idle" };
 
+/** The Deploys section. Opened from a link to `section=deploys` (a deploy's task), it scrolls into view once. */
+function DeploysAnchor({ project }: { project: ProjectView }) {
+  const [section, setSection] = useSearchParam("section");
+  const top = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the link lands
+  useEffect(() => {
+    if (section !== "deploys") return;
+    top.current?.scrollIntoView({ block: "start" });
+    setSection(undefined);
+  }, []);
+  return (
+    <div ref={top}>
+      <DeploySection project={project} />
+    </div>
+  );
+}
+
 /** Saves one section through `projects.update`, keeping the fields the section does not own as they are. */
 function useSectionSave(project: ProjectView) {
   const update = useUpdateProject();
@@ -154,7 +171,7 @@ export function ProjectDetail({
       <div className="mt-4">
         <ProjectCardSection project={project.id} />
       </div>
-      <DeploySection project={project} />
+      <DeploysAnchor project={project} />
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
       <HandoffSection project={project} />
