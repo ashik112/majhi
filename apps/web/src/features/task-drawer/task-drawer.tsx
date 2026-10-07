@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { TaskStatusBadge } from "@/components/ui/status-badge";
 import { Markdown } from "@/features/room/markdown";
 import { briefBody, relations } from "@/features/task/model";
 import { statusInfo } from "@/features/tasks/model";
@@ -101,14 +101,7 @@ function Details({ id, onClose }: { id: string; onClose: () => void }) {
 function Status({ task, summary }: { task: Task; summary: TaskSummary | undefined }) {
   // Running with no agent at work means the task waits for the owner, as on the board.
   const yourTurn = task.status === "running" && summary !== undefined && summary.working.length === 0;
-  return (
-    <StatusBadge
-      status={task.status}
-      pausedReason={task.pausedReason}
-      pausedBy={task.pausedBy}
-      yourTurn={yourTurn}
-    />
-  );
+  return <TaskStatusBadge task={task} yourTurn={yourTurn} />;
 }
 
 function Org({ task }: { task: Task }) {
