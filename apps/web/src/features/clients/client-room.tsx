@@ -700,10 +700,9 @@ function WhoIs({ item }: { item: Of<"who-is"> }) {
       { onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }) },
     );
   return (
-    <section className="flex items-center gap-3 rounded-xl border border-line bg-raised px-3 py-2">
+    <section className="flex w-fit max-w-full flex-wrap items-center gap-3 rounded-xl border border-line bg-raised px-3 py-2">
       <Initial name={item.name} seed={item.sender} />
       <span className="text-sm text-fg">{`Is ${item.name} one of us?`}</span>
-      <span className="flex-1" />
       {item.state === "asking" ? (
         <>
           <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => ask("us")}>
@@ -731,10 +730,9 @@ function SamePerson({ item }: { item: Of<"same-person"> }) {
     );
   const first = item.line.split(" ")[0] ?? "?";
   return (
-    <section className="flex items-center gap-3 rounded-xl border border-line bg-raised px-3 py-2">
+    <section className="flex w-fit max-w-full flex-wrap items-center gap-3 rounded-xl border border-line bg-raised px-3 py-2">
       <Initial name={first} seed={item.a} />
       <span className="text-sm text-fg">{item.line}</span>
-      <span className="flex-1" />
       {item.state === "asking" && (
         <>
           <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => ask("same")}>
