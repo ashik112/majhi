@@ -1,4 +1,5 @@
-import type { ChatApp, ChatCursor, ChatEnvelope, ChatFileRef, ChatTrouble } from "@majhi/shared";
+import type { Body, ChatApp, ChatCursor, ChatEnvelope, ChatFileRef, ChatTrouble } from "@majhi/shared";
+import type { People } from "./format.ts";
 
 /**
  * One chat app account as the adapters see it. The token is read from secrets.age when the hub starts the adapter
@@ -34,6 +35,12 @@ export interface ChatCapabilities {
   retentionHours?: number;
 }
 
+/** What majhi writes to a chat: the neutral body, and who its mentions name on the app being written to. */
+export interface ChatMessage {
+  body: Body;
+  people: People;
+}
+
 /** What the hub gives an adapter's read loop. */
 export interface ChatSink {
   /** Stores one delivery. Resolves when it is stored, and only then may the read position move. */
@@ -52,7 +59,10 @@ export interface ChatAdapter {
   capabilities: ChatCapabilities;
   /** Starts the read loop, catching up from `cursor`. Returns what stops it. */
   start(conn: ChatConnection, sink: ChatSink, cursor: ChatCursor | undefined): () => void;
-  send(conn: ChatConnection, target: ChatTarget, text: string): Promise<{ message: string }>;
+  /** The body in the app's own markup (Telegram HTML, Slack mrkdwn). Slack, Discord and email add a renderer only. */
+  render(body: Body, people: People): string;
+  /** Writes the message, rendered by this adapter's `render`; falls back to plain words if the app refuses the markup. */
+  send(conn: ChatConnection, target: ChatTarget, message: ChatMessage): Promise<{ message: string }>;
   /** Fetches a file now. Refuses one over the size cap. */
   file(conn: ChatConnection, ref: ChatFileRef): Promise<{ path: string; type: string; bytes: number }>;
 }

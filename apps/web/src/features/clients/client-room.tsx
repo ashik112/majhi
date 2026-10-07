@@ -4,6 +4,7 @@ import {
   type ClientRow,
   REPLY_HOLD_LABEL,
   type RoomItem,
+  replaceMentions,
 } from "@majhi/shared";
 import { ArrowDown, FileText, Info } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
+import { Markdown } from "@/features/room/markdown";
 import { useRoom } from "@/features/room/use-room";
 import { useAgentIndex } from "@/lib/agent-index";
 import {
@@ -32,6 +34,11 @@ import { GLASS } from "@/lib/glass";
 import { useOrgs } from "@/lib/studio-queries";
 import { AppMark } from "./app-mark";
 import { kindLine } from "./clients-list";
+
+/** A text with each mention token shown as the person's name. */
+function withNames(text: string, names: Record<string, string> | undefined, wrap = ""): string {
+  return replaceMentions(text, (id) => `${wrap}@${names?.[id] ?? "someone"}${wrap}`);
+}
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -305,7 +312,9 @@ function Message({ item, row }: { item: Of<"client">; row: ClientRow }) {
         </div>
         {item.deleted === true && <span className="text-xs text-fg-faint">Deleted by the sender</span>}
         {item.text !== "" && (
-          <div className="max-w-[72ch] whitespace-pre-wrap text-base text-fg">{item.text}</div>
+          <div className="max-w-[72ch] whitespace-pre-wrap text-base text-fg">
+            {withNames(item.text, item.mentions)}
+          </div>
         )}
         {item.files.length > 0 && (
           <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
@@ -398,7 +407,9 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
           </span>
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.at)}</span>
         </div>
-        <div className="max-w-[72ch] whitespace-pre-wrap text-base text-fg">{item.text}</div>
+        <div className="max-w-[72ch] text-base text-fg">
+          <Markdown text={withNames(item.text, item.mentions, "**")} size="chat" />
+        </div>
         {item.state === "sent" && (
           <Badge tone="green" className="self-start">
             Sent
@@ -491,7 +502,9 @@ function HeldReply({ item }: { item: Of<"client-reply"> }) {
           </div>
         </div>
       ) : (
-        <p className="m-0 whitespace-pre-wrap text-base text-fg-soft">{item.text}</p>
+        <div className="max-w-[72ch] text-base text-fg-soft">
+          <Markdown text={withNames(item.text, item.mentions, "**")} size="chat" />
+        </div>
       )}
     </section>
   );
