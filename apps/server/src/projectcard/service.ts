@@ -156,6 +156,22 @@ export class ProjectCards {
     }
   }
 
+  /**
+   * Looks at the cards as the owner opens them: a card whose base tip moved is brought up to date now, without the
+   * debounce a merge burst gets, so what the page shows is never older than the repo.
+   */
+  async refreshMoved(): Promise<void> {
+    for (const p of await this.deps.projects()) {
+      if (!p.exists || p.base === undefined) continue;
+      const have = this.deps.repo.get(p.id)?.card;
+      if (have === undefined || this.deps.ruleOff?.(p.org, "proj-cards") === true) continue;
+      const tip = await this.deps.git.tip(p.path, p.base);
+      if (tip === undefined || have.commit === tip) continue;
+      this.pending.delete(p.id);
+      await this.settle(p, have, tip).catch((err: unknown) => this.log(`cards: ${p.id}: ${String(err)}`));
+    }
+  }
+
   /** The tip moved: rescan when a relevant file changed, otherwise only move the stamp. */
   private async settle(p: CardProject, have: ProjectCard, tip: string): Promise<void> {
     const changed =
