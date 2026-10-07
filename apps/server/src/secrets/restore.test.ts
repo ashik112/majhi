@@ -170,7 +170,7 @@ describe("restoreKey", () => {
     await writeKeyFile(join(old, ".config", "majhi", "secrets.key"), key);
     const oldStore = new SecretStore(join(old, ".majhi"), join(old, ".config", "majhi", "secrets.key"));
     await oldStore.set("acme-api", "value-1");
-    const { content } = await new KeyExports(join(old, ".majhi"), oldStore).export(PASSPHRASE);
+    const { content } = await new KeyExports(join(old, ".majhi"), oldStore).export(PASSPHRASE, 10);
 
     // The new computer: secrets.age copied over, and the new key `make up` made.
     const home = join(dir, "new");

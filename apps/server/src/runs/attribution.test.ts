@@ -168,6 +168,8 @@ describe("a run in the shared git folder", () => {
   const as = (cwd: string, env: Record<string, string>, ...args: string[]) =>
     run("git", args, { cwd, env }).then((r) => r.stdout.trim());
 
+  // Only this test commits through the run's hooks, to show a run can commit on its own branch. Every
+  // hook is a shell with several git processes, so the other tests make their commit as the owner.
   it("cannot move, delete or commit on the owner's branches", async () => {
     const { repo, wt } = await taskWorktree();
     const env = await runEnv(repo);
@@ -189,7 +191,7 @@ describe("a run in the shared git folder", () => {
   it("cannot delete or rename the branch majhi tracks, which a refused rename would lose", async () => {
     const { repo, wt } = await taskWorktree();
     const env = await runEnv(repo);
-    await as(wt, env, "commit", "--quiet", "-am", "work");
+    await git(wt, "commit", "--quiet", "-am", "work");
     const tip = await git(repo, "rev-parse", "task/acm-7-work");
     for (const args of [
       ["branch", "-m", "task/acm-7-work", "task/acm-7-renamed"],
@@ -206,7 +208,7 @@ describe("a run in the shared git folder", () => {
     const { repo, wt } = await taskWorktree();
     const env = await runEnv(repo);
     const main = await git(repo, "rev-parse", "main");
-    await as(wt, env, "commit", "--quiet", "-am", "work");
+    await git(wt, "commit", "--quiet", "-am", "work");
     await expect(as(wt, env, "checkout", "--quiet", "main")).rejects.toThrow(/stays on its task branch/);
     expect(await git(wt, "symbolic-ref", "HEAD")).toBe("refs/heads/task/acm-7-work");
 
@@ -228,7 +230,7 @@ describe("a run in the shared git folder", () => {
     const { repo, wt } = await taskWorktree();
     await git(repo, "update-ref", "refs/remotes/origin/main", "main");
     const env = await runEnv(repo);
-    await as(wt, env, "commit", "--quiet", "-am", "work");
+    await git(wt, "commit", "--quiet", "-am", "work");
     await expect(as(wt, env, "update-ref", "refs/remotes/origin/main", "HEAD")).rejects.toThrow(
       /refs\/remotes\/origin\/main is majhi's copy/,
     );
@@ -266,7 +268,7 @@ describe("a run in the shared git folder", () => {
     }
     const env = await runEnv(repo);
     expect(await as(wt, env, "config", "--get", "gc.pruneExpire")).toBe("never");
-    await as(wt, env, "commit", "--quiet", "-am", "dropped");
+    await git(wt, "commit", "--quiet", "-am", "dropped");
     const dropped = await as(wt, env, "rev-parse", "HEAD");
     await as(wt, env, "reset", "--quiet", "--hard", "HEAD~1");
     await as(wt, env, "reflog", "expire", "--all");

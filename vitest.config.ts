@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { QUIET_GIT } from "./apps/server/src/testing/quiet-git.ts";
 
 export default defineConfig({
   test: {
@@ -9,6 +10,7 @@ export default defineConfig({
       "apps/*/src/**/*.test.tsx",
     ],
     environment: "node",
+    env: QUIET_GIT,
     globalSetup: ["./apps/server/src/testing/global-setup.ts"],
     // Keeps transformed modules between runs and between worker processes.
     fsModuleCache: true,

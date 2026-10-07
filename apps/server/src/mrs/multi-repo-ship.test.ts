@@ -36,18 +36,27 @@ async function commitOn(repo: string, branch: string, file: string, text: string
 /** Prompts the agent got, in order. */
 let prompts: string[] = [];
 
-/** ACM-1 on api, web and ops, in review, with a change in each repo of `changes`. */
-async function reviewed(changes: string[]): Promise<Task> {
+/**
+ * ACM-1 in review, with a change in each repo of `changes`. It spans api, web and ops, or only api
+ * when `onlyApi` (a test that is not about the other repos does not pay for them).
+ */
+async function reviewed(changes: string[], onlyApi = false): Promise<Task> {
   w = await taskWorld();
   prompts = [];
-  await w.addRepo("web");
-  await w.addRepo("ops");
-  must(await cmd("projects.register", { id: "acme-web", org: "acme", path: "~/Work/web", aliases: ["web"] }));
-  must(await cmd("projects.register", { id: "acme-ops", org: "acme", path: "~/Work/ops", aliases: ["ops"] }));
-  must(await cmd("projects.update", { id: "acme-ops", org: "acme", aliases: ["ops"], base: "develop" }));
-  // ops: main and develop both changed the README.
-  await commitOn(w.repo("ops"), "main", "README.md", "# ops on main\n");
-  await commitOn(w.repo("ops"), "develop", "README.md", "# ops on develop\n");
+  if (!onlyApi) {
+    await w.addRepo("web");
+    await w.addRepo("ops");
+    must(
+      await cmd("projects.register", { id: "acme-web", org: "acme", path: "~/Work/web", aliases: ["web"] }),
+    );
+    must(
+      await cmd("projects.register", { id: "acme-ops", org: "acme", path: "~/Work/ops", aliases: ["ops"] }),
+    );
+    must(await cmd("projects.update", { id: "acme-ops", org: "acme", aliases: ["ops"], base: "develop" }));
+    // ops: main and develop both changed the README.
+    await commitOn(w.repo("ops"), "main", "README.md", "# ops on main\n");
+    await commitOn(w.repo("ops"), "develop", "README.md", "# ops on develop\n");
+  }
   w.h.runtime.onSession = (session) => {
     session.script = async (t) => {
       prompts.push(t.text);
@@ -63,18 +72,24 @@ async function reviewed(changes: string[]): Promise<Task> {
   must(
     await cmd("tasks.create", {
       text: "update api, web and ops",
-      repos: [{ project: "acme-api" }, { project: "acme-web" }, { project: "acme-ops" }],
+      repos: onlyApi
+        ? [{ project: "acme-api" }]
+        : [{ project: "acme-api" }, { project: "acme-web" }, { project: "acme-ops" }],
       start: true,
     }),
   );
   await w.h.majhi.services.runs.idle();
   await until(async () => (await cmd("tasks.get", { id: "ACM-1" })).body.status === "review", "review");
   const task = (await cmd("tasks.get", { id: "ACM-1" })).body as Task;
-  expect(task.repos.map((r) => [r.project, r.base])).toEqual([
-    ["acme-api", "main"],
-    ["acme-web", "main"],
-    ["acme-ops", "develop"],
-  ]);
+  expect(task.repos.map((r) => [r.project, r.base])).toEqual(
+    onlyApi
+      ? [["acme-api", "main"]]
+      : [
+          ["acme-api", "main"],
+          ["acme-web", "main"],
+          ["acme-ops", "develop"],
+        ],
+  );
   return task;
 }
 
@@ -101,7 +116,7 @@ describe("shipping a task with several repos", () => {
   });
 
   it("does not push the owner's own unpushed commits on the target, or create a branch, unless confirmed", async () => {
-    await reviewed(["acme-api"]);
+    await reviewed(["acme-api"], true);
     await commitOn(w.repo("api"), "main", "notes.txt", "owner's work\n");
     const local = await tip(w.repo("api"), "main");
     const remote = await tip(w.remote("api"), "main");
