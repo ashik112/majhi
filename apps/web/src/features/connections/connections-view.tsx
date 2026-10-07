@@ -230,7 +230,7 @@ function Row({
   onOpen: () => void;
   onCheck: () => void;
 }) {
-  const status = rowStatus(view.health, checking, now);
+  const status = rowStatus(view, checking, now);
   const account = view.health !== undefined && "account" in view.health ? view.health.account : undefined;
   const host = view.fields.host?.value;
   const sub = [account, host, connectionType(view.type).label].filter((v) => v !== undefined && v !== "")[0];

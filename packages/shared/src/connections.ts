@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ConnectionFailureSchema, ConnectionHealthSchema } from "./connection-health.ts";
+import {
+  ConnectionFailureSchema,
+  ConnectionHealthSchema,
+  FAILURE_FIX,
+  FAILURE_LINE,
+} from "./connection-health.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 
 /**
@@ -1109,6 +1114,26 @@ export const ConnectionViewSchema = z.object({
   health: ConnectionHealthSchema.optional(),
 });
 export type ConnectionView = z.infer<typeof ConnectionViewSchema>;
+
+/**
+ * What failed, in the check's own plain words ("nonexistent-cli is not installed where agents run"),
+ * else the reason's line. No trailing full stop. Empty when the connection has not failed. The Connections
+ * page and Health read it, so the same failure reads the same on both.
+ */
+export function failureLine(view: Pick<ConnectionView, "health" | "lastTest">): string {
+  const health = view.health;
+  if (health === undefined || (health.state !== "failed" && health.state !== "needs-attention")) return "";
+  const test = view.lastTest;
+  const said = test !== undefined && !test.ok && test.failure?.reason === health.reason ? test.detail : "";
+  return (said === "" ? FAILURE_LINE[health.reason] : said).replace(/\.$/, "");
+}
+
+/** The next step of a failed connection, the same everywhere. Empty when it has not failed. */
+export function failureFix(view: Pick<ConnectionView, "health">): string {
+  const health = view.health;
+  if (health === undefined || (health.state !== "failed" && health.state !== "needs-attention")) return "";
+  return health.fix || FAILURE_FIX[health.reason];
+}
 
 /** An entry of `vars`, `headers` or `env` as a command sets it: a text value, or none yet. */
 export const ConnectionEntryInputSchema = z.strictObject({

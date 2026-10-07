@@ -2,7 +2,7 @@ import {
   type ConnectionHealth,
   type ConnectionView,
   connectionType,
-  FAILURE_LINE,
+  failureLine,
   GLOBAL_CONNECTIONS,
   hostPorts,
   type OrgView,
@@ -187,7 +187,7 @@ function StatusBlock({
   onCheck: () => void;
 }) {
   const health = view.health;
-  const status = rowStatus(health, checking, now);
+  const status = rowStatus(view, checking, now);
   const fix = fixOf(health);
   const re = useReconnect(view);
   const [other, setOther] = useState(false);
@@ -201,7 +201,7 @@ function StatusBlock({
       {health?.state === "connected" && <Verified health={health} now={now} />}
       {failed && health !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-sunken p-3">
-          <p className="text-base font-medium text-fg">{FAILURE_LINE[health.reason]}.</p>
+          <p className="text-base font-medium text-fg">{failureLine(view)}.</p>
           {fix !== undefined && <p className="text-base text-fg-muted text-pretty">{fix.text}</p>}
           {health.state === "needs-attention" && (
             <p className="text-sm text-fg-faint">

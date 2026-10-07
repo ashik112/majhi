@@ -190,11 +190,11 @@ esac`,
       );
     }
 
-    it("exit 127 is a missing tool, any other exit is a tool that is not signed in, whatever it printed", async () => {
+    it("exit 127 is a missing tool, any other exit means the values are not accepted, whatever it printed", async () => {
       await env("acme whoami");
       await script("acme", "echo 'everything is fine, you are connected'; exit 1");
       expect((await tester().test("acme-keys")).failure).toMatchObject({
-        reason: "not-signed-in",
+        reason: "rejected",
         status: 1,
       });
       await script("acme", "exit 127");
