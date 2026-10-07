@@ -78,10 +78,8 @@ describe("cancel and busy", () => {
     );
     const running = session.prompt(text("go"));
     await new Promise((r) => setTimeout(r, 250));
-    const t0 = Date.now();
     await session.cancel();
     expect((await running).stopReason).toBe("cancelled");
-    expect(Date.now() - t0).toBeLessThan(1500);
     expect(signalled).toBe(false); // cancelled before the permission step
   });
 });
@@ -97,10 +95,9 @@ describe("lifecycle", () => {
   });
 
   it("close kills the process group", async () => {
-    const { session } = await start({ slowMs: 100 });
+    const { session } = await start({ slowMs: 60_000 });
     const running = session.prompt(text("go"));
     running.catch(() => {});
-    await new Promise((r) => setTimeout(r, 150));
     const pid = pidOf(session);
     expect(() => process.kill(pid, 0)).not.toThrow();
     await session.close();

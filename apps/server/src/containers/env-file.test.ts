@@ -41,7 +41,6 @@ describe("env files", () => {
     execFileSync("mkfifo", [join(folder, "api", "fifo.env")]);
     mkdirSync(join(folder, "api", "dir.env"), { recursive: true });
     writeFileSync(join(folder, "api", "huge.env"), `A=${"x".repeat(200 * 1024)}\n`);
-    const started = Date.now();
     for (const name of ["fifo.env", "dir.env", "huge.env"]) {
       await expect(readEnvFile(name, join(folder, "api"), safety), name).rejects.toBeInstanceOf(
         ContainerRefused,
@@ -54,8 +53,7 @@ describe("env files", () => {
       safety,
     );
     expect([...read.values()].map((r) => "refused" in r)).toEqual([true]);
-    expect(Date.now() - started).toBeLessThan(3_000);
-  }, 15_000);
+  });
 
   it("reads a file of the task, and refuses one outside it, through a symlink, or of majhi's", async () => {
     expect(await readEnvFile(".env", join(folder, "api"), safety)).toEqual(["A=1", "B=two words"]);

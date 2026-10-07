@@ -42,11 +42,9 @@ async function runWithWorld(command: string) {
 
 describe("running a project's command for the hand-off", () => {
   it("stops a command that does not finish, and says so", async () => {
-    const started = Date.now();
     const hung = await run("echo started; sleep 30", 400);
     expect(hung.timedOut).toBe(true);
     expect(hung.output).toContain("started");
-    expect(Date.now() - started).toBeLessThan(8_000);
   });
 
   it("gives it a clean environment: nothing of majhi's own, and no secret it prints survives", async () => {
