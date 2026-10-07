@@ -26,6 +26,7 @@ import { HOST_LABEL, type MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
+import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
@@ -84,6 +85,8 @@ export interface WorldDeps {
   protectedProjects: () => Promise<ReadonlySet<string>>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
+  /** Who does each step of shipping a task: the one decision the chore, the lane and the poller read. */
+  ship: Pick<ShipPlanner, "plan">;
   /** The checked hand-off, bound once the server made it. Absent: ship readiness is the cheap checks only. */
   handoff?: (() => HandoffService | undefined) | undefined;
 }
@@ -224,6 +227,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       }
       return out;
     },
+
+    shipPlan: (_org, id) => deps.ship.plan(id),
 
     async shipCheck(_org, id, except): Promise<ShipCheck> {
       const base = await shipReadiness(deps, id, except);

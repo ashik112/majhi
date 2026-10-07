@@ -68,12 +68,9 @@ describe("decideAutonomously: the table", () => {
     expect(decide(call("tasks.push", { id: "GLX-1" }, { org: "globex" }))).toBe("left");
     expect(decide(call("tasks.merge", { id: "ACM-1" }))).toBe("left");
     expect(decide(call("tasks.merge", { id: "GLX-1" }, { org: "globex" }))).toBe("approved");
-    // MR merges need the org's own merge policy too, which is never by default.
-    expect(decide(call("tasks.mergeMrs", { id: "GLX-1" }, { org: "globex" }))).toBe("left");
-    expect(
-      decide(call("tasks.mergeMrs", { id: "GLX-1" }, { org: "globex" }), ctx({ orgMerge: "approve" })),
-    ).toBe("approved");
-    expect(decide(call("tasks.markMerged", { id: "ACM-1" }), ctx({ orgMerge: "approve" }))).toBe("left");
+    // Merging the merge requests of a task follows the same Merge row.
+    expect(decide(call("tasks.mergeMrs", { id: "GLX-1" }, { org: "globex" }))).toBe("approved");
+    expect(decide(call("tasks.markMerged", { id: "ACM-1" }))).toBe("left");
     // An org with no entry may do neither.
     expect(decide(call("tasks.push", { id: "NW-1" }, { org: "northwind" }))).toBe("left");
     // Any other outbound call waits for the owner.
@@ -379,15 +376,18 @@ describe("hardLimit", () => {
     expect(limit("tasks.create", { text: "token: secret:acme-gitlab" })).toBe(undefined);
   });
 
-  it("never force-pushes, never pushes with a merge, never deletes a worktree after a push", () => {
-    expect(limit("tasks.merge", { id: "ACM-1", push: true })).toContain("never pushes with a merge");
+  it("never force-pushes, pushes with a merge only where Push is the captain's, never deletes a worktree after a push", () => {
+    expect(limit("tasks.merge", { id: "ACM-1", push: true })).toContain("pushing is the owner's");
     // The card's and the pending ship's merge-and-push are pushes with a merge too.
     expect(limit("room.cardAction", { task: "ACM-1", item: "review:1", action: "mergePush" })).toContain(
-      "never pushes with a merge",
+      "pushing is the owner's",
     );
     expect(limit("tasks.resolveShip", { id: "ACM-1", action: "mergePush" })).toContain(
-      "never pushes with a merge",
+      "pushing is the owner's",
     );
+    // Where the ship decision gives the captain Push for that task, the merge may push: the chore's rule.
+    const pushes = { command: "tasks.merge", input: { id: "ACM-1", push: true }, pushDecides: true };
+    expect(hardLimit(pushes, world())).toBe(undefined);
     expect(limit("room.cardAction", { task: "ACM-1", item: "review:1", action: "push" })).toBe(undefined);
     expect(limit("tasks.resolveShip", { id: "ACM-1", action: "merge" })).toBe(undefined);
     // No ship deletes its worktree after it, on any command.

@@ -1436,7 +1436,6 @@ export const commands = {
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
-      merge: OrgConfigSchema.shape.merge.nullable().optional(),
       /** Which tasks a lead may start without asking. null goes back to `children`. */
       lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
@@ -2289,14 +2288,14 @@ export const commands = {
   "tasks.mergeMrs": {
     risk: "outbound",
     summary:
-      "Merge the task's MRs on their hosts, in merge order, stopping at the first that fails or has failing CI, and say why. Not for the never policy: merge on the host, then use markMerged",
+      "Merge the task's MRs on their hosts, in merge order, stopping at the first that fails or has failing CI, and say why. Merging is the Merge row's and the ship rules': the owner always may. Merge on the host instead and use markMerged",
     input: z.object({ id: TaskIdSchema }),
     output: MergeMrsResultSchema,
   },
   "tasks.markMerged": {
     risk: "change",
     summary:
-      "The owner merged the MRs on the host (the never policy). Checks each with its host; force records them as merged without that check. When every MR is merged, the task is done",
+      "The owner merged the MRs on the host. Checks each with its host; force records them as merged without that check. When every MR is merged, the task is done",
     input: z.object({
       id: TaskIdSchema,
       /** Only this repo. Default: every repo with an MR. */

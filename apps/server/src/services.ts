@@ -196,6 +196,7 @@ import { SkillStore } from "./skills/store.ts";
 import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { pruneOld } from "./store/retention.ts";
+import { ShipPlanner } from "./ship/plan.ts";
 import { AreasReader } from "./tasks/areas.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
@@ -459,6 +460,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(
     () => config.migrateUpdateTargetPolicy(),
     (err) => console.error(`Could not update the branch-sync approval setting: ${errorMessage(err)}`),
+  );
+  background.run(
+    () => config.migrateOrgMerge(),
+    (err) => console.error(`Could not fold the merge policies into the Merge row: ${errorMessage(err)}`),
   );
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
@@ -1271,6 +1276,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     tasks,
     working: (id) => runs.working(id).length > 0,
+    captainMerges: (task) => captainMerges(task.id),
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
@@ -1568,6 +1574,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     lanes,
     processWaiting: (task) => processes.waiting(task).length > 0,
     typing: (task) => events.typing.holds(task),
+    shipPlan: (task) => shipPlanner.plan(task),
     protectedProjects: async () =>
       new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
     upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
@@ -1819,6 +1826,44 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   queuedMerges.start();
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
+  // Who does each step of shipping a task: one decision for the captain's chore and lane, the lead's cards
+  // and the merge request timer. The areas it reads are the ones the board shows.
+  const areasReader = new AreasReader({
+    enabled: wikiOn,
+    components: async (org, project) => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") return [];
+      const file = await readFactsFile(wikiCacheDir(loaded.state.config.tasksDir, org, project));
+      return (file?.facts ?? []).flatMap((f) =>
+        f.kind === "component" ? [{ name: f.name, folder: f.folder, role: f.role }] : [],
+      );
+    },
+  });
+  const shipPlanner = new ShipPlanner({
+    tasks: { get: (id) => store.tasks.get(id) },
+    settings: async () => (await config.settings()).autonomy,
+    mode: () => autonomy.mode(),
+    areas: areasReader,
+    viaMergeRequests: (task) => mrs.viaMergeRequests(task),
+    zone: zoneOr,
+    now: () => new Date(),
+  });
+  /** The merge request timer, the lane and the chore merge a task's requests only when this says so. */
+  async function captainMerges(task: string): Promise<{ yes: true } | { yes: false; why: string }> {
+    const plan = await shipPlanner.plan(task);
+    if (plan.steps.merge !== "captain") {
+      return {
+        yes: false,
+        why:
+          plan.ruleSubject === undefined
+            ? "merging is the owner's here"
+            : `the rule for ${plan.ruleSubject.charAt(0).toLowerCase()}${plan.ruleSubject.slice(1)} leaves the merge to the owner`,
+      };
+    }
+    if (plan.rest !== undefined) return { yes: false, why: plan.rest };
+    if (events.typing.holds(task)) return { yes: false, why: "the owner is typing in it" };
+    return { yes: true };
+  }
   const captain = new CaptainService({
     store,
     config,
@@ -1876,6 +1921,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
       dispatch: () => captainDispatch,
       handoff: () => handoffService,
+      ship: shipPlanner,
     }),
     tell: (key, text) => notifier.captain(key, text),
     cancelTurn: async (chat) => {
@@ -2589,17 +2635,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     taskDetails: new TaskDetails({
       store,
       handoff: (id) => handoff.state(id),
-      areas: new AreasReader({
-        enabled: wikiOn,
-        components: async (org, project) => {
-          const loaded = await config.load();
-          if (loaded.state.status !== "loaded") return [];
-          const file = await readFactsFile(wikiCacheDir(loaded.state.config.tasksDir, org, project));
-          return (file?.facts ?? []).flatMap((f) =>
-            f.kind === "component" ? [{ name: f.name, folder: f.folder, role: f.role }] : [],
-          );
-        },
-      }),
+      areas: areasReader,
+      ship: (id) => shipPlanner.plan(id),
     }),
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),

@@ -63,6 +63,11 @@ export const TrailStepSchema = z.discriminatedUnion("kind", [
     stage: z.enum(["pending", "merged"]),
     projects: z.array(IdSchema).min(1),
   }),
+  /**
+   * A step of shipping the rules leave to the owner: the task waits for them to do it. Only in the
+   * single read (`tasks.detail`), since it is read from the ship decision for the task's diff now.
+   */
+  z.object({ kind: z.literal("ship"), ...tone, step: z.enum(["merge", "push"]) }),
   z.object({ kind: z.literal("deploy"), ...tone, env: z.string().min(1).max(60) }),
   z.object({ kind: z.literal("reply"), ...tone }),
 ]);
@@ -96,12 +101,34 @@ export const TaskAreasSchema = z.object({
 });
 export type TaskAreas = z.infer<typeof TaskAreasSchema>;
 
+/** Who does one step of shipping a task. */
+export const ShipWhoSchema = z.enum(["captain", "owner"]);
+
+/**
+ * Who does each step of shipping a task in review or with a merge request open, read now from the
+ * workspace's rows and ship rules: nothing here is stored.
+ */
+export const ShipViewSchema = z.object({
+  merge: ShipWhoSchema,
+  push: ShipWhoSchema,
+  deployStaging: ShipWhoSchema,
+  deployProduction: ShipWhoSchema,
+  tell: ShipWhoSchema,
+  /** `merge-request`: the project works through merge requests, so the work lands by one. */
+  way: z.enum(["local", "merge-request"]),
+  /** What the rule that decided covers ("A bug up to 200 lines"). Absent when the rows decided. */
+  rule: z.string().optional(),
+});
+export type ShipView = z.infer<typeof ShipViewSchema>;
+
 /** The single read of a task: where it came from, what it touches, and its whole trail. */
 export const TaskDetailSchema = z.object({
   task: TaskIdSchema,
   origin: OriginViewSchema.optional(),
   areas: TaskAreasSchema,
-  /** Like the summary's trail, plus the hand-off check, and each child listed. */
+  /** Like the summary's trail, plus the hand-off check, each child listed, and the step the owner is waited for. */
   trail: TrailSchema,
+  /** Who ships it, for a task in review or with a merge request open. */
+  ship: ShipViewSchema.optional(),
 });
 export type TaskDetail = z.infer<typeof TaskDetailSchema>;

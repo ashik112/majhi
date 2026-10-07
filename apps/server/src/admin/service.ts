@@ -127,6 +127,12 @@ export interface AutonomyGate {
     command: CommandName,
     input: Record<string, unknown>,
   ): Promise<Record<string, unknown> | undefined>;
+  /** The captain's merge with the push the Push step decides, or undefined when the call stays as it is. */
+  shipCall(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined>;
   decide(
     caller: AdminCaller,
     command: CommandName,
@@ -427,6 +433,11 @@ export class AdminService {
         const filed = await this.callCommand(caller, command, { ...input, start: false }, ask);
         return filed.isError ? filed : { ...filed, text: `${filed.text}\n${full}` };
       }
+    }
+    // The captain's merge pushes where the ship decision leaves Push to it, as the ship chore's does.
+    if (autonomy !== undefined && auto === "boss") {
+      const shipped = await autonomy.shipCall(caller, command, input);
+      if (shipped !== undefined) return this.callCommand(caller, command, shipped, ask);
     }
     // The captain names no team: staffing weighs the agents and accounts of the workspace and picks one.
     if (autonomy !== undefined && auto === "boss") {

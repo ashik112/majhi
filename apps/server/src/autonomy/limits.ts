@@ -5,7 +5,8 @@ import { type ConnectionConfig, detectSecrets, type GitAccount, PRIVATE } from "
  * tasks never do, whatever a policy, a saved rule or an `auto` mode says. Pure: the service gathers
  * the world, and every refusal is one line the agent and the owner read.
  *
- * - No force push: a merge never pushes, and a push never deletes the worktree after it.
+ * - No force push: a push never forces and never deletes the worktree after it. A merge pushes only when the
+ *   Push step is the captain's for that task (the same decision the ship chore reads).
  * - No removing a task over uncommitted work.
  * - No passing one org's credentials to another: secrets, accounts, `where`, git accounts and
  *   logins, SSH aliases and connections stay with the org that has them. `private` is an org.
@@ -43,6 +44,8 @@ export interface LimitCall {
   input: Record<string, unknown>;
   /** The caller's one-line reason: it goes into the feed, so it is text too. */
   reason?: string | undefined;
+  /** Whether the ship decision leaves Push to the captain for the task the call names. Absent: it does not. */
+  pushDecides?: boolean | undefined;
 }
 
 /** Why the call may not run at all, or undefined. */
@@ -143,12 +146,12 @@ export function ownersOf(ref: string, world: Pick<LimitWorld, "orgs" | "accounts
 // ---------------------------------------------------------------------------
 // Pushes and worktrees
 
-function noForce({ command, input }: LimitCall): string | undefined {
+function noForce({ command, input, pushDecides }: LimitCall): string | undefined {
   const mergePush =
     (command === "tasks.merge" && input.push !== undefined && input.push !== false) ||
     ((command === "room.cardAction" || command === "tasks.resolveShip") && input.action === "mergePush");
-  if (mergePush) {
-    return "Refused: autonomous mode never pushes with a merge. Merge without push, and push with tasks.push, which never forces.";
+  if (mergePush && pushDecides !== true) {
+    return "Refused: this merge would push, and pushing is the owner's for this task. Merge without push, or leave it for the owner.";
   }
   if (input.deleteAfter === true) {
     return "Refused: autonomous mode never deletes a worktree after a ship. Ship without deleteAfter; the owner cleans up.";

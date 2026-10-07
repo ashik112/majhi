@@ -9,7 +9,7 @@ import { TASK_TYPE_LABEL, type TaskType, TaskTypeSchema } from "./task-type.ts";
  * is. The first rule whose `when` matches decides; with no match, the rows decide.
  *
  * A rule can only choose who does a step. It cannot lift a guard: green checks for the exact head, the
- * secret scan, protected repos, the branch allowlist, hours, freezes, presence and the daily cap are
+ * secret scan, protected repos, the branch allowlist, hours, freezes, presence, one ship per state of the work and the re-check are
  * checked by the code that does the step, after this answer says the captain may.
  */
 
@@ -133,7 +133,8 @@ export const SHIP_GUARDS: readonly string[] = [
   "Secret scan",
   "Protected repos and paths",
   "Hours and freezes",
-  "5 ships a day",
+  "Not while you type",
+  "Once per state of the work",
   "Re-check before a push",
 ];
 

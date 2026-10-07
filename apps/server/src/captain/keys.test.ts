@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ALL_ASK } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import { planOf } from "./authority-fixtures.ts";
 import { answerOnce, shipState } from "./keys.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
@@ -195,8 +196,9 @@ describe("a ship", () => {
     const ports = {
       reviewTasks: async () => [{ id: "ACM-1", title: "Fix", heads: state.heads, bases: state.bases }],
       shipCheck: async () => state.check,
+      shipPlan: async () => planOf({ ...ALL_ASK, merge: "decide" }),
       newRepos: async () => [],
-    } as unknown as Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos">;
+    } as unknown as Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos" | "shipPlan">;
     const gate = new LaneGate({
       repo,
       ports,

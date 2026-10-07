@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
+import type { MrDeps } from "./service.ts";
 import { type FakeBitbucket, type FakeHosts, fakeBitbucket, fakeHosts } from "../testing/mrHosts.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -45,7 +46,8 @@ const must = (res: { status: number; body: unknown }) => {
 };
 
 interface Setup {
-  policy?: "never" | "approve" | "auto-if-green";
+  /** Merge is the captain's in acme and Autonomous is On, so the poller merges what is green. */
+  captain?: boolean;
   /** Host of the web project. Default gitlab. */
   webHost?: "gitlab" | "bitbucket";
 }
@@ -91,10 +93,16 @@ async function reviewed(setup: Setup = {}) {
   must(
     await cmd("orgs.update", {
       id: "acme",
-      merge: setup.policy ?? "approve",
       mr_tokens: { github: "secret:gh-acme", gitlab: "secret:gl-acme", bitbucket: "secret:bb-acme" },
     }),
   );
+
+  if (setup.captain === true) {
+    // Who merges is the ship decision's, tested on its own; here the merge request mechanics run as if
+    // it said the captain does.
+    const deps = (w.h.majhi.services.mrs as unknown as { deps: MrDeps }).deps;
+    deps.captainMerges = async () => ({ yes: true });
+  }
 
   // "web" is named first, so the task lists web before api: the merge order must still put api first.
   const made = must(
@@ -126,7 +134,7 @@ const mergeCalls = async () =>
 
 describe("one task, two repos on two hosts", () => {
   it("opens two linked MRs, merges them in order, finishes the task and starts what waited on it", async () => {
-    const id = await reviewed({ policy: "approve" });
+    const id = await reviewed();
     // A second task waits until the first one's MRs are merged.
     const waiting = must(
       await cmd("tasks.create", {
@@ -227,15 +235,15 @@ describe("merge policies", () => {
     });
   const tick = () => w.h.majhi.services.mrPoller.tick();
 
-  it("approve: stops at the first failure, says why in the room, and continues on the next click", async () => {
-    const id = await reviewed({ policy: "approve" });
+  it("a click stops at the first failure, says why in the room, and continues on the next click", async () => {
+    const id = await reviewed();
     must(await cmd("tasks.openMrs", { id }));
     await passing();
     await fake.update((s) => {
       s.mergeFails["remotes/web"] = "Merge conflict in invoices.html";
     });
 
-    // The poller does not merge under approve, whatever the CI says.
+    // The poller does not merge where Merge is the owner's, whatever the CI says.
     await tick();
     expect((await get(id)).repos.map((r) => r.mr?.state)).toEqual(["open", "open"]);
 
@@ -256,8 +264,8 @@ describe("merge policies", () => {
     expect((await get(id)).status).toBe("done");
   });
 
-  it("approve: does not merge past failing CI", async () => {
-    const id = await reviewed({ policy: "approve" });
+  it("does not merge past failing CI", async () => {
+    const id = await reviewed();
     must(await cmd("tasks.openMrs", { id }));
     await fake.update((s) => {
       s.ci["remotes/api"] = "failing";
@@ -270,8 +278,8 @@ describe("merge policies", () => {
     expect(await mergeCalls()).toEqual([]);
   });
 
-  it("auto-if-green: the poller merges in order once CI passes, not before", async () => {
-    const id = await reviewed({ policy: "auto-if-green" });
+  it("Merge is the captain's: the poller merges in order once CI passes, not before", async () => {
+    const id = await reviewed({ captain: true });
     must(await cmd("tasks.openMrs", { id }));
     await fake.update((s) => {
       s.ci["remotes/api"] = "pending";
@@ -287,13 +295,10 @@ describe("merge policies", () => {
     expect((await get(id)).status).toBe("done");
   });
 
-  it("never: majhi does not merge; the poller notices merges done on the host, and I merged it checks first", async () => {
-    const id = await reviewed({ policy: "never" });
+  it("Merge is the owner's: the poller merges nothing, notices merges done on the host, and I merged it checks first", async () => {
+    const id = await reviewed();
     must(await cmd("tasks.openMrs", { id }));
     await passing();
-    const refused = await cmd("tasks.mergeMrs", { id });
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toContain("never");
     await tick();
     expect(await mergeCalls()).toEqual([]);
 
@@ -317,8 +322,8 @@ describe("merge policies", () => {
     expect((await get(id)).status).toBe("done");
   });
 
-  it("never: force records the merge as the owner said", async () => {
-    const id = await reviewed({ policy: "never" });
+  it("force records the merge as the owner said", async () => {
+    const id = await reviewed();
     must(await cmd("tasks.openMrs", { id }));
     const res = await cmd("tasks.markMerged", { id, force: true });
     expect(res.body).toMatchObject({ done: true, stillOpen: [] });
@@ -407,7 +412,7 @@ describe("credentials", () => {
 
 describe("a task closed with merge requests not merged", () => {
   it("keeps what waits on it waiting, pauses it with a reason, and says when the merge happened", async () => {
-    const id = await reviewed({ policy: "never" });
+    const id = await reviewed();
     const waiting = must(
       await cmd("tasks.create", {
         text: "tweak invoices in api",
@@ -470,7 +475,7 @@ describe("a task closed with merge requests not merged", () => {
 
 describe("after the merge", () => {
   it("keeps a worktree with uncommitted changes and still finishes the task", async () => {
-    const id = await reviewed({ policy: "approve" });
+    const id = await reviewed();
     must(await cmd("tasks.openMrs", { id }));
     await fake.update((s) => {
       s.ci["remotes/api"] = "passing";

@@ -1,5 +1,6 @@
 import type { CommandName } from "@majhi/shared";
 import { pageRef } from "@majhi/shared";
+import { shipAsked } from "../ship/plan.ts";
 import { shipState } from "./keys.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { CaptainRepo, KeyClaim } from "./repo.ts";
@@ -25,7 +26,7 @@ export const SHIP_COMMANDS: ReadonlySet<string> = new Set([
 
 export interface LaneGateDeps {
   repo: CaptainRepo;
-  ports: Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos">;
+  ports: Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos" | "shipPlan">;
   workspace(org: string): Promise<Workspace | undefined>;
   now(): Date;
 }
@@ -49,6 +50,12 @@ export class LaneGate {
     if (ws === undefined) return undefined;
     const id = typeof input.id === "string" ? input.id : undefined;
     if (id === undefined) return undefined;
+    // The chore's own decision: who does the merge here, and how the work lands.
+    const plan = await this.deps.ports.shipPlan(org, id);
+    if (plan.steps.merge !== "captain") return `Refused: ${shipAsked("merge", ws.name, plan)}.`;
+    if (command === "tasks.merge" && plan.way === "merge-request") {
+      return `Refused: ${id} works through merge requests. Open one with tasks.openMrs, and the captain merges it once it is green.`;
+    }
     const key = await this.keyOf(org, command, id, ws.day);
     this.keys.set(`${command}:${id}`, key);
     const early = this.deps.repo.keyState(key, this.deps.now().toISOString());

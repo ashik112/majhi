@@ -1,7 +1,7 @@
-import type { Authority } from "@majhi/shared";
+import type { Authority, ShipFacts, ShipRule } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { RUNS } from "./authority-fixtures.ts";
+import { planOf, RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { AnswerTask, CaptainPorts } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -15,7 +15,13 @@ function setup(
   authority: Authority,
   answers: AnswerTask[] = [],
   mr: { ok: boolean } = { ok: true },
-  over: { check?: () => unknown; heads?: () => string } = {},
+  over: {
+    check?: () => unknown;
+    heads?: () => string;
+    rules?: ShipRule[];
+    facts?: ShipFacts;
+    way?: "local" | "merge-request";
+  } = {},
 ) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const calls = { merged: 0, opened: 0, asked: 0, closed: [] as string[], changes: [] as string[] };
@@ -23,6 +29,7 @@ function setup(
     typing: () => false,
     answerTasks: async () => answers,
     reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: over.heads?.() ?? "abc" }],
+    shipPlan: async () => planOf(authority, { rules: over.rules ?? [], facts: over.facts, way: over.way }),
     shipCheck: async () =>
       over.check?.() ?? {
         ready: true,
@@ -53,7 +60,7 @@ function setup(
     name: "Acme",
     mode: "on",
     authority,
-    rules: undefined,
+    rules: over.rules === undefined ? undefined : { ships: over.rules },
     tz: "UTC",
     day: "2026-10-04",
     rulesOff: new Set(),

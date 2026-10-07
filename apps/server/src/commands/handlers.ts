@@ -821,7 +821,8 @@ export function createHandlers({
     "tasks.openMrs": (input, ctx) =>
       services.mrs.open(input.id, { into: input.into, targets: input.targets }, actorName(ctx.meta.actor)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
-    "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
+    "tasks.mergeMrs": (input, ctx) =>
+      services.mrs.merge(input.id, ctx.meta.actor.kind === "agent" ? "poll" : "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),
     "tasks.changeBranch": (input, ctx) =>
       changeTaskBranch(

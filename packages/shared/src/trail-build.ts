@@ -61,6 +61,8 @@ export interface TrailFacts {
   merged: readonly string[];
   /** A ship waits for the lead to resolve conflicts: the projects it covers. */
   pendingShip: readonly string[];
+  /** The step of shipping the rules leave to the owner now, when the task waits for them. */
+  owner?: "merge" | "push" | undefined;
   /** The hand-off check of the task's head now, when it has one. */
   check?: { result: "green" | "red" | "running" | "queued"; failedStep?: HandoffStepId | undefined };
 }
@@ -127,5 +129,6 @@ export function buildTrail(facts: TrailFacts): Trail {
       projects: [firstMerged, ...otherMerged],
     });
   }
+  if (facts.owner !== undefined) steps.push({ kind: "ship", tone: "needs", step: facts.owner });
   return steps;
 }

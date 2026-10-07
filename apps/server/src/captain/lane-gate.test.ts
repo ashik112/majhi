@@ -1,6 +1,7 @@
 import { ALL_ASK } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import { planOf } from "./authority-fixtures.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -19,14 +20,16 @@ function setup(rules?: Workspace["rules"]) {
       evidence: "committed, merges cleanly into main",
       targets: [{ project: "acme-api", into: "main", base: "main" }],
     } as ShipCheck,
+    plan: planOf({ ...ALL_ASK, merge: "decide" }),
     inReview: true,
     repos: [{ path: "/Users/owner/Work/acme/web" }] as { path: string }[],
   };
   const ports = {
     reviewTasks: async () => (state.inReview ? [{ id: "ACM-1", title: "Fix", heads: state.heads }] : []),
     shipCheck: async () => state.check,
+    shipPlan: async () => state.plan,
     newRepos: async () => state.repos,
-  } as unknown as Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos">;
+  } as unknown as Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos" | "shipPlan">;
   const gate = new LaneGate({
     repo,
     ports,

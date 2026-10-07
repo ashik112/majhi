@@ -1,5 +1,6 @@
 import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
+import type { ShipPlan } from "../ship/plan.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { AnswerResult } from "./keys.ts";
 import type { OwnWorkScope } from "./own-work.ts";
@@ -116,6 +117,11 @@ export interface TriageTask {
 export interface CaptainPorts {
   // Ship finished work
   reviewTasks(org: string): Promise<ReviewTask[]>;
+  /**
+   * Who does each step of shipping the task, and how it lands: the workspace's rows refined by its ship
+   * rules, for the task as it is now. The lane's calls and the lead's cards read the same one.
+   */
+  shipPlan(org: string, task: string): Promise<ShipPlan>;
   /** `except`: the item id of a pending card that does not count as waiting (the lead's merge card). */
   shipCheck(org: string, task: string, except?: string): Promise<ShipCheck>;
   /** Merges (and pushes when `push`) by the workspace's ship rule. Returns what Undo needs. */

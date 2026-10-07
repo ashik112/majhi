@@ -232,7 +232,7 @@ export class PlaybookService implements ChorePlaybooks {
     if (def.runner.kind === "chore") {
       const chore = def.runner.chore;
       if (this.deps.mode() !== "on" && !OFF_CHORES.includes(chore)) return "Auto-pilot is off.";
-      if (!choresNow(ws.authority, ws.mode).includes(chore)) {
+      if (!choresNow(ws.authority, ws.mode, ws.rules?.ships).includes(chore)) {
         return `The Delegation row that governs it is on You in ${ws.name}.`;
       }
       const off = this.deps.captain.repo.chore(org, chore);

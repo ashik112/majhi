@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  DEFAULT_MERGE_POLICY,
   type GitAuth,
   type MarkMergedResult,
   type MergeMethod,
   type MergeMrsResult,
   type MergeOrder,
-  type MergePolicy,
   type MrHost,
   type OpenMrsResult,
   type ProjectFetchResult,
@@ -103,6 +101,12 @@ export interface MrDeps {
   freshToken?: (ref: string) => Promise<string | undefined>;
   /** The org's own token for an https push, when it signed in to that host. Else the helper uses the saved login. */
   pushAuth?: (org: string, url: string) => Promise<GitAuth | undefined>;
+  /**
+   * Whether the captain merges this task's merge requests now, by the one ship decision (`ShipPlanner`):
+   * Merge is the captain's for it, Autonomous is On, and nothing rests it (hours, a freeze). The owner's own
+   * click does not ask. Without it the captain merges nothing.
+   */
+  captainMerges?: (task: Task) => Promise<{ yes: true } | { yes: false; why: string }>;
   now?: () => Date;
 }
 
@@ -139,6 +143,13 @@ class FixableError extends UserError {
     readonly fix: ShipFix,
   ) {
     super(message, 409);
+  }
+}
+
+/** The captain's merge was asked for a task the ship decision leaves to the owner. The timer skips these quietly. */
+export class CaptainDoesNotMerge extends UserError {
+  constructor(task: string, why: string) {
+    super(`The captain does not merge ${task}: ${why}.`, 409);
   }
 }
 
@@ -284,9 +295,22 @@ export class MrService {
     return value;
   }
 
-  private async policy(task: Task): Promise<MergePolicy> {
-    const orgs = (await this.deps.config.sections()).orgs;
-    return orgs[task.org ?? "private"]?.merge ?? DEFAULT_MERGE_POLICY;
+  /**
+   * Whether the task's project works through merge requests: every repo it changes has a token for its
+   * MR host (its remote's own, else the org's). Read from what is configured, no network.
+   */
+  async viaMergeRequests(task: Task): Promise<boolean> {
+    const repos = task.repos.filter((r) => r.writes !== false);
+    if (repos.length === 0) return false;
+    for (const repo of repos) {
+      try {
+        const ctx = await this.context(repo);
+        if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
   }
 
   private async context(repo: TaskRepo): Promise<RepoContext> {
@@ -1349,7 +1373,7 @@ export class MrService {
       await this.readStates(task);
       await this.finishIfMerged(id);
       if (waited) await this.mergedLate(id);
-      return { task: this.deps.tasks.get(id), policy: await this.policy(task) };
+      return { task: this.deps.tasks.get(id) };
     });
   }
 
@@ -1402,17 +1426,17 @@ export class MrService {
   // ---------------------------------------------------------------------------
   // Merge
 
-  /** Merges in order under the org's policy. `owner`: a click; `poll`: the timer. */
+  /**
+   * Merges in order. `owner`: a click, which the owner may always make. `poll`: the captain's merge, on the
+   * timer or through a call, which runs only when the ship decision says the captain merges this task.
+   */
   async merge(id: string, trigger: "owner" | "poll"): Promise<MergeMrsResult> {
     const first = this.deps.tasks.get(id);
     if (first.status !== "mr")
       throw new UserError(`${id} is ${first.status}. Its merge requests are not open.`, 409);
-    const policy = await this.policy(first);
-    if (policy === "never" && trigger === "owner") {
-      throw new UserError(
-        "This org's merge policy is never, so majhi does not merge. Merge on the host, then choose I merged it.",
-        409,
-      );
+    if (trigger === "poll") {
+      const may = (await this.deps.captainMerges?.(first)) ?? { yes: false as const, why: "no ship decision" };
+      if (!may.yes) throw new CaptainDoesNotMerge(id, may.why);
     }
     if (trigger === "owner") this.resolved(id, "");
     const keys = first.repos.filter((r) => r.mr !== undefined).map((r) => ShipQueue.key(r.project, r.base));
@@ -1432,7 +1456,6 @@ export class MrService {
             pushedAt: r.pushedAt,
           }));
         const decision = nextMerge({
-          policy,
           trigger,
           order,
           nowMs: this.now().getTime(),
@@ -1650,16 +1673,16 @@ export class MrService {
   // ---------------------------------------------------------------------------
   // Polling
 
-  /** One pass over the tasks in `mr`: read their MRs, merge under `auto-if-green`, notice merges. */
+  /** One pass over the tasks in `mr`: read their MRs, merge those the captain merges, notice merges. */
   async poll(): Promise<void> {
     for (const id of this.deps.store.tasks.idsWithStatus("mr")) {
       if (this.busy.has(id)) continue;
       try {
         await this.refresh(id);
         const task = this.deps.tasks.get(id);
-        if (task.status === "mr" && (await this.policy(task)) === "auto-if-green")
-          await this.merge(id, "poll");
+        if (task.status === "mr") await this.merge(id, "poll");
       } catch (err) {
+        if (err instanceof CaptainDoesNotMerge) continue;
         this.problem(id, "poll", `Could not check the merge requests (${errorMessage(err)}).`);
       }
     }
