@@ -475,8 +475,6 @@ export const ReplyHoldSchema = z.union([
   HoldClassSchema,
   FixedHoldSchema,
   z.literal("tell"),
-  /** Auto-pilot is off: no reply goes to a client without the owner. */
-  z.literal("autopilot"),
   /** The chat's replies for the day were all sent. */
   z.literal("limit"),
 ]);
@@ -485,7 +483,6 @@ export type ReplyHold = z.infer<typeof ReplyHoldSchema>;
 /** The line a held reply shows beside "Reply waits for you": what in the reply made it wait. */
 export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
   tell: "Tell is set to You",
-  autopilot: "Auto-pilot is off",
   limit: "Daily limit reached",
   secret: "Holds a secret",
   "other-client": "Names another client",

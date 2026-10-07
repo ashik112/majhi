@@ -2501,7 +2501,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (!res.ok) throw new UserError("Telegram would not remove the webhook.", 409);
     },
     majhiHome: env.majhiHome,
-    autopilot: () => autonomy.mode() === "on",
     polling: env.chats?.polling === true,
     changed: () => events.emit(["clients"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),

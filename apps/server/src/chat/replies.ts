@@ -34,8 +34,6 @@ export interface RepliesDeps {
   rooms: ClientRooms;
   /** The Tell row of a workspace as it is now: Ask me whenever Auto-pilot is not On. */
   tell: (org: string) => Promise<AuthorityChoice>;
-  /** Whether Auto-pilot is on. While it is not, no reply goes to a client without the owner. */
-  autopilot: () => boolean;
   /** The Hold list of a workspace, every class filled in. */
   holds: (org: string) => Promise<Holds>;
   /** The names of the workspaces, to keep one workspace's name out of another's replies. */
@@ -165,7 +163,6 @@ export class ClientReplies {
     }
     const rails = {
       tell: await this.deps.tell(org),
-      autopilot: this.deps.autopilot(),
       // The chat's own Ask-me cases over the workspace's list.
       holds: holdsForRoom(await this.deps.holds(org), room.chat),
 
@@ -238,7 +235,6 @@ export class ClientReplies {
     const row = this.roomOf(room);
     const verdict = railsFor({
       tell: "ask",
-      autopilot: true,
       holds: await this.deps.holds(row.org as string),
       text,
       flags: undefined,

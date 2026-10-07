@@ -15,9 +15,8 @@ import {
  *   1. a secret in the text, which is also taken out of it (fixed, no switch);
  *   2. another client's or another workspace's name in the text (fixed);
  *   3. a report to a client, such as an RCA (fixed);
- *   4. Auto-pilot off: every reply waits (the one rule for every client reply, whatever Tell says);
- *   5. Tell on Ask me: every reply waits;
- *   6. under Captain decides, the classes of the Hold list the owner left on.
+ *   4. Tell on Ask me: every reply waits (Tell does not wait for Auto-pilot: it is the row as the owner set it);
+ *   5. under Captain decides, the classes of the Hold list the owner left on.
  * A reply the writer gave no flags for waits: a missing answer is never a yes.
  */
 
@@ -36,8 +35,6 @@ export interface RailsInput {
   afterGap: boolean;
   /** The text is a report, like an RCA. */
   report?: boolean;
-  /** Auto-pilot is on. While it is off, every reply waits for the owner. */
-  autopilot: boolean;
 }
 
 export type RailsVerdict =
@@ -80,7 +77,6 @@ export function railsFor(input: RailsInput): RailsVerdict {
     return { send: false, why: "other-client", text: input.text };
   }
   if (input.report === true) return { send: false, why: "report", text: input.text };
-  if (!input.autopilot) return { send: false, why: "autopilot", text: input.text };
   if (input.tell !== "decide") return { send: false, why: "tell", text: input.text };
   const flags = input.flags;
   const held = (why: HoldClass): RailsVerdict => ({ send: false, why, text: input.text });
