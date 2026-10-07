@@ -37,7 +37,7 @@ import type { WikiEnabled } from "../wiki/switch.ts";
 import { isAnswerTask } from "./answer-check.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
-import { askedSentence, SHIP_ROW } from "./levels.ts";
+import { askedSentence } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
 import { answerFor, widenedNote } from "./permission-rules.ts";
@@ -414,10 +414,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           risky: true,
         };
       if (verdict.decision === "left") return verdict;
-      const row = startsWork(call.command, call.parsed) ? "start" : SHIP_ROW[call.command];
-      if (row !== undefined && authority[row] !== "decide") {
+      // Shipping calls were decided by the one ship decision above (the rows and the rules); starting is the Start row.
+      if (startsWork(call.command, call.parsed) && authority.start !== "decide") {
         const name = (await deps.config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org);
-        return { decision: "left", why: askedSentence(row, name) };
+        return { decision: "left", why: askedSentence("start", name) };
       }
       return verdict;
     },

@@ -142,16 +142,6 @@ export function choresOf(authority: Authority, rules: readonly ShipRule[] = []):
   });
 }
 
-/** The authority row that governs a command that ships work. The others need no row here. */
-export const SHIP_ROW: Readonly<Record<string, "merge" | "push">> = {
-  "tasks.merge": "merge",
-  "tasks.mergeMrs": "merge",
-  "tasks.markMerged": "merge",
-  "tasks.resolveShip": "merge",
-  "tasks.push": "push",
-  "tasks.openMrs": "push",
-};
-
 /** The refusal line when a row is "Ask me": "Refused: in Acme you decide when work starts, ...". */
 export function askedWhy(row: AuthorityRow, name: string): string {
   return `in ${name} you decide ${AUTHORITY_REFUSAL[row]}`;

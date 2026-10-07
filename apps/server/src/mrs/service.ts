@@ -1479,7 +1479,7 @@ export class MrService {
         if (repo?.mr === undefined) break;
         const ctx0 = await this.context(repo).catch(() => undefined);
         if (ctx0?.project.protected === true) {
-          // No merge policy merges a protected repo: the owner merges it on the host.
+          // Nothing merges a protected repo: the owner merges it on the host.
           stoppedAt = {
             project: repo.project,
             reason: `${repo.project} is protected, so majhi never merges it. Merge it on the host yourself, then choose I merged it.`,

@@ -1,4 +1,4 @@
-/** Watches the tasks whose MRs are open: reads their state, merges under `auto-if-green`, and notices merges the owner did. */
+/** Watches the tasks whose MRs are open: reads their state, merges those the captain merges (the ship decision), and notices merges the owner did. */
 export const POLL_INTERVAL_MS = 60_000;
 
 export class MrPoller {

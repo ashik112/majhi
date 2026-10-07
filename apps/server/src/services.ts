@@ -1808,7 +1808,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         stepMinutes: c.handoff_step_minutes,
       };
     },
-    mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
+    mergeDecides: async (task) => (await shipPlanner.plan(task)).steps.merge === "captain",
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     ceilingHeld: () => outcomesService?.ceilingHeld(),

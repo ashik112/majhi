@@ -227,7 +227,7 @@ describe("one task, two repos on two hosts", () => {
   });
 });
 
-describe("merge policies", () => {
+describe("who merges", () => {
   const passing = () =>
     fake.update((s) => {
       s.ci["remotes/api"] = "passing";
