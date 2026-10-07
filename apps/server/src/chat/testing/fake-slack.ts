@@ -94,6 +94,8 @@ export class FakeSlack {
   userScopes: string[] = ["chat:write", "channels:history", "groups:history", "im:history", "mpim:history"];
   /** The workspace the owner's token belongs to; another id is a token of a different workspace. */
   userTeam: string | undefined;
+  /** Whether messages carry a `team` field: Slack leaves it out of some, and history items rarely have it. */
+  sendTeam = true;
   /** While false, Slack refuses the owner's token (`invalid_auth`), as after it was revoked. */
   userTokenValid = true;
   /** The owner: their user token posts as them. */
@@ -238,7 +240,7 @@ export class FakeSlack {
       user: m.user,
       text: m.text,
       ts: m.ts,
-      team: this.team.id,
+      ...(this.sendTeam ? { team: this.team.id } : {}),
       ...(m.thread_ts === undefined ? {} : { thread_ts: m.thread_ts }),
       ...(m.edited === undefined ? {} : { edited: { user: m.user, ts: m.edited.ts } }),
       ...(m.bot_id === undefined ? {} : { bot_id: m.bot_id }),

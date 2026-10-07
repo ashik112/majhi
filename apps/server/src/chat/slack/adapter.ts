@@ -1,5 +1,5 @@
 import type { Body, ChatCursor, ChatEnvelope, ChatFileRef, ChatKind } from "@majhi/shared";
-import { slackMentions } from "@majhi/shared";
+import { slackMentions, slackPersonId } from "@majhi/shared";
 import WebSocket from "ws";
 import { z } from "zod";
 import { errorMessage } from "../../errors.ts";
@@ -143,7 +143,7 @@ class SlackSession {
   private readonly seenMessages = new Set<string>();
   private readonly users = new Map<
     string,
-    { name: string; username?: string | undefined; bot: boolean; team?: string | undefined; at: number }
+    { name: string; username?: string | undefined; bot: boolean; at: number }
   >();
   private readonly chats = new Map<string, { title: string; kind: ChatKind; people?: number; at: number }>();
   /** A message's thread, so a reply to a reply goes to the thread's root. */
@@ -405,18 +405,18 @@ class SlackSession {
     if (this.seen(this.seenEvents, payload.event_id)) return;
     const event = MessageEvent.safeParse(payload.event);
     if (event.success) {
-      const delivery = await this.build(event.data, payload.team_id);
+      const delivery = await this.build(event.data);
       if (delivery !== undefined) await this.deliver(delivery, true);
     }
     this.remember(this.seenEvents, payload.event_id);
   }
 
   /** The delivery a message event makes, or undefined when it is not a client's message: a bot's post, our own, a join. */
-  private async build(event: MessageEvent, team: string | undefined): Promise<Delivery | undefined> {
+  private async build(event: MessageEvent): Promise<Delivery | undefined> {
     if (event.subtype === "message_changed") {
       const message = event.message;
       if (message === undefined) return undefined;
-      return this.fromMessage(event.channel, message, event.channel_type, team, "edit");
+      return this.fromMessage(event.channel, message, event.channel_type, "edit");
     }
     if (event.subtype === "message_deleted") {
       const before = event.previous_message;
@@ -431,7 +431,8 @@ class SlackSession {
           kind: "delete",
           external: this.key(event.channel, ts),
           chat: channel,
-          sender: { id: before?.user ?? "slack", name: "", bot: false, verified: before?.user !== undefined },
+          sender: {
+            id: before?.user === undefined ? "slack" : slackPersonId(before.user), name: "", bot: false, verified: before?.user !== undefined },
           text: "",
           files: [],
           at: this.now().toISOString(),
@@ -439,7 +440,7 @@ class SlackSession {
       };
     }
     if (!WRITTEN.has(event.subtype)) return undefined;
-    return this.fromMessage(event.channel, event, event.channel_type, team, "new");
+    return this.fromMessage(event.channel, event, event.channel_type, "new");
   }
 
   private ours(message: SlackMessage): boolean {
@@ -464,7 +465,6 @@ class SlackSession {
     channel: string,
     message: SlackMessage,
     channelType: string | undefined,
-    eventTeam: string | undefined,
     kind: "new" | "edit",
   ): Promise<Delivery | undefined> {
     if (this.ours(message) || message.user === undefined) return undefined;
@@ -482,17 +482,16 @@ class SlackSession {
       });
     }
     if (message.text === "" && files.length === 0) return undefined;
-    const sender = await this.person(message.user, message.user_team ?? message.team ?? eventTeam);
-    const team = sender.team ?? this.me?.team ?? "";
+    const sender = await this.person(message.user);
     // The names of the people the text mentions, asked once each, so an unknown mention still reads as a name.
     const named = new Map<string, string>();
     for (const mention of slackMentions(message.text)) {
       const id = mention.native;
       if (id === undefined || named.has(id)) continue;
-      const found = await this.person(id, team);
+      const found = await this.person(id);
       named.set(id, found.name);
     }
-    const read = readSlackText(message.text, team, (id) => named.get(id));
+    const read = readSlackText(message.text, (id) => named.get(id));
     const info = await this.chat(channel, channelType, message.user, sender.name);
     const root =
       message.thread_ts !== undefined && message.thread_ts !== message.ts ? message.thread_ts : undefined;
@@ -505,7 +504,7 @@ class SlackSession {
         external: this.key(channel, message.ts),
         chat: info,
         sender: {
-          id: `${team}:${message.user}`,
+          id: slackPersonId(message.user),
           name: sender.name,
           ...(sender.username === undefined ? {} : { username: sender.username }),
           bot: sender.bot,
@@ -519,8 +518,8 @@ class SlackSession {
         ...(byOwner ? { owner: true as const } : {}),
         ...(read.mentions.some(
           (m) =>
-            (this.me !== undefined && m.native === `${team}:${this.me.user}`) ||
-            (owner !== undefined && m.native === `${team}:${owner.user}`),
+            (this.me !== undefined && m.native === slackPersonId(this.me.user)) ||
+            (owner !== undefined && m.native === slackPersonId(owner.user)),
         )
           ? { addressed: true }
           : {}),
@@ -582,7 +581,7 @@ class SlackSession {
   // -------------------------------------------------------------------------
   // Who and where
 
-  private async person(id: string, team: string | undefined) {
+  private async person(id: string) {
     const cached = this.users.get(id);
     if (cached !== undefined && this.now().getTime() - cached.at < INFO_TTL_MS) return cached;
     try {
@@ -594,7 +593,6 @@ class SlackSession {
         name: name ?? id,
         ...(user.name === undefined ? {} : { username: user.name }),
         bot: user.is_bot === true,
-        ...((user.team_id ?? team) === undefined ? {} : { team: user.team_id ?? team }),
         at: this.now().getTime(),
       };
       this.users.set(id, out);
@@ -602,7 +600,7 @@ class SlackSession {
     } catch (err) {
       if (this.refused(err)) throw err;
       // A name is a nicety: the user id still says who it is.
-      return cached ?? { name: id, bot: false, ...(team === undefined ? {} : { team }), at: 0 };
+      return cached ?? { name: id, bot: false, at: 0 };
     }
   }
 
@@ -624,7 +622,7 @@ class SlackSession {
       const kind = kindOf(channelType, { im: info.is_im === true, mpim: info.is_mpim === true });
       const title =
         kind === "private"
-          ? (userName ?? (user === undefined ? channel : (await this.person(user, undefined)).name))
+          ? (userName ?? (user === undefined ? channel : (await this.person(user)).name))
           : info.name === undefined
             ? channel
             : info.is_mpim === true
@@ -784,7 +782,7 @@ class SlackSession {
   private async store(channel: string, messages: SlackMessage[], oldest: string): Promise<void> {
     for (const message of messages) {
       if (compareTs(message.ts, oldest) <= 0 || !WRITTEN.has(message.subtype)) continue;
-      const delivery = await this.fromMessage(channel, message, undefined, undefined, "new");
+      const delivery = await this.fromMessage(channel, message, undefined, "new");
       if (delivery === undefined) continue;
       if (!(await this.deliver(delivery, false)))
         throw new SlackNetworkError("A message could not be stored.");

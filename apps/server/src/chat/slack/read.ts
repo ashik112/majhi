@@ -1,4 +1,4 @@
-import type { ChatMention } from "@majhi/shared";
+import { type ChatMention, slackPersonId } from "@majhi/shared";
 
 /**
  * Reading what Slack sends. A Slack `ts` is the message's id and its time: seconds, a dot and six digits, as a string.
@@ -45,7 +45,6 @@ function after(value: string, from: number, ch: string): number {
  */
 export function readSlackText(
   raw: string,
-  team: string,
   names: (user: string) => string | undefined,
 ): { text: string; mentions: ChatMention[] } {
   let out = "";
@@ -70,7 +69,7 @@ export function readSlackText(
       const id = target.slice(1);
       const word = `@${names(id) ?? (label !== undefined && label !== "" ? label : id)}`;
       if (id !== "")
-        mentions.push({ start: out.length, end: out.length + word.length, native: `${team}:${id}` });
+        mentions.push({ start: out.length, end: out.length + word.length, native: slackPersonId(id) });
       out += word;
     } else if (target.startsWith("#")) {
       out += `#${label !== undefined && label !== "" ? label : target.slice(1)}`;

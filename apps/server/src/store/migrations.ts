@@ -1,10 +1,13 @@
 import type Database from "better-sqlite3";
+import { stabilizeSlackIds } from "./slack-ids-migration.ts";
 
 export interface Migration {
   /** Increasing, never reused. */
   id: number;
   name: string;
   sql: string;
+  /** Data work SQL cannot say, run in the same transaction after `sql`. */
+  run?: (db: Database.Database) => void;
 }
 
 /** The item types the room search indexes, as an SQL list (see SEARCHABLE_ITEM_TYPES in shared). */
@@ -1945,6 +1948,14 @@ INSERT INTO read_marks (id, read_at, updated_at)
    GROUP BY r.task;
 `,
   },
+  {
+    // One Slack person is one identity: the user id. Ids that carried a per-message team prefix are rewritten,
+    // and contacts that now share an identity are merged, each merge logged so it can be undone.
+    id: 183,
+    name: "stable slack person ids",
+    sql: "",
+    run: stabilizeSlackIds,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
@@ -1990,6 +2001,7 @@ export function migrate(db: Database.Database, migrations: readonly Migration[] 
     if (applied.has(m.id)) continue;
     db.transaction(() => {
       db.exec(m.sql);
+      m.run?.(db);
       record.run(m.id, m.name, new Date().toISOString());
     })();
     done.push(m.id);

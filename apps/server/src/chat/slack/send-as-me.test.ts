@@ -107,7 +107,7 @@ it("sends the captain's reply with the owner's token, and its echo is not read a
     room: t.room.id,
     text: "On it, looking now.",
     flags: t.w.flags(),
-    to: "T01ACME:U1SARA",
+    to: "U1SARA",
     replyTo: ask.ts,
   });
   expect(out.state).toBe("sent");
@@ -117,7 +117,7 @@ it("sends the captain's reply with the owner's token, and its echo is not read a
   // The echo came back over the socket; a later message from the client is read after it.
   t.api.post({ channel: "C1OPS", user: "U1SARA", text: "Thanks" });
   await until(() => t.w.triaged.length === 2, "the second triage");
-  expect(t.delivered.filter((e) => e.sender.id.endsWith(":U0OWNER"))).toEqual([]);
+  expect(t.delivered.filter((e) => e.sender.id === "U0OWNER")).toEqual([]);
   expect(t.w.triaged.map((i) => (i.type === "client" ? i.text : ""))).toEqual([
     "Orders page is down",
     "Thanks",
@@ -154,7 +154,7 @@ it("never posts a Me chat's reply as the bot when the owner's token is refused: 
     room: t.room.id,
     text: "On it.",
     flags: t.w.flags(),
-    to: "T01ACME:U1SARA",
+    to: "U1SARA",
     replyTo: ask.ts,
   });
   expect(out.state).toBe("failed");

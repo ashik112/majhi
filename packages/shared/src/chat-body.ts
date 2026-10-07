@@ -135,6 +135,15 @@ export function tokenizeMentions(
   return { text: out, names };
 }
 
+/**
+ * A Slack person's identity in majhi: the user id alone. Slack user ids are unique across the workspaces of a
+ * connection, so a team prefix adds nothing and, taken per message, split one person into several. Older data
+ * wrote `T01:U02` (or `:U02`); this reads those back to the same person.
+ */
+export function slackPersonId(user: string): string {
+  return user.slice(user.lastIndexOf(":") + 1);
+}
+
 /** Slack's `<@U123>` and `<@U123|name>` in a text, as mentions with the user id. A pure parser for the Slack adapter. */
 export function slackMentions(text: string): ChatMention[] {
   const out: ChatMention[] = [];
