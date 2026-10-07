@@ -90,7 +90,7 @@ test("an account at its limit mid-run hands the task to the fallback, with a han
 
   // The board's top bar shows it.
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /claude-acme-1 at limit/ })).toBeVisible();
+  await expect(page.getByTestId("account-readout").filter({ hasText: "claude-acme-1" })).toBeVisible();
   await shot(page, "limits-top-bar");
   await cmd(request, "tasks.close", { id });
 });

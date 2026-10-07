@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { expect, MAJHI_HOME, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
 // From first run. Each test builds on the state the previous one left.
 useHome({ seed: "empty" });
@@ -143,10 +143,10 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await page.getByRole("button", { name: "Write the first task" }).click();
   await expect(page.getByRole("dialog", { name: "New task" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await expect(page.locator("#journey-heading")).toHaveCount(0);
 
   const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));

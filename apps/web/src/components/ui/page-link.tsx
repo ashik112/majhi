@@ -11,6 +11,7 @@ export function PageLink({
   title,
   onClick,
   "aria-label": ariaLabel,
+  "data-testid": testId,
   children,
 }: {
   page: PageName;
@@ -19,9 +20,11 @@ export function PageLink({
   title?: string;
   onClick?: () => void;
   "aria-label"?: string;
+  "data-testid"?: string;
   children: ReactNode;
 }) {
-  const props: { title?: string; "aria-label"?: string; onClick?: () => void } = {};
+  const props: { title?: string; "aria-label"?: string; "data-testid"?: string; onClick?: () => void } = {};
+  if (testId) props["data-testid"] = testId;
   if (title) props.title = title;
   if (onClick) props.onClick = onClick;
   if (ariaLabel) props["aria-label"] = ariaLabel;

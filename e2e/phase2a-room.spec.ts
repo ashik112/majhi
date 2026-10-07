@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { expect, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, test, useHome } from "./fixture.ts";
 
 // The room: stopping a turn, permissions, a chat task and what an agent can show. Org Acme with its
 // agents, the API-key account codex-key and the project api. The fake Codex adapter pauses 600 ms
@@ -53,7 +53,7 @@ const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task
 /** Opens the New task dialog with `n` and types the title. */
 async function openNewTask(page: Page, title: string) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await page.keyboard.press("n");
   await expect(newTaskDialog(page)).toBeVisible();
   await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);

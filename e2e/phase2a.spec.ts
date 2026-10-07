@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { expect, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
 // Org Acme with its agents. One task on api, from registering the project to removing the task.
 // The fake Claude adapter pauses 120 ms between the steps of a turn, so the turn can be watched.
@@ -61,7 +61,7 @@ const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task
 /** Opens the New task dialog with `n` and types the title. */
 async function openNewTask(page: Page, title: string) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await page.keyboard.press("n");
   await expect(newTaskDialog(page)).toBeVisible();
   await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);
