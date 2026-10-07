@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check, MoreHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
@@ -94,7 +94,7 @@ export function Menu({
         trigger(triggerProps)
       ) : (
         <Button variant="ghost" size="icon" aria-label={label} {...triggerProps}>
-          {icon}
+          {icon ?? <MoreHorizontal aria-hidden="true" />}
         </Button>
       )}
       {open &&

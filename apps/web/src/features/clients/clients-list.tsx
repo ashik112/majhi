@@ -12,7 +12,7 @@ import { AppMark } from "./app-mark";
 
 /** "Telegram group", "Telegram channel": what the chat is, in the list's one line. */
 export function kindLine(row: Pick<ClientRow, "app" | "kind">): string {
-  const kind = row.kind === "private" ? "chat" : row.kind;
+  const kind = row.app === "slack" ? "channel" : row.kind === "private" ? "chat" : row.kind;
   return `${CHAT_APP_LABEL[row.app]} ${kind}`;
 }
 
