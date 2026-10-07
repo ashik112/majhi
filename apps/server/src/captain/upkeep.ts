@@ -31,6 +31,10 @@ export function discoverKey(c: Pick<Candidate, "kind" | "id">): string {
 }
 
 /** "fixed 2, 1 for you", or the words for nothing. */
+/** The log key of a run's one summary line, and the test for it, so a page reads the run's result from that line. */
+export const summaryKey = (chore: string, org: string, day: string): string => `${chore}:summary:${org}:${day}`;
+export const isSummaryKey = (key: string): boolean => key.split(":")[1] === "summary";
+
 function line(fixed: number, left: number, none: string): string {
   const parts = [...(fixed > 0 ? [`fixed ${fixed}`] : []), ...(left > 0 ? [`${left} for you`] : [])];
   return parts.length === 0 ? none : parts.join(", ");
@@ -71,7 +75,7 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
   /** Each run leaves one line in the log. */
   const summary = (run: ChoreRun, label: string, text: string) =>
     run.act({
-      key: `${run.chore}:summary:${run.org}:${run.ws.day}`,
+      key: summaryKey(run.chore, run.org, run.ws.day),
       text: `${label}: ${text}`,
       reason: "Each upkeep run leaves one line",
       do: async () => ({ undoNote: "A log line: nothing to undo" }),
@@ -378,7 +382,7 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
         });
         if (outcome === "done") fixed += 1;
       }
-      await summary(run, "Owner checklist", line(fixed, left, "nothing needs you"));
+      await summary(run, "Owner checklist", line(fixed, left, "nothing new"));
     },
   };
 }

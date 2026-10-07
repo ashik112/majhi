@@ -643,7 +643,7 @@ export class MrService {
               if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) {
                 const org =
                   (await this.deps.config.sections()).orgs[ctx.project.org]?.name ?? ctx.project.org;
-                throw new FixableError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Orgs > ${org}.`, {
+                throw new FixableError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Workspaces > ${org}.`, {
                   page: "orgs",
                   org: ctx.project.org,
                 });
@@ -1134,7 +1134,12 @@ export class MrService {
     }
     if (failed === undefined) return true;
     if (/couldn't find remote ref|could not find remote ref/i.test(failed)) return false;
-    throw new UserError(`Could not read ${target.remote}/${branch} before pushing: ${failed}`, 409);
+    throw new UserError(
+      isSshAuthFailure(failed)
+        ? `majhi could not sign in to ${target.remote} to push. Open Git accounts and check this project's key, then ship again.`
+        : `majhi could not reach ${target.remote} to push. Check the connection and the remote address, then ship again.`,
+      409,
+    );
   }
 
   /**

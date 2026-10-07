@@ -26,7 +26,8 @@ export const SHIP_COMMANDS: ReadonlySet<string> = new Set([
 
 export interface LaneGateDeps {
   repo: CaptainRepo;
-  ports: Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos" | "shipPlan">;
+  ports: Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos" | "shipPlan"> &
+    Partial<Pick<CaptainPorts, "shipFailed">>;
   workspace(org: string): Promise<Workspace | undefined>;
   now(): Date;
 }
@@ -115,12 +116,15 @@ export class LaneGate {
       at,
       text: outcome.ok
         ? `${verb} ${id} from the captain's lane`
-        : `${verb} ${id} from the captain's lane failed: ${outcome.error ?? "it did not go"}`,
+        : `${command === "tasks.resolveShip" ? `Asking the lead of ${id} to resolve failed` : `Ship failed for ${id}`}: ${outcome.error ?? "it did not go"}`,
       reason: reason === "" ? `In ${ws.name} the captain decides when work is merged` : reason,
       task: id,
       outcome: outcome.ok ? "done" : "failed",
       undoNote: "Shipped by the captain's own call: revert it from the task if needed",
     });
+    if (!outcome.ok && command !== "tasks.resolveShip") {
+      await this.deps.ports.shipFailed?.(org, id, outcome.error ?? "it did not go").catch(() => undefined);
+    }
     // The log line holds the key now; after a failure the key is free to try again.
     this.deps.repo.releaseKey(key);
   }

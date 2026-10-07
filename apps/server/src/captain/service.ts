@@ -182,8 +182,8 @@ export class CaptainService {
         meta: { actor: { kind: "agent", id: "majhi" } },
         summary:
           names.length === 0
-            ? "moved autonomous mode's workspace list to the captain's choice per workspace"
-            : `let the captain start work in ${names.join(", ")}, from autonomous mode's workspace list`,
+            ? "moved Auto-pilot's workspace list to the captain's choice per workspace"
+            : `let the captain start work in ${names.join(", ")}, from Auto-pilot's workspace list`,
       },
     );
     return true;
