@@ -3,6 +3,7 @@ import { UserError } from "../errors.ts";
 import { fileSignature } from "../fs.ts";
 import { ConfigHistory, type HistoryEntry } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
+import { foldedOrgs, orgsWithMergeSwitch, removeOrgMergeSwitches } from "./migrate-org-merge.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
 import { type ConfigSections, readSections } from "./sections.ts";
 import { readSettings, type SettingsPatch } from "./settings.ts";
@@ -154,6 +155,36 @@ export class ConfigService {
         changed = true;
         const { commands } = (await readSettings(this.file)).policy;
         await writeSettings(this.file, { policy: { commands: { ...commands, [COMMAND]: "auto" } } });
+      },
+    );
+    return changed;
+  }
+
+  /**
+   * Startup migration: `orgs.<id>.merge` (never, approve, auto-if-green) folds into the Merge row of the
+   * authority table and the key is removed (see `migrate-org-merge.ts`). Returns whether it changed
+   * anything; a second run finds nothing and makes no commit.
+   */
+  async migrateOrgMerge(): Promise<boolean> {
+    if ((await orgsWithMergeSwitch(this.file)).length === 0) return false;
+    let changed = false;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: "Folded each workspace's merge policy into the Merge row of the Permissions table",
+      },
+      async () => {
+        const found = await orgsWithMergeSwitch(this.file);
+        if (found.length === 0) return;
+        changed = true;
+        const { autonomy } = await readSettings(this.file);
+        const orgs = foldedOrgs(autonomy, found);
+        if (orgs !== undefined) await writeSettings(this.file, { autonomy: { orgs } });
+        await removeOrgMergeSwitches(
+          this.file,
+          found.map((f) => f.id),
+        );
       },
     );
     return changed;

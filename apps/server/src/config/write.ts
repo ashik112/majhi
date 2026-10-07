@@ -28,7 +28,7 @@ export class ConfigConflictError extends Error {
  * atomically. Keys and comments the edit does not touch stay as they were.
  * A missing file starts empty.
  */
-async function editConfig(file: string, edit: (doc: Document) => void): Promise<void> {
+export async function editConfig(file: string, edit: (doc: Document) => void): Promise<void> {
   const text = await readFile(file, "utf8").catch((err: unknown) => {
     if (errorCode(err) === "ENOENT") return "";
     throw err;
