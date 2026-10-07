@@ -1433,7 +1433,7 @@ export const commands = {
     // draft of the outbound gate), so no approval card is asked on top of them.
     risk: "read",
     summary:
-      "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits",
+      "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits. Format the text with a small Markdown subset: **bold**, _italic_, `code`, ``` code blocks, [links](https://...) and - lists; each chat app shows it in its own markup. Mention a person with @[contact:<id>], using the contact ids listed for that chat; a name typed as plain text is not a mention",
     input: ChatReplyInputSchema,
     output: ChatReplyResultSchema,
   },

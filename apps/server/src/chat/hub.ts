@@ -4,6 +4,7 @@ import { errorMessage } from "../errors.ts";
 import {
   type ChatAdapter,
   type ChatConnection,
+  type ChatMessage,
   ChatSendError,
   type ChatSink,
   type ChatTarget,
@@ -176,10 +177,15 @@ export class ChatHub {
   }
 
   /** Sends text to a chat of an account. */
-  async send(app: ChatApp, account: string, target: ChatTarget, text: string): Promise<{ message: string }> {
+  async send(
+    app: ChatApp,
+    account: string,
+    target: ChatTarget,
+    message: ChatMessage,
+  ): Promise<{ message: string }> {
     const { adapter, conn } = await this.resolve(app, account);
     try {
-      return await adapter.send(conn, target, text);
+      return await adapter.send(conn, target, message);
     } catch (err) {
       if (err instanceof ChatSendError && err.kind === "unreachable")
         this.deps.unreachable(conn, target.chat);

@@ -1,17 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChatCursor, ChatEnvelope, ChatFileRef, ChatKind } from "@majhi/shared";
+import type { Body, ChatCursor, ChatEnvelope, ChatFileRef, ChatKind, ChatMention } from "@majhi/shared";
 import { errorMessage } from "../../errors.ts";
 import {
   type ChatAdapter,
   type ChatCapabilities,
   type ChatConnection,
+  type ChatMessage,
   ChatSendError,
   type ChatSink,
   type ChatTarget,
   FILE_CAP_BYTES,
 } from "../adapter.ts";
+import { type People, packBody, renderPlain, renderTelegramHtml } from "../format.ts";
 import {
   type Fetch,
   TelegramApi,
@@ -63,28 +65,7 @@ const defaultSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
     );
   });
 
-/** Splits a text into parts of at most `max` characters, at a paragraph, line or space where one is near the end. */
-export function splitText(text: string, max: number = MAX_TEXT): string[] {
-  const parts: string[] = [];
-  let rest = text;
-  while (rest.length > max) {
-    const window = rest.slice(0, max);
-    let cut = Math.max(window.lastIndexOf("\n\n"), window.lastIndexOf("\n"), window.lastIndexOf(" "));
-    if (cut < max / 2) cut = max;
-    // Never cut a surrogate pair in two.
-    const before = rest.charCodeAt(cut - 1);
-    if (before >= 0xd800 && before <= 0xdbff) cut -= 1;
-    parts.push(rest.slice(0, cut).trimEnd());
-    rest = rest.slice(cut).trimStart();
-  }
-  if (rest !== "" || parts.length === 0) parts.push(rest);
-  return parts.filter((p) => p !== "");
-}
-
-/** The text as Telegram's HTML: only the three characters it reads as markup are escaped. */
-export function toHtml(text: string): string {
-  return text.split("&").join("&amp;").split("<").join("&lt;").split(">").join("&gt;");
-}
+export { splitText } from "../format.ts";
 
 function kindOf(type: string): ChatKind {
   if (type === "channel") return "channel";
@@ -185,10 +166,12 @@ export function toEnvelope(
       : {
           id: String(msg.from?.id),
           name: nameOf(msg.from ?? { first_name: "Unknown" }),
+          ...(msg.from?.username === undefined ? {} : { username: msg.from.username }),
           bot: msg.from?.is_bot === true,
           verified: true,
         };
   const at = edit === undefined ? msg.date : (edit.edit_date ?? edit.date);
+  const mentions = mentionsOf(msg, text);
   return {
     kind: edit === undefined ? "new" : "edit",
     external,
@@ -202,7 +185,33 @@ export function toEnvelope(
       : {}),
     ...(msg.reply_to_message === undefined ? {} : { replyTo: String(msg.reply_to_message.message_id) }),
     ...(msg.forward_origin !== undefined || msg.forward_date !== undefined ? { forwarded: true } : {}),
+    ...(mentions.length === 0 ? {} : { mentions }),
   };
+}
+
+/**
+ * The people a message names. A `text_mention` carries the user (a person with no @handle); a `mention` is
+ * an @handle in the text. Offsets are UTF-16 units of the message text, which is a JS string index.
+ */
+function mentionsOf(msg: TgMessage, text: string): ChatMention[] {
+  const entities = msg.text === undefined ? msg.caption_entities : msg.entities;
+  const out: ChatMention[] = [];
+  for (const entity of entities ?? []) {
+    const end = entity.offset + entity.length;
+    if (entity.type === "text_mention" && entity.user !== undefined) {
+      out.push({
+        start: entity.offset,
+        end,
+        native: String(entity.user.id),
+        ...(entity.user.username === undefined ? {} : { username: entity.user.username }),
+      });
+    } else if (entity.type === "mention") {
+      const word = text.slice(entity.offset, end);
+      if (word.startsWith("@") && word.length > 1)
+        out.push({ start: entity.offset, end, username: word.slice(1) });
+    }
+  }
+  return out;
 }
 
 /** A name safe to put in a path: letters, digits, dot, dash and underscore. */
@@ -351,9 +360,13 @@ export class TelegramAdapter implements ChatAdapter {
   // -------------------------------------------------------------------------
   // Sending
 
-  send(conn: ChatConnection, target: ChatTarget, text: string): Promise<{ message: string }> {
+  render(body: Body, people: People): string {
+    return renderTelegramHtml(body, people);
+  }
+
+  send(conn: ChatConnection, target: ChatTarget, message: ChatMessage): Promise<{ message: string }> {
     const previous = this.queues.get(target.chat) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => this.sendNow(conn, target, text));
+    const run = previous.catch(() => undefined).then(() => this.sendNow(conn, target, message));
     this.queues.set(target.chat, run);
     void run
       .catch(() => undefined)
@@ -366,13 +379,24 @@ export class TelegramAdapter implements ChatAdapter {
   private async sendNow(
     conn: ChatConnection,
     target: ChatTarget,
-    text: string,
+    message: ChatMessage,
   ): Promise<{ message: string }> {
     const api = this.api(conn);
     let last = "";
     let first = true;
-    for (const part of splitText(text)) {
-      last = await this.sendPart(api, target, part, first);
+    const parts = packBody(
+      message.body,
+      MAX_TEXT,
+      (part) => this.render(part, message.people),
+      (part) => renderPlain(part, message.people),
+    );
+    for (const part of parts) {
+      last = await this.sendPart(
+        api,
+        target,
+        { html: this.render(part, message.people), plain: renderPlain(part, message.people) },
+        first,
+      );
       first = false;
     }
     return { message: last };
@@ -381,7 +405,7 @@ export class TelegramAdapter implements ChatAdapter {
   private async sendPart(
     api: TelegramApi,
     target: ChatTarget,
-    text: string,
+    text: { html: string; plain: string },
     first: boolean,
   ): Promise<string> {
     const base: Record<string, unknown> = {
@@ -396,7 +420,7 @@ export class TelegramAdapter implements ChatAdapter {
       try {
         const sent = await api.call(
           "sendMessage",
-          html ? { ...base, text: toHtml(text), parse_mode: "HTML" } : { ...base, text },
+          html ? { ...base, text: text.html, parse_mode: "HTML" } : { ...base, text: text.plain },
           TgSent,
         );
         return String(sent.message_id);

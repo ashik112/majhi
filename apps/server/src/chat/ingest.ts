@@ -3,10 +3,12 @@ import { relative } from "node:path";
 import {
   type ChatEnvelope,
   type ChatFile,
+  type ChatMention,
   type ClientRoom,
   externalKeyText,
   type RoomItem,
   type TaskId,
+  tokenizeMentions,
 } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -93,13 +95,21 @@ export class ChatIngest {
     const org = room.org;
     if (room.chat.ignored === true || org === undefined) return;
     if (room.chat.trouble === "unreachable") room = rooms.patch(room, { trouble: undefined });
-    const text = withoutSecrets(env.text);
+    // Mentions become contact tokens before anything else touches the text: their offsets are the app's.
+    const tokenized = tokenizeMentions(env.text, env.mentions ?? [], (m) => this.contactOf(org, env, m));
+    const names = tokenized.names;
+    const text = withoutSecrets(tokenized.text);
     const files = await this.files(env);
     const sender = env.sender;
     const contact = sender.verified
       ? this.deps.contacts.ensure(
           org,
-          { app: env.external.app, account: env.external.account, native: sender.id },
+          {
+            app: env.external.app,
+            account: env.external.account,
+            native: sender.id,
+            ...(sender.username === undefined ? {} : { username: sender.username }),
+          },
           sender.name,
         )
       : undefined;
@@ -110,6 +120,7 @@ export class ChatIngest {
       sender,
       ...(us ? { us: true as const } : {}),
       text,
+      ...(Object.keys(names).length === 0 ? {} : { mentions: names }),
       files,
       external: env.external,
       ...(env.thread === undefined ? {} : { thread: env.thread }),
@@ -131,7 +142,13 @@ export class ChatIngest {
       }
       if (existing.text === text) return undefined;
       const { id: _i, task: _t, seq: _s, at: _a, ...rest } = existing;
-      return { ...rest, text, revisions: [...existing.revisions, { text: existing.text, at: env.at }] };
+      const { mentions: _m, ...base } = rest;
+      return {
+        ...base,
+        text,
+        ...(Object.keys(names).length === 0 ? {} : { mentions: names }),
+        revisions: [...existing.revisions, { text: existing.text, at: env.at }],
+      };
     });
     if (stored === undefined || !stored.created || stored.item.type !== "client") return;
     const item = stored.item;
@@ -147,6 +164,23 @@ export class ChatIngest {
       .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`))
       .finally(() => this.pending.delete(work));
     this.pending.add(work);
+  }
+
+  /** The contact a mention names: by the app's user id, else by its handle. Someone majhi never saw stays words. */
+  private contactOf(
+    org: string,
+    env: ChatEnvelope,
+    mention: ChatMention,
+  ): { id: string; name: string } | undefined {
+    const { client } = this.deps.store;
+    const { app, account } = env.external;
+    const found =
+      mention.native !== undefined
+        ? client.byIdentity(org, { app, account, native: mention.native })
+        : mention.username === undefined
+          ? undefined
+          : client.byUsername(org, app, account, mention.username);
+    return found === undefined ? undefined : { id: found.id, name: found.name };
   }
 
   /** More than SENDER_LIMIT messages from one person in the window: stored, not read. */

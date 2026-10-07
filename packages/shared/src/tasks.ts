@@ -989,6 +989,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     sender: ChatSenderSchema,
     us: z.boolean().optional(),
     text: z.string(),
+    /** Contacts the text mentions as `@[contact:id]` tokens, with their names, so a reader needs no lookup. */
+    mentions: z.record(z.string(), z.string()).optional(),
     files: z.array(ChatFileSchema),
     external: ExternalKeySchema,
     thread: z.string().optional(),
@@ -1008,6 +1010,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     type: z.literal("client-reply"),
     by: z.enum(["captain", "you"]),
     text: z.string(),
+    /** Contacts the text mentions as `@[contact:id]` tokens, with their names. */
+    mentions: z.record(z.string(), z.string()).optional(),
     /** The client message it answers (its sender's id) and the thread it goes to. */
     to: z.string().optional(),
     thread: z.string().optional(),

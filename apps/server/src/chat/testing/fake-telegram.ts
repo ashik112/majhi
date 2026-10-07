@@ -18,6 +18,7 @@ export interface FakeUser {
   is_bot?: boolean;
   first_name: string;
   last_name?: string;
+  username?: string;
 }
 
 export interface FakeMessage {
@@ -25,6 +26,7 @@ export interface FakeMessage {
   from?: FakeUser;
   text?: string;
   caption?: string;
+  entities?: { type: string; offset: number; length: number; user?: FakeUser }[];
   document?: { file_id: string; file_name: string; file_size: number; mime_type?: string };
   reply_to?: number;
   thread?: number;
@@ -76,6 +78,7 @@ export class FakeTelegram {
       ...(message.from === undefined ? {} : { from: { is_bot: false, ...message.from } }),
       ...(message.text === undefined ? {} : { text: message.text }),
       ...(message.caption === undefined ? {} : { caption: message.caption }),
+      ...(message.entities === undefined ? {} : { entities: message.entities }),
       ...(message.document === undefined ? {} : { document: message.document }),
       ...(message.reply_to === undefined ? {} : { reply_to_message: { message_id: message.reply_to } }),
       ...(message.thread === undefined ? {} : { message_thread_id: message.thread, is_topic_message: true }),

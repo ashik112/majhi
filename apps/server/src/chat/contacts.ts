@@ -65,7 +65,11 @@ export class Contacts {
   /** The contact of a chat identity in a workspace, made on first sight. `fresh` is true when it was made now. */
   ensure(org: string, identity: ContactIdentity, name: string): { contact: Contact; fresh: boolean } {
     const had = this.deps.store.client.byIdentity(org, identity);
-    if (had !== undefined) return { contact: had, fresh: false };
+    if (had !== undefined) {
+      // The handle an app shows can change: the latest one is kept.
+      this.deps.store.client.setUsername(org, identity, identity.username);
+      return { contact: had, fresh: false };
+    }
     const contact: Contact = {
       id: `ct-${randomUUID().slice(0, 8)}`,
       org,

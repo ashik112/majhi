@@ -65,7 +65,14 @@ const SnapshotSchema = z.object({
     us: z.number(),
     created_at: z.string(),
   }),
-  ids: z.array(z.object({ app: z.string(), account: z.string(), native: z.string() })),
+  ids: z.array(
+    z.object({
+      app: z.string(),
+      account: z.string(),
+      native: z.string(),
+      username: z.string().nullable().optional(),
+    }),
+  ),
 });
 
 export interface MergeRecord {
@@ -162,10 +169,15 @@ export class ClientRepo {
     return (
       this.sqlite
         .prepare(
-          "SELECT app, account, native FROM contact_ids WHERE contact = ? ORDER BY app, account, native",
+          "SELECT app, account, native, username FROM contact_ids WHERE contact = ? ORDER BY app, account, native",
         )
-        .all(contact) as { app: ChatApp; account: string; native: string }[]
-    ).map((r) => ({ app: r.app, account: r.account, native: r.native }));
+        .all(contact) as { app: ChatApp; account: string; native: string; username: string | null }[]
+    ).map((r) => ({
+      app: r.app,
+      account: r.account,
+      native: r.native,
+      ...(r.username === null ? {} : { username: r.username }),
+    }));
   }
 
   view(id: string): ContactView | undefined {
@@ -183,6 +195,27 @@ export class ClientRepo {
       )
       .get(org, identity.app, identity.account, identity.native) as ContactRow | undefined;
     return row === undefined ? undefined : toContact(row);
+  }
+
+  /** The contact an app handle names in a workspace (handles are not case sensitive). */
+  byUsername(org: string, app: string, account: string, username: string): Contact | undefined {
+    const row = this.sqlite
+      .prepare(
+        `SELECT c.id, c.org, c.name, c.tz, c.lang, c.us FROM contacts c
+           JOIN contact_ids i ON i.contact = c.id
+          WHERE i.org = ? AND i.app = ? AND i.account = ? AND i.username = ? COLLATE NOCASE`,
+      )
+      .get(org, app, account, username) as ContactRow | undefined;
+    return row === undefined ? undefined : toContact(row);
+  }
+
+  /** Keeps the handle the app shows for an identity: it changes, so it is written on each message. */
+  setUsername(org: string, identity: ContactIdentity, username: string | undefined): void {
+    this.sqlite
+      .prepare(
+        "UPDATE contact_ids SET username = ? WHERE org = ? AND app = ? AND account = ? AND native = ? AND username IS NOT ?",
+      )
+      .run(username ?? null, org, identity.app, identity.account, identity.native, username ?? null);
   }
 
   contactsOf(org: string): ContactView[] {
@@ -211,8 +244,17 @@ export class ClientRepo {
           at,
         );
       this.sqlite
-        .prepare("INSERT INTO contact_ids (contact, org, app, account, native) VALUES (?, ?, ?, ?, ?)")
-        .run(contact.id, contact.org, identity.app, identity.account, identity.native);
+        .prepare(
+          "INSERT INTO contact_ids (contact, org, app, account, native, username) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          contact.id,
+          contact.org,
+          identity.app,
+          identity.account,
+          identity.native,
+          identity.username ?? null,
+        );
       return contact;
     })();
   }
@@ -290,10 +332,17 @@ export class ClientRepo {
           snap.contact.created_at,
         );
       const move = this.sqlite.prepare(
-        "UPDATE contact_ids SET contact = ? WHERE org = ? AND app = ? AND account = ? AND native = ?",
+        "UPDATE contact_ids SET contact = ?, username = ? WHERE org = ? AND app = ? AND account = ? AND native = ?",
       );
       for (const identity of snap.ids) {
-        move.run(snap.contact.id, snap.contact.org, identity.app, identity.account, identity.native);
+        move.run(
+          snap.contact.id,
+          identity.username ?? null,
+          snap.contact.org,
+          identity.app,
+          identity.account,
+          identity.native,
+        );
       }
       this.sqlite.prepare("UPDATE contact_merges SET undone_at = ? WHERE id = ?").run(at, id);
     })();
