@@ -73,8 +73,8 @@ export function TaskAction({
         </Button>
       )}
       {copy.kind === "done" && unshipped.length > 0 && (
-        // Narrow headers have no room for it: the button's tooltip and the review card say it too.
-        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft lg:inline">
+        // A narrow header has no room for it: the button's tooltip and the review card say it too.
+        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft @[49rem]:inline">
           {unshippedCount(unshipped)}
         </span>
       )}
