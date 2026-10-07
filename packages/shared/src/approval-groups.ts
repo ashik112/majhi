@@ -49,6 +49,10 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.samePerson",
   "chat.confirmWebhook",
   "chat.markUs",
+  "chat.settings",
+  "chat.keepCount",
+  "chat.person",
+  "chat.settingsSet",
   "contacts.list",
   "contacts.merge",
   "contacts.undoMerge",
@@ -97,6 +101,7 @@ export const CAPTAIN_PROPOSALS: ReadonlySet<CommandName> = new Set<CommandName>(
   "autonomy.start",
   "autonomy.configure",
   "projects.setEnvironments",
+  "chat.settingsSet",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

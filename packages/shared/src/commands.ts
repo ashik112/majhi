@@ -91,7 +91,12 @@ import {
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
   ChatLinkInputSchema,
+  ChatKeepCountInputSchema,
+  ChatKeepCountSchema,
   ChatMarkUsInputSchema,
+  ChatPersonInputSchema,
+  ChatSettingsInputSchema,
+  ChatSettingsViewSchema,
   ChatReplyInputSchema,
   ChatReplyResultSchema,
   ChatSendInputSchema,
@@ -1465,6 +1470,34 @@ export const commands = {
     summary:
       'Say that the sender of a message is one of us, the owner or a teammate, or is not. What an "us" writes in a chat is not a client\'s: the captain does not triage it, and the chat goes to the owner (Replies: You). Owner only',
     input: ChatMarkUsInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.settings": {
+    risk: "read",
+    summary:
+      "The settings of one client chat as the sheet shows them: when the captain replies, whose name it sends as, the daily limit, the owner's rules, the Ask-me cases, how long messages are kept, when the owner is told, and the people who wrote. Owner only",
+    input: z.object({ room: z.string().min(1) }),
+    output: ChatSettingsViewSchema,
+  },
+  "chat.settingsSet": {
+    risk: "change",
+    summary:
+      "Change the settings of one client chat, only the fields named: replyWhen (mentioned, needs-reply, every), sendAs (bot, me), dailyLimit (20, 50, 100, none), rules (the owner's text for this chat, at most 1500 characters; a secret in it is refused; it never loosens an Ask-me case or the fixed holds), holds (per case: true asks the owner, false lets the captain send, null follows the workspace), keep (all, 500, 100) and notify (needs-me, every, never). The owner changes it at once; the captain's call is a proposal the owner applies, for a chat of its own workspace",
+    input: ChatSettingsInputSchema,
+    output: ChatSettingsViewSchema,
+  },
+  "chat.keepCount": {
+    risk: "read",
+    summary:
+      "How many messages of a client chat a Keep setting would remove now: the older ones past the newest N, leaving out any an incident, a task or a report points to. Owner only",
+    input: ChatKeepCountInputSchema,
+    output: ChatKeepCountSchema,
+  },
+  "chat.person": {
+    risk: "change",
+    summary:
+      "Say what a sender is in one client chat: a client, one of us (the owner or a teammate) or muted (stored, never read by the captain). Owner only",
+    input: ChatPersonInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "chat.reply": {
