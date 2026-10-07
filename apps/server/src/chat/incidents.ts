@@ -17,6 +17,7 @@ import {
   type TaskId,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import { earliest, type IncidentFacts, type IncidentRead as Read } from "../incident/facts.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { OutboundGate } from "../playbooks/outbound.ts";
 import type { RoomService } from "../room/service.ts";
@@ -33,6 +34,8 @@ import type { ClientReplies } from "./replies.ts";
 
 export interface IncidentsDeps {
   store: Store;
+  /** The one reader of an incident's recorded facts. */
+  facts: IncidentFacts;
   room: Pick<RoomService, "post" | "get">;
   replies: Pick<ClientReplies, "captain" | "report" | "reportProblem">;
   gate: Pick<OutboundGate, "get" | "edit">;
@@ -103,26 +106,6 @@ function clip(text: string, max: number): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-const earliest = (times: readonly (string | undefined)[]): string | undefined =>
-  times.filter((t): t is string => t !== undefined).toSorted()[0];
-const latest = (times: readonly (string | undefined)[]): string | undefined =>
-  times
-    .filter((t): t is string => t !== undefined)
-    .toSorted()
-    .at(-1);
-
-/** What is recorded about one incident, read at one moment. */
-interface Read {
-  task: Task;
-  org: string;
-  /** The tasks made to fix it: its children and its fix tasks. */
-  fixes: Task[];
-  deploys: DeployRecord[];
-  events: { id: string; detail: IncidentEvent }[];
-  watch: OpsIncident | undefined;
-  facts: StatusFacts;
-  cadenceMin: number;
-}
 
 export class ClientIncidents {
   constructor(private readonly deps: IncidentsDeps) {}
@@ -162,72 +145,11 @@ export class ClientIncidents {
   }
 
   private events(task: string): Read["events"] {
-    return this.deps.store.room
-      .ofType(task, "incident-event")
-      .flatMap((i) => (i.type === "incident-event" ? [{ id: i.id, detail: i.detail }] : []));
+    return this.deps.facts.events(task);
   }
 
-  /** The watch incident this task is the task of: through its finding, or the one it was made for. */
-  private watchOf(task: Task): OpsIncident | undefined {
-    const findings = new Set(this.deps.findings.ofTask(task.id).map((f) => f.id));
-    if (task.origin?.kind === "finding") findings.add(task.origin.finding);
-    const found: OpsIncident[] = [];
-    for (const f of findings) {
-      const incident = this.deps.watch.incidentOfFinding(f);
-      if (incident !== undefined) found.push(incident);
-    }
-    if (task.origin?.kind === "watch" && task.origin.incident !== undefined) {
-      const incident = this.deps.watch.incident(task.origin.incident);
-      if (incident !== undefined) found.push(incident);
-    }
-    return found.toSorted((a, b) => b.id - a.id)[0];
-  }
-
-  /** The tasks made to fix the incident: its children and its fix tasks. */
-  private fixTasks(task: string): Task[] {
-    const ids = this.deps.store.tasks
-      .linksTo(task)
-      .filter((l) => l.type === "parent" || l.type === "follow-up")
-      .map((l) => l.task);
-    return ids.flatMap((id) => this.deps.store.tasks.get(id) ?? []);
-  }
-
-  private async read(task: Task): Promise<Read> {
-    const org = task.org ?? "";
-    const settings = await this.deps.settings(org);
-    const fixes = this.fixTasks(task.id);
-    const deploys = [task, ...fixes].flatMap((t) => this.deps.store.deploys.ofTask(t.id));
-    const events = this.events(task.id);
-    const watch = this.watchOf(task);
-    const cause = earliest(events.flatMap((e) => (e.detail.event === "cause" ? [e.detail.at] : [])));
-    const reopenedAt = events.flatMap((e) => (e.detail.event === "reopened" ? [e.detail.at] : []));
-    const identifiedAt = earliest([
-      cause,
-      ...fixes.map((t) => t.createdAt),
-      ...[task, ...fixes].flatMap((t) => t.repos.flatMap((r) => [r.pushedAt, r.landed?.at])),
-      ...deploys.map((d) => d.createdAt),
-    ]);
-    const pending = deploys.some((d) => d.state !== "live");
-    const liveAt =
-      deploys.length > 0 && !pending ? latest(deploys.map((d) => d.finishedAt ?? d.updatedAt)) : undefined;
-    const facts: StatusFacts = {
-      openedAt: task.createdAt,
-      reopenedAt,
-      ...(identifiedAt === undefined ? {} : { identifiedAt }),
-      ...(liveAt === undefined ? {} : { liveAt }),
-      ...(watch === undefined
-        ? {}
-        : {
-            watch: {
-              ...(watch.status === "resolved" ? { greenAt: watch.resolvedAt ?? watch.openedAt } : {}),
-            },
-          }),
-      ...(task.status === "done" ? { doneAt: task.updatedAt } : {}),
-      deploysPending: pending,
-      soakMin: settings.soakMin,
-      now: this.at(),
-    };
-    return { task, org, fixes, deploys, events, watch, facts, cadenceMin: settings.cadenceMin };
+  private read(task: Task): Promise<Read> {
+    return this.deps.facts.read(task);
   }
 
   private clock(iso: string, tz: string): string {

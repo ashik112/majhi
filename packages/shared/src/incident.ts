@@ -63,6 +63,11 @@ export interface StatusFacts {
 
 export interface StatusResult {
   status: ClientStatus;
+  /**
+   * The watch went green with no fix shipped: the problem recovered on its own. The incident stays open and the
+   * owner closes it with one click or lets the lead go on. Never Resolved by itself.
+   */
+  recoveredAt?: string;
   /** When each state began, for the states reached since the last reopen. */
   at: Partial<Record<ClientStatus, string>>;
   /** While the watch is green and soaking: when the soak ends. */
@@ -98,17 +103,26 @@ export function clientStatus(f: StatusFacts): StatusResult {
 
   let resolvedAt: string | undefined;
   let soakEndsAt: string | undefined;
+  let recoveredAt: string | undefined;
   if (f.watch !== undefined) {
     const green = f.watch.greenAt;
-    // After a reopen the earlier green means nothing alone: a new fix has to go live.
-    if (green !== undefined && (!reopened || liveAt !== undefined)) {
-      const since0 = liveAt === undefined ? green : later(green, liveAt);
-      const end = new Date(ms(since0) + f.soakMin * 60_000).toISOString();
-      if (ms(end) <= ms(f.now)) resolvedAt = end;
-      else soakEndsAt = end;
+    // Resolved needs a shipped fix and a watch that stayed green after it. A watch that went green with nothing
+    // shipped, or with a fix older than the last reopen, is only "recovered": the incident stays open.
+    if (green !== undefined) {
+      if (liveAt === undefined) recoveredAt = green;
+      else {
+        const end = new Date(ms(later(green, liveAt)) + f.soakMin * 60_000).toISOString();
+        if (ms(end) <= ms(f.now)) resolvedAt = end;
+        else soakEndsAt = end;
+      }
     }
   } else if (doneAt !== undefined && !f.deploysPending) {
     resolvedAt = liveAt === undefined ? doneAt : later(doneAt, liveAt);
+  } else if (liveAt !== undefined && !f.deploysPending) {
+    // No watch to look at: the fix has been live for the soak.
+    const end = new Date(ms(liveAt) + f.soakMin * 60_000).toISOString();
+    if (ms(end) <= ms(f.now)) resolvedAt = end;
+    else soakEndsAt = end;
   }
   if (resolvedAt !== undefined) at.resolved = resolvedAt;
 
@@ -120,7 +134,12 @@ export function clientStatus(f: StatusFacts): StatusResult {
         : at.identified !== undefined
           ? "identified"
           : "investigating";
-  return { status, at, ...(soakEndsAt === undefined ? {} : { soakEndsAt }) };
+  return {
+    status,
+    at,
+    ...(soakEndsAt === undefined ? {} : { soakEndsAt }),
+    ...(recoveredAt === undefined || resolvedAt !== undefined ? {} : { recoveredAt }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +156,12 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
   }),
   /** A client said it was still broken after Resolved. */
   z.object({ event: z.literal("reopened"), room: TaskIdSchema, at: z.string() }),
+  /** The owner answered the "recovered on its own" card: close the incident, or let the lead go on. */
+  z.object({ event: z.literal("recovered"), choice: z.enum(["closed", "continue"]), at: z.string() }),
+  /** The owner saw a card of this incident (a failed deploy): it leaves Needs you. */
+  z.object({ event: z.literal("seen"), what: z.string().min(1).max(80), at: z.string() }),
+  /** The owner or the captain wrote the incident down: where it came from and the facts it was opened on. */
+  z.object({ event: z.literal("opened"), source: z.enum(["watch", "client", "deploy"]), facts: z.string().max(2000), at: z.string() }),
   /** An update to a client room: what it was told, and the outbound draft it went as. */
   z.object({
     event: z.literal("told"),
@@ -172,9 +197,24 @@ export const ReportTextSchema = z.strictObject({
 });
 export type ReportText = z.infer<typeof ReportTextSchema>;
 
-/** The report as one message to a client: each section under its name. */
+/**
+ * The report as one message to a client, in the small Markdown the chat renderer reads: each section under a bold
+ * name, the timeline as a list. Every chat app draws it in its own markup.
+ */
 export function reportMessage(text: ReportText): string {
-  return REPORT_SECTIONS.map((s) => `${REPORT_SECTION_LABEL[s]}\n${text[s].trim()}`).join("\n\n");
+  return REPORT_SECTIONS.map((s) => {
+    const body = text[s].trim();
+    const shown =
+      s === "timeline"
+        ? body
+            .split("\n")
+            .map((l) => l.trim())
+            .filter((l) => l !== "")
+            .map((l) => (l.startsWith("- ") ? l : `- ${l}`))
+            .join("\n")
+        : body;
+    return `**${REPORT_SECTION_LABEL[s]}**\n${shown}`;
+  }).join("\n\n");
 }
 
 /** To which rooms the client version went. Once any went, the text is frozen. */
@@ -196,6 +236,8 @@ export const IncidentRoomViewSchema = z.object({
   toldAt: z.string().optional(),
   /** How the last update went: `held` waits for the owner. */
   update: z.enum(["held", "sent", "failed", "discarded"]).optional(),
+  /** The chat follows a newer incident: this one is shown as joined and tells it nothing. */
+  joined: z.literal(true).optional(),
 });
 export type IncidentRoomView = z.infer<typeof IncidentRoomViewSchema>;
 
@@ -207,6 +249,10 @@ export const IncidentViewSchema = z.object({
   /** One line of facts: what the watch says, the fix, the soak. */
   facts: z.string(),
   watch: z.object({ id: z.number().int().positive(), title: z.string(), firing: z.boolean() }).optional(),
+  /** The watch went green with nothing shipped: the incident stays open for the owner to close. */
+  recovered: z.object({ at: z.string(), closed: z.boolean() }).optional(),
+  /** Why nobody has looked at it, when that is so: "Auto-pilot is off", "outside working hours until 09:00". */
+  quiet: z.string().optional(),
   rooms: z.array(IncidentRoomViewSchema),
   report: z
     .object({
@@ -214,6 +260,8 @@ export const IncidentViewSchema = z.object({
       internal: ReportTextSchema,
       client: ReportTextSchema,
       sent: z.array(ReportSentSchema),
+      /** What the client version leaves open or would say wrongly if sent now: the cause is not recorded. */
+      warn: z.string().optional(),
     })
     .optional(),
 });
