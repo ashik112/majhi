@@ -45,6 +45,7 @@ const SSH_PORT = 2299;
 
 export interface Proof {
   url: string;
+  majhi: ReturnType<typeof import("../apps/server/src/server.ts").createMajhi>;
   hosts: Awaited<ReturnType<typeof startFakeHosts>>;
   repo: string;
   /** What the fake GitHub has on main: push of the proof's own. */
@@ -176,6 +177,7 @@ export async function startProof(): Promise<Proof> {
   const url = `http://127.0.0.1:${env.port}`;
   return {
     url,
+    majhi,
     hosts,
     repo,
     push,

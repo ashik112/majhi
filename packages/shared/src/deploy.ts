@@ -98,7 +98,7 @@ export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
 export const DeployVerifySchema = z
   .object({
     /** A URL that answers 2xx when the new version is up. */
-    health: z.httpUrl().max(500).optional(),
+    health: z.url({ protocol: /^https?$/ }).max(500).optional(),
     /** A watch of the same workspace that must read ok for the wait. */
     watch: WatchRefSchema.optional(),
     waitSeconds: z.number().int().min(0).max(1800).default(60),

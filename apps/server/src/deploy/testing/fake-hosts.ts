@@ -41,6 +41,8 @@ interface Run {
   attempt: number;
   provider: "github" | "gitlab" | "vercel";
   finished: boolean;
+  /** How this run ends, fixed when it was made: a run made to succeed succeeds again when it is run again. */
+  result: string;
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
@@ -138,6 +140,7 @@ export async function startFakeHosts(
           attempt: 1,
           provider: "github",
           finished: false,
+          result: state.outcome.github,
         };
         runs.set(run.id, run);
         return send(res, 204);
@@ -180,7 +183,7 @@ export async function startFakeHosts(
             id: run.id,
             run_attempt: run.attempt,
             status: done ? "completed" : "in_progress",
-            conclusion: done ? state.outcome.github : null,
+            conclusion: done ? run.result : null,
             html_url: `http://${state.host}/${run.slug}/actions/runs/${run.id}`,
           });
         }
@@ -213,6 +216,7 @@ export async function startFakeHosts(
           attempt: 1,
           provider: "gitlab",
           finished: false,
+          result: state.outcome.gitlab,
         };
         runs.set(run.id, run);
         return send(res, 201, {
@@ -226,7 +230,7 @@ export async function startFakeHosts(
         const run = runs.get(Number(pipe[1]));
         if (run === undefined) return send(res, 404, { message: "Not found" });
         const done = finished(run);
-        return send(res, 200, { id: run.id, status: done ? state.outcome.gitlab : "running" });
+        return send(res, 200, { id: run.id, status: done ? run.result : "running" });
       }
       return send(res, 404, { message: "Not found" });
     }
@@ -247,6 +251,10 @@ export async function startFakeHosts(
         attempt: 1,
         provider: "vercel",
         finished: false,
+        result:
+          spec?.deploymentId !== undefined
+            ? (runs.get(Number(spec.deploymentId))?.result ?? state.outcome.vercel)
+            : state.outcome.vercel,
       };
       runs.set(run.id, run);
       return send(res, 200, {
@@ -263,8 +271,8 @@ export async function startFakeHosts(
       const done = finished(run);
       return send(res, 200, {
         id: String(run.id),
-        readyState: done ? state.outcome.vercel : "BUILDING",
-        ...(done && state.outcome.vercel === "ERROR" ? { errorMessage: "Build failed" } : {}),
+        readyState: done ? run.result : "BUILDING",
+        ...(done && run.result === "ERROR" ? { errorMessage: "Build failed" } : {}),
       });
     }
     send(res, 404, { message: "Not found" });
