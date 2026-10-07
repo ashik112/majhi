@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { CardCheck, ProjectCard, ReadinessItem } from "@majhi/shared";
+import { z } from "zod";
 import { readCiChecks } from "../ci/checks.ts";
+import { safeLine } from "../ci/safe.ts";
 import { UserError } from "../errors.ts";
 import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 import { readiness, gaps as readinessGaps } from "./readiness.ts";
@@ -45,6 +47,19 @@ export interface CardDeps {
   now?: () => Date;
   log?: (message: string) => void;
   debounceMs?: number;
+}
+
+const PackageScripts = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
+
+/** The body of a package.json script in a check's folder, for turning a script that writes into its read-only form. */
+async function scriptOf(files: RepoFiles, workdir: string | undefined, name: string): Promise<string | undefined> {
+  try {
+    const text = await files.read(workdir === undefined ? "package.json" : `${workdir}/package.json`);
+    const pkg = text === undefined ? undefined : PackageScripts.safeParse(JSON.parse(text));
+    return pkg?.success ? pkg.data.scripts?.[name] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A remote URL without the user and password part, so a token in it never reaches a card. */
@@ -103,12 +118,14 @@ export class ProjectCards {
         const found = await readCiChecks((this.deps.files ?? fsRepoFiles)(path), { key: path }).catch(
           () => [],
         );
-        return {
-          ...card,
-          checks: found
+        const files = (this.deps.files ?? fsRepoFiles)(path);
+        const checks = await Promise.all(
+          found
             .filter((c) => safeText(c.command) !== undefined)
-            .map(
-              (c): CardCheck => ({
+            .map(async (c): Promise<CardCheck> => {
+              // What the hand-off runs: the line in its read-only form, never the CI's `--fix`.
+              const safe = await safeLine(c.command, (name) => scriptOf(files, c.workdir, name));
+              return {
                 kind: c.kind,
                 command: c.command,
                 env: c.env,
@@ -116,9 +133,15 @@ export class ProjectCards {
                 from: c.from,
                 ...(c.minutes === undefined ? {} : { minutes: c.minutes }),
                 services: c.services.map((s) => s.image),
-              }),
-            ),
-        };
+                ...(safe.ok
+                  ? safe.command === c.command
+                    ? {}
+                    : { runs: safe.command }
+                  : { notRun: safe.why }),
+              };
+            }),
+        );
+        return { ...card, checks };
       }),
     );
   }

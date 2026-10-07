@@ -4,6 +4,7 @@ import {
   type ChildFact,
   type DeployAsk,
   type DeployStepView,
+  handoffNoChanges,
   type HandoffState,
   type OriginView,
   type ShipView,
@@ -34,6 +35,8 @@ export function checkFacts(state: HandoffState): TrailFacts["check"] {
   if (state.activity !== undefined) return { result: state.activity.phase };
   const current = state.current;
   if (current === undefined || state.stale) return undefined;
+  // Nothing changed, so nothing was checked: no tick for it.
+  if (handoffNoChanges(current.steps)) return undefined;
   return current.verdict === "green"
     ? { result: "green" }
     : { result: "red", ...(current.failed === undefined ? {} : { failedStep: current.failed.step }) };
@@ -130,7 +133,11 @@ export class TaskDetails {
       task.status === "review" || task.status === "mr"
         ? await this.deps.ship(id).catch(() => undefined)
         : undefined;
-    const owner = plan === undefined || task.status !== "review" ? undefined : ownerStepOf(task, plan);
+    // A task that changed no code has nothing to merge: no merge step waits for the owner.
+    const nothingToMerge =
+      state?.current !== undefined && !state.stale && handoffNoChanges(state.current.steps);
+    const owner =
+      plan === undefined || task.status !== "review" || nothingToMerge ? undefined : ownerStepOf(task, plan);
     const deployed = await this.deps.deploys?.describe(task).catch(() => undefined);
     return {
       task: id,
