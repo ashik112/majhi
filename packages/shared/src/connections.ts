@@ -1003,6 +1003,19 @@ export const ConnectionValueViewSchema = z.object({
 });
 export type ConnectionValueView = z.infer<typeof ConnectionValueViewSchema>;
 
+/**
+ * The hints an MCP server gives about a tool in `tools/list` (`Tool.annotations`, MCP spec 2025-06-18).
+ * Only the three booleans the gate reads. Absent means the server did not say, which is not "false".
+ */
+export const ToolAnnotationsSchema = z.object({
+  /** The tool does not change its environment. */
+  readOnlyHint: z.boolean().optional(),
+  /** The tool may delete or destroy data. */
+  destructiveHint: z.boolean().optional(),
+  idempotentHint: z.boolean().optional(),
+});
+export type ToolAnnotations = z.infer<typeof ToolAnnotationsSchema>;
+
 /** What a Test found. */
 export const ConnectionTestResultSchema = z.object({
   ok: z.boolean(),
@@ -1010,6 +1023,8 @@ export const ConnectionTestResultSchema = z.object({
   detail: z.string(),
   /** An MCP server's tool names, all of them. `detail` shows only the first few. */
   tools: z.array(z.string()).optional(),
+  /** The hints the server gave about those tools, by tool name. The gate reads them to tell a read from a write. */
+  toolAnnotations: z.record(z.string(), ToolAnnotationsSchema).optional(),
   /** What works but should not, like an identity that can delete pods. */
   warnings: z.array(z.string()),
   at: z.string(),

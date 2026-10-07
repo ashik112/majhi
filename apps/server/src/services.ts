@@ -735,6 +735,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     // A service on this computer is offered to a run only while its check passes (5.14).
     connected: (id: string) => connectionHealth.get(id)?.state === "connected",
+    toolAnnotations: (id: string) => connections.lastTest(id)?.toolAnnotations,
     hostServices: (task: string, services: { id: string; ports: number[] }[]) =>
       containers.hostForward(task, services),
     browsersPath:
@@ -857,6 +858,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     admin: new AdminAccess(adminTokens),
     decisions,
     connectionFiles,
+    connections: { addTool: (...args) => connections.addTool(...args) },
     skills: skillStore,
     containerRunner: env.runner.mode === "container",
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),

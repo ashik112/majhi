@@ -217,6 +217,54 @@ describe("classifyTool", () => {
   });
 });
 
+describe("classifyTool: what the server says about its tools", () => {
+  const server = (extra: Partial<GateConnection> = {}): GateConnection[] => [
+    {
+      id: "acme-obs",
+      type: "mcp",
+      server: "acme-obs",
+      allow: [],
+      toolAnnotations: {
+        execute_query: { readOnlyHint: true },
+        drop_view: { destructiveHint: true },
+        sync_data: { readOnlyHint: false },
+      },
+      ...extra,
+    },
+  ];
+
+  it("readOnlyHint makes a read of a name that does not say so", () => {
+    expect(classifyTool("acme-obs", "execute_query", server()).kind).toBe("read");
+  });
+
+  it("the owner's write_tools beat the server's readOnlyHint, and read_tools beat its destructiveHint", () => {
+    expect(classifyTool("acme-obs", "execute_query", server({ writeTools: ["execute_query"] })).kind).toBe(
+      "write",
+    );
+    expect(classifyTool("acme-obs", "drop_view", server({ readTools: ["drop_view"] })).kind).toBe("read");
+  });
+
+  it("destructiveHint is a destructive write that allow does not cover", () => {
+    const held = server({
+      allow: ["archive_data"],
+      toolAnnotations: { archive_data: { destructiveHint: true } },
+    });
+    expect(classifyTool("acme-obs", "archive_data", held)).toMatchObject({
+      kind: "write",
+      writes: [{ tool: "archive_data", destructive: true, allowed: false }],
+    });
+  });
+
+  it("a write names its reason: the server's word, or the name's", () => {
+    expect(classifyTool("acme-obs", "sync_data", server())).toMatchObject({
+      writes: [{ why: "the server says this tool changes data", destructive: false }],
+    });
+    expect(classifyTool("acme-obs", "mystery", server())).toMatchObject({
+      writes: [{ why: "its name does not say it only reads" }],
+    });
+  });
+});
+
 describe("classifyRemote", () => {
   const box: GateConnection = { id: "acme-box", type: "ssh", allow: ["systemctl restart api"] };
   const remote = (command: string) => classifyRemote(command, box);
