@@ -25,7 +25,7 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * A long turn: a tool call and a higher running cost, one after the other, until it is cancelled. After
- * each one `settle` lets what the cost set off (the usage record, the cap, the cancel) finish, so how far
+ * each one `settle` lets the cap check the cost set off (and the cancel it makes) finish, so how far
  * the cost runs past the cap depends on the code, never on how fast the machine is. Reports its cost at
  * the end.
  */
@@ -68,8 +68,8 @@ describe("the day cap of autonomous mode", () => {
       session.script = async (turn) => {
         if (sessions.indexOf(session) === 0 && session.prompts.length === 1)
           return spender(turn, spent, async () => {
-            await h.majhi.services.usageRecorder.flush();
             await new Promise((r) => setImmediate(r));
+            await h.majhi.services.runs.capChecked();
           });
         turn.emit({ type: "text", messageId: `m${session.prompts.length}`, text: "ok" });
         return "end_turn";
