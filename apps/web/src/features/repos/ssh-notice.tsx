@@ -5,6 +5,7 @@ import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { SshKeyStep } from "@/features/orgs/ssh-key-step";
 import { cn } from "@/lib/cn";
 import { useHostStatus, useSshReload, useSshUnlock } from "@/lib/queries";
 
@@ -75,10 +76,12 @@ export function SshNotice({ className }: { className?: string }) {
           </details>
         </>
       ) : (
-        <p className="text-sm text-fg-muted text-pretty">
-          {keys.error ?? "No SSH key was found in ~/.ssh."} Add a key to ~/.ssh and to your git host, then
-          check again.
-        </p>
+        <>
+          <p className="m-0 text-sm text-fg-muted text-pretty">
+            {keys.error ?? "No SSH key was found in ~/.ssh."}
+          </p>
+          {keys.error === undefined && <SshKeyStep />}
+        </>
       )}
     </section>
   );

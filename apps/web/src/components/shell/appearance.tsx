@@ -87,7 +87,7 @@ export function AppearanceButton() {
 }
 
 /** The theme segment and the accent swatches, in the sidebar popover and on Hub setup. */
-export function AppearanceControls({ className }: { className?: string }) {
+export function AppearanceControls({ className, hint = true }: { className?: string; hint?: boolean }) {
   const appearance = useAppearance();
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -140,7 +140,7 @@ export function AppearanceControls({ className }: { className?: string }) {
             );
           })}
         </div>
-        <p className="mt-2.5 text-xs text-fg-faint">Saved in this browser.</p>
+        {hint && <p className="mt-2.5 text-xs text-fg-faint">Saved in this browser.</p>}
       </fieldset>
     </div>
   );

@@ -169,7 +169,8 @@ export function BackupsSection({ home }: { home: string }) {
             </Row>
             <Row label="Next daily">
               <span>{list.nextAt ? formatIn(list.nextAt, now) : "-"}</span>
-              <span className="ml-2 text-fg-faint">
+              <span className="text-fg-faint">
+                {" · "}
                 {list.keep.daily} daily and {list.keep.weekly} weekly kept
               </span>
             </Row>

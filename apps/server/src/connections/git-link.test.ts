@@ -24,6 +24,12 @@ function rig(orgs: Record<string, OrgConfig> = { acme: { name: "Acme" } }) {
         views.push(view);
         return view;
       },
+      remove: async (id) => {
+        views.splice(
+          views.findIndex((v) => v.id === id),
+          1,
+        );
+      },
       update: async (input) => {
         updates.push(input);
         const view = views.find((v) => v.id === input.id);
@@ -59,5 +65,18 @@ describe("a git host sign-in is a connection", () => {
     expect(a2).toBe(a1);
     expect(g).not.toBe(a1);
     expect(r.views.map((v) => v.org).sort()).toEqual(["acme", "globex"]);
+  });
+
+  it("removing the last account on a host removes its connection, and another account keeps it", async () => {
+    const orgs: Record<string, OrgConfig> = {
+      acme: { name: "Acme", git_accounts: [{ host: "github.com", account: "acme-dev" }] },
+    };
+    const r = rig(orgs);
+    await r.link.signedIn({ org: "acme", kind: "github", host: "github.com" });
+    await r.link.signedOut({ org: "acme", kind: "github", host: "github.com" }, "orgs.removeGitAccount");
+    expect(r.views).toHaveLength(1);
+    delete orgs.acme?.git_accounts;
+    await r.link.signedOut({ org: "acme", kind: "github", host: "github.com" }, "orgs.removeGitAccount");
+    expect(r.views).toHaveLength(0);
   });
 });

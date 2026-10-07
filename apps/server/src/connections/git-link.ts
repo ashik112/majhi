@@ -36,6 +36,7 @@ export interface GitLinkDeps {
       command: string,
       meta: CommandMeta,
     ): Promise<unknown>;
+    remove(id: string, command: string, meta: CommandMeta): Promise<unknown>;
   };
   orgs: () => Promise<Record<string, OrgConfig>>;
   /** Which git service a host is, by its name (github, gitlab, bitbucket in it), or none. */
@@ -125,6 +126,25 @@ export class GitLink {
     })().finally(() => this.running.delete(key));
     this.running.set(key, run);
     return run;
+  }
+
+  /**
+   * The workspace no longer has a sign-in to this host (its last account there was removed): its `git`
+   * connection goes too, so the Connections page never shows a sign-in the workspace does not have.
+   */
+  async signedOut(
+    ref: Pick<GitHostRef, "org" | "kind" | "host">,
+    command: string,
+    meta: CommandMeta = OWNER,
+  ): Promise<void> {
+    const config = (await this.deps.orgs())[ref.org];
+    const accountStays = (config?.git_accounts ?? []).some((a) => a.host === ref.host);
+    const tokenStays = ref.host === DEFAULT_GIT_HOST[ref.kind] && config?.mr_tokens?.[ref.kind] !== undefined;
+    if (accountStays || tokenStays) return;
+    const existing = (await this.deps.connections.list()).find(
+      (c) => c.type === "git" && c.org === ref.org && this.matches(c, ref),
+    );
+    if (existing !== undefined) await this.deps.connections.remove(existing.id, command, meta);
   }
 
   /** A connection for every git account that has a token and none yet. Checked later, by the startup pass. */

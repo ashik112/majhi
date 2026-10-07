@@ -61,6 +61,14 @@ export const SshStatusSchema = z.object({
 });
 export type SshStatus = z.infer<typeof SshStatusSchema>;
 
+/** A key the helper made: the private path with `~`, the public line and its SHA256 fingerprint. */
+export const MadeSshKeySchema = z.object({
+  path: z.string(),
+  publicKey: z.string(),
+  fingerprint: z.string().optional(),
+});
+export type MadeSshKey = z.infer<typeof MadeSshKeySchema>;
+
 /** Longest passphrase majhi accepts. It goes to the helper once and is never stored. */
 export const SSH_PASSPHRASE_MAX = 1024;
 
@@ -369,6 +377,8 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("listDirs"),
     params: z.object({ path: z.string(), showHidden: z.boolean() }),
   }),
+  /** Make a project folder inside the owner's home. Refuses anywhere else. */
+  z.object({ id: z.string(), method: z.literal("fs.mkdir"), params: z.object({ path: z.string() }) }),
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
   /** Load, memory and free disk of this computer. */
   z.object({ id: z.string(), method: z.literal("machine.read"), params: z.object({}) }),
@@ -376,6 +386,8 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
   /** Load this computer's SSH keys into the agent majhi uses again and report the result. */
   z.object({ id: z.string(), method: z.literal("ssh.reload"), params: z.object({}) }),
+  /** Make a new ed25519 key in a free name in ~/.ssh. Never replaces a key; the private key never travels. */
+  z.object({ id: z.string(), method: z.literal("ssh.keygen"), params: z.object({}) }),
   /** The checkout's HEAD, and the subjects of the commits after `from`, newest first. */
   z.object({
     id: z.string(),
@@ -616,10 +628,12 @@ export type HostMethod = HostJob["method"];
 
 export const HostResultSchemas = {
   listDirs: DirListingSchema,
+  "fs.mkdir": z.object({ path: z.string() }),
   suggestRoots: z.object({ suggestions: z.array(RootSuggestionSchema) }),
   /** The helper answers before it restarts the server, so the server can tell the UI. */
   remount: z.object({ accepted: z.literal(true) }),
   "ssh.reload": SshStatusSchema,
+  "ssh.keygen": MadeSshKeySchema,
   "ssh.unlock": SshStatusSchema,
   "secretsKey.save": SecretsKeyBackupSchema,
   "secretsKey.restore": SecretsKeyRestoreSchema,

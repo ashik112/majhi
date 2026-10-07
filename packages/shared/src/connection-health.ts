@@ -77,7 +77,7 @@ export const FAILURE_LINE: Record<FailureReason, string> = {
   "blocked-host": "majhi refuses this address",
   "no-credential": "majhi holds no sign-in for it",
   expired: "The sign-in ended",
-  "tool-missing": "The command-line tool is not installed",
+  "tool-missing": "The command-line tool is not installed where agents run",
   "not-signed-in": "The tool is not signed in",
   "helper-offline": "majhi's helper is not running",
   "setup-needed": "A setting at the service is off",
@@ -99,7 +99,7 @@ export const FAILURE_FIX: Record<FailureReason, string> = {
   "blocked-host": "Use a public host name, or confirm that the address is on your own network.",
   "no-credential": "Connect it again.",
   expired: "Sign in again.",
-  "tool-missing": "Install the tool on this Mac, then check again.",
+  "tool-missing": "Install the tool where agents run, then check again.",
   "not-signed-in": "Sign in again with the tool's own login.",
   "helper-offline": "Start majhi's helper on this Mac, then check again.",
   "setup-needed": "Turn the setting on at the service, then check again.",
@@ -119,6 +119,30 @@ export const TRANSIENT_FAILURES: ReadonlySet<FailureReason> = new Set<FailureRea
   "timeout",
   "helper-offline",
 ]);
+
+/** Reasons where signing in again is the fix. */
+const SIGN_IN_AGAIN: ReadonlySet<FailureReason> = new Set<FailureReason>([
+  "rejected",
+  "expired",
+  "insufficient-scope",
+  "no-credential",
+  "not-signed-in",
+]);
+
+/** Connection types that hold a sign-in majhi can renew. An env var, a command or an address has nothing to reconnect. */
+const SIGN_IN_TYPES: ReadonlySet<string> = new Set(["api", "chat", "git", "mcp"]);
+
+/**
+ * The one next step a failed connection offers, the same on the Connections page and in Health:
+ * check again for a failure that passes by itself, reconnect for a sign-in that ended, else open it to fix.
+ */
+export function failureAction(type: string, reason: FailureReason): "check" | "reconnect" | "fix" {
+  if (TRANSIENT_FAILURES.has(reason)) return "check";
+  return SIGN_IN_AGAIN.has(reason) && SIGN_IN_TYPES.has(type) ? "reconnect" : "fix";
+}
+
+/** The label of `failureAction`. */
+export const FAILURE_ACTION_LABEL = { check: "Check now", reconnect: "Reconnect", fix: "Fix" } as const;
 
 export const ConnectionFailureSchema = z.object({
   reason: FailureReasonSchema,

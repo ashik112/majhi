@@ -2,6 +2,7 @@ import {
   type GitAccountStatus,
   type GitHost,
   type LoginOffer,
+  OrgConfigSchema,
   type OrgView,
   type SignOut,
   tokenPageUrl,
@@ -27,6 +28,7 @@ import {
   useUseSavedLogin,
 } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
+import { SshKeyStep } from "./ssh-key-step";
 
 /** Where a host lists the account's SSH keys, for when no key on this computer logs in as it. */
 const SSH_KEYS_PAGE: Partial<Record<GitHost, (host: string) => string>> = {
@@ -125,9 +127,22 @@ export function GitAccounts({ org }: { org: OrgView }) {
                 <AccountRow key={`${a.host}/${a.account}`} org={org} status={a} onSignedOut={setSignedOut} />
               ))}
               {data.missing.map((m) => (
-                <MissingRow key={m.host} org={org} host={m.host} kind={m.kind} offers={m.offers} />
+                <MissingRow
+                  key={m.host}
+                  org={org}
+                  host={m.host}
+                  kind={m.kind}
+                  offers={m.offers}
+                  keyAccepted={m.keyAccepted === true}
+                />
               ))}
             </ul>
+          )}
+          {data.accounts[0] !== undefined && (
+            <div className="flex min-w-0 flex-col gap-2 border-t border-line pt-4">
+              <span className="text-sm text-fg-faint">Commit identity for every account of {org.name}</span>
+              <IdentityLine org={org} account={data.accounts[0].account} />
+            </div>
           )}
           {data.tokens.map((t) => (
             <p key={t.kind} className="m-0 text-sm text-fg-muted">
@@ -193,9 +208,6 @@ function AccountRow({
         </Line>
         <Line label="Merge requests">
           <TokenLine org={org.id} status={status} />
-        </Line>
-        <Line label="Commit identity">
-          <IdentityLine org={org} account={status.account} />
         </Line>
       </dl>
     </li>
@@ -287,12 +299,7 @@ function PushLine({ org, status }: { org: string; status: GitAccountStatus }) {
           ))}
         </div>
       ) : (
-        keys && (
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-faint">
-            <ExternalButton href={keys}>Add an SSH key on {status.host}</ExternalButton>
-            then Detect again.
-          </span>
-        )
+        <SshKeyStep host={status.host} keysPage={keys} tried={push.tried} />
       )}
       <Failure text={action.failure} />
     </>
@@ -406,6 +413,10 @@ function IdentityLine({ org, account }: { org: OrgView; account: string }) {
   const action = useAction();
   const [name, setName] = useState(account);
   const [email, setEmail] = useState("");
+  const validEmail = OrgConfigSchema.shape.identity.safeParse({
+    name: name.trim() || "x",
+    email: email.trim(),
+  }).success;
   if (org.identity !== undefined) {
     return (
       <State tone="green">
@@ -439,11 +450,16 @@ function IdentityLine({ org, account }: { org: OrgView; account: string }) {
           onChange={(e) => setEmail(e.target.value)}
           className="w-[220px] flex-none"
         />
-        <Button type="submit" disabled={name.trim() === "" || email.trim() === "" || action.busy}>
+        <Button type="submit" disabled={name.trim() === "" || !validEmail || action.busy}>
           Set identity
         </Button>
       </form>
-      <Failure text={action.failure} />
+      <Failure
+        text={
+          action.failure ??
+          (email.trim() !== "" && !validEmail ? "Use an email address like you@company.com" : undefined)
+        }
+      />
     </>
   );
 }
@@ -454,11 +470,13 @@ function MissingRow({
   host,
   kind,
   offers,
+  keyAccepted,
 }: {
   org: OrgView;
   host: string;
   kind: GitHost;
   offers: readonly LoginOffer[];
+  keyAccepted: boolean;
 }) {
   const { set } = useSetGitAccount();
   const dismiss = useDismissGitLogin();
@@ -508,7 +526,9 @@ function MissingRow({
             }}
           >
             <span className="text-sm text-fg-faint">
-              Type the account {org.name} uses on {host}.
+              {keyAccepted
+                ? `${host} accepted this computer's SSH key. Only the account name is missing. Type the account ${org.name} uses.`
+                : `Type the account ${org.name} uses on ${host}.`}
             </span>
             <span className="flex items-center gap-2">
               <Input

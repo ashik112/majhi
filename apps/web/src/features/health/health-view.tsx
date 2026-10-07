@@ -92,7 +92,11 @@ export function HealthView() {
               tools={tools.data}
               now={now}
               filtered={orgFilter !== undefined}
-              className="max-h-[720px] min-[1280px]:max-h-none min-[1280px]:flex-1"
+              // With no accounts the card is one short line, so it does not stretch to fill the column.
+              className={cn(
+                "max-h-[720px] min-[1280px]:max-h-none",
+                (rows.length > 0 || accounts.isPending) && "min-[1280px]:flex-1",
+              )}
             />
             <CostChartPanel org={orgFilter} />
           </div>

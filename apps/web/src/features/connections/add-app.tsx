@@ -104,7 +104,7 @@ function ConnectPhase({
         <ul className="flex flex-col divide-y divide-line rounded-lg border border-line">
           {entries.map((entry) => {
             const have = mine(entry);
-            const status = have === undefined ? undefined : rowStatus(have.health, false, now);
+            const status = have === undefined ? undefined : rowStatus(have, false, now);
             const running = active?.service === entry.id;
             return (
               <li key={entry.id} className="flex flex-col gap-3 px-3 py-2.5">

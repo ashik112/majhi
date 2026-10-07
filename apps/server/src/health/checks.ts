@@ -10,7 +10,9 @@ import {
   type ConnectionView,
   collapseHome,
   dockerRuntimeName,
-  FAILURE_LINE,
+  FAILURE_ACTION_LABEL,
+  failureAction,
+  failureSentence,
   type HostOs,
   type HostStatus,
   hostOsOf,
@@ -149,35 +151,30 @@ export function connectionCheck(view: ConnectionView): Check {
       fix: { label: "Open settings" },
     };
   }
+  const h = view.health;
+  if (h?.state === "failed" || h?.state === "needs-attention") {
+    // The same sentence the Connections page shows, and the same next step.
+    const action = failureAction(view.type, h.reason);
+    return {
+      ...base,
+      status: "fail",
+      detail: failureSentence(view),
+      checkedAt: h.at,
+      ...(action === "check" ? {} : { fix: { label: FAILURE_ACTION_LABEL[action] } }),
+    };
+  }
   const result = view.lastTest;
   if (result !== undefined) {
     if (!result.ok) {
-      const transient = result.failure !== undefined && TRANSIENT_FAILURES.has(result.failure.reason);
-      return {
-        ...base,
-        status: "fail",
-        detail: result.detail,
-        checkedAt: result.at,
-        ...(transient ? {} : { fix: { label: "Reconnect" } }),
-      };
+      return { ...base, status: "fail", detail: result.detail, checkedAt: result.at };
     }
     const warning = result.warnings[0];
     return warning === undefined
       ? { ...base, status: "pass", detail: result.detail, checkedAt: result.at }
       : { ...base, status: "warn", detail: warning, checkedAt: result.at };
   }
-  const h = view.health;
   if (h?.state === "connected") {
     return { ...base, status: "pass", detail: h.checked[0] ?? "Connected", checkedAt: h.verifiedAt };
-  }
-  if (h?.state === "failed" || h?.state === "needs-attention") {
-    return {
-      ...base,
-      status: "fail",
-      detail: `${FAILURE_LINE[h.reason]}. ${h.fix}`,
-      checkedAt: h.at,
-      ...(TRANSIENT_FAILURES.has(h.reason) ? {} : { fix: { label: "Reconnect" } }),
-    };
   }
   return { ...base, status: "warn", detail: "Not checked yet." };
 }
@@ -191,7 +188,7 @@ function helperConnected(host: HostSource): boolean {
   return host.status?.connected === true;
 }
 
-const MAKE_UP = "Run `make up` in the majhi folder once.";
+const MAKE_UP = "Run make up in the majhi folder once.";
 
 export function checkConfig(state: ConfigState, home: string): Check {
   const file = collapseHome(state.file, home);

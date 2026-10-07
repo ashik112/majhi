@@ -28,6 +28,7 @@ import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger, type Logger } from "./log.ts";
 import { readMachine } from "./machine.ts";
+import { makeDir } from "./makeDir.ts";
 import { desktopNotifier, plainLine, showNotification } from "./notify.ts";
 import { findExecutable } from "./paths.ts";
 import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
@@ -311,12 +312,14 @@ async function main(): Promise<void> {
     cliCheck: (params: Parameters<CliToolLogins["check"]>[0]) => cliTools.check(params),
     cliLogout: (params: Parameters<CliToolLogins["logout"]>[0]) => cliTools.logout(params),
     listDirs: (params: { path: string; showHidden: boolean }) => listDirs(params, config.home),
+    makeDir: (params: { path: string }) => makeDir(params, config.home),
     suggestRoots: () => suggestRoots(config.home, platform.folders.skippedAtHome),
     // Read at each job: remount and update turn on once docker is found.
     get remount() {
       return remount;
     },
     sshReload: () => ssh.reload(),
+    sshKeygen: () => ssh.makeKey(),
     editorOpen,
     machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {

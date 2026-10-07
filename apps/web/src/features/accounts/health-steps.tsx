@@ -10,9 +10,12 @@ export function HealthSteps({ health, className }: { health: HealthCheck; classN
     <div className={cn("flex flex-col gap-2", className)}>
       <p className={cn("text-base font-medium", health.ok ? "text-green" : "text-red")}>
         {health.ok ? "Health check passed" : "Health check failed"}
-        <span className="ml-2 font-mono text-sm font-normal text-fg-faint">
-          {formatDuration(health.durationMs)}
-        </span>
+        {health.durationMs > 0 && (
+          <span className="font-mono text-sm font-normal text-fg-faint">
+            {" · "}
+            {formatDuration(health.durationMs)}
+          </span>
+        )}
       </p>
       <ul aria-label="Health check steps" className="flex flex-col gap-1">
         {health.steps.map((step) => (

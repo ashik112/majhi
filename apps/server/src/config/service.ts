@@ -1,8 +1,15 @@
 import { type CommandMeta, GLOBAL_CONNECTIONS, type Settings, type WorkspacesUpdate } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { fileSignature } from "../fs.ts";
+import { fileSignature, writeFileAtomic } from "../fs.ts";
 import { ConfigHistory, type HistoryEntry } from "./history.ts";
-import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
+import {
+  CONFIG_FILE_NAME,
+  type ConfigPaths,
+  configFilePath,
+  type LoadedConfig,
+  loadConfig,
+  parseConfigText,
+} from "./load.ts";
 import { foldedOrgs, orgsWithMergeSwitch, removeOrgMergeSwitches } from "./migrate-org-merge.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
 import {
@@ -263,6 +270,31 @@ export class ConfigService {
   /** Config commits, newest first. */
   historyEntries(limit: number): Promise<HistoryEntry[]> {
     return this.serialize(() => this.history.entries(limit));
+  }
+
+  /**
+   * Puts back the newest earlier majhi.yaml that loads, for a file that no longer does. The broken
+   * file stays in the history as a manual change, so nothing is lost. Throws when none loads.
+   */
+  restoreLastWorking(change: ChangeRecord): Promise<{ at: string }> {
+    return this.serialize(async () => {
+      await this.commitPending();
+      for (const { commit, at } of await this.history.commitsTouching(CONFIG_FILE_NAME, 100)) {
+        const text = await this.history.fileAt(commit, CONFIG_FILE_NAME);
+        if (text === undefined) continue;
+        if (parseConfigText(text, this.paths.hostHome, this.file).state.status !== "loaded") continue;
+        await writeFileAtomic(this.file, text);
+        await this.history.commit({
+          files: [CONFIG_FILE_NAME],
+          message: `${change.command}: ${change.summary}`,
+          actor: change.meta.actor,
+          trailers: { Command: change.command, Actor: "owner", Summary: change.summary },
+        });
+        this.loaded = undefined;
+        return { at };
+      }
+      throw new UserError("No earlier version of majhi.yaml loads, so majhi cannot restore one.", 409);
+    });
   }
 
   /**

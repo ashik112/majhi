@@ -16,6 +16,8 @@ export const PushStatusSchema = z.discriminatedUnion("state", [
     choices: z.array(z.object({ ssh: z.string(), label: z.string() })),
     /** Why no key was found, when a key was accepted but could not be tied to this account. */
     note: z.string().optional(),
+    /** The keys the host accepted that name no account: the alias (none: the default key) and fingerprint. */
+    tried: z.array(z.object({ alias: z.string().optional(), fingerprint: z.string().optional() })).optional(),
   }),
 ]);
 export type PushStatus = z.infer<typeof PushStatusSchema>;
@@ -63,7 +65,15 @@ export const GitStatusSchema = z.object({
   checkedAt: z.string().optional(),
   accounts: z.array(GitAccountStatusSchema),
   /** Hosts the org's projects use that have no account yet, with the logins found for each. */
-  missing: z.array(z.object({ host: z.string(), kind: GitHostSchema, offers: z.array(LoginOfferSchema) })),
+  missing: z.array(
+    z.object({
+      host: z.string(),
+      kind: GitHostSchema,
+      offers: z.array(LoginOfferSchema),
+      /** The host accepted an SSH key from this computer but does not say whose it is. Only the account name is missing. */
+      keyAccepted: z.boolean().optional(),
+    }),
+  ),
   /** MR tokens saved for a host kind that no account of the org covers. */
   tokens: z.array(z.object({ kind: MrHostSchema, ref: z.string() })),
 });

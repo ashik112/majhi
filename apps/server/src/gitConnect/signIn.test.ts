@@ -502,3 +502,27 @@ describe("git.signOut", () => {
     expectNoSecrets(s);
   });
 });
+
+describe("removing a git account", () => {
+  it("takes its token, its grant and the mr_tokens entry with it, and keeps another account's token", async () => {
+    const orgs: Record<string, OrgConfig> = {
+      private: { name: "Private" },
+      acme: {
+        name: "Acme",
+        git_accounts: [
+          { host: "gitlab.com", account: "acme-dev", token: "secret:t", oauth: "secret:g" },
+          { host: "github.com", account: "acme-gh", token: "secret:gh" },
+        ],
+        mr_tokens: { gitlab: "secret:t", github: "secret:gh" } as Partial<Record<MrHost, string>>,
+      },
+    };
+    const s = setup({ orgs });
+    await s.service.removeAccount(
+      { org: "acme", host: "gitlab.com", account: "ACME-dev" },
+      { command: "orgs.removeGitAccount", meta: { actor: { kind: "owner" } } },
+    );
+    expect(orgs.acme?.git_accounts).toEqual([{ host: "github.com", account: "acme-gh", token: "secret:gh" }]);
+    expect(orgs.acme?.mr_tokens).toEqual({ github: "secret:gh" });
+    expect(s.dropped).toEqual(["secret:t", "secret:g"]);
+  });
+});

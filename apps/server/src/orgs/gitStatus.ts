@@ -83,6 +83,14 @@ export async function gitStatus(deps: GitStatusDeps, id: string): Promise<GitSta
               : {
                   state: "missing",
                   ...(note === undefined ? {} : { note }),
+                  ...((hostEntry(a.host)?.keys?.length ?? 0) === 0
+                    ? {}
+                    : {
+                        tried: (hostEntry(a.host)?.keys ?? []).map((k) => ({
+                          ...(k.alias === undefined ? {} : { alias: k.alias }),
+                          ...(k.fingerprint === undefined ? {} : { fingerprint: k.fingerprint }),
+                        })),
+                      }),
                   choices: logins
                     .filter((l) => l.via === "ssh")
                     .map((l) => ({
@@ -116,6 +124,7 @@ export async function gitStatus(deps: GitStatusDeps, id: string): Promise<GitSta
       host,
       kind: deps.classify(host),
       offers: offersFor(host, loginsOf(host), org.dismissed),
+      ...((hostEntry(host)?.keys?.length ?? 0) > 0 ? { keyAccepted: true } : {}),
     }));
 
   const kinds = new Set(org.accounts.map((a) => mrKindOf(deps.classify(a.host))));

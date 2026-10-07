@@ -60,13 +60,17 @@ export function classifyProbe(run: SshRun): Pick<SshHostCheck, "state" | "detail
       run.output,
     )
   ) {
-    return { state: "unreachable", detail: "Cannot connect to the host." };
+    return { state: "unreachable", detail: "majhi cannot connect to the host. Check its address and port." };
   }
   if (/host key verification failed/i.test(run.output)) {
     return { state: "unreachable", detail: "The host key is not in known_hosts." };
   }
   // Git hosts answer -T with a greeting and exit 0 or 1. Only exit 255 is an ssh failure.
-  if (run.code === 255) return { state: "unreachable", detail: "ssh could not connect." };
+  if (run.code === 255)
+    return {
+      state: "unreachable",
+      detail: "majhi could not connect to the host. Check its address and port.",
+    };
   return { state: "reachable", detail: "Reachable, and a key was accepted." };
 }
 

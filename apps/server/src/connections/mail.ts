@@ -1,5 +1,19 @@
 import { isIP, connect as netConnect, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
+import type { FailureReason } from "@majhi/shared";
+
+/** A mail check that failed, with the typed reason and the next step. The message is plain and holds no password. */
+export class MailError extends Error {
+  constructor(
+    message: string,
+    readonly reason: FailureReason,
+    readonly fix: string,
+  ) {
+    super(message);
+  }
+}
+
+const CHECK_ADDRESS = "Check the server address and port, then check again.";
 
 /** Longest line a mail server may send before majhi gives up on it. */
 const MAX_LINE = 64 * 1024;
@@ -18,7 +32,7 @@ function readLines(socket: Socket, onLine: (line: string) => void): void {
       buffer = buffer.slice(nl + 1);
       onLine(line);
     }
-    if (buffer.length > MAX_LINE) socket.destroy(new Error("The server sent a line that is too long."));
+    if (buffer.length > MAX_LINE) socket.destroy(new Error("too long"));
   });
 }
 
@@ -27,7 +41,7 @@ function exchange<T>(
   socket: Socket,
   where: string,
   timeoutMs: number,
-  step: (line: string, finish: (result: T) => void, fail: (message: string) => void) => void,
+  step: (line: string, finish: (result: T) => void, fail: (error: MailError) => void) => void,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
@@ -39,10 +53,16 @@ function exchange<T>(
       setTimeout(() => socket.destroy(), 1000).unref();
       fn();
     };
-    const fail = (message: string) => end(() => reject(new Error(message)));
-    socket.setTimeout(timeoutMs, () => fail(`${where} did not answer in time.`));
-    socket.on("error", (err) => fail(`Cannot reach ${where}: ${err.message}`));
-    socket.on("close", () => fail(`${where} closed the connection.`));
+    const fail = (error: MailError) => end(() => reject(error));
+    socket.setTimeout(timeoutMs, () =>
+      fail(new MailError(`${where} did not answer in time.`, "timeout", CHECK_ADDRESS)),
+    );
+    socket.on("error", () =>
+      fail(new MailError(`majhi cannot reach ${where}.`, "unreachable", CHECK_ADDRESS)),
+    );
+    socket.on("close", () =>
+      fail(new MailError(`${where} closed the connection.`, "unreachable", CHECK_ADDRESS)),
+    );
     readLines(socket, (line) => {
       if (!settled) step(line, (result) => end(() => resolve(result)), fail);
     });
@@ -68,14 +88,21 @@ export function imapLogin(input: {
   return exchange<void>(socket, where, input.timeoutMs, (line, finish, fail) => {
     if (state === "greeting") {
       if (/^\* PREAUTH/i.test(line)) return finish();
-      if (!/^\* OK/i.test(line)) return fail(`${where} did not greet as an IMAP server.`);
+      if (!/^\* OK/i.test(line)) {
+        return fail(new MailError(`${where} did not greet as an IMAP server.`, "not-found", CHECK_ADDRESS));
+      }
       state = "user";
       socket.write(`a1 LOGIN {${user.length}}\r\n`);
       return;
     }
     if (/^a1 (NO|BAD)/i.test(line)) {
-      const why = line.replace(/^a1 (NO|BAD)\s*/i, "").trim();
-      return fail(`${input.host} refused the login${why ? `: ${why}` : "."}`);
+      return fail(
+        new MailError(
+          `${input.host} refused the login.`,
+          "rejected",
+          "Check the user name and the password, then connect again.",
+        ),
+      );
     }
     if (state === "user" && line.startsWith("+")) {
       state = "password";
@@ -105,6 +132,6 @@ export function smtpGreeting(input: { host: string; port: number; timeoutMs: num
       socket.write("QUIT\r\n");
       return finish(line);
     }
-    fail(`${where} did not greet as an SMTP server.`);
+    fail(new MailError(`${where} did not greet as an SMTP server.`, "not-found", CHECK_ADDRESS));
   });
 }
