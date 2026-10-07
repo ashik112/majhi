@@ -709,31 +709,15 @@ export class TaskService {
 
   /**
    * Gives an incident that waits in the inbox with no repo its project, once the owner (or the evidence) says which
-   * one it is about. The task becomes a code task with a new branch, like one made with that project.
+   * one it is about: it becomes a code task, and the project joins the way `addRepo` adds one.
    */
   async attachProject(id: string, project: string): Promise<Task> {
     const task = this.get(id);
     if (task.status !== "inbox" || task.repos.length > 0) {
       throw new UserError(`${id} already has its project or has started.`, 409);
     }
-    const projects = await this.deps.projects.infos();
-    const info = projects.find((p) => p.id === project);
-    if (info === undefined || info.org !== task.org) {
-      throw new UserError(`${project} is not a project of this workspace.`, 409);
-    }
-    const parsed = parseTaskText(task.brief, { projects: [], agents: [] });
-    const planned = await this.planRepos(
-      id,
-      { ...parsed, title: task.title, repos: [{ project, match: project }] },
-      projects,
-      new Map(),
-      task.typing === undefined ? undefined : BRANCH_TYPE_OF[task.typing.type],
-    );
-    this.deps.store.tasks.setRepos(id, "code", planned.repos, this.now().toISOString());
-    await this.refreshBriefs([id]);
-    this.deps.room.publishTask(this.get(id));
-    this.deps.events.emitTask(id, true);
-    return this.get(id);
+    this.deps.store.tasks.setKind(id, "code", this.now().toISOString());
+    return this.addRepo({ id, project, byOwner: false });
   }
 
   /**

@@ -630,25 +630,9 @@ export class TaskRepo {
       );
   }
 
-  /** Gives a task that has no repo its first repos, and the kind that goes with them. For a task that waits in the inbox. */
-  setRepos(id: string, kind: Task["kind"], repos: Task["repos"], at: string): void {
-    this.db.transaction((tx) => {
-      tx.update(tasks).set({ kind, updatedAt: at }).where(eq(tasks.id, id)).run();
-      repos.forEach((r, pos) => {
-        tx.insert(taskRepos)
-          .values({
-            task: id,
-            project: r.project,
-            source: r.source,
-            base: r.base,
-            branch: r.branch,
-            createdBranch: r.createdBranch,
-            pos,
-            writes: r.writes === true,
-          })
-          .run();
-      });
-    });
+  /** Changes a task's kind: an incident made without a project becomes a code task once its project is known. */
+  setKind(id: string, kind: Task["kind"], at: string): void {
+    this.db.update(tasks).set({ kind, updatedAt: at }).where(eq(tasks.id, id)).run();
   }
 
   /** Tasks with a merge request that is not merged: open, or closed without merging. */

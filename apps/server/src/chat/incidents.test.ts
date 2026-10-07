@@ -45,7 +45,10 @@ async function setup(
     tz: async () => "UTC",
     facts,
     ...(write === undefined ? {} : { write }),
-    engine: { open: async () => ({ task: "ACM-1", joined: false, started: false, projectUnknown: false }), evidence: () => [] },
+    engine: {
+      open: async () => ({ task: "ACM-1", joined: false, started: false, projectUnknown: false }),
+      evidence: () => [],
+    },
     reopen: async (id) => {
       reopened.push(id);
       // What the lifecycle's reopen does to the row: a done task is open again.
@@ -120,8 +123,16 @@ describe("updates to client rooms", () => {
 
 describe("the report never claims what was not recorded", () => {
   it("says no fix was shipped and the cause is being confirmed, whatever the model wrote", async () => {
-    const section = { summary: "We found and fixed it", impact: "Brief", cause: "A bad index", fix: "We deployed a fix", followUps: "None" };
-    const { incidents } = await setup("done", async () => JSON.stringify({ internal: section, client: section }));
+    const section = {
+      summary: "We found and fixed it",
+      impact: "Brief",
+      cause: "A bad index",
+      fix: "We deployed a fix",
+      followUps: "None",
+    };
+    const { incidents } = await setup("done", async () =>
+      JSON.stringify({ internal: section, client: section }),
+    );
     await incidents.tick();
     const view = await incidents.view("ACM-9");
     expect(view?.report?.client.fix).not.toContain("deployed a fix");
@@ -134,8 +145,16 @@ describe("the report never claims what was not recorded", () => {
   });
 
   it("uses the model's words for a cause and fix that are recorded", async () => {
-    const section = { summary: "Fixed", impact: "Brief", cause: "Slow query", fix: "Added an index", followUps: "None" };
-    const { incidents, w } = await setup("done", async () => JSON.stringify({ internal: section, client: section }));
+    const section = {
+      summary: "Fixed",
+      impact: "Brief",
+      cause: "Slow query",
+      fix: "Added an index",
+      followUps: "None",
+    };
+    const { incidents, w } = await setup("done", async () =>
+      JSON.stringify({ internal: section, client: section }),
+    );
     incidents.cause("ACM-9", "report query", "a slow query");
     // A fix is recorded once something shipped: a deploy that is live.
     w.store.raw
@@ -164,7 +183,12 @@ describe("the report to a client", () => {
     const sentBefore = w.sent.length;
 
     // An agent, even the captain, cannot send or edit it.
-    const handlers = incidentHandlers({ incidents, lane: async () => undefined, orgOf: () => "acme", askCaptain: async () => undefined });
+    const handlers = incidentHandlers({
+      incidents,
+      lane: async () => undefined,
+      orgOf: () => "acme",
+      askCaptain: async () => undefined,
+    });
     const agent = {
       command: "incident.sendReport",
       meta: { actor: { kind: "agent", id: "captain" } },

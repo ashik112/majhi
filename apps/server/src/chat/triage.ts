@@ -462,12 +462,9 @@ export class ClientTriage {
         if (decision.outage === true) {
           const found = await this.deps.incident.claim(room, item, finding);
           // No watch, no failed deploy: nothing backs the claim yet. The client is asked for specifics.
-          if (found === undefined) return clarify("No watch or deploy shows a problem: asked the client for details");
-          return handled(
-            found.joined
-              ? `Joined incident ${found.task}`
-              : `Opened incident ${found.task}`,
-          );
+          if (found === undefined)
+            return clarify("No watch or deploy shows a problem: asked the client for details");
+          return handled(found.joined ? `Joined incident ${found.task}` : `Opened incident ${found.task}`);
         }
         const { task } = await this.deps.findings.toTask(finding, { kind: "captain", org });
         return handled(`Proposed a task: ${task}`);

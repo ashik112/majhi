@@ -326,7 +326,8 @@ export class AutonomyService {
    */
   async quietWhy(org: string): Promise<string | undefined> {
     if (this.repo.state().mode !== "on") return "Auto-pilot is off";
-    if (!(await this.thinksIn()).includes(org)) return "Start and Upkeep are You here, so the captain is not listening";
+    if (!(await this.thinksIn()).includes(org))
+      return "Start and Upkeep are You here, so the captain is not listening";
     const rest = await this.restingWhy(org);
     if (rest !== undefined) return `The captain rests: ${rest}`;
     if (this.dayCapped()) return "the day's spend cap is reached";

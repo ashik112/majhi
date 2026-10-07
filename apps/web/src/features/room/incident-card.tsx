@@ -114,7 +114,11 @@ export function IncidentCard({ view }: { view: IncidentView }) {
                 ? "This chat follows a newer incident and hears about that one"
                 : lineOf(view, room)
             }
-            below={i === 0 && room.joined !== true && view.status !== "resolved" ? <Steps view={view} /> : undefined}
+            below={
+              i === 0 && room.joined !== true && view.status !== "resolved" ? (
+                <Steps view={view} />
+              ) : undefined
+            }
           />
         </li>
       ))}
@@ -215,7 +219,10 @@ function Report({ view, report }: { view: IncidentView; report: NonNullable<Inci
       line={
         frozen
           ? report.sent
-              .map((s) => `Sent to ${view.rooms.find((r) => r.room === s.room)?.title ?? "the chat"} at ${clock(s.at)}`)
+              .map(
+                (s) =>
+                  `Sent to ${view.rooms.find((r) => r.room === s.room)?.title ?? "the chat"} at ${clock(s.at)}`,
+              )
               .join(" · ")
           : report.warn
       }

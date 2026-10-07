@@ -89,7 +89,10 @@ function setup(options: { starts?: "captain" | "owner"; projects?: string[]; soa
       ofTask: (task) => [...findingTask].filter(([, t]) => t === task).map(([id]) => ({ id }) as never),
       get: (id) => ({ id, task: findingTask.get(id) }) as never,
     },
-    watch: { openIncidents: () => [...incidents.values()].filter((i) => i.status === "open"), incident: (id) => incidents.get(id) },
+    watch: {
+      openIncidents: () => [...incidents.values()].filter((i) => i.status === "open"),
+      incident: (id) => incidents.get(id),
+    },
     watchProject: () => "storefront",
     tasks: {
       create: create as never,
@@ -137,7 +140,14 @@ function setup(options: { starts?: "captain" | "owner"; projects?: string[]; soa
         `INSERT INTO deploys (org, project, env, commit_sha, state, task, by, runs, seq, attempt, created_at, updated_at, finished_at)
          VALUES ('acme', 'storefront', 'production', ?, ?, ?, 'owner', '[]', 0, 1, ?, ?, ?)`,
       )
-      .run(`abcdef${Math.random().toString(16).slice(2, 10)}`, state, task, at.toISOString(), at.toISOString(), at.toISOString());
+      .run(
+        `abcdef${Math.random().toString(16).slice(2, 10)}`,
+        state,
+        task,
+        at.toISOString(),
+        at.toISOString(),
+        at.toISOString(),
+      );
   };
   return { store, engine, clock, incidents, watchIncident, started, closed, reopen, findingTask, deploy };
 }
@@ -277,7 +287,11 @@ describe("resolution", () => {
     const t = setup();
     const inc = t.watchIncident();
     const { task } = await t.engine.open(watchSource(inc));
-    t.incidents.set(7, { ...inc, status: "resolved", resolvedAt: new Date(t.clock.now.getTime() + 5 * MIN).toISOString() });
+    t.incidents.set(7, {
+      ...inc,
+      status: "resolved",
+      resolvedAt: new Date(t.clock.now.getTime() + 5 * MIN).toISOString(),
+    });
     t.clock.now = new Date(t.clock.now.getTime() + 600 * MIN);
     await t.engine.sweep();
     expect(t.closed).toEqual([]);

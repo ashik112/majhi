@@ -18,9 +18,9 @@ import {
 } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
+import type { FindingsService } from "../findings/service.ts";
 import type { IncidentEngine } from "../incident/engine.ts";
 import { earliest, type IncidentFacts, type IncidentRead as Read } from "../incident/facts.ts";
-import type { FindingsService } from "../findings/service.ts";
 import type { OutboundGate } from "../playbooks/outbound.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
@@ -112,7 +112,6 @@ function clip(text: string, max: number): string {
       .find((l) => l !== "") ?? "";
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
-
 
 export class ClientIncidents {
   constructor(private readonly deps: IncidentsDeps) {}
@@ -415,12 +414,19 @@ export class ClientIncidents {
   /** What a client is told of a status: the plain words, then the facts a client may read. Nothing guessed. */
   private statusText(read: Read, result: ReturnType<typeof clientStatus>, tz: string): string {
     const parts = [UPDATE_TEXT[result.status]];
+    // What our own monitoring sees is a fact a client may read: the problem is confirmed on our side too.
+    if (result.status === "investigating" && read.watch?.status === "open")
+      parts.push("Our monitoring shows the problem too.");
     const cause = read.events.find((e) => e.detail.event === "cause")?.detail;
     if (cause?.event === "cause" && cause.client !== undefined && result.status !== "investigating")
       parts.push(`Cause: ${clip(cause.client, 200)}.`);
     if (result.status === "monitoring" && result.at.monitoring !== undefined)
       parts.push(`The fix went live at ${this.clock(result.at.monitoring, tz)}.`);
-    if (result.status === "resolved" && result.recoveredAt === undefined && result.at.monitoring === undefined)
+    if (
+      result.status === "resolved" &&
+      result.recoveredAt === undefined &&
+      result.at.monitoring === undefined
+    )
       parts.push("It cleared up without a change from us, and we are still looking into why.");
     return parts.join(" ");
   }
@@ -559,7 +565,9 @@ export class ClientIncidents {
     const due =
       told !== undefined && status !== "resolved" && now - Date.parse(told.at) >= read.cadenceMin * 60_000;
     if (!changed && !due) return false;
-    const text = changed ? this.statusText(read, clientStatus(read.facts), await this.deps.tz(read.org)) : REMINDER_TEXT(status);
+    const text = changed
+      ? this.statusText(read, clientStatus(read.facts), await this.deps.tz(read.org))
+      : REMINDER_TEXT(status);
     const to = this.reporter(room.id);
     // A held update that was not sent yet says the newest thing instead of stacking up behind it.
     if (told !== undefined && this.updateState(told.draft) === "held") {

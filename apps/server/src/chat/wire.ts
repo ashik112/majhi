@@ -13,6 +13,7 @@ import { CLIENT_MESSAGE_QUESTION, readClientMessage } from "../decisions/uses/cl
 import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
 import type { FindingsService } from "../findings/service.ts";
+import type { IncidentFacts } from "../incident/facts.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
 import type { OutboundGate } from "../playbooks/outbound.ts";
 import type { RoomService } from "../room/service.ts";
@@ -20,7 +21,6 @@ import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { Contacts } from "./contacts.ts";
 import { type ChatConnectionInfo, ChatHub } from "./hub.ts";
-import type { IncidentFacts } from "../incident/facts.ts";
 import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
@@ -205,7 +205,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     ...(w.quiet === undefined ? {} : { quiet: w.quiet }),
     write: async (org, key, prompt) => {
       try {
-        return (await w.housekeeper.ask({ id: key, org }, prompt, (text) => ({ ok: true, value: text }))).value;
+        return (await w.housekeeper.ask({ id: key, org }, prompt, (text) => ({ ok: true, value: text })))
+          .value;
       } catch {
         return undefined;
       }

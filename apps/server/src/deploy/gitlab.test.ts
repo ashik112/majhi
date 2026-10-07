@@ -97,7 +97,12 @@ describe("the gitlab-job provider", () => {
 
   it("goes back on a pipeline target: the earlier commit gets a branch and the same pipeline runs there with its inputs", async () => {
     const { provider, ctx, calls } = gitlab();
-    const pipeline: DeployRunStep = { kind: "gitlab-pipeline", remote: "origin", ref: "base", variables: { VERSION: "1.8.2" } };
+    const pipeline: DeployRunStep = {
+      kind: "gitlab-pipeline",
+      remote: "origin",
+      ref: "base",
+      variables: { VERSION: "1.8.2" },
+    };
     const previous = "2".repeat(40);
     const back = await provider.redeploy?.(ctx, pipeline, { commit: previous, run: undefined });
     expect(back?.id).toBe("10");

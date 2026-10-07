@@ -254,7 +254,9 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       });
       // 400 is "the branch exists": an earlier rollback to this commit made it.
       if (made.status !== 201 && made.status !== 400) {
-        throw new DeployProblem(`GitLab would not make a branch at ${previous.commit.slice(0, 7)} (it answered ${made.status}).`);
+        throw new DeployProblem(
+          `GitLab would not make a branch at ${previous.commit.slice(0, 7)} (it answered ${made.status}).`,
+        );
       }
       const variables = Object.entries(step.variables ?? {}).map(([key, value]) => ({ key, value }));
       const started = await api(deps, a, `/projects/${a.id}/pipeline`, {

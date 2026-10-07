@@ -2,7 +2,12 @@ import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { ClientIncidents } from "./incidents.ts";
 
-type IncidentCommand = "incident.askCaptain" | "incident.view" | "incident.cause" | "incident.editReport" | "incident.sendReport";
+type IncidentCommand =
+  | "incident.askCaptain"
+  | "incident.view"
+  | "incident.cause"
+  | "incident.editReport"
+  | "incident.sendReport";
 
 /** What the commands need to know of who asks: whose task it is and which captain lane it is in. */
 export interface IncidentHandlerDeps {

@@ -5,10 +5,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
-  effectiveIncident,
   BUILT_IN_CONNECT_APPS,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
+  effectiveIncident,
   failureFromError,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
@@ -57,8 +57,6 @@ import { captainWorld } from "./captain/world.ts";
 import type { ClientChat } from "./chat/service.ts";
 import { SlackAdapter } from "./chat/slack/adapter.ts";
 import { TelegramAdapter } from "./chat/telegram/adapter.ts";
-import { IncidentEngine } from "./incident/engine.ts";
-import { IncidentFacts } from "./incident/facts.ts";
 import { type ClientChatParts, createClientChat } from "./chat/wire.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
@@ -124,6 +122,8 @@ import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
+import { IncidentEngine } from "./incident/engine.ts";
+import { IncidentFacts } from "./incident/facts.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";

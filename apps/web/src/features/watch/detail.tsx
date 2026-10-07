@@ -1,4 +1,3 @@
-import { useAskCaptain } from "@/lib/incident-queries";
 import { OPS_IMPACT_LABEL, type OpsIncident, type OpsServiceView, PAGE_PATH } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, MessageSquare, Pencil, Plug, RefreshCw, Trash2, Wrench } from "lucide-react";
@@ -16,6 +15,7 @@ import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { useAskCaptain } from "@/lib/incident-queries";
 import { useFixCheck } from "@/lib/ops-queries";
 import { useAckIncident, useCheckNow, useRemoveService } from "@/lib/watch-queries";
 import {
@@ -227,7 +227,8 @@ export function IncidentDetail({
                     incident.task === undefined
                       ? boss.show(wsTab(incident.org), asked)
                       : askNow.mutate(incident.task, {
-                          onSuccess: () => toast("Asked the captain", { detail: `It is looking at ${incident.task}.` }),
+                          onSuccess: () =>
+                            toast("Asked the captain", { detail: `It is looking at ${incident.task}.` }),
                           onError: (e) =>
                             toast("Could not ask the captain", { detail: describeError(e), tone: "error" }),
                         })

@@ -86,7 +86,6 @@ const later = (a: string, b: string): string => (ms(a) >= ms(b) ? a : b);
  */
 export function clientStatus(f: StatusFacts): StatusResult {
   const from = f.reopenedAt.reduce<string>((a, b) => later(a, b), f.openedAt);
-  const reopened = from !== f.openedAt;
   const since = (t: string | undefined): string | undefined =>
     t !== undefined && ms(t) > ms(from) ? t : undefined;
 
@@ -169,7 +168,13 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
   /** The owner saw a card of this incident (a failed deploy): it leaves Needs you. */
   z.object({ event: z.literal("seen"), what: z.string().min(1).max(80), at: z.string() }),
   /** The owner or the captain wrote the incident down: where it came from and the facts it was opened on. */
-  z.object({ event: z.literal("opened"), source: z.enum(["watch", "client", "deploy"]), facts: z.string().max(2000), projectUnknown: z.literal(true).optional(), at: z.string() }),
+  z.object({
+    event: z.literal("opened"),
+    source: z.enum(["watch", "client", "deploy"]),
+    facts: z.string().max(2000),
+    projectUnknown: z.literal(true).optional(),
+    at: z.string(),
+  }),
   /** An update to a client room: what it was told, and the outbound draft it went as. */
   z.object({
     event: z.literal("told"),

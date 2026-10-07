@@ -469,11 +469,17 @@ describe("deploy", () => {
     it("goes back through a GitLab pipeline: the same runs again at the earlier commit", async () => {
       r = await rig([environment("staging")], "gitlab");
       r.hosts.branches.set("gitlab:acme/storefront:main", C1);
-      const first = await r.service.deploy({ project: "storefront", env: "staging", runs: GL_PIPELINE }, "owner");
+      const first = await r.service.deploy(
+        { project: "storefront", env: "staging", runs: GL_PIPELINE },
+        "owner",
+      );
       await r.service.idle();
       r.hosts.branches.set("gitlab:acme/storefront:main", C2);
       r.tip.value = C2;
-      const second = await r.service.deploy({ project: "storefront", env: "staging", runs: GL_PIPELINE }, "owner");
+      const second = await r.service.deploy(
+        { project: "storefront", env: "staging", runs: GL_PIPELINE },
+        "owner",
+      );
       await r.service.idle();
       expect(r.store.deploys.get(second.record.id)?.state).toBe("live");
       const out = await r.service.rollback(second.record.id, "owner");

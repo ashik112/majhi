@@ -62,7 +62,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export async function startFakeHosts(
-  init: { tokens?: Partial<FakeHosts["tokens"]>; pollsToFinish?: number } = {},
+  init: { tokens?: Partial<FakeHosts["tokens"]>; pollsToFinish?: number; port?: number } = {},
 ): Promise<FakeHosts> {
   const tokens = {
     github: init.tokens?.github ?? "gh-fake-token-1111",
@@ -287,7 +287,7 @@ export async function startFakeHosts(
   const server: Server = createServer((req, res) => {
     void serve(req, res).catch(() => send(res, 500, { message: "fake failed" }));
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(init.port ?? 0, "127.0.0.1", resolve));
   const address = server.address();
   state.port = typeof address === "object" && address !== null ? address.port : 0;
   state.host = `127.0.0.1:${state.port}`;

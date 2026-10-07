@@ -66,7 +66,9 @@ describe("the status a client sees", () => {
     expect(r.status).toBe("investigating");
     expect(r.recoveredAt).toBe(t("10:30"));
     // The owner closing it after the recovery resolves it once the soak has run.
-    const closed = clientStatus(facts({ watch: { greenAt: t("10:30") }, doneAt: t("10:45"), now: t("13:00") }));
+    const closed = clientStatus(
+      facts({ watch: { greenAt: t("10:30") }, doneAt: t("10:45"), now: t("13:00") }),
+    );
     expect(closed.status).toBe("resolved");
     expect(closed.at.resolved).toBe(t("11:00"));
   });
@@ -75,7 +77,9 @@ describe("the status a client sees", () => {
     // Fix live but the watch is still firing.
     expect(clientStatus(facts({ liveAt: t("10:41"), watch: {}, now: t("13:00") })).status).toBe("monitoring");
     // Fix live, watch green, soak not over.
-    const soaking = clientStatus(facts({ liveAt: t("10:41"), watch: { greenAt: t("10:50") }, now: t("10:55") }));
+    const soaking = clientStatus(
+      facts({ liveAt: t("10:41"), watch: { greenAt: t("10:50") }, now: t("10:55") }),
+    );
     expect(soaking.status).toBe("monitoring");
     expect(soaking.soakEndsAt).toBe(t("11:05"));
   });

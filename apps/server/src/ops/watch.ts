@@ -96,7 +96,12 @@ export interface OpsDeps {
    * the one place the fix, the client updates and the resolution live. `again` is a re-fire.
    */
   incidentTask?:
-    | ((inc: OpsIncident, subject: Subject, evidence: string[], again: boolean) => Promise<IncidentTaskNote | undefined>)
+    | ((
+        inc: OpsIncident,
+        subject: Subject,
+        evidence: string[],
+        again: boolean,
+      ) => Promise<IncidentTaskNote | undefined>)
     | undefined;
   /** The incident task of an incident, and why nobody looked at it, for the Watch page. */
   incidentMeta?: ((inc: OpsIncident) => Promise<{ task?: string; quiet?: string }>) | undefined;
@@ -172,7 +177,12 @@ export interface Subject {
   /** A watch: the incident's title, and the news for the captain (undefined: it is not woken). */
   title?: string | undefined;
   wakeText?:
-    | ((inc: OpsIncident, evidence: string[], note: IncidentTaskNote | undefined, again: boolean) => string | undefined)
+    | ((
+        inc: OpsIncident,
+        evidence: string[],
+        note: IncidentTaskNote | undefined,
+        again: boolean,
+      ) => string | undefined)
     | undefined;
 }
 

@@ -1,10 +1,4 @@
-import type {
-  DeployRecord,
-  IncidentEvent,
-  OpsIncident,
-  StatusFacts,
-  Task,
-} from "@majhi/shared";
+import type { DeployRecord, IncidentEvent, OpsIncident, StatusFacts, Task } from "@majhi/shared";
 import type { FindingsService } from "../findings/service.ts";
 import type { Store } from "../store/index.ts";
 
