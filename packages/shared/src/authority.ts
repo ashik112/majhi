@@ -50,6 +50,18 @@ export const AuthoritySchema = z.strictObject({
 });
 export type Authority = z.infer<typeof AuthoritySchema>;
 
+/**
+ * A change to some rows of a workspace's authority. Unlike `AuthoritySchema` it fills in nothing: a row
+ * that is not named keeps its saved value. (A `.partial()` of `AuthoritySchema` would apply the rows'
+ * defaults and quietly reset Deploy staging, Deploy production, Tell and Own to You on every change.)
+ */
+export const AuthorityPatchSchema = z.strictObject(
+  Object.fromEntries(AUTHORITY_ROWS.map((row) => [row, AuthorityChoiceSchema.optional()])) as {
+    [K in AuthorityRow]: z.ZodOptional<typeof AuthorityChoiceSchema>;
+  },
+);
+export type AuthorityPatch = z.infer<typeof AuthorityPatchSchema>;
+
 /** The row names in plain words, for the table. */
 export const AUTHORITY_LABEL: Record<AuthorityRow, string> = {
   start: "Start work from the backlog",
