@@ -61,8 +61,13 @@ export function trailFactsOf(task: Task, children: readonly ChildFact[]): Omit<T
  * push when the project works through merge requests and the captain would merge but may not push.
  * Undefined when the captain does the next step, or the task changed no code.
  */
-export function ownerStepOf(task: Task, plan: Pick<ShipPlan, "steps" | "way">): "merge" | "push" | undefined {
+export function ownerStepOf(
+  task: Task,
+  plan: Pick<ShipPlan, "steps" | "way" | "waits">,
+): "merge" | "push" | undefined {
   if (!task.repos.some((r) => r.writes !== false)) return undefined;
+  // The captain's merge waits for the deploy plan: that is its own step, not one the owner is waited for.
+  if (plan.waits !== undefined) return undefined;
   if (plan.steps.merge === "owner") return opensMergeRequest(plan) ? undefined : "merge";
   return plan.way === "merge-request" && plan.steps.push === "owner" ? "push" : undefined;
 }
@@ -77,6 +82,7 @@ function shipView(plan: ShipPlan): ShipView {
     tell: steps.tell,
     way: plan.way,
     ...(plan.ruleSubject === undefined ? {} : { rule: plan.ruleSubject }),
+    ...(plan.waits === undefined ? {} : { waits: plan.waits }),
   };
 }
 
@@ -116,6 +122,7 @@ export class TaskDetails {
         ...trailFactsOf(task, children),
         ...(check === undefined ? {} : { check }),
         ...(owner === undefined ? {} : { owner }),
+        ...(plan?.waits === undefined || task.status !== "review" ? {} : { planWait: true }),
         ...(deployed === undefined ? {} : { deploys: deployed.steps }),
       }),
       ...(plan === undefined ? {} : { ship: shipView(plan) }),

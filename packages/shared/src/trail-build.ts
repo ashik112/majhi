@@ -64,6 +64,8 @@ export interface TrailFacts {
   pendingShip: readonly string[];
   /** The step of shipping the rules leave to the owner now, when the task waits for them. */
   owner?: "merge" | "push" | undefined;
+  /** The captain's merge waits for the task's deploy plan. */
+  planWait?: boolean | undefined;
   /** One entry per target of the projects the task changed that has a deploy record or a pending decision. */
   deploys?: readonly DeployStepView[];
   /** The hand-off check of the task's head now, when it has one. */
@@ -133,6 +135,8 @@ export function buildTrail(facts: TrailFacts): Trail {
     });
   }
   if (facts.owner !== undefined) steps.push({ kind: "ship", tone: "needs", step: facts.owner });
+  else if (facts.planWait === true)
+    steps.push({ kind: "ship", tone: "working", step: "merge", waits: "deploy-plan" });
   for (const d of facts.deploys ?? []) steps.push(deployTrailStep(d));
   return steps;
 }

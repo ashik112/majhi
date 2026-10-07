@@ -90,6 +90,8 @@ export interface DeployDeps {
   changed(): void;
   /** A deploy went live: the next step of the plan may go now. */
   onLive?: (record: DeployRecord) => void;
+  /** A task's plan came back empty: nothing deploys for its head. Kept so the ship decision does not wait for a plan. */
+  nothingDeploys?: (task: string, by: DeployActor) => Promise<void>;
   /** One line in the room of the task a deploy belongs to, keyed so a repeat says nothing new. */
   taskNote?: (task: string, key: string, level: "info" | "warn", text: string) => void;
   now(): Date;
@@ -296,6 +298,7 @@ export class DeployService {
         at,
       })),
     );
+    if (input.steps.length === 0) await this.deps.nothingDeploys?.(input.task, actor);
     this.changed();
     return { records };
   }

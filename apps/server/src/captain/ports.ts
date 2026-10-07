@@ -152,6 +152,8 @@ export interface DeployPorts {
 export interface CaptainPorts {
   // Ship finished work
   reviewTasks(org: string): Promise<ReviewTask[]>;
+  /** Tasks whose merge requests are open: the captain's merge of them waits on the deploy plan, so it is asked for. */
+  mrTasks?(org: string): Promise<ReviewTask[]>;
   /**
    * Who does each step of shipping the task, and how it lands: the workspace's rows refined by its ship
    * rules, for the task as it is now. The lane's calls and the lead's cards read the same one.

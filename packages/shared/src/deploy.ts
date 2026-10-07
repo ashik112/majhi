@@ -126,6 +126,14 @@ export const DeployRunStepSchema = z.discriminatedUnion("kind", [
     variables: InputsSchema.optional(),
   }),
   z.object({
+    kind: z.literal("bitbucket-pipeline"),
+    remote: RemoteNameSchema,
+    /** A custom pipeline of the project, the name under `pipelines: custom:` in `bitbucket-pipelines.yml`. */
+    pipeline: z.string().trim().min(1).max(200),
+    ref: z.union([z.literal("base"), RefSchema]).default("base"),
+    variables: InputsSchema.optional(),
+  }),
+  z.object({
     kind: z.literal("vercel"),
     /** An `env` connection of the project's workspace that holds `VERCEL_TOKEN`. */
     connection: IdSchema,
@@ -150,11 +158,12 @@ export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
   "github-workflow": "GitHub workflow",
   "gitlab-job": "GitLab job",
   "gitlab-pipeline": "GitLab pipeline",
+  "bitbucket-pipeline": "Bitbucket pipeline",
   vercel: "Vercel",
   ssh: "SSH command",
 };
 
-/** One run in a line, for a row and a log: "GitHub workflow deploy.yml", "GitLab job deploy-prod". */
+/** One run in a line, for a row and a log: "GitHub workflow deploy.yml", "GitLab job deploy-prod", "Bitbucket pipeline deploy-prod". */
 export function deployRunLine(run: DeployRunStep): string {
   switch (run.kind) {
     case "github-workflow":
@@ -163,6 +172,8 @@ export function deployRunLine(run: DeployRunStep): string {
       return `${DEPLOY_KIND_LABEL[run.kind]} ${run.job}`;
     case "gitlab-pipeline":
       return DEPLOY_KIND_LABEL[run.kind];
+    case "bitbucket-pipeline":
+      return `${DEPLOY_KIND_LABEL[run.kind]} ${run.pipeline}`;
     case "vercel":
       return `Vercel ${run.project}`;
     case "ssh":

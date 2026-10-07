@@ -28,6 +28,8 @@ export function runHost(run: DeployRunStep): GitHost {
     case "gitlab-job":
     case "gitlab-pipeline":
       return "gitlab";
+    case "bitbucket-pipeline":
+      return "bitbucket";
     case "vercel":
     case "ssh":
       return "other";

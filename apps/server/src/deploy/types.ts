@@ -65,7 +65,7 @@ export interface DeployCredentials {
   git(
     org: string,
     host: string,
-    provider: "github" | "gitlab",
+    provider: "github" | "gitlab" | "bitbucket",
   ): Promise<{ token: string } | { problem: string }>;
   /** One variable of one of its `env` connections. */
   variable(org: string, connection: string, name: string): Promise<{ value: string } | { problem: string }>;

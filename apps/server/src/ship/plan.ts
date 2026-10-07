@@ -22,6 +22,8 @@ import { changedLinesOfTask } from "./lines.ts";
  * facts read now. Nothing here is stored, so there is no second copy to disagree.
  */
 
+export const WAITS_FOR_PLAN = "Waits for the deploy plan";
+
 /** How a task lands: a local merge of the branch, or the merge request its project works through. */
 export type ShipWay = "local" | "merge-request";
 
@@ -39,6 +41,12 @@ export interface ShipPlan {
    * whose Deploy cell made Merge or Push the owner's, which the rows alone would have left to the captain.
    */
   gated?: { project: string; env: string; tier: DeployEnvironment["tier"] } | undefined;
+  /**
+   * Set when the captain would merge or push but the task changes a project with environments and its deploy is not
+   * planned yet ("Waits for the deploy plan"). Merge and Push read as the owner's meanwhile, so nothing of the
+   * captain's merges it; the owner can still ship it by hand. Gone once the plan, or an empty one, is in.
+   */
+  waits?: string | undefined;
 }
 
 export interface ShipPlannerDeps {
@@ -49,6 +57,8 @@ export interface ShipPlannerDeps {
   areas: Pick<AreasReader, "of" | "forget">;
   /** The environments of a project. A merge or push into the branch of one is a deploy of it. */
   environments(project: string): Promise<readonly DeployEnvironment[]>;
+  /** Whether the task changes a project with environments and its deploy has no plan yet (not even "nothing deploys"). */
+  needsDeployPlan(task: Task): Promise<boolean>;
   /** Whether every repo the task changes has a token for its host, so its project works through merge requests. */
   viaMergeRequests(task: Task): Promise<boolean>;
   zone(tz: string | undefined): string;
@@ -88,7 +98,9 @@ export class ShipPlanner {
       facts,
       this.deps.mode() === "on",
     );
-    const { steps, gated } = await this.gate(task, base);
+    const gate = await this.gate(task, base);
+    const { gated } = gate;
+    const { steps, waits } = await this.holdForPlan(task, gate.steps);
     const rule = shipRulesOf(settings, org).find((r) => r.id === steps.rule);
     const rules = settings.orgs[org];
     const now = this.deps.now();
@@ -104,7 +116,22 @@ export class ShipPlanner {
       ...(rule === undefined ? {} : { ruleSubject: shipRuleSubject(rule.when) }),
       ...(rest === undefined ? {} : { rest }),
       ...(gated === undefined ? {} : { gated }),
+      ...(waits === undefined ? {} : { waits }),
     };
+  }
+
+  /**
+   * The captain's merge and push wait until the deploy is planned, for a task in review or with merge requests open. Only what the captain
+   * would have done is held, so a task the owner ships anyway shows nothing.
+   */
+  private async holdForPlan(task: Task, steps: ShipSteps): Promise<{ steps: ShipSteps; waits?: string }> {
+    if (
+      (task.status !== "review" && task.status !== "mr") ||
+      (steps.merge !== "captain" && steps.push !== "captain")
+    )
+      return { steps };
+    if (!(await this.deps.needsDeployPlan(task).catch(() => false))) return { steps };
+    return { steps: { ...steps, merge: "owner", push: "owner" }, waits: WAITS_FOR_PLAN };
   }
 
   /** A merge or push into the branch of an environment is a deploy of it: the stricter of that and the Deploy cell. */
@@ -157,8 +184,11 @@ export function opensMergeRequest(plan: Pick<ShipPlan, "steps" | "way">): boolea
 export function shipAsked(
   row: "merge" | "push",
   name: string,
-  plan?: Pick<ShipPlan, "ruleSubject" | "gated">,
+  plan?: Pick<ShipPlan, "ruleSubject" | "gated" | "waits">,
 ): string {
+  if (plan?.waits !== undefined) {
+    return `In ${name} ${row === "merge" ? "the merge" : "the push"} waits for the deploy plan of this task`;
+  }
   if (plan?.gated !== undefined) {
     const { env, tier } = plan.gated;
     return `In ${name} ${env} is deployed when its branch is ${row === "merge" ? "merged" : "pushed"}, and deploying ${tier} is the owner's`;

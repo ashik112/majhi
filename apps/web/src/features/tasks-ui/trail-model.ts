@@ -102,7 +102,12 @@ function stepView(step: TrailStep, index: number): StepView {
         waiting,
       };
     case "ship":
-      return { ...base, label: SHIP_STEP_LABEL[step.step], word: "waits for you", waiting };
+      return {
+        ...base,
+        label: SHIP_STEP_LABEL[step.step],
+        word: step.waits === undefined ? "waits for you" : "waits for the deploy plan",
+        waiting,
+      };
     case "deploy":
       return { ...base, label: step.env, word: DEPLOY_STATE_WORD[step.state], waiting };
     case "reply":
