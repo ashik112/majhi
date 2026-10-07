@@ -1,5 +1,10 @@
 import { CAPTAIN_LANE_BRIEF, CLIENT_CHAT_BRIEF, type Task } from "@majhi/shared";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 import { Store } from "./index.ts";
 
 function task(id: string, patch: Partial<Task>): Task {
@@ -25,13 +30,18 @@ function task(id: string, patch: Partial<Task>): Task {
 
 describe("conversations list", () => {
   it("lists every kind newest first, keeps the workspace, and hides archived ones only by flag", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const store = new Store(":memory:");
     store.tasks.insert(task("ACME-1", {}));
     store.tasks.insert(task("CAP-1", { kind: "chat", brief: CAPTAIN_LANE_BRIEF, org: "globex" }));
     store.tasks.insert(task("CHAT-1", { kind: "chat", brief: "Chat", title: "Chat", org: undefined }));
     store.tasks.insert(task("CLI-1", { kind: "chat", brief: CLIENT_CHAT_BRIEF, org: "acme" }));
-    const say = (id: string, text: string) =>
+    let minute = 0;
+    const say = (id: string, text: string) => {
+      minute += 1;
+      vi.setSystemTime(new Date(Date.UTC(2026, 0, 2, 0, minute)));
       store.room.upsert(id, `a-${id}-${text}`, { type: "agent", agent: "dev", text });
+    };
     say("ACME-1", "first");
     say("CHAT-1", "second");
     say("CAP-1", "third");
