@@ -9,8 +9,8 @@ import { DockBar } from "./dock-bar";
 const capital = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 /** The deploy that waits for the owner on this task, when one does. */
-export function useDeployAsk(task: string): DeployAsk | undefined {
-  return useTaskDetail(task).data?.deployAsk;
+export function useDeployAsk(task: string, enabled: boolean): DeployAsk | undefined {
+  return useTaskDetail(task, enabled).data?.deployAsk;
 }
 
 /** "Deploy to production? Staging is healthy at a1b2c3d. The fix is 38 lines." with Deploy and Hold. */

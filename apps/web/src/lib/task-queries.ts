@@ -117,12 +117,13 @@ export function useTask(id: string | undefined) {
  * One task's origin, the parts of the system it touches and its whole trail (`tasks.detail`). Under the
  * tasks key, so a change the owner makes refreshes it; the feed marks it stale with the task itself.
  */
-export function useTaskDetail(id: string) {
+export function useTaskDetail(id: string, enabled = true) {
   return useQuery<CommandOutput<"tasks.detail">, ApiRequestError>({
     queryKey: [...queryKeys.tasks, "detail", id],
     queryFn: () => cmd("tasks.detail", { id }),
     staleTime: 10_000,
     retry: false,
+    enabled,
   });
 }
 

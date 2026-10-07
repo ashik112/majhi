@@ -267,7 +267,8 @@ export function Timeline({
     () => dockItems(state.items, owner?.task.status),
     [state.items, owner?.task.status],
   );
-  const deployAsk = useDeployAsk(task.id);
+  // Only a task page asks: a chat or the captain's thread has no deploys.
+  const deployAsk = useDeployAsk(task.id, owner !== undefined && owner.task.kind !== "chat");
   const typed = owner?.task.typing?.type;
 
   return (
