@@ -329,6 +329,7 @@ function LimitsForm({ saved }: { saved: ContainersSettings }) {
 const HANDOFF_STEPS = [
   { key: "install", label: "Install", fallback: 10 },
   { key: "lint", label: "Lint", fallback: 5 },
+  { key: "typecheck", label: "Type check", fallback: 5 },
   { key: "build", label: "Build", fallback: 10 },
   { key: "tests", label: "Tests", fallback: 10 },
 ] as const;

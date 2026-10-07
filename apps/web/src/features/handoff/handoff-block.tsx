@@ -14,8 +14,10 @@ import { ChevronRight, FileText, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
+import { PageLink } from "@/components/ui/page-link";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
+import { useFindingToTask } from "@/lib/findings-queries";
 import { formatAgo } from "@/lib/format";
 import { useCheckAgain, useHandoff, useRerunStep } from "@/lib/handoff-queries";
 
@@ -27,6 +29,7 @@ const STATUS_WORD: Record<HandoffStep["status"], string> = {
   none: "nothing to run",
   skipped: "not run",
   note: "to look at",
+  existing: "already failing",
 };
 
 const STATUS_TEXT: Record<HandoffStep["status"], string> = {
@@ -37,6 +40,7 @@ const STATUS_TEXT: Record<HandoffStep["status"], string> = {
   none: "text-fg-faint",
   skipped: "text-fg-faint",
   note: "text-caution",
+  existing: "text-caution",
 };
 
 function lampOf(state: HandoffState, result: HandoffResult | undefined): LampState {
@@ -133,6 +137,65 @@ export function FailedStep({ task, className }: { task: string; className?: stri
   );
 }
 
+/** A failure the base commit has too: what it is, and one click to open a task that fixes it. */
+function ExistingFailure({
+  task,
+  existing,
+}: {
+  task: string;
+  existing: NonNullable<HandoffStep["existing"]>;
+}) {
+  const open = useFindingToTask();
+  return (
+    <div className="flex min-w-0 flex-col gap-1 text-xs text-fg-soft sm:ml-[156px]">
+      {existing.problems.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 font-mono text-fg-faint">
+          {existing.problems.slice(0, 5).map((p) => (
+            <li key={p} className="break-words">
+              {p}
+            </li>
+          ))}
+          {existing.problems.length > 5 && <li>and {existing.problems.length - 5} more</li>}
+        </ul>
+      )}
+      {existing.finding !== undefined && (
+        <span className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={open.isPending || open.isSuccess}
+            onClick={() => open.mutate({ id: existing.finding ?? 0 })}
+            aria-label={`Open a task to fix the failure on ${existing.base} (${task})`}
+          >
+            {open.isSuccess ? "Task opened" : "Open a task to fix it"}
+          </Button>
+          {open.isError && <span className="text-red">{describeError(open.error)}</span>}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** The memory kill, with the page where the limit is raised. */
+function MemoryLink({ task, limit }: { task: string; limit: string }) {
+  const state = useHandoff(task).data;
+  const project = state?.current?.steps.flatMap((s) => s.ran?.map((r) => r.project) ?? [])[0];
+  return (
+    <>
+      The limit is {limit}.{" "}
+      {project !== undefined && (
+        <PageLink
+          page="projects"
+          search={{ project, section: "checks" }}
+          className="text-blue underline-offset-2 hover:underline"
+        >
+          Raise it here
+        </PageLink>
+      )}
+    </>
+  );
+}
+
 /** One step: its label, how it ended and what it said, and the end of a failing command's output. */
 function StepRow({ task, step, busy }: { task: string; step: HandoffStep; busy: boolean }) {
   return (
@@ -159,6 +222,31 @@ function StepRow({ task, step, busy }: { task: string; step: HandoffStep; busy: 
             )}
           </div>
         )}
+      {step.ran !== undefined && step.ran.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-xs text-fg-faint sm:ml-[156px]">
+          {step.ran.map((r) => (
+            <li key={`${r.project}:${r.command}`} className="min-w-0 break-words">
+              <span className="font-mono text-fg-muted">{r.command}</span> {r.from}
+              {r.workdir === undefined ? "" : `, in ${r.workdir}`}
+              {Object.entries(r.env).map(([k, v]) => (
+                <span key={k} className="font-mono">
+                  {" "}
+                  {k}={v}
+                </span>
+              ))}
+              {r.notes.map((n) => (
+                <span key={n}>. {n}</span>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+      {step.existing !== undefined && <ExistingFailure task={task} existing={step.existing} />}
+      {step.memory !== undefined && (
+        <p className="m-0 text-xs text-fg-soft sm:ml-[156px]">
+          <MemoryLink task={task} limit={step.memory.limit} />
+        </p>
+      )}
       {step.output !== undefined && step.output !== "" && (
         <pre className="m-0 ml-0 max-h-40 overflow-auto rounded-md border border-line-strong bg-sunken p-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words text-fg-muted sm:ml-[156px]">
           {step.output}

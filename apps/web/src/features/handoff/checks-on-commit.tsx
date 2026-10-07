@@ -8,6 +8,7 @@ const PARTS: readonly { step: HandoffStepId; label: string }[] = [
   { step: "tests", label: "tests" },
   { step: "build", label: "build" },
   { step: "lint", label: "lint" },
+  { step: "typecheck", label: "types" },
 ];
 
 /**
