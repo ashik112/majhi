@@ -156,7 +156,7 @@ const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) 
 
 describe("the merge rule", { timeout: 90_000 }, () => {
   it("refuses a failed check, cannot be overridden by an agent or a wrong sha, and lets the owner confirm the head", async () => {
-    const { h, id, repo } = await reviewed('\t@echo "FAIL: nope"; exit 1');
+    const { h, id, repo } = await reviewed('\t@test ! -f work.txt || { echo "FAIL: nope"; exit 1; }');
     const options = (await h.cmd("tasks.shipOptions", { id })).body;
     expect(options.checks.verdict).toEqual({ kind: "failed", check: "test" });
     const head = options.checks.head as string;

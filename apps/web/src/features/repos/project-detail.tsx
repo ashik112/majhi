@@ -1,4 +1,12 @@
-import { collapseHome, type GitStatus, type OrgView, type ProjectView, type Repo } from "@majhi/shared";
+import {
+  ContainerMemorySchema,
+  collapseHome,
+  type GitStatus,
+  type OrgView,
+  type ProjectCard,
+  type ProjectView,
+  type Repo,
+} from "@majhi/shared";
 import { CircleAlert, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
@@ -18,10 +26,11 @@ import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
 import { DeploySection } from "@/features/deploy/deploy-section";
 import type { ApiRequestError } from "@/lib/api";
+import { useProjectCards } from "@/lib/card-queries";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
-import { useGitStatus } from "@/lib/studio-queries";
+import { useGitStatus, useOrgs, useUpdateOrg } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ProjectCardSection } from "./project-card";
@@ -343,7 +352,27 @@ const HANDOFF_ROWS = [
   { key: "typecheck", label: "Typecheck", placeholder: "pnpm typecheck" },
 ] as const;
 
-/** The commands the check before ship runs, when they differ from what the project card read. */
+/** Where a check's command comes from: this project's own setting, the repo's CI, or the project card. */
+function sourceOf(
+  key: (typeof HANDOFF_ROWS)[number]["key"],
+  own: string,
+  card: ProjectCard | undefined,
+): { command: string | undefined; from: string; env: string[] } {
+  if (own.trim() !== "") return { command: own.trim(), from: "set here", env: [] };
+  const ci = card?.checks.find((c) => c.kind === key);
+  if (ci !== undefined)
+    return {
+      command: ci.command,
+      from: `${ci.from}${ci.workdir === undefined ? "" : `, in ${ci.workdir}`}`,
+      env: Object.entries(ci.env).map(([k, v]) => `${k}=${v}`),
+    };
+  const fromCard = card?.commands[key];
+  return fromCard === undefined
+    ? { command: undefined, from: "nothing found: no check runs", env: [] }
+    : { command: fromCard, from: "from the project card", env: [] };
+}
+
+/** The commands the check before ship runs, where each came from, and how much memory a check may use. */
 function HandoffSection({ project }: { project: ProjectView }) {
   const initial = {
     test: project.handoff?.test ?? "",
@@ -353,47 +382,113 @@ function HandoffSection({ project }: { project: ProjectView }) {
   };
   const [draft, setDraft] = useState(initial);
   const { state, setState, save } = useSectionSave(project);
-  const dirty = HANDOFF_ROWS.some((r) => draft[r.key].trim() !== initial[r.key]);
+  const card = useProjectCards().data?.get(project.id);
+  const orgs = useOrgs();
+  const updateOrg = useUpdateOrg();
+  const org = orgs.data?.find((o) => o.id === project.org);
+  const savedMemory = org?.checks?.memory ?? "";
+  const [memory, setMemory] = useState(savedMemory);
+  const memoryProblem =
+    memory.trim() === "" || ContainerMemorySchema.safeParse(memory.trim()).success
+      ? undefined
+      : "Use a size like 6g or 8192m";
+  const dirty =
+    HANDOFF_ROWS.some((r) => draft[r.key].trim() !== initial[r.key]) || memory.trim() !== savedMemory;
+  // Opened from a link that points here (a check that ran out of memory): bring the section into view.
+  const [section, setSection] = useSearchParam("section");
+  const top = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the link lands
+  useEffect(() => {
+    if (section !== "checks") return;
+    top.current?.scrollIntoView({ block: "start" });
+    setSection(undefined);
+  }, []);
   return (
-    <SaveSection
-      title="Check before ship"
-      dirty={dirty}
-      state={state}
-      onDiscard={() => {
-        setDraft(initial);
-        setState(IDLE);
-      }}
-      onSave={() => {
-        const lines = Object.fromEntries(
-          HANDOFF_ROWS.flatMap((r) => (draft[r.key].trim() === "" ? [] : [[r.key, draft[r.key].trim()]])),
-        );
-        save({ handoff: Object.keys(lines).length === 0 ? null : lines });
-      }}
-    >
-      <p className="mb-3 text-sm text-fg-soft text-pretty">
-        Blank rows use the commands on the project card. In Test,{" "}
-        <span className="font-mono">{"{base}"}</span> becomes the commit the task branched from, so the check
-        can run only the tests the task touched.
-      </p>
-      <div className="grid gap-3">
-        {HANDOFF_ROWS.map((r) => (
-          <Field key={r.key} label={r.label}>
+    <div ref={top}>
+      <SaveSection
+        title="Check before ship"
+        dirty={dirty}
+        state={state}
+        onDiscard={() => {
+          setDraft(initial);
+          setMemory(savedMemory);
+          setState(IDLE);
+        }}
+        onSave={() => {
+          if (memoryProblem !== undefined) return;
+          const lines = Object.fromEntries(
+            HANDOFF_ROWS.flatMap((r) => (draft[r.key].trim() === "" ? [] : [[r.key, draft[r.key].trim()]])),
+          );
+          if (memory.trim() !== savedMemory) {
+            setState({ kind: "saving" });
+            updateOrg.mutate(
+              { id: project.org, checks: memory.trim() === "" ? null : { memory: memory.trim() } },
+              {
+                onSuccess: () => {
+                  if (HANDOFF_ROWS.some((r) => draft[r.key].trim() !== initial[r.key]))
+                    save({ handoff: Object.keys(lines).length === 0 ? null : lines });
+                  else setState({ kind: "saved" });
+                },
+                onError: (e: ApiRequestError) =>
+                  setState({ kind: "error", message: e.message, details: e.details }),
+              },
+            );
+            return;
+          }
+          save({ handoff: Object.keys(lines).length === 0 ? null : lines });
+        }}
+      >
+        <p className="mb-3 text-sm text-fg-soft text-pretty">
+          Blank rows run what the repo&apos;s own CI runs, with its environment, else the project card&apos;s
+          command. A command that rewrites files (<span className="font-mono">--fix</span>,{" "}
+          <span className="font-mono">--write</span>) runs in its read-only form. In Test,{" "}
+          <span className="font-mono">{"{base}"}</span> becomes the commit the task branched from.
+        </p>
+        <div className="grid gap-3">
+          {HANDOFF_ROWS.map((r) => {
+            const source = sourceOf(r.key, draft[r.key], card);
+            return (
+              <Field
+                key={r.key}
+                label={r.label}
+                hint={`${source.from[0]?.toUpperCase() ?? ""}${source.from.slice(1)}${source.env.length === 0 ? "" : `. Runs with ${source.env.join(" ")}`}`}
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={draft[r.key]}
+                    onChange={(e) => {
+                      if (state.kind !== "saving") setState(IDLE);
+                      setDraft((d) => ({ ...d, [r.key]: e.target.value }));
+                    }}
+                    placeholder={source.command ?? r.placeholder}
+                    className="font-mono"
+                  />
+                )}
+              </Field>
+            );
+          })}
+          <Field
+            label="Memory per check"
+            hint={`The most one check of ${org?.name ?? "this workspace"} may use. A check that hits it says so. Blank: a quarter of this machine, at least 6g`}
+            error={memoryProblem}
+          >
             {(props) => (
               <Input
                 {...props}
-                value={draft[r.key]}
+                value={memory}
                 onChange={(e) => {
                   if (state.kind !== "saving") setState(IDLE);
-                  setDraft((d) => ({ ...d, [r.key]: e.target.value }));
+                  setMemory(e.target.value);
                 }}
-                placeholder={r.placeholder}
+                placeholder="8g"
                 className="font-mono"
               />
             )}
           </Field>
-        ))}
-      </div>
-    </SaveSection>
+        </div>
+      </SaveSection>
+    </div>
   );
 }
 

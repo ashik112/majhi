@@ -1,15 +1,23 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { type HandoffCommands, PRIVATE, type Task } from "@majhi/shared";
 import type Database from "better-sqlite3";
+import { z } from "zod";
+import { ciChecks } from "../ci/jobs.ts";
+import { readCiFiles } from "../ci/read.ts";
 import { git } from "../git/git.ts";
 import { changeBase } from "../git/since-start.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
 import type { MrService } from "../mrs/service.ts";
+import { fsRepoFiles } from "../projectcard/files.ts";
 import type { ProjectCards } from "../projectcard/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
+import { baseRunStore } from "./base-runs.ts";
+import { makeCheckout } from "./checkout.ts";
 import { effectiveCommands } from "./commands.ts";
 import { type ExecDeps, execInTask } from "./exec.ts";
 import { dependenciesMissing } from "./install.ts";
@@ -54,16 +62,26 @@ export interface HandoffWiring {
   environment?: (() => string) | undefined;
   /** The caps and timeouts of a project's checks, from settings. */
   limits?: ((project: string) => Promise<HandoffLimits>) | undefined;
+  /** Where the results of checks on base commits are kept. Absent: they are run again each time. */
+  baseRunsDir?: string | undefined;
+  /** Files a finding for a check that already fails on the base, once per project and check. */
+  reportExisting?: HandoffPorts["reportExisting"] | undefined;
   /** Tests replace the command runner. */
   exec?: HandoffPorts["exec"] | undefined;
 }
 
-/** The task's head commits, one per repo: the branch tips, so a state of the work is one string. */
+const PackageSchema = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
+
+/**
+ * The task's head per repo, so a state of the work is one string. It is the tree of the branch tip,
+ * not the commit: checks vouch for the files, and majhi folds a branch's checkpoints into one commit
+ * before it leaves (`cleanOutgoing`), which changes the commit and never the files.
+ */
 export async function taskHeads(task: Task): Promise<string> {
   const heads: string[] = [];
   for (const r of task.repos) {
     const tip = (
-      await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "")
+      await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}^{tree}`]).catch(() => "")
     ).trim();
     heads.push(`${r.project}@${tip.slice(0, 12)}`);
   }
@@ -105,6 +123,52 @@ export function createHandoff(w: HandoffWiring): HandoffService {
     },
     commands: async (project) =>
       effectiveCommands(w.projectCards.get(project)?.commands, await w.handoffCommands?.(project)),
+    checkSpec: async (_task, project, kind, worktree) => {
+      const key = kind === "tests" ? "test" : kind;
+      const own = (await w.handoffCommands?.(project))?.[key];
+      if (own !== undefined && own.trim() !== "")
+        return { command: own, env: {}, from: "set for this project" };
+      // The CI of the task's own commit, so a CI file the task changed counts.
+      if (key !== "install") {
+        const found = ciChecks(await readCiFiles(fsRepoFiles(worktree))).find((c) => c.kind === key);
+        if (found !== undefined)
+          return {
+            command: found.command,
+            env: found.env,
+            workdir: found.workdir,
+            from: found.from,
+            minutes: found.minutes,
+          };
+      }
+      const card = w.projectCards.get(project)?.commands[key];
+      return card === undefined || card.trim() === ""
+        ? undefined
+        : { command: card, env: {}, from: "from the project card" };
+    },
+    script: async (cwd, name) => {
+      try {
+        const pkg = PackageSchema.safeParse(JSON.parse(await readFile(join(cwd, "package.json"), "utf8")));
+        return pkg.success ? pkg.data.scripts?.[name] : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    headCommit: async (id, project) => {
+      const r = w.store.tasks.get(id)?.repos.find((x) => x.project === project);
+      if (r === undefined) return undefined;
+      const tip = (
+        await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "")
+      ).trim();
+      return tip === "" ? undefined : tip;
+    },
+    checkout: async (id, project, commit, installedFrom) => {
+      const t = w.store.tasks.get(id);
+      const r = t?.repos.find((x) => x.project === project);
+      if (t === undefined || r === undefined) throw new Error("the task is gone");
+      return makeCheckout({ source: r.source, folder: t.folder, project, commit, installedFrom });
+    },
+    ...(w.baseRunsDir === undefined ? {} : { baseRuns: baseRunStore(w.baseRunsDir) }),
+    ...(w.reportExisting === undefined ? {} : { reportExisting: w.reportExisting }),
     mergeBase: async (id, project) => {
       const t = w.store.tasks.get(id);
       const r = t?.repos.find((x) => x.project === project);

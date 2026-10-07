@@ -52,9 +52,9 @@ export function plainUrl(url: string): string {
 }
 
 function hashOf(facts: ScanFacts): string {
-  const { stack, commands, structure, conventions, ci, deploy, readme } = facts;
+  const { stack, commands, checks, structure, conventions, ci, deploy, readme } = facts;
   return createHash("sha1")
-    .update(JSON.stringify({ stack, commands, structure, conventions, ci, deploy, readme }))
+    .update(JSON.stringify({ stack, commands, checks, structure, conventions, ci, deploy, readme }))
     .digest("hex");
 }
 
@@ -223,6 +223,7 @@ export class ProjectCards {
       whatItIsBy: by,
       stack: facts.stack,
       commands: facts.commands,
+      checks: facts.checks,
       structure: facts.structure,
       conventions: facts.conventions,
       ci: {

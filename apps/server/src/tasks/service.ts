@@ -78,6 +78,7 @@ import {
   mergeBranch,
   remoteBranches,
 } from "../git/merge.ts";
+import { cleanOutgoing, trackingRefOf } from "../git/outgoing.ts";
 import { commitsSinceStart } from "../git/since-start.ts";
 import {
   baseExists,
@@ -117,11 +118,14 @@ import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent, roleIn } from "./agents.ts";
 import {
   branchName,
-  freeBranch,
+  carriesTaskId,
+  freeBranchesTogether,
   inferBranchType,
+  mergeMessage,
   readRepoStyle,
   styleOptions,
   taskBranchType,
+  titleFor,
   typeOfBranch,
 } from "./branch-naming.ts";
 import {
@@ -956,6 +960,7 @@ export class TaskService {
   ): Promise<{ repos: TaskRepo[]; warnings: string[] }> {
     const repos: TaskRepo[] = [];
     const warnings: string[] = [];
+    const planned: { project: ProjectInfo; base: string; wanted: string }[] = [];
     for (const match of parsed.repos) {
       const project = projects.find((p) => p.id === match.project);
       if (project === undefined) continue;
@@ -974,8 +979,8 @@ export class TaskService {
       }
       if (base === undefined)
         throw new UserError(`Project "${project.id}" has no base branch. Set one on the project.`);
-      // `<type>/<id>-<slug>`, in the owner's pattern or the one the repo's own branches show. A name
-      // that is taken gets a number: an agent never works on a branch that exists.
+      // `<type>/<slug>`, in the owner's pattern or with the type words the repo's own branches show.
+      // Never majhi's task id, unless the owner's pattern asks for it.
       const style = project.branchPattern === undefined ? await readRepoStyle(project.path) : undefined;
       const wanted = branchName({
         id,
@@ -985,16 +990,24 @@ export class TaskService {
           ? styleOptions(style?.branches ?? { kind: "default" })
           : { pattern: project.branchPattern }),
       });
-      const branch = await freeBranch(wanted, (name) => branchExists(project.path, name));
+      planned.push({ project, base, wanted });
+    }
+    // A name that is taken gets a number: an agent never works on a branch that exists. One number
+    // for every repo, so the task has the same name in all of them where that is free.
+    const names = await freeBranchesTogether(
+      planned.map((p) => p.wanted),
+      (i, name) => branchExists(planned[i]?.project.path ?? "", name),
+    );
+    planned.forEach(({ project, base }, i) => {
       // No worktree yet. It will be `<folder>/<project>`, which TASK.md names.
       repos.push({
         project: project.id,
         source: project.path,
         base,
-        branch,
+        branch: names[i] ?? "",
         createdBranch: true,
       });
-    }
+    });
     return { repos, warnings };
   }
 
@@ -1880,6 +1893,93 @@ export class TaskService {
   }
 
   /**
+   * Gets a task's branches ready to leave majhi (a first push, or a merge into the base here): a
+   * branch that was never published and carries the task id in its name is renamed to the clean
+   * name, and the commits not yet published lose the checkpoints and `Majhi-Task` trailers (see
+   * `cleanOutgoing`). Nothing the remote has is rewritten. Safe to repeat. Call with no agent working.
+   */
+  async cleanForShip(id: string): Promise<Task> {
+    const task = this.get(id);
+    const projects = await this.deps.projects.infos();
+    const published = async (repo: TaskRepo): Promise<string | undefined> =>
+      trackingRefOf(repo.source, repo.branch);
+    const renames: { repo: TaskRepo; wanted: string }[] = [];
+    const failed: string[] = [];
+    for (const repo of task.repos) {
+      if (!repo.createdBranch || !(await localBranchExists(repo.source, repo.branch))) continue;
+      if (repo.pushedAt !== undefined || (await published(repo)) !== undefined) continue;
+      if (!carriesTaskId(repo.branch, task.id)) continue;
+      const project = projects.find((p) => p.id === repo.project);
+      const pattern = project?.branchPattern;
+      if (pattern?.includes("{id}") === true || pattern?.includes("{ID}") === true) continue;
+      const style = pattern === undefined ? await readRepoStyle(repo.source) : undefined;
+      renames.push({
+        repo,
+        wanted: branchName({
+          id: task.id,
+          title: task.title,
+          type: typeOfBranch(repo.branch) ?? taskBranchType(task),
+          ...(pattern === undefined ? styleOptions(style?.branches ?? { kind: "default" }) : { pattern }),
+        }),
+      });
+    }
+    const names = await freeBranchesTogether(
+      renames.map((r) => r.wanted),
+      (i, name) => branchExists(renames[i]?.repo.source ?? "", name),
+    );
+    for (const [i, { repo }] of renames.entries()) {
+      const to = names[i] ?? repo.branch;
+      try {
+        await git(repo.source, ["branch", "--move", repo.branch, to]);
+        this.deps.store.tasks.setBranch(id, repo.project, to);
+        this.note(id, `${repo.project}: the branch is now ${to}, so no majhi id reaches the remote.`);
+      } catch (err) {
+        failed.push(`${repo.project}: could not rename ${repo.branch} to ${to}: ${errorMessage(err)}`);
+      }
+    }
+    if (renames.length > 0) await this.refreshBriefs([id]);
+    const identity =
+      (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+    const now = this.get(id);
+    let rewritten = false;
+    for (const repo of now.repos) {
+      if (!repo.createdBranch || !(await localBranchExists(repo.source, repo.branch))) continue;
+      try {
+        const { commits } = await readRepoStyle(repo.source);
+        const result = await cleanOutgoing({
+          source: repo.source,
+          branch: repo.branch,
+          base: repo.base,
+          stackCommit: repo.stack?.commit,
+          published: await published(repo).then((ref) => (ref === undefined ? undefined : { ref })),
+          taskId: id,
+          subject: titleFor(
+            { title: task.title, type: typeOfBranch(repo.branch) ?? taskBranchType(task) },
+            commits,
+          ),
+          identity,
+        });
+        if (result.changed) {
+          rewritten = true;
+          this.note(
+            id,
+            `${repo.project}: ${result.how === "collapsed" ? "the checkpoints were folded into one commit" : "the task trailers were removed from the commits"} before they leave majhi.`,
+          );
+        }
+      } catch (err) {
+        failed.push(`${repo.project}: could not clean the commits before they leave majhi: ${errorMessage(err)}`);
+      }
+    }
+    if (rewritten) await this.restackOnto(id);
+    // Shipping anyway would publish the task id or the checkpoints, so nothing leaves until it is clean.
+    if (failed.length > 0) {
+      for (const line of failed) this.warn(id, line);
+      throw new UserError(`Nothing was shipped. ${failed.join(" ")}`, 409);
+    }
+    return this.get(id);
+  }
+
+  /**
    * A task's branches moved (a checkpoint): rebase the tasks stacked on them (5.4a). Each takes
    * the worktree's lock first, so no agent edits while it moves. A conflict leaves the worktree
    * as it was and says which files.
@@ -2124,7 +2224,8 @@ export class TaskService {
         409,
       );
     }
-    const plan = await this.shipPlan(task, input);
+    await this.cleanForShip(task.id);
+    const plan = await this.shipPlan(this.get(task.id), input);
     await this.enforceChecks(task, plan, input.confirmChecks, input.by ?? "owner");
     if (input.deleteAfter === true) await this.assertDeletable(plan.ship.map((s) => s.repo));
     const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
@@ -2210,7 +2311,7 @@ export class TaskService {
         branch: repo.branch,
         into,
         identity,
-        message: `Merge ${task.id}: ${task.title}`,
+        message: mergeMessage(repo.branch, into),
         scratch: join(task.folder, ".merge", repo.project),
         method: input.method,
       }).catch(

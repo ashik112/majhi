@@ -6,7 +6,8 @@ import { ensureWorktreeExcludes } from "../git/worktree-excludes.ts";
 /**
  * Checkpoints (SPEC 5.7): after every turn that changed files, a WIP commit on the task branch
  * in each touched worktree, `wip(<task>): checkpoint N`, authored as the org and committed by the
- * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with signing off,
+ * agent that ran the turn, with a `Majhi-Task` trailer. They never leave majhi: `cleanOutgoing` folds them into one clean commit
+ * before the branch is first pushed or merged here. Git runs with signing off,
  * and `git` keeps hooks and filters off, so the owner's setup cannot block or prompt.
  */
 

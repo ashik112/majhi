@@ -925,6 +925,26 @@ export class TaskRepo {
       .run();
   }
 
+  /** The task's branch in this repo was renamed. Tasks stacked on it follow. */
+  setBranch(task: string, project: string, branch: string): void {
+    this.db.transaction((tx) => {
+      const old = tx
+        .select({ branch: taskRepos.branch })
+        .from(taskRepos)
+        .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+        .get()?.branch;
+      tx.update(taskRepos)
+        .set({ branch })
+        .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+        .run();
+      if (old === undefined) return;
+      tx.update(taskRepos)
+        .set({ stackBranch: branch })
+        .where(and(eq(taskRepos.stackTask, task), eq(taskRepos.stackBranch, old)))
+        .run();
+    });
+  }
+
   /** majhi merged the branch at `head` into `into`. */
   setShipped(task: string, project: string, head: string, into: string): void {
     this.db
