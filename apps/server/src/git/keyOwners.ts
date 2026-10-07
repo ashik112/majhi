@@ -10,6 +10,13 @@ import type { Probe } from "../orgs/gitAccount.ts";
 export interface KeyOwner {
   account: string;
   fingerprints: ReadonlySet<string> | undefined;
+  /** `workspace/repo` of the SSH remote `reach` tries, when the account's projects have one. */
+  target?: string;
+  /**
+   * Whether the key of an SSH alias (undefined: the host's own key) can read the target repo. Read-only.
+   * The fallback when the key list can't be read: a key that reaches the workspace's repo is its account's.
+   */
+  reach?: (alias: string | undefined) => Promise<boolean>;
 }
 
 /** `SHA256:` plus the unpadded base64 of the SHA-256 of the key's wire bytes, as `ssh-keygen -l` prints it. */
@@ -55,17 +62,22 @@ export async function bitbucketKeyFingerprints(
 }
 
 /**
- * Turns the accepted keys that name no account into logins, when exactly the fingerprint is on an
- * account's key list. Keys no listed account owns stay in `keys`.
+ * Turns the accepted keys that name no account into logins: when the fingerprint is on an account's key
+ * list, or, for an account whose list can't be read, when the key reaches one of its repos.
+ * Keys no account owns stay in `keys`.
  */
-export function resolveKeys(found: GitHostLogins, owners: readonly KeyOwner[]): GitHostLogins {
+export async function resolveKeys(found: GitHostLogins, owners: readonly KeyOwner[]): Promise<GitHostLogins> {
   if (found.keys === undefined || found.keys.length === 0) return found;
   const logins: GitLogin[] = [...found.logins];
   const rest: GitAcceptedKey[] = [];
   for (const key of found.keys) {
     const fp = key.fingerprint === undefined ? undefined : normalize(key.fingerprint);
-    const owner = fp === undefined ? undefined : owners.find((o) => o.fingerprints?.has(fp) === true);
-    if (fp === undefined || owner === undefined) {
+    let owner = fp === undefined ? undefined : owners.find((o) => o.fingerprints?.has(fp) === true);
+    for (const o of owners) {
+      if (owner !== undefined) break;
+      if (o.fingerprints === undefined && (await o.reach?.(key.alias)) === true) owner = o;
+    }
+    if (owner === undefined) {
       rest.push(key);
       continue;
     }
@@ -73,7 +85,7 @@ export function resolveKeys(found: GitHostLogins, owners: readonly KeyOwner[]): 
       via: "ssh",
       ...(key.alias === undefined ? {} : { alias: key.alias }),
       account: owner.account,
-      fingerprint: fp,
+      ...(fp === undefined ? {} : { fingerprint: fp }),
     });
   }
   const { keys: _dropped, ...base } = found;

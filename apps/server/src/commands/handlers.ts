@@ -43,7 +43,7 @@ import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
-import { hostNameOf } from "../mrs/remote.ts";
+import { hostNameOf, repoSlug, rewriteRemoteUrl } from "../mrs/remote.ts";
 import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
 import { opsHandlers } from "../ops/handlers.ts";
 import {
@@ -85,6 +85,8 @@ const SSH_CALL_TIMEOUT_MS = 40_000;
 
 /** `gh auth token` is quick, but the helper may be busy. */
 const GIT_TOKEN_TIMEOUT_MS = 20_000;
+/** A read-only `git ls-remote` over SSH, to see whether a key reaches a repo. */
+const REACH_TIMEOUT_MS = 20_000;
 
 /** Writing the key file is quick: the helper answers before it restarts majhi. */
 const KEY_RESTORE_TIMEOUT_MS = 30_000;
@@ -175,35 +177,73 @@ export function createHandlers({
   const readSaved = async (host: string, account: string) =>
     (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret;
   /**
-   * The SSH keys registered on each Bitbucket account the orgs have a token for, so an accepted key that
-   * names no account can be tied to one by fingerprint. Cached with the other status checks.
+   * One SSH remote of the org's projects on the host, to prove a key reaches the workspace: the one in the
+   * account's own workspace when there is one. `url` is reached through the key's alias, when it has one.
+   */
+  const sshTargetOf = async (org: string, host: string, account: string) => {
+    const aliases = await sshConfigHosts(config.paths.hostHome).catch(() => []);
+    const projects = (await services.projects.infos()).filter((p) => p.org === org && p.exists);
+    const found: Array<{ url: string; slug: string }> = [];
+    for (const p of projects) {
+      const meta = await readGitMeta(p.path).catch(() => undefined);
+      for (const remote of meta?.remotes ?? []) {
+        const name = hostNameOf(remote.url)?.toLowerCase();
+        if (name === undefined || /^https?:\/\//i.test(remote.url)) continue;
+        const real = aliases.find((x) => x.alias.toLowerCase() === name)?.hostName?.toLowerCase() ?? name;
+        if (real === host) found.push({ url: remote.url, slug: repoSlug(remote.url) });
+      }
+    }
+    return (
+      found.find((f) => f.slug.split("/")[0]?.toLowerCase() === account.toLowerCase()) ?? found[0]
+    );
+  };
+  /**
+   * The Bitbucket accounts of the orgs, each with the fingerprints of the SSH keys registered on it (when
+   * its token can list them) and a read-only reach check, so an accepted key that names no account can be
+   * tied to one. Cached with the other status checks.
    */
   const keyOwnersOf = async (host: string): Promise<KeyOwner[]> => {
     if (classifyHost(host) !== "bitbucket") return [];
     const orgs = (await config.sections()).orgs;
-    const seen = new Map<string, string>();
-    for (const org of Object.values(orgs)) {
-      for (const a of org.git_accounts ?? []) {
-        const ref = a.token ?? org.mr_tokens?.bitbucket;
-        if (a.host === host && ref !== undefined && !seen.has(a.account.toLowerCase() + "\n" + ref)) {
-          seen.set(a.account.toLowerCase() + "\n" + ref, a.account);
-        }
-      }
-    }
+    const accounts = Object.entries(orgs).flatMap(([org, o]) =>
+      (o.git_accounts ?? [])
+        .filter((a) => a.host === host)
+        .map((a) => ({ org, account: a.account, ref: a.token ?? o.mr_tokens?.bitbucket })),
+    );
     return Promise.all(
-      [...seen.entries()].map(async ([id, account]): Promise<KeyOwner> => {
-        const ref = id.split("\n")[1] ?? "";
-        const fingerprints = await gitChecks.get(`keys\n${host}\n${id}`, async () => {
-          const value = await services.gitConnect.tokens.value(ref).catch(() => undefined);
-          if (value === undefined) return undefined;
-          const request = tokenRequest(host, "bitbucket", account, value, { stored: true });
-          const me = await fetchProbe(request.url, request.headers).catch(() => undefined);
-          const uuid = (me?.body as { uuid?: unknown } | undefined)?.uuid;
-          return typeof uuid === "string"
-            ? bitbucketKeyFingerprints(fetchProbe, request.headers, uuid)
-            : undefined;
-        });
-        return { account, fingerprints };
+      accounts.map(async ({ org, account, ref }): Promise<KeyOwner> => {
+        const fingerprints =
+          ref === undefined
+            ? undefined
+            : await gitChecks.get(`keys\n${host}\n${account.toLowerCase()}\n${ref}`, async () => {
+                const value = await services.gitConnect.tokens.value(ref).catch(() => undefined);
+                if (value === undefined) return undefined;
+                const request = tokenRequest(host, "bitbucket", account, value, { stored: true });
+                const me = await fetchProbe(request.url, request.headers).catch(() => undefined);
+                const uuid = (me?.body as { uuid?: unknown } | undefined)?.uuid;
+                return typeof uuid === "string"
+                  ? bitbucketKeyFingerprints(fetchProbe, request.headers, uuid)
+                  : undefined;
+              });
+        if (fingerprints !== undefined) return { account, fingerprints };
+        const target = await sshTargetOf(org, host, account);
+        if (target === undefined) return { account, fingerprints };
+        return {
+          account,
+          fingerprints,
+          target: target.slug,
+          reach: (alias) =>
+            gitChecks.get(`reach\n${host}\n${org}\n${account.toLowerCase()}\n${alias ?? ""}`, () =>
+              hostLink
+                .call(
+                  "git.lsRemote",
+                  { url: rewriteRemoteUrl(target.url, alias ?? host), auth: { kind: "ssh" } },
+                  REACH_TIMEOUT_MS,
+                )
+                .then(() => true)
+                .catch(() => false),
+            ),
+        };
       }),
     );
   };

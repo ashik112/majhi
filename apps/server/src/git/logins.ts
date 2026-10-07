@@ -53,7 +53,7 @@ export class GitLoginService {
           value.hosts.map(async (h) =>
             h.keys === undefined || this.owners === undefined
               ? h
-              : resolveKeys(h, await this.owners(h.host).catch(() => [])),
+              : await resolveKeys(h, await this.owners(h.host).catch(() => [])),
           ),
         );
         const resolved = { ...value, hosts };
