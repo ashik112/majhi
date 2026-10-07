@@ -44,7 +44,7 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
@@ -847,6 +847,18 @@ export class TaskRepo {
       .set({ shippedHead: head, shippedInto: into })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
+  }
+
+  /** The tasks that have work landed since `since` (UTC ISO), newest first. */
+  landedSince(since: string): string[] {
+    return this.db
+      .selectDistinct({ task: taskRepos.task, at: taskRepos.landedAt })
+      .from(taskRepos)
+      .where(and(isNotNull(taskRepos.landedAt), gte(taskRepos.landedAt, since)))
+      .orderBy(desc(taskRepos.landedAt))
+      .all()
+      .map((r) => r.task)
+      .filter((id, i, all) => all.indexOf(id) === i);
   }
 
   /** The commits the work of tasks landed in on a project's branches, newest first, with the task. */

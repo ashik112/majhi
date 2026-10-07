@@ -23,18 +23,35 @@ export interface DeployFacts {
   rest?: string | undefined;
 }
 
-/** The sentence that says why this deploy may not start, or undefined when it may. */
-export function deployRefusal(f: DeployFacts): string | undefined {
-  if (f.tip === undefined) return "majhi could not read the project's base branch.";
+/** Why a deploy may not start: the sentence, and which guard said it, so a trail can tell waiting from blocked. */
+export interface DeployRefusal {
+  kind: "unreadable" | "moved" | "unverified" | "previous" | "rest";
+  why: string;
+}
+
+/** The refusal of the first guard that stops this deploy, or undefined when it may start. */
+export function deployRefusal(f: DeployFacts): DeployRefusal | undefined {
+  if (f.tip === undefined)
+    return { kind: "unreadable", why: "majhi could not read the project's base branch." };
   if (f.commit !== f.tip) {
-    return `The base branch is at ${f.tip.slice(0, 7)} now, not at ${f.commit.slice(0, 7)}. Only the head of the base branch is deployed.`;
+    return {
+      kind: "moved",
+      why: `The base branch is at ${f.tip.slice(0, 7)} now, not at ${f.commit.slice(0, 7)}. Only the head of the base branch is deployed.`,
+    };
   }
   if (!f.landed && f.checksConfigured && !(f.actor === "owner" && f.confirmUnchecked)) {
-    return `${f.commit.slice(0, 7)} was not merged by a task whose checks passed, so it has not been verified.`;
+    return {
+      kind: "unverified",
+      why: `${f.commit.slice(0, 7)} was not merged by a task whose checks passed, so it has not been verified.`,
+    };
   }
   const waiting = f.before.find((b) => !b.live);
-  if (waiting !== undefined) return `${waiting.env} is not live at ${f.commit.slice(0, 7)} yet.`;
-  if (f.actor === "captain" && f.rest !== undefined) return `The captain rests: ${f.rest}`;
+  if (waiting !== undefined) {
+    return { kind: "previous", why: `${waiting.env} is not live at ${f.commit.slice(0, 7)} yet.` };
+  }
+  if (f.actor === "captain" && f.rest !== undefined) {
+    return { kind: "rest", why: `The captain rests: ${f.rest}` };
+  }
   return undefined;
 }
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeployStepStateSchema } from "./deploy.ts";
+import { DeployAskSchema, DeployStepStateSchema } from "./deploy.ts";
 import { HandoffStepIdSchema } from "./handoff.ts";
 import { IdSchema, TaskIdSchema } from "./ids.ts";
 import { CiStateSchema, MrStateSchema } from "./mr-state.ts";
@@ -143,5 +143,7 @@ export const TaskDetailSchema = z.object({
   trail: TrailSchema,
   /** Who ships it, for a task in review or with a merge request open. */
   ship: ShipViewSchema.optional(),
+  /** The deploy that waits for the owner, when one does. */
+  deployAsk: DeployAskSchema.optional(),
 });
 export type TaskDetail = z.infer<typeof TaskDetailSchema>;

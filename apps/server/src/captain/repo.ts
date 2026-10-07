@@ -100,6 +100,7 @@ function actionOf(r: ActionRow): StoredAction | undefined {
     ...(r.decision === null ? {} : { decision: r.decision }),
     outcome: r.outcome,
     ...(undo === undefined ? {} : { undo }),
+    ...(undoData?.kind === "rollback" ? { undoWord: "roll-back" } : {}),
     ...(r.undo_note === null ? {} : { undoNote: r.undo_note }),
     ...(r.undone_at === null ? {} : { undoneAt: r.undone_at }),
   });

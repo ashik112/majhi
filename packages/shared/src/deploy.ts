@@ -327,24 +327,47 @@ export function deployStepOfRecord(r: DeployRecord): DeployStepView {
   };
 }
 
+/**
+ * The question the task page asks when a deploy waits for the owner: "Deploy to production? Staging is healthy
+ * at a1b2c3d. The fix is 38 lines." Read now from the steps and the record of the environment before it.
+ */
+export const DeployAskSchema = z.object({
+  project: IdSchema,
+  env: EnvNameSchema,
+  commit: z.string(),
+  /** The environment before this one, when it is live at the commit. */
+  after: EnvNameSchema.optional(),
+  /** The size of the change, when the diff can say. */
+  lines: z.number().int().nonnegative().optional(),
+});
+export type DeployAsk = z.infer<typeof DeployAskSchema>;
+
 // ---------------------------------------------------------------------------
 // Suggestions
 
 /**
- * A target majhi found in the project, offered with one click. Derived on every read from the
- * repo's files and the workspace's connections; never copied into the project card or the wiki.
+ * A target majhi found in the project, offered to the owner. Derived on every read from the repo's files and
+ * the workspace's connections; never copied into the project card or the wiki. `target` is set when nothing
+ * is left to write, so one click saves it. Otherwise the form opens with what is known.
  */
 export const DeploySuggestionSchema = z.object({
   /** Stable for the same finding, so a hidden suggestion stays hidden. */
-  id: z.string(),
+  id: z.string().min(1).max(200),
   env: EnvNameSchema,
-  via: DeployViaSchema,
-  verify: DeployVerifySchema,
-  rollback: DeployRollbackSchema,
+  kind: z.enum(["github-workflow", "gitlab-pipeline", "vercel", "ssh"]),
   /** What it was found in: ".github/workflows/deploy.yml". */
   found: z.string(),
   /** In words: "has workflow_dispatch". */
   because: z.string(),
+  /** The workspace's connection that fits, when there is one. */
+  connection: IdSchema.optional(),
+  workflow: z.string().optional(),
+  project: z.string().optional(),
+  /** A watch of the workspace that looks at the same address, offered as the check. */
+  watch: z.string().optional(),
+  /** What is missing for a one-click target, in a few words: "A health address". */
+  needs: z.string().optional(),
+  target: DeployTargetSchema.optional(),
 });
 export type DeploySuggestion = z.infer<typeof DeploySuggestionSchema>;
 

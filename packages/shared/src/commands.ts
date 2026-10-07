@@ -119,6 +119,18 @@ import {
 } from "./containers.ts";
 import { ConversationListSchema, ConversationMarkReadInputSchema } from "./conversations.ts";
 import {
+  DeployHideInputSchema,
+  DeployHoldInputSchema,
+  DeployInputSchema,
+  DeployRecordSchema,
+  DeployRemoveInputSchema,
+  DeployResultSchema,
+  DeploySetInputSchema,
+  DeployViewInputSchema,
+  ProjectDeployViewSchema,
+  RollbackInputSchema,
+} from "./deploy.ts";
+import {
   DecisionLabelSchema,
   EvalInputSchema,
   EvalReportSchema,
@@ -1684,6 +1696,53 @@ export const commands = {
       branch: LocalBranchSchema.optional(),
     }),
     output: ProjectFetchResultSchema,
+  },
+  "projects.deployView": {
+    risk: "read",
+    summary:
+      "Where a project is deployed: its targets in the order they go live, the targets majhi found in the project to confirm with one click, and the deploys so far, newest first",
+    input: DeployViewInputSchema,
+    output: ProjectDeployViewSchema,
+  },
+  "projects.setDeploy": {
+    risk: "change",
+    summary:
+      "Add or change one deploy target of a project (an environment, how it is deployed through a connection of the project's workspace, how it is checked and how it goes back). A new environment goes last",
+    input: DeploySetInputSchema,
+    output: ProjectDeployViewSchema,
+  },
+  "projects.removeDeploy": {
+    risk: "change",
+    summary: "Remove one deploy target of a project. Its earlier deploys stay in the history",
+    input: DeployRemoveInputSchema,
+    output: ProjectDeployViewSchema,
+  },
+  "projects.hideDeploySuggestion": {
+    risk: "change",
+    summary: "Stop offering one deploy target majhi found in a project",
+    input: DeployHideInputSchema,
+    output: ProjectDeployViewSchema,
+  },
+  "projects.deploy": {
+    risk: "outbound",
+    summary:
+      "Deploy the head of a project's base branch to one of its targets with that target's connection, follow the run until it ends, then check it. A failed run or check rolls back at once, opens an incident task and tells the owner. The same target and commit twice is one deploy. Never run by an agent",
+    input: DeployInputSchema,
+    output: DeployResultSchema,
+  },
+  "projects.rollback": {
+    risk: "outbound",
+    summary:
+      "Go back: run the target's rollback for a deploy that is live, or whose own rollback did not work. Only the newest live deploy of a target can be rolled back",
+    input: RollbackInputSchema,
+    output: DeployResultSchema,
+  },
+  "projects.holdDeploy": {
+    risk: "change",
+    summary:
+      "Hold a commit back from a target: no rule deploys it there until the owner deploys it. For the Deploy to production question on a task",
+    input: DeployHoldInputSchema,
+    output: DeployRecordSchema,
   },
   "projects.remove": {
     risk: "change",

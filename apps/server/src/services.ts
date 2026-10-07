@@ -91,6 +91,7 @@ import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
+import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -266,6 +267,13 @@ export interface ServiceOptions {
   containerDocker?: ContainerDocker;
   /** Replaces ssh for majhi-connections, so tests never reach a host. */
   connectionsRemote?: RemoteRunFn;
+  /** Replaces the network, ssh, Vercel's address and the waits of deploys, so tests and proofs reach only fakes. */
+  deploy?: {
+    fetch?: Fetch;
+    remote?: RemoteRunFn;
+    vercelApi?: string;
+    timing?: Partial<DeployTiming>;
+  };
   /** How long after a turn ends a silent room is looked at. Default `IDLE_CHECK_MS`. */
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
@@ -292,6 +300,8 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
+  /** Deploy targets, deploy records and what follows a deploy. */
+  deploy: DeployWorld;
   config: ConfigService;
   runtime: AcpRuntime;
   secrets: SecretStore;
@@ -1106,6 +1116,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onMerged: (merge) => {
       cards.onMerged(merge.project);
+      const merged = store.tasks.get(merge.task);
+      if (merged !== undefined) captainRef.current?.deployChanged(merged.org ?? PRIVATE);
     },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
@@ -1277,6 +1289,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tasks,
     working: (id) => runs.working(id).length > 0,
     captainMerges: (task) => captainMerges(task.id),
+    landed: (id) => {
+      const merged = store.tasks.get(id);
+      if (merged !== undefined) captainRef.current?.deployChanged(merged.org ?? PRIVATE);
+    },
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
@@ -1848,6 +1864,44 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     zone: zoneOr,
     now: () => new Date(),
   });
+  // Deploys: targets live in each project's config, records in one table, and the trail is derived. The
+  // connections and the watch engine are built below; each is read only when a deploy asks.
+  const deployWorld = createDeploy({
+    store,
+    config,
+    projects,
+    tasks,
+    ship: shipPlanner,
+    credentials: {
+      connections: { find: (id) => connections.find(id) },
+      secrets,
+      gitToken: async (org, provider, host) =>
+        gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
+    },
+    watch: async (org, id) => {
+      const view = await opsEngine?.checkNow(id);
+      if (view === undefined) return { ok: false, detail: "the watch is not ready" };
+      if (view.org !== org) return { ok: false, detail: "it belongs to another workspace" };
+      return { ok: view.status === "ok", detail: view.word === "" ? view.status : view.word };
+    },
+    watches: async (org) =>
+      ((await opsEngine?.overview(org))?.watches ?? []).map((w) => ({
+        id: w.id,
+        name: w.def.name,
+        ...(w.def.spec.kind === "website" ? { url: w.def.spec.url } : {}),
+      })),
+    checksConfigured: (project) => {
+      const commands = cards.get(project)?.commands ?? {};
+      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
+    },
+    tellOwner: (key, text) => notifier.captain(key, text),
+    onLive: (org) => captainRef.current?.deployChanged(org),
+    changed: () => events.emit(["tasks", "projects", "captain"]),
+    fetch: options.deploy?.fetch,
+    remote: options.deploy?.remote ?? options.connectionsRemote,
+    vercelApi: options.deploy?.vercelApi,
+    timing: options.deploy?.timing,
+  });
   /** The merge request timer, the lane and the chore merge a task's requests only when this says so. */
   async function captainMerges(task: string): Promise<{ yes: true } | { yes: false; why: string }> {
     const plan = await shipPlanner.plan(task);
@@ -1922,6 +1976,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       dispatch: () => captainDispatch,
       handoff: () => handoffService,
       ship: shipPlanner,
+      deploys: deployWorld.ports,
     }),
     tell: (key, text) => notifier.captain(key, text),
     cancelTurn: async (chat) => {
@@ -2632,8 +2687,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
+    deploy: deployWorld,
     taskDetails: new TaskDetails({
       store,
+      deploys: deployWorld.planner,
       handoff: (id) => handoff.state(id),
       areas: areasReader,
       ship: (id) => shipPlanner.plan(id),

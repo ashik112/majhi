@@ -30,7 +30,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     trigger: { cadence: HOURLY, events: ["A task reaches review"] },
     inputs: ["Tasks in review", "Their diffs and checks", "The workspace's allowed branches"],
     steps:
-      "For each task in review: check it is committed, merges cleanly, has no card waiting and no secret in the diff. Where Merge is Captain, merge it and push by the Push row. Where it is You, ask with one ready-to-ship card.",
+      "For each task in review: check it is committed, merges cleanly, has no card waiting and no secret in the diff. Where Merge is Captain, merge it and push by the Push row. Where it is You, ask with one ready-to-ship card. For merged work whose project has a deploy target, start the deploys the rules give the captain, staging before production, and leave the others for you.",
     outputs: ["decision", "log"],
     cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Ships finished work by the Merge and Push rows in Delegation.",
@@ -48,6 +48,14 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       { id: "ship-checks", text: "Checks fail: send the exact failures to the lead, ask me after 3 tries" },
       { id: "ship-conflict", text: "Conflicts with main: ask the lead to resolve it, then try again" },
       { id: "ship-notready", text: "Not committed, a card waits or a secret in the diff: tell me why" },
+      {
+        id: "ship-deploy",
+        text: "Work is merged and its project has a deploy target the rules give the captain: deploy it, check it, roll back if it fails",
+      },
+      {
+        id: "ship-deploy-ask",
+        text: "Work is merged and a deploy is yours by the rules: leave it on the task for my click",
+      },
     ],
     runner: { kind: "chore", chore: "ship" },
   }),

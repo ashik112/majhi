@@ -159,22 +159,9 @@ export class DeployRepo {
     patch: DeployPatch = {},
   ): DeployRecord | undefined {
     if (!deployMayMove(from, to)) throw new Error(`A deploy cannot go from ${from} to ${to}.`);
-    const sets = ["state = ?", "updated_at = ?"];
-    const values: (string | number | null)[] = [to, at];
-    const set = (column: string, value: string | number | null) => {
-      sets.push(`${column} = ?`);
-      values.push(value);
-    };
-    if (patch.run !== undefined) set("run", JSON.stringify(patch.run));
-    if (patch.check !== undefined) set("check_result", JSON.stringify(patch.check));
-    if (patch.reason !== undefined) set("reason", patch.reason);
-    if (patch.rollback !== undefined) set("rollback", JSON.stringify(patch.rollback));
-    if (patch.incident !== undefined) set("incident", patch.incident);
-    if (patch.previous !== undefined) set("previous", patch.previous);
-    if (patch.by !== undefined) set("by", patch.by);
-    if (patch.task !== undefined) set("task", patch.task);
-    if (patch.unchecked !== undefined) set("unchecked", patch.unchecked ? 1 : 0);
-    if (patch.finished === true) set("finished_at", at);
+    const { sets, values } = setsOf(patch, at);
+    sets.unshift("state = ?");
+    values.unshift(to);
     // A retry starts a new attempt from a clean record: what the last one found is not this one's.
     if ((from === "failed" || from === "rolled-back") && to === "queued") {
       sets.push("attempt = attempt + 1", "finished_at = NULL");
@@ -190,23 +177,11 @@ export class DeployRepo {
     return done.changes === 0 ? undefined : this.get(id);
   }
 
-  /** Sets what a record carries without moving it (the run link, the incident). */
-  note(id: number, at: string, patch: Pick<DeployPatch, "run" | "incident" | "reason">): void {
-    const sets = ["updated_at = ?"];
-    const values: (string | null)[] = [at];
-    if (patch.run !== undefined) {
-      sets.push("run = ?");
-      values.push(JSON.stringify(patch.run));
-    }
-    if (patch.incident !== undefined) {
-      sets.push("incident = ?");
-      values.push(patch.incident);
-    }
-    if (patch.reason !== undefined) {
-      sets.push("reason = ?");
-      values.push(patch.reason);
-    }
+  /** Sets what a record carries without moving it (the run link, the rollback, the incident). */
+  annotate(id: number, at: string, patch: DeployPatch): DeployRecord | undefined {
+    const { sets, values } = setsOf(patch, at);
     this.sqlite.prepare(`UPDATE deploys SET ${sets.join(", ")} WHERE id = ?`).run(...values, id);
+    return this.get(id);
   }
 
   private rows(sql: string, ...args: (string | number)[]): DeployRecord[] {
@@ -252,4 +227,24 @@ function record(row: Row): DeployRecord | undefined {
     ...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
   });
   return parsed.success ? parsed.data : undefined;
+}
+
+function setsOf(patch: DeployPatch, at: string): { sets: string[]; values: (string | number | null)[] } {
+  const sets = ["updated_at = ?"];
+  const values: (string | number | null)[] = [at];
+  const set = (column: string, value: string | number | null) => {
+    sets.push(`${column} = ?`);
+    values.push(value);
+  };
+  if (patch.run !== undefined) set("run", JSON.stringify(patch.run));
+  if (patch.check !== undefined) set("check_result", JSON.stringify(patch.check));
+  if (patch.reason !== undefined) set("reason", patch.reason);
+  if (patch.rollback !== undefined) set("rollback", JSON.stringify(patch.rollback));
+  if (patch.incident !== undefined) set("incident", patch.incident);
+  if (patch.previous !== undefined) set("previous", patch.previous);
+  if (patch.by !== undefined) set("by", patch.by);
+  if (patch.task !== undefined) set("task", patch.task);
+  if (patch.unchecked !== undefined) set("unchecked", patch.unchecked ? 1 : 0);
+  if (patch.finished === true) set("finished_at", at);
+  return { sets, values };
 }

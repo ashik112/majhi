@@ -10,7 +10,13 @@ import {
 import { errorMessage, UserError } from "../errors.ts";
 import type { DeployRepo } from "../store/deploys.ts";
 import type { DeployGit } from "./git.ts";
-import { deployIsUnchecked, deployRefusal, rollbackProblem, targetsBefore } from "./guards.ts";
+import {
+  type DeployRefusal,
+  deployIsUnchecked,
+  deployRefusal,
+  rollbackProblem,
+  targetsBefore,
+} from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
 import { runRollbackCommand } from "./ssh.ts";
 import {
@@ -81,6 +87,8 @@ export interface DeployDeps {
   }): void;
   /** Something about deploys changed: screens read again. */
   changed(): void;
+  /** A deploy went live: the next environment of the project may go now. */
+  onLive?: (record: DeployRecord) => void;
   now(): Date;
   sleep(ms: number): Promise<void>;
   /** Time between looks at a run, and between looks of the check. */
@@ -94,7 +102,7 @@ export type DeployActor = DeployRecord["by"];
 
 /** What a decision to deploy says before anything starts: the sentence that stops it, or what it would run with. */
 export type Evaluated =
-  | { ok: false; why: string }
+  | { ok: false; why: string; kind: DeployRefusal["kind"] | "setup" }
   | { ok: true; project: DeployProject; target: DeployTarget; ctx: DeployContext; unchecked: boolean };
 
 /** Calls to a provider that fail this many times in a row end the follow: what the run did is not known. */
@@ -116,18 +124,21 @@ export class DeployService {
   async evaluate(input: DeployInput, actor: DeployActor, rest?: string): Promise<Evaluated> {
     const project = await this.deps.projects.get(input.project);
     const target = project.targets.find((t) => t.env === input.env);
-    if (target === undefined) return { ok: false, why: `${project.id} has no ${input.env} target.` };
+    if (target === undefined)
+      return { ok: false, kind: "setup", why: `${project.id} has no ${input.env} target.` };
     if (input.task !== undefined) {
       const task = this.deps.tasks.get(input.task);
       if ((task?.org ?? PRIVATE) !== project.org) {
-        return { ok: false, why: `${input.task} is not in the workspace of ${project.id}.` };
+        return { ok: false, kind: "setup", why: `${input.task} is not in the workspace of ${project.id}.` };
       }
     }
     const base = project.base;
-    if (base === undefined) return { ok: false, why: `${project.id} has no base branch.` };
+    if (base === undefined) return { ok: false, kind: "setup", why: `${project.id} has no base branch.` };
     const tip = await this.deps.git.tip(project.path, base);
     const commit = input.commit ?? tip;
-    if (commit === undefined) return { ok: false, why: "majhi could not read the project's base branch." };
+    if (commit === undefined) {
+      return { ok: false, kind: "unreadable", why: "majhi could not read the project's base branch." };
+    }
     const facts = {
       actor,
       commit,
@@ -141,8 +152,8 @@ export class DeployService {
       })),
       rest,
     };
-    const why = deployRefusal(facts);
-    if (why !== undefined) return { ok: false, why };
+    const refused = deployRefusal(facts);
+    if (refused !== undefined) return { ok: false, ...refused };
     return {
       ok: true,
       project,
@@ -448,6 +459,7 @@ export class DeployService {
     if (live === undefined) return;
     this.audit(live, true, `Live: ${result.detail}`);
     this.deps.changed();
+    this.deps.onLive?.(live);
   }
 
   private verify(ctx: DeployContext): Promise<{ ok: boolean; detail: string }> {

@@ -334,6 +334,63 @@ export function createChores(
     return seen;
   };
 
+  /**
+   * Merged work with a deploy target (SPEC 5.18, "One way to ship"): the steps the ship rules give the
+   * captain are started, one record per target and commit, so a second look changes nothing. A step the
+   * rules leave to the owner is said once in the log and waits on the task's trail for their click.
+   */
+  const deployPass = async (run: ChoreRun): Promise<void> => {
+    const deploys = ports.deploys;
+    if (deploys === undefined) return;
+    const { org, ws } = run;
+    for (const step of await deploys.next(org)) {
+      run.check();
+      const where = `${step.project} to ${step.env}`;
+      const key = `deploy:${step.project}:${step.env}:${step.commit}`;
+      const present = away(step.task);
+      if (present !== undefined) {
+        run.note(`${key}:presence`, `Waiting on ${step.task}`, present, step.task);
+        continue;
+      }
+      const what = step.env === "production" ? "Deploy production" : "Deploy staging";
+      if (step.who === "owner") {
+        if (ruleOff(run, "ship-deploy-ask")) continue;
+        await run.act({
+          key: `${key}:asked`,
+          text: `Left the deploy of ${where} for you: ${step.title}`,
+          reason:
+            step.rule === undefined
+              ? `In ${ws.name} ${what} is the owner's`
+              : `In ${ws.name} the rule for ${lowerFirst(step.rule)} leaves ${what} to you`,
+          task: step.task,
+          do: async () => ({ outcome: "asked", undoNote: "A step for you on the task: nothing to undo" }),
+        });
+        continue;
+      }
+      if (ruleOff(run, "ship-deploy")) continue;
+      await run.act({
+        key,
+        text: `Started the deploy of ${where}: ${step.title}`,
+        reason:
+          step.rule === undefined
+            ? `In ${ws.name} the captain decides ${what.toLowerCase()}`
+            : `In ${ws.name} the rule for ${lowerFirst(step.rule)} lets the captain ${what.toLowerCase()}`,
+        evidence: `Commit ${step.commit.slice(0, 7)}, merged and checked`,
+        task: step.task,
+        irreversible: true,
+        recheck: async () => away(step.task) ?? (await deploys.recheck(org, step)),
+        do: async () => {
+          const { record, repeat } = await deploys.deploy(org, step);
+          if (repeat) return { repeat: true };
+          return {
+            text: `Started the deploy of ${where}: ${step.title}. majhi follows the run and checks it`,
+            undo: { kind: "rollback" as const, record: record.id },
+          };
+        },
+      });
+    }
+  };
+
   return {
     ...createUpkeepChores(ports),
     ...createWikiChore(ports),
@@ -461,6 +518,7 @@ export function createChores(
           do: () => ports.ship(org, t.id, { push }, reason),
         });
       }
+      await deployPass(run);
     },
 
     async cards(run) {

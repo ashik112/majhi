@@ -41,7 +41,7 @@ import { askedSentence } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
 import { answerFor, widenedNote } from "./permission-rules.ts";
-import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
+import type { ApprovalCard, CaptainPorts, DeployPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { upkeepWorld } from "./upkeep-world.ts";
 
@@ -87,6 +87,8 @@ export interface WorldDeps {
   dispatch: () => Dispatch | undefined;
   /** Who does each step of shipping a task: the one decision the chore, the lane and the poller read. */
   ship: Pick<ShipPlanner, "plan">;
+  /** Deploying merged work, from the deploy service. Absent: the ship chore deploys nothing. */
+  deploys?: DeployPorts | undefined;
   /** The checked hand-off, bound once the server made it. Absent: ship readiness is the cheap checks only. */
   handoff?: (() => HandoffService | undefined) | undefined;
 }
@@ -229,6 +231,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     },
 
     shipPlan: (_org, id) => deps.ship.plan(id),
+    ...(deps.deploys === undefined ? {} : { deploys: deps.deploys }),
 
     async shipCheck(_org, id, except): Promise<ShipCheck> {
       const base = await shipReadiness(deps, id, except);

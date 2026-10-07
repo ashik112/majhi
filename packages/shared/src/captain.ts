@@ -61,6 +61,8 @@ export const CaptainUndoSchema = z.discriminatedUnion("kind", [
       .min(1)
       .max(20),
   }),
+  /** A deploy: run the target's rollback. The log offers "Roll back" for it instead of Undo. */
+  z.object({ kind: z.literal("rollback"), record: z.number().int().positive() }),
   /** A change to majhi.yaml or the agent files: revert that commit of the config history. */
   z.object({ kind: z.literal("config"), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }),
   /** A task's priority or due date the captain set: put the old ones back. */
@@ -96,6 +98,8 @@ export const CaptainActionSchema = z.object({
   outcome: z.enum(["done", "asked", "skipped", "failed"]),
   /** `yes`: Undo works. `no`: it cannot be undone (a push, a removed worktree), with `undoNote`. `done`: undone. */
   undo: z.enum(["yes", "no", "done"]).optional(),
+  /** What the button says when Undo works: absent is "Undo", `roll-back` is a deploy's. */
+  undoWord: z.enum(["roll-back"]).optional(),
   undoNote: z.string().optional(),
   undoneAt: z.string().optional(),
 });

@@ -107,6 +107,8 @@ export interface MrDeps {
    * click does not ask. Without it the captain merges nothing.
    */
   captainMerges?: (task: Task) => Promise<{ yes: true } | { yes: false; why: string }>;
+  /** Every merge request of a task is merged and its work landed in the base: deploys may go. */
+  landed?: (task: string) => void;
   now?: () => Date;
 }
 
@@ -1660,6 +1662,7 @@ export class MrService {
         this.note(task.id, `${repo.project}: could not remove the worktree (${errorMessage(err)}).`, "error");
       }
     }
+    this.deps.landed?.(task.id);
     this.note(task.id, "Every merge request is merged. The task is done.");
     await this.deps.tasks.close(task.id, {
       whenSubtasksOpen: "stay",

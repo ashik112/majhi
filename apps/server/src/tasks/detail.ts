@@ -1,6 +1,8 @@
 import {
   buildTrail,
   type ChildFact,
+  type DeployAsk,
+  type DeployStepView,
   type HandoffState,
   type ShipView,
   type Task,
@@ -21,6 +23,8 @@ export interface DetailDeps {
   ship(id: string): Promise<ShipPlan>;
   /** The ids of a workspace's projects. */
   projectsOf(org: string): Promise<string[]>;
+  /** What happens to each deploy target of the projects the task changed, and the question for the owner. */
+  deploys?: { describe(task: Task): Promise<{ steps: readonly DeployStepView[]; ask?: DeployAsk }> };
 }
 
 /** The check of a task as the trail shows it: running or queued, else the result for the current head. Nothing when there is none. */
@@ -103,6 +107,7 @@ export class TaskDetails {
         ? await this.deps.ship(id).catch(() => undefined)
         : undefined;
     const owner = plan === undefined || task.status !== "review" ? undefined : ownerStepOf(task, plan);
+    const deployed = await this.deps.deploys?.describe(task).catch(() => undefined);
     return {
       task: id,
       ...(origin === undefined ? {} : { origin }),
@@ -111,8 +116,10 @@ export class TaskDetails {
         ...trailFactsOf(task, children),
         ...(check === undefined ? {} : { check }),
         ...(owner === undefined ? {} : { owner }),
+        ...(deployed === undefined ? {} : { deploys: deployed.steps }),
       }),
       ...(plan === undefined ? {} : { ship: shipView(plan) }),
+      ...(deployed?.ask === undefined ? {} : { deployAsk: deployed.ask }),
     };
   }
 
