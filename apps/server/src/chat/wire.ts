@@ -53,6 +53,10 @@ export interface ClientChatWiring {
   createIncident: IncidentsDeps["create"];
   /** A workspace's time zone. */
   tz: IncidentsDeps["tz"];
+  /** Moves a done incident task back to an open state through the task lifecycle. */
+  reopenIncident: IncidentsDeps["reopen"];
+  /** Tells an incident task's lead something, as majhi. */
+  askLead: IncidentsDeps["askLead"];
   decisions: LayaDecisions | undefined;
   lane: ClientChatDeps["lane"];
   deleteWebhook: ClientChatDeps["deleteWebhook"];
@@ -170,6 +174,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     settings: async (org) => effectiveIncident((await w.config.settings()).autonomy.orgs[org]?.incident),
     tz: w.tz,
     create: w.createIncident,
+    reopen: w.reopenIncident,
+    askLead: w.askLead,
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });

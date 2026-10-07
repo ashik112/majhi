@@ -1,8 +1,9 @@
 import type { OpsIncident, Task } from "@majhi/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
+import { ClientTriage, type TriageDeps } from "./triage.ts";
 
 /**
  * Tests of the incident flow: what each client room is told, and who may send the report to a client. Real rooms,
@@ -12,13 +13,14 @@ import { CONN, envelope, world } from "./testing/world.ts";
 async function setup(status: Task["status"] = "inbox") {
   const w = world({ tell: "decide", holds: { firstContact: false } });
   const watch: { incident?: OpsIncident } = {};
+  const reopened: string[] = [];
   const incidents = new ClientIncidents({
     store: w.store,
     room: w.room,
     replies: w.replies,
     gate: w.gate,
     findings: {
-      ofTask: () => [],
+      ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
       adopt: () => ({}) as never,
       get: () => ({}) as never,
       dismiss: () => ({}) as never,
@@ -31,6 +33,12 @@ async function setup(status: Task["status"] = "inbox") {
     settings: async () => ({ soakMin: 15, cadenceMin: 30 }),
     tz: async () => "UTC",
     create: async () => ({ id: "ACM-1" }),
+    reopen: async (id) => {
+      reopened.push(id);
+      // What the lifecycle's reopen does to the row: a done task is open again.
+      w.store.raw.prepare("UPDATE tasks SET status = 'inbox' WHERE id = ?").run(id);
+    },
+    askLead: async () => undefined,
     changed: () => undefined,
   });
   // Two client rooms, each with a message from a person.
@@ -67,7 +75,7 @@ async function setup(status: Task["status"] = "inbox") {
   };
   w.store.tasks.insert(task);
   for (const room of rooms) w.store.tasks.putLink({ task: task.id, type: "client", other: room });
-  return { w, incidents, rooms, task, watch };
+  return { w, incidents, rooms, task, watch, reopened };
 }
 
 describe("updates to client rooms", () => {
@@ -157,5 +165,117 @@ describe("the report to a client", () => {
     });
     await expect(incidents.sendReport("ACM-9", rooms[0] as string)).rejects.toThrow(/secret/);
     expect(w.sent).toHaveLength(before);
+  });
+});
+
+describe("a client says it is still broken after Resolved", () => {
+  it("moves the done task back through the lifecycle once, and a second report does not reopen it again", async () => {
+    const { w, incidents, rooms, reopened } = await setup("done");
+    await incidents.tick();
+    expect((await incidents.view("ACM-9"))?.status).toBe("resolved");
+
+    const room = w.rooms.room(rooms[0] as string);
+    const first = await incidents.attach(room, "ACM-9", "i1");
+    expect(first.reopened).toBe(true);
+    expect(reopened).toEqual(["ACM-9"]);
+    expect(w.store.tasks.get("ACM-9")?.status).toBe("inbox");
+    expect((await incidents.view("ACM-9"))?.status).toBe("investigating");
+
+    const second = await incidents.attach(room, "ACM-9", "i2");
+    expect(second.reopened).toBe(false);
+    expect(reopened).toEqual(["ACM-9"]);
+  });
+});
+
+describe('"any update?" from a client', () => {
+  async function ask(chat: string | undefined) {
+    const t = await setup();
+    const roomId = chat ?? (t.rooms[0] as string);
+    // A chat of the workspace that no incident is linked to.
+    const other = chat === undefined ? roomId : await t.w.linked(chat);
+    await t.w.ingest.deliver(CONN, envelope({ chatId: chat ?? "-100", message: "40", text: "Any update?" }));
+    const item = t.w.store.room
+      .page(other, 10)
+      .items.find((i) => i.type === "client" && i.external.message === "40");
+    if (item?.type !== "client") throw new Error("no message");
+    const model = vi.fn(async (_o: string, _k: string, _p: string, parse: (x: string) => never) => {
+      const parsed = parse('{"action":"update","reason":"asks how it is going"}') as {
+        ok: boolean;
+        value?: unknown;
+      };
+      return parsed.value;
+    });
+    const wiki = vi.fn(async () => ({ answer: "Guess", found: true }));
+    const deps = {
+      store: t.w.store,
+      room: t.w.room,
+      model,
+      findings: {
+        report: async () => ({ finding: { id: 1 } }),
+        dismiss: () => undefined,
+        toTask: async () => ({}),
+      },
+      replies: t.w.replies,
+      wiki,
+      rest: async () => undefined,
+      incidents: (org: string, room: string) => t.incidents.candidates(org, room),
+      incident: t.incidents,
+    } as unknown as TriageDeps;
+    const out = await new ClientTriage(deps).run(t.w.rooms.room(other), item);
+    return { t, out, wiki };
+  }
+
+  it("in a chat linked to an open incident is answered from its status, through the reply rails", async () => {
+    const { t, out, wiki } = await ask(undefined);
+    expect(out?.action).toBe("update");
+    expect(t.w.sent.at(-1)?.text).toBe(
+      "We are looking into the problem. We will tell you here when we know more.",
+    );
+    expect(wiki).not.toHaveBeenCalled();
+    // Under Tell Ask me the same answer waits instead of going out.
+    t.w.state.tell = "ask";
+    const before = t.w.sent.length;
+    await new ClientTriage({
+      store: t.w.store,
+      room: t.w.room,
+      model: async (_o: string, _k: string, _p: string, parse: (x: string) => never) =>
+        (parse('{"action":"update","reason":"asks"}') as { value?: never }).value,
+      findings: { report: async () => ({ finding: { id: 2 } }), dismiss: () => undefined },
+      replies: t.w.replies,
+      wiki,
+      rest: async () => undefined,
+      incidents: () => [],
+      incident: t.incidents,
+    } as unknown as TriageDeps).run(
+      t.w.rooms.room(t.rooms[0] as string),
+      t.w.store.room.page(t.rooms[0] as string, 10).items.find((i) => i.type === "client") as never,
+    );
+    expect(t.w.sent).toHaveLength(before);
+  });
+
+  it("counts a done task still in its soak as open, and answers Resolved once the soak has passed", async () => {
+    const t = await setup("done");
+    const now = new Date();
+    t.watch.incident = {
+      id: 1,
+      org: "acme",
+      title: "Orders down",
+      status: "resolved",
+      openedAt: new Date(now.getTime() - 3_600_000).toISOString(),
+      resolvedAt: now.toISOString(),
+    } as OpsIncident;
+    const soaking = await t.incidents.answer(t.rooms[0] as string);
+    expect(soaking?.text).not.toContain("resolved");
+    t.watch.incident = { ...t.watch.incident, resolvedAt: new Date(now.getTime() - 3_600_000).toISOString() };
+    const after = await t.incidents.answer(t.rooms[0] as string);
+    expect(after?.text).toContain("resolved");
+  });
+
+  it("in a chat with no linked incident is not answered; the owner is asked", async () => {
+    const { t } = await ask("-300");
+    expect(t.w.sent).toEqual([]);
+    const room = t.w.rooms.find("telegram", CONN.account, "-300");
+    const notes = t.w.store.room.page(room?.id ?? "", 20).items.filter((i) => i.type === "system");
+    expect(notes.some((n) => n.type === "system" && n.text.startsWith("Waits for you"))).toBe(true);
   });
 });

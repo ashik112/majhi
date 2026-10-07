@@ -177,6 +177,7 @@ describe("the triage step", () => {
       wiki: async () => ({ answer: "", found: false }),
       rest: async () => undefined,
       incidents: () => [],
+      incident: { linked: () => false, answer: async () => undefined },
     } as unknown as TriageDeps;
     return {
       w,

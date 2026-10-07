@@ -2415,6 +2415,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const a = (await config.settings()).autonomy;
       return zoneOr(a.orgs[org]?.tz ?? a.tz);
     },
+    reopenIncident: async (task) => {
+      await tasks.reopen(task);
+    },
+    askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
     decisions,
     lane: async (task) => {
       const org = lanes.orgOf(task);
