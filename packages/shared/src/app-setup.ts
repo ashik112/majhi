@@ -134,6 +134,24 @@ export const SLACK_SCOPE_USE: Readonly<Record<string, string>> = {
   "chat:write": "Post replies",
 };
 
+/** The user scopes of "Send as Me": post as the owner, and read back majhi's own posts to recognise them. */
+export const SLACK_USER_SCOPES: readonly string[] = [
+  "chat:write",
+  "channels:history",
+  "groups:history",
+  "im:history",
+  "mpim:history",
+];
+
+/** What each user scope is for, for the permissions list ("As you"). */
+export const SLACK_USER_SCOPE_USE: Readonly<Record<string, string>> = {
+  "chat:write": "Post replies",
+  "channels:history": "Recognise your posts in public channels",
+  "groups:history": "Recognise your posts in private channels",
+  "im:history": "Recognise your posts in direct messages",
+  "mpim:history": "Recognise your posts in group messages",
+};
+
 /** Every bot scope a Slack chat connection needs: reading and replying. */
 export function slackChatScopes(): string[] {
   return slackBotScopes("readwrite");
@@ -144,7 +162,7 @@ export function slackManifest(appName: string, access: ConnectAccess): Record<st
   return {
     display_information: { name: appName, description: "majhi reads and drafts for this workspace" },
     features: { bot_user: { display_name: appName, always_online: false } },
-    oauth_config: { scopes: { bot: slackBotScopes(access) } },
+    oauth_config: { scopes: { bot: slackBotScopes(access), user: [...SLACK_USER_SCOPES] } },
     settings: {
       event_subscriptions: {
         bot_events: ["message.channels", "message.groups", "message.im", "message.mpim"],

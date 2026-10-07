@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ChatChannelList, type ChatConnection, ChatSendError } from "../adapter.ts";
+import { type ChatAsYou, type ChatChannelList, type ChatConnection, ChatSendError } from "../adapter.ts";
 import {
   type SlackApi,
   SlackAuth,
@@ -30,6 +30,49 @@ function refused(err: unknown): never {
     throw new ChatSendError(err.plain, "rejected", err.needed);
   }
   throw err;
+}
+
+const USER_TOKEN_STEP =
+  "In the Slack app open OAuth & Permissions, add the User Token Scopes, press Reinstall to Workspace, then copy the User OAuth Token (it starts with xoxp-).";
+
+/**
+ * Checks the owner's User OAuth Token: Slack accepts it, it starts with xoxp-, and it belongs to the same workspace
+ * as the bot. A refusal carries the exact step that fixes it.
+ */
+export async function checkSlackUser(api: SlackApi, conn: ChatConnection): Promise<ChatAsYou> {
+  const token = conn.userToken;
+  if (token === undefined)
+    throw new ChatSendError(`No User OAuth Token is saved. ${USER_TOKEN_STEP}`, "rejected");
+  if (!token.startsWith("xoxp-"))
+    throw new ChatSendError(
+      `That is not a User OAuth Token: it must start with xoxp-. ${USER_TOKEN_STEP}`,
+      "rejected",
+    );
+  try {
+    const mine = await api.callWithHeaders("auth.test", token, {}, SlackAuth);
+    const bot = await api.call("auth.test", conn.token, {}, SlackAuth);
+    if (mine.data.team_id !== bot.team_id) {
+      throw new ChatSendError(
+        "That User OAuth Token belongs to another Slack workspace. Copy it from this app's OAuth & Permissions page, in the workspace the app is installed in.",
+        "rejected",
+      );
+    }
+    return {
+      user: mine.data.user_id,
+      name: mine.data.user ?? mine.data.user_id,
+      scopes: scopesOf(mine.headers),
+    };
+  } catch (err) {
+    if (err instanceof SlackError) {
+      if (err.badToken)
+        throw new ChatSendError(
+          `Slack does not accept that User OAuth Token. ${USER_TOKEN_STEP}`,
+          "rejected",
+        );
+      throw new ChatSendError(err.plain, "rejected", err.needed);
+    }
+    throw err;
+  }
 }
 
 /** Every channel the bot can see (public and private, not archived), the bot's name and the scopes of its token. */
@@ -75,11 +118,22 @@ export async function listSlackChannels(api: SlackApi, conn: ChatConnection): Pr
         appId = undefined;
       }
     }
+    let you: ChatChannelList["you"];
+    if (conn.userToken !== undefined) {
+      try {
+        const who = await checkSlackUser(api, conn);
+        you = { state: "ok", name: who.name, scopes: who.scopes };
+      } catch (err) {
+        if (!(err instanceof ChatSendError)) throw err;
+        you = { state: "refused", fix: err.message };
+      }
+    }
     return {
       bot: auth.data.user ?? "majhi",
       ...(appId === undefined ? {} : { appId }),
       channels,
       scopes,
+      ...(you === undefined ? {} : { you }),
     };
   } catch (err) {
     return refused(err);

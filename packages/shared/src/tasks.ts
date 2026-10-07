@@ -1019,6 +1019,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("client-reply"),
     by: z.enum(["captain", "you"]),
+    /** It went out under the owner's own account (Slack, Send as Me): drawn "You (by the captain)" when `by` is the captain. */
+    as: z.literal("you").optional(),
     text: z.string(),
     /** Contacts the text mentions as `@[contact:id]` tokens, with their names. */
     mentions: z.record(z.string(), z.string()).optional(),

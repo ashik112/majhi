@@ -86,6 +86,7 @@ export class ChatIngest {
         title: env.chat.title,
         kind: env.chat.kind,
         holder: "captain",
+        sendAs: "bot" as const,
         ...(env.chat.people === undefined ? {} : { people: env.chat.people }),
       };
       rooms.open(base);
@@ -113,7 +114,11 @@ export class ChatIngest {
           sender.name,
         )
       : undefined;
-    const us = contact?.contact.us === true;
+    // The owner's own account wrote it: majhi's own post as the owner is already in the room as a reply.
+    if (env.owner === true && this.isOurReply(room.id, env.external.message)) return;
+    const us = env.owner === true || contact?.contact.us === true;
+    if (env.owner === true && contact !== undefined && !contact.contact.us)
+      this.deps.contacts.setUs(contact.contact.id, true);
     const key = externalKeyText(env.external);
     const payload = (): Omit<ClientItem, "id" | "task" | "seq" | "at"> => ({
       type: "client",
@@ -165,6 +170,13 @@ export class ChatIngest {
       .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`))
       .finally(() => this.pending.delete(work));
     this.pending.add(work);
+  }
+
+  /** Whether a message of the chat is one majhi sent (a reply of the room with that message id). */
+  private isOurReply(room: string, message: string): boolean {
+    return this.deps.store.room
+      .page(room, 200)
+      .items.some((i) => i.type === "client-reply" && i.external?.message === message);
   }
 
   /** The contact a mention names: by the app's user id, else by its handle. Someone majhi never saw stays words. */
