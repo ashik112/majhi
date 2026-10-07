@@ -68,6 +68,18 @@ export function Crumbs({
               <OriginMark origin={origin} />
               <span className={cn("font-mono text-xs", fit === "tight" && "hidden")}>{origin.task}</span>
             </Link>
+          ) : origin.kind === "chat" ? (
+            <Link
+              to="/chats/$taskId"
+              params={{ taskId: origin.room }}
+              title={`From the chat ${originName(origin)}`}
+              className="flex min-w-0 shrink items-center gap-1.5 rounded-xs text-sm text-fg-soft hover:text-fg"
+            >
+              <OriginMark origin={origin} />
+              <span className={cn("truncate", fit === "tight" && "hidden")}>
+                {`From the chat ${originName(origin)}`}
+              </span>
+            </Link>
           ) : (
             <span className="flex min-w-0 shrink-0 items-center gap-1.5 text-sm text-fg-soft">
               <OriginMark origin={origin} />

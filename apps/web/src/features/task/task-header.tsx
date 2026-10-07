@@ -14,6 +14,7 @@ import { useTaskDetail, useTaskRow, useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
 import { AppMark } from "../clients/app-mark";
 import { AreaChips, areaNames } from "../tasks-ui/area-chips";
+import { OriginIcon } from "../tasks-ui/origin-mark";
 import type { OrgTag } from "../tasks-ui/project-names";
 import { TrailStrip } from "../tasks-ui/trail-strip";
 import { TypeChip } from "../tasks-ui/type-chip";
@@ -81,7 +82,7 @@ export function TaskHeader({
       <AreaChips names={areas} max={3} />
     </span>
   );
-  // A client's report names its chat, and the watch that fires for it shows beside the type.
+  // A client's report names its chat, a task an agent made from a chat names that chat, and the watch that fires for it shows beside the type.
   const incidentChips = (
     <>
       {origin?.kind === "client" && (
@@ -89,6 +90,17 @@ export function TaskHeader({
           {origin.app !== undefined && <AppMark app={origin.app} size={14} />}
           {`From ${origin.from ?? origin.name ?? "a client"}`}
         </span>
+      )}
+      {origin?.kind === "chat" && (
+        <Link
+          to="/chats/$taskId"
+          params={{ taskId: origin.room }}
+          title="Open the chat this task came from"
+          className="inline-flex h-5 min-w-0 shrink items-center gap-1.5 rounded-sm border border-line px-1.5 text-xs whitespace-nowrap text-fg-soft hover:text-fg"
+        >
+          <OriginIcon kind="chat" className="size-3 shrink-0" />
+          <span className="min-w-0 truncate">{`From the chat ${origin.name ?? ""}`.trimEnd()}</span>
+        </Link>
       )}
       {incident?.watch !== undefined && (
         <span
@@ -131,7 +143,7 @@ export function TaskHeader({
             task={task}
             org={tag}
             // A client report names its chat in the chip beside the title.
-            origin={origin?.kind === "client" ? undefined : origin}
+            origin={origin?.kind === "client" || origin?.kind === "chat" ? undefined : origin}
             fit={fit}
             filter={filter}
           />

@@ -20,8 +20,10 @@ const LIST_LIMIT = 200;
  * the owner started with an agent. Only the old autonomy chat is left out (the captain threads replace it).
  */
 const LISTED = sql`NOT (t.kind = 'chat' AND t.brief = ${AUTONOMY_CHAT_BRIEF})`;
+/** A chat that became a task: its origin names itself. It stays one conversation, listed as the chat it was. */
+const PROMOTED = sql`(json_extract(t.origin, '$.kind') = 'chat' AND json_extract(t.origin, '$.room') = t.id)`;
 /** The chats the owner started with an agent: they stay listed after they are done. */
-const AGENT_CHAT = sql`(t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF}))`;
+const AGENT_CHAT = sql`((t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF})) OR ${PROMOTED})`;
 
 /**
  * Whether a client's message counts as unread, by the chat's Notify setting: every message, only what needs the
@@ -46,6 +48,7 @@ interface Row {
   app: string | null;
   agent: string | null;
   archived: number;
+  promoted: number;
 }
 
 /**
@@ -113,7 +116,7 @@ export class ConversationsRepo {
     const rows = this.db.all<Row>(sql`
       SELECT t.id AS id, t.title AS title, t.org AS org, t.brief AS brief, t.kind AS kind,
         json_extract(t.client, '$.app') AS app, json_extract(t.team, '$[0]') AS agent,
-        (a.archived_at IS NOT NULL) AS archived,
+        (a.archived_at IS NOT NULL) AS archived, (${PROMOTED}) AS promoted,
         (SELECT count(*) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
             AND (r.type = 'agent' OR ${NOTIFIES})) AS unread,
@@ -156,6 +159,7 @@ export class ConversationsRepo {
 }
 
 function kindOf(row: Row): Conversation["kind"] {
+  if (row.promoted === 1) return "agent";
   if (row.kind !== "chat") return "task";
   if (row.brief === CAPTAIN_LANE_BRIEF) return "captain";
   if (row.brief === CLIENT_CHAT_BRIEF) return "client";

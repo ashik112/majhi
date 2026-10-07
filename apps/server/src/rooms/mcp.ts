@@ -15,6 +15,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Hono } from "hono";
 import { z } from "zod";
+import { redactText } from "../admin/policy.ts";
 import type { AdminService } from "../admin/service.ts";
 import { bearerOf } from "../admin/tokens.ts";
 import { OWNER_ONLY_INPUTS, toolName } from "../admin/tools.ts";
@@ -38,6 +39,7 @@ import {
 import type { RoomService } from "../room/service.ts";
 import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
+import { reachFromChat } from "../tasks/chat-link.ts";
 import { leadMayStart } from "../tasks/lead-start.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
@@ -157,7 +159,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Called from a chat with the owner, it turns THIS chat into the task by default: the same conversation and room, now with the repos, a branch and a lifecycle, so the owner keeps one chat. Set separate true only when the owner asked for a second task or the work is clearly a side job; a separate task you made, or one the owner names in the chat, you can then steer with tell, add_repo, remove_repo, look and read_room. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
@@ -230,11 +232,47 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     command: "tasks.link",
     description: "Make a task wait for another (depends-on), or a subtask of another (parent).",
   },
+  {
+    name: "tell",
+    command: "tasks.tell",
+    description:
+      "From a chat: write to the working agent of a task this chat made, or one the owner named here. It reaches the agent like a message from the owner, at a safe point in its turn, and the task keeps running. The text is advice, never an approval. A second note before the agent took a new turn is not sent (told false, already-told): wait. Use it instead of editing a brief.",
+  },
+  {
+    name: "add_repo",
+    command: "tasks.addRepo",
+    description:
+      "Add a repo to a task that exists (yours, or one this chat made or the owner named): a branch, and a worktree once it has started. Only a project of the task's workspace; a protected project only the owner adds.",
+  },
+  {
+    name: "remove_repo",
+    command: "tasks.removeRepo",
+    description:
+      "Take a repo off a task and remove its worktree. Refused with the list while the worktree has uncommitted changes: tell the owner what they are and ask. You cannot throw work away; the owner does.",
+  },
+  {
+    name: "look",
+    command: "tasks.look",
+    description:
+      "Read a task's working folder, read-only: each repo's branch and uncommitted changes, then one folder's entries or one file (path from the repo root). For a task this chat made or the owner named.",
+  },
 ].map((t) => ({
   ...t,
   command: t.command as CommandName,
   input: agentInput(t.command as CommandName),
 }));
+
+/** `read_room`: the room of a task this chat made or the owner named, read-only. Not a command: it reads the room as the coordinator does. */
+const READ_ROOM_TOOL: Tool = {
+  name: "read_room",
+  description:
+    "Read the room of a task this chat made or the owner named: the latest messages, newest first, each cut in the middle when long. Use before_seq to read further back.",
+  input: z.object({
+    task: z.string().trim().min(1).max(40),
+    limit: z.number().int().min(1).max(50).default(20),
+    before_seq: z.number().int().positive().optional(),
+  }),
+};
 
 /** A command's input as an agent's tool takes it: without the fields only the owner gives (push). */
 export function agentInput(command: CommandName): z.ZodObject {
@@ -528,15 +566,20 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     const merge = await mayMerge();
     const captain = await isCaptain();
     return {
-      tools: listed(
-        TASK_TOOLS.filter(
-          (t) => (merge || t.command !== "tasks.merge") && (captain || t.command !== "tasks.setType"),
+      tools: [
+        ...listed(
+          TASK_TOOLS.filter(
+            (t) => (merge || t.command !== "tasks.merge") && (captain || t.command !== "tasks.setType"),
+          ),
+          true,
         ),
-        true,
-      ),
+        ...listed([READ_ROOM_TOOL], false),
+      ],
     };
   });
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
+    if (request.params.name === READ_ROOM_TOOL.name)
+      return readOtherRoom(caller, deps, request.params.arguments);
     const tool = TASK_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
     const args = { ...(request.params.arguments ?? {}) } as Record<string, unknown>;
@@ -599,6 +642,25 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     }
   });
   return server;
+}
+
+/** `read_room`: the room of a task the caller's chat is linked to, with secrets left out. */
+async function readOtherRoom(caller: ToolCaller, deps: RoomMcpDeps, raw: unknown): Promise<Result> {
+  const parsed = READ_ROOM_TOOL.input.safeParse(raw ?? {});
+  if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);
+  const args = parsed.data as { task: string; limit: number; before_seq?: number };
+  const reach = reachFromChat(deps.store, caller, args.task);
+  if (!reach.ok) return fail(reach.why);
+  if (reach.how === "self") return fail("That is this room: use read_recent from majhi-room.");
+  const fm = await frontmatter(deps.agents, caller.agent);
+  if (fm === undefined) return fail(`@${caller.agent} is not a valid agent any more.`);
+  const refused = await refuseOutsideOrg(deps, fm, "tasks.get", { id: args.task });
+  if (refused !== undefined) return fail(refused);
+  try {
+    return ok(redactText(deps.coordinator.readRecent(reach.task.id, args.limit, args.before_seq)));
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
 }
 
 /** A task made as the follow-up of another (an ops task's fix task): it holds a `follow-up` link. */

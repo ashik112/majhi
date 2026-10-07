@@ -628,6 +628,31 @@ const CardAnswerOutput = z.object({
   refused: z.enum(["already-answered", "in-flight"]).optional(),
 });
 
+/** What `tasks.look` shows of a task's working folder. */
+const TaskLookSchema = z.object({
+  id: TaskIdSchema,
+  status: z.string(),
+  repos: z.array(
+    z.object({
+      project: IdSchema,
+      branch: z.string(),
+      base: z.string(),
+      /** False before the task has started: there is no folder to read yet. */
+      worktree: z.boolean(),
+      /** Lines of `git status --porcelain`. */
+      changes: z.array(z.string()),
+      /** Commits on the branch since it was cut from its base. */
+      commits: z.number().int().nonnegative().optional(),
+    }),
+  ),
+  /** A folder: its entries, folders with a trailing slash. */
+  entries: z.array(z.string()).optional(),
+  file: z
+    .object({ project: IdSchema, path: z.string(), content: z.string(), truncated: z.boolean() })
+    .optional(),
+});
+export type TaskLook = z.infer<typeof TaskLookSchema>;
+
 /**
  * A note from the captain to a lead (G1): one per turn of the lead. `told: false` with `refused`
  * says why nothing was sent: `already-told` (wait for the lead's next turn), or `in-flight`.
@@ -2143,6 +2168,17 @@ export const commands = {
           "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png (copied, the original stays)",
         ),
       start: z.boolean(),
+      /**
+       * Only for an agent calling from a chat with the owner. By default the chat itself becomes the task
+       * (same conversation, same room, now with the repos and a lifecycle). `true` makes a second, separate
+       * task instead: only when the owner asked for one, or the work is clearly a side job.
+       */
+      separate: z
+        .boolean()
+        .optional()
+        .describe(
+          "From a chat: leave out (or false) to turn this chat into the task, so the owner keeps one conversation. true only when the owner asked for a separate task or the work is clearly a side job.",
+        ),
       /** Makes the new task a child of this one (5.4a). */
       parent: TaskIdSchema.optional(),
       /** The new task waits for these (5.4a); it does not start until they are met. */
@@ -2597,6 +2633,42 @@ export const commands = {
       "Commit file changes to another task's branch inside that task's own worktree, so its files, index and branch stay in step. Give base, the commit of that branch you read from (git rev-parse <branch> before reading); a branch that moved since is refused and nothing is written. Send a patch (unified diff from the repo root) for small edits, or whole files (path from the repo root, full new content) for new files and full rewrites, never both. Only for a task in your own org (root agents: any). Refused while one of its agents is working or has work queued (retry when it is idle, paused or in review), and while its worktree has uncommitted changes. The task's room gets a line saying who changed what and why",
     input: ChangeBranchInputSchema,
     output: ChangeBranchResultSchema,
+  },
+  "tasks.addRepo": {
+    risk: "change",
+    summary:
+      "Add a repo to a task that already exists: it gets its own branch and, once the task has started, a worktree. Only a project of the task's workspace; a protected project only the owner adds. Use it instead of making a second task when the work reaches another repo",
+    input: z.object({
+      id: TaskIdSchema,
+      project: IdSchema,
+      /** The branch the new worktree is cut from. Default: the project's base. */
+      base: LocalBranchSchema.optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.removeRepo": {
+    risk: "change",
+    summary:
+      "Take a repo off a task that already exists, and remove its worktree. Refused, with the list, while the worktree has uncommitted changes or commits that are not merged, pushed or in a pull request: say what they are and ask the owner. The branch stays in the project",
+    input: z.object({
+      id: TaskIdSchema,
+      project: IdSchema,
+      /** Owner only: remove it although work would be lost. */
+      discard: z.boolean().optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.look": {
+    risk: "read",
+    summary:
+      "Read a task's working folder without changing anything: for each repo its branch and `git status` (uncommitted changes), and the files. Give path (from the repo root) to read one file or list one folder; with more than one repo, give project too",
+    input: z.object({
+      id: TaskIdSchema,
+      project: IdSchema.optional(),
+      /** A file or folder, relative to the repo's root. */
+      path: z.string().trim().min(1).max(1000).optional(),
+    }),
+    output: TaskLookSchema,
   },
   "tasks.remove": {
     risk: "destructive",

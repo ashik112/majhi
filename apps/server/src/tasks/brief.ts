@@ -130,7 +130,7 @@ export function renderTaskMd(
   if (task.typing?.type === "incident") lines.push(...incidentLines(), "");
   if (connections.length > 0) lines.push(...connectionLines(connections, task.kind === "ops"), "");
   if (wiki.length > 0) lines.push(...wikiLines(wiki), "");
-  if (task.kind === "chat") lines.push(...rememberLines(), "");
+  if (task.kind === "chat") lines.push(...rememberLines(), "", ...chatTaskLines(), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
   }
@@ -230,6 +230,16 @@ export function sectionOf(md: string, heading: string): string {
     .slice(start + 1, end < 0 ? undefined : end)
     .join("\n")
     .trim();
+}
+
+/** What a chat agent does when the talk turns into work. */
+function chatTaskLines(): string[] {
+  return [
+    "## When the work starts",
+    "",
+    "When the owner asks for work in a repo, create the task with the majhi-tasks create tool and list the repos it changes. By default this chat becomes the task: same conversation, same room, now with a branch and worktrees, so the owner keeps one chat. Leave `separate` out. Set `separate: true` only when the owner asked for a second task or the work is clearly a side job.",
+    "For a task this chat made separately, or one the owner names here, you can steer it: tell writes to its working agent, add_repo and remove_repo change its repos (a repo with uncommitted work is not removed: tell the owner what is uncommitted and ask), look reads its working folder and read_room its room. You never need the owner to relay these.",
+  ];
 }
 
 /** What a chat agent does when the owner says to remember something. */
