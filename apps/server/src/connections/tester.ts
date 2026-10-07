@@ -381,6 +381,10 @@ export class ConnectionTester {
         );
       case "host":
         return this.host(values);
+      case "chat":
+        return Promise.resolve(
+          fail("This connection is checked through Connect.", { reason: "no-credential" }),
+        );
     }
   }
 

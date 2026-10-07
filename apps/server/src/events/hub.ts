@@ -109,6 +109,10 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
+    case "chat":
+    case "contacts":
+      // A reply waits in Decisions too.
+      return ["clients", "playbooks"];
     case "captain":
       // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
       return ["captain", "autonomy", "config", "tasks", "memory"];

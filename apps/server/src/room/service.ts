@@ -233,6 +233,31 @@ export class RoomService {
     return item;
   }
 
+  /**
+   * Stores a message of a chat app under its external key (`externalKeyText`), once, and sends it to the sockets.
+   * `make` gets the item already stored for the key (undefined the first time) and returns what to store, or
+   * undefined to leave it: a repeat delivery changes nothing and sends nothing.
+   */
+  postExternal(
+    task: TaskId,
+    external: string,
+    id: string,
+    make: (existing: RoomItem | undefined) => RoomPayload | undefined,
+  ): { item: RoomItem; created: boolean } | undefined {
+    this.flush(task);
+    const redact = this.redact;
+    const stored = this.store.room.putExternal(task, external, id, (existing) => {
+      const payload = make(existing);
+      return payload === undefined || redact === undefined
+        ? payload
+        : redactDeep(payload, (text) => redact(task, text));
+    });
+    if (stored === undefined) return undefined;
+    this.send(stored.item.task, { type: "item", item: stored.item });
+    this.listen(stored.item.task as TaskId, stored.item);
+    return stored;
+  }
+
   /** Calls `listener` after every stored item, from any task. */
   onWrite(listener: (task: TaskId, item: RoomItem) => void): void {
     this.writeListeners.add(listener);

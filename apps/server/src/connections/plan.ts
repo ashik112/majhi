@@ -228,6 +228,9 @@ export async function planConnections(
     switch (c.type) {
       case "kubectl":
         break;
+      case "chat":
+        // A chat app's token is majhi's alone: no run gets it, and nothing says the connection exists.
+        break;
       case "env": {
         const vars = await entries(h, "vars");
         for (const [name, value] of Object.entries(vars)) setVar(h.id, name, value);
@@ -504,5 +507,7 @@ export function useLine(h: HeldConnection, current = false): string {
     }
     case "ssh":
       return `Run a command on it with the majhi-connections ssh tool (connection ${h.id}). Commands that change something wait for the owner.`;
+    case "chat":
+      return "Only majhi reads this chat app. Runs do not get it.";
   }
 }
