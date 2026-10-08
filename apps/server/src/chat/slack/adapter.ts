@@ -950,7 +950,7 @@ export class SlackAdapter implements ChatAdapter {
     // A reply to a message goes to its thread: the root when the message is in one, else the message starts it.
     const thread =
       target.thread ??
-      (target.replyTo === undefined
+      (target.replyTo === undefined || !Number.isFinite(Number(target.replyTo))
         ? undefined
         : (this.rootOf.get(`${target.chat}:${target.replyTo}`) ?? target.replyTo));
     const parts = packBody(
