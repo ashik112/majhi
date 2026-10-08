@@ -152,6 +152,8 @@ export const CaptainOrgSchema = z.object({
   forYou: z.number().int().nonnegative(),
   /** Why it does not act right now (outside hours, a freeze, budget reached). */
   resting: z.string().optional(),
+  /** The account that pays for the captain's turns in this workspace. Absent when none may. */
+  pays: IdSchema.optional(),
   /** The captain's thread for this workspace (a chat that is not a task to the owner). */
   lane: TaskIdSchema.optional(),
   /** What the thread is doing: the captain is in a turn, something waits on the owner, or neither. */

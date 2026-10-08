@@ -207,7 +207,10 @@ export function MoreRules({
             captain's own turns and the work it starts here.
           </span>
         </div>
-        <Field label="Pays for its decisions" hint="Only an account of this workspace, or a Private one.">
+        <Field
+          label="Pays for its decisions"
+          hint={org.pays === undefined ? "No account may pay yet." : `Now: ${org.pays}.`}
+        >
           {(props) => (
             <Select
               {...props}
@@ -215,7 +218,9 @@ export function MoreRules({
               onChange={(e) => set({ account: e.target.value })}
               className="h-8 text-sm"
             >
-              <option value="">The captain's own account</option>
+              <option value="">
+                {org.org === PRIVATE ? "The captain's own account" : "This workspace's own account"}
+              </option>
               {payers.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.id}

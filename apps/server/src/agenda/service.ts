@@ -228,9 +228,14 @@ export class AgendaService {
         return d.kind === "incident" && parsed?.kind === "incident" ? [parsed.id] : [];
       }),
     );
+    // So is one whose incident task asks the owner something (start it, pick its project, a failed deploy).
+    const askedTasks = new Set(
+      decisions.flatMap((d) => (d.kind === "incident" && d.task !== undefined ? [d.task as string] : [])),
+    );
     const incidents = live
       .filter((f) => f.source === "incident" && f.severity !== "info")
       .filter((f) => !onAgenda.has(this.deps.incidentOf?.(f.id) ?? -1))
+      .filter((f) => f.task === undefined || !askedTasks.has(f.task))
       .map((f) => ({
         id: f.id,
         title: f.title,

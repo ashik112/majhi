@@ -439,6 +439,7 @@ export class CaptainService {
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
       const cap = settings.autonomy.orgs[org]?.cap;
+      const paid = await this.deps.lanes.account(org).catch(() => undefined);
       orgs.push({
         org,
         name: ws.name,
@@ -450,6 +451,7 @@ export class CaptainService {
         summary: line,
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
+        ...(paid === undefined || "problem" in paid ? {} : { pays: paid.account }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode, settings.autonomy.orgs[org]?.ships).map((chore) => {

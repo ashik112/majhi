@@ -1146,7 +1146,7 @@ export class MrService {
     throw new UserError(
       isSshAuthFailure(failed)
         ? `majhi could not sign in to ${target.remote} to push. Open Git accounts and check this project's key, then ship again.`
-        : `majhi could not reach ${target.remote} to push. Check the connection and the remote address, then ship again.`,
+        : `majhi could not reach ${target.remote} to push. Open Projects, pick this project and check its remote address and your connection, then ship again.`,
       409,
     );
   }
