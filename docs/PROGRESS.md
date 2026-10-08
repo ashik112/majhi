@@ -1,5 +1,27 @@
 # Progress
 
+## One home, one voice, slice 2: surfaces (branch `feat/one-home-surfaces`, built, not merged)
+
+Task kinds, the board tag, the bubble's Now list, and the client room's Make a task and Retry. Slice 1 (relay removal, captain tags, task page, Captain and Chats pages) is built apart.
+
+**Plan and stored fields.** New storage: one `tasks.fields` JSON column (migration 187), a zod `TaskFields` object discriminated by `type` (a post's draft, channel, schedule, `approvedAt`), checked against the task's type on every write. Everything else is derived: the publish decision (`publish:<task>`) in `inbox/build.ts` from open post tasks; the Now list from the task list and decisions list; Make a task and Retry reuse the captain's start path and the reply rails. Order: types and fields, publish decision, client room commands, then web (board tag, bubble, room), then a throwaway majhi walk.
+
+**What works.**
+- Task types `support` (LifeBuoy) and `post` (Megaphone) with their own color tokens. `tasks.setFields` (owner, or the captain from its own workspace lane; captain tool `set_fields`) refuses fields that do not fit the task's type. A task that holds fields cannot be retyped.
+- A post with a draft and no `approvedAt` is a Needs you decision of kind Publish, "Approve to publish: <channel, schedule>", with an Approve button. Approving records `approvedAt` and a line in the task's room. Nothing is sent: no social channel is connected yet.
+- Board cards carry a kind tag (icon and word).
+- The bubble is the Captain chat with one Now list above it: a row per live task with its lamp, rows that need the owner carry the decision's first answer, decisions with no task are their own rows. No second list.
+- Client room: "Make a task" on each client message and captain reply (`chat.makeTask`, the same start path as the captain, origin client, room's workspace, "Started task X" on the message, then opens the task). A failed reply shows "Not sent" and Retry (`chat.retryReply`, same holds and secret checks as a first send).
+- "Captain blocked: no account" card with "Pick <account>" buttons, in Needs you and under the waiting message in the client room.
+
+**How to try it.** Throwaway majhi: `node --import tsx e2e/incident-walk/server.ts` with the fake Slack as in `e2e/incident-walk/walk.ts`. Make a post with `tasks.create` (type post, kind ops), then `tasks.setFields`.
+
+**Checked.** Typecheck, the three allowed tests, web and server builds, unit and e2e suites once, and a walk of the six journeys in a throwaway majhi (board 1440 and 1100, dark and light; bubble; client answers in place; Make a task; failed reply and Retry; post approval).
+
+**Left.** The bubble no longer lists other conversations: they are on the Chats page ("All chats" link). A post is not sent anywhere. Setting a post's fields has no screen yet; the task page header (slice 1) shows them.
+
+**Known issues.** Migration id 187 may collide with slice 1's; renumber on merge.
+
 ## Client chats, phase 3: Slack (branch `feat/chat-slack`, built, not merged)
 
 Slack channels of the owner's own workspace are client chats like Telegram groups. Brief: `docs/briefs/client-chats.md`, phase 3.

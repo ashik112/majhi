@@ -14,6 +14,7 @@ import {
   DaySchema,
   deployStepOfRecord,
   FINDING_SOURCE_LABEL,
+  fieldsFit,
   IdSchema,
   isCaptainLane,
   isOwnerChat,
@@ -31,6 +32,8 @@ import {
   type StoredOrigin,
   StoredOriginSchema,
   type Task,
+  type TaskFields,
+  TaskFieldsSchema,
   type TaskId,
   TaskIdSchema,
   TaskLinkTypeSchema,
@@ -101,6 +104,27 @@ function parseOrigin(json: string | null): StoredOrigin | undefined {
 }
 
 /** The type and who set it. A row with only one of the two, or a value this build does not know, is untyped. */
+/** The task's kind fields as the column holds them, checked against its type: a post's fields on a bug are refused. */
+function fieldsJson(task: Pick<Task, "typing" | "fields">): string | null {
+  if (task.fields === undefined) return null;
+  const fields = TaskFieldsSchema.parse(task.fields);
+  if (!fieldsFit(task.typing, fields)) {
+    throw new Error(`A ${fields.type}'s fields do not fit a task of type ${task.typing?.type ?? "none"}.`);
+  }
+  return JSON.stringify(fields);
+}
+
+/** The kind fields. A row that no longer parses, or whose fields do not fit its type, reads as none. */
+function fieldsOf(row: { fields: string | null }, typing: TaskTyping | undefined): TaskFields | undefined {
+  if (row.fields === null) return undefined;
+  try {
+    const parsed = TaskFieldsSchema.safeParse(JSON.parse(row.fields));
+    return parsed.success && fieldsFit(typing, parsed.data) ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function typingOf(row: { type: string | null; typeBy: string | null }): TaskTyping | undefined {
   if (row.type === null || row.typeBy === null) return undefined;
   const parsed = TaskTypingSchema.safeParse({ type: row.type, by: row.typeBy });
@@ -237,6 +261,7 @@ export class TaskRepo {
           kind: task.kind,
           type: task.typing?.type ?? null,
           typeBy: task.typing?.by ?? null,
+          fields: fieldsJson(task),
           origin: task.origin === undefined ? null : JSON.stringify(StoredOriginSchema.parse(task.origin)),
           org: task.org ?? null,
           status: task.status,
@@ -601,6 +626,16 @@ export class TaskRepo {
     );
   }
 
+  /** Post tasks that are not done and have fields: the ones that may wait for an approval to publish. */
+  openPosts(): string[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.type, "post"), isNotNull(tasks.fields), ne(tasks.status, "done")))
+      .all()
+      .map((r) => r.id);
+  }
+
   /** The open merge requests of every task, for the Shipping rows of Home. One query. */
   openMrs(): { task: string; project: string; number: number; url: string; ci: CiState }[] {
     return this.db
@@ -707,6 +742,21 @@ export class TaskRepo {
   setTyping(id: string, typing: TaskTyping): void {
     const parsed = TaskTypingSchema.parse(typing);
     this.db.update(tasks).set({ type: parsed.type, typeBy: parsed.by }).where(eq(tasks.id, id)).run();
+  }
+
+  /**
+   * Replaces a task's kind fields. They must belong to the task's own type, so a post's fields on a bug are
+   * refused and nothing is written.
+   */
+  setFields(id: string, fields: TaskFields): void {
+    const row = this.db
+      .select({ type: tasks.type, typeBy: tasks.typeBy })
+      .from(tasks)
+      .where(eq(tasks.id, id))
+      .get();
+    if (row === undefined) throw new Error(`No task ${id}.`);
+    const json = fieldsJson({ typing: typingOf(row), fields });
+    this.db.update(tasks).set({ fields: json }).where(eq(tasks.id, id)).run();
   }
 
   /** The owner's mark Not for autonomous mode. It does not move the task in the lists. */
@@ -1344,6 +1394,7 @@ function buildTask(
 ): Task {
   const pending = parsePendingShip(row.pendingShip);
   const typing = typingOf(row);
+  const fields = fieldsOf(row, typing);
   const origin = parseOrigin(row.origin);
   return TaskSchema.parse({
     id: row.id,
@@ -1351,6 +1402,7 @@ function buildTask(
     brief: row.brief,
     kind: row.kind,
     ...(typing === undefined ? {} : { typing }),
+    ...(fields === undefined ? {} : { fields }),
     ...(origin === undefined ? {} : { origin }),
     ...(row.org === null ? {} : { org: row.org }),
     status: row.status,

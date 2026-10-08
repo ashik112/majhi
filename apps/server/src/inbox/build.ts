@@ -14,6 +14,7 @@ import {
   type OwnerDecisionKind,
   permissionOptionLabel,
   plainAuthorityText,
+  publishDecisionId,
   type RoomItem,
   roomDecisionId,
   SHIP_FAILED_PREFIX,
@@ -31,6 +32,16 @@ export const FIX_CHECKS_TEXT =
 export interface Recommendation {
   option: string;
   reason: string;
+}
+
+/** A post that waits for the owner's approval to go out: read from the task's kind fields. */
+export interface PostAsk {
+  task: TaskId;
+  org?: string | undefined;
+  title: string;
+  channel: string;
+  schedule?: string | undefined;
+  at: string;
 }
 
 /** What decisions are built from. Every list is what waits right now. */
@@ -63,6 +74,8 @@ export interface DecisionSources {
     /** A fix the owner is asked to approve (Watch anything). */
     question?: { text: string; options: { id: string; label: string }[] } | undefined;
   }[];
+  /** Post tasks with a draft the owner has not approved to publish. */
+  posts?: readonly PostAsk[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
   /** Decisions another part of majhi builds itself: the trust ladder's notices, the monthly ceiling. */
@@ -530,6 +543,23 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       options,
       at: inc.at,
       link: { kind: "watch" },
+    });
+  }
+
+  for (const post of src.posts ?? []) {
+    const id = publishDecisionId(post.task);
+    const where = post.schedule === undefined ? post.channel : `${post.channel}, ${post.schedule}`;
+    out.push({
+      id,
+      kind: "publish",
+      ...(post.org === undefined ? {} : { org: post.org }),
+      task: post.task,
+      taskTitle: post.title,
+      title: oneLine(`Approve to publish: ${where}`),
+      sentence: `"${post.title}" is drafted for ${where}. Nothing goes out until you approve it.`,
+      ...decorate(id, [{ id: "approve", label: "Approve", primary: true }], undefined, undefined),
+      at: post.at,
+      link: { kind: "task", id: post.task },
     });
   }
 

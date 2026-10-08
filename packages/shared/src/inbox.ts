@@ -23,6 +23,7 @@ export const OwnerDecisionKindSchema = z.enum([
   "incident",
   "trust",
   "notifications",
+  "publish",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
@@ -262,6 +263,7 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   trust: "Trust",
   // The Mac's own switch for majhi's notifications: access the owner gives, like a sign-in.
   notifications: "Access",
+  publish: "Publish",
 };
 
 export function roomDecisionId(task: string, item: string): string {
@@ -299,6 +301,10 @@ export function chatWaitDecisionId(room: string, ref: string): string {
 export function captainPayDecisionId(org: string): string {
   return `cpay:${org}`;
 }
+/** A post task whose draft waits for the owner to approve it to go out. */
+export function publishDecisionId(task: string): string {
+  return `publish:${task}`;
+}
 /** The one decision that says the Mac has notifications off for majhi. */
 export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
@@ -316,7 +322,8 @@ export type ParsedDecisionId =
   | { kind: "mrci"; task: string }
   | { kind: "dwait"; task: string; project: string; env: string }
   | { kind: "cwait"; room: string; ref: string }
-  | { kind: "cpay"; org: string };
+  | { kind: "cpay"; org: string }
+  | { kind: "publish"; task: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -351,6 +358,8 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };
   }
+  if (head === "publish" && rest.length === 1 && rest[0] !== "")
+    return { kind: "publish", task: rest[0] as string };
   if (head === "cpay" && rest.length >= 1 && rest[0] !== "") return { kind: "cpay", org: rest.join(":") };
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);

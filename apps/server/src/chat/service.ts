@@ -4,10 +4,12 @@ import {
   type ChatChannels,
   type ChatHistoryInput,
   type ChatHistoryResult,
+  type ChatMakeTaskInput,
   type ChatOpenIncidentInput,
   type ChatPermission,
   type ChatPermissionState,
   type ChatReplyInput,
+  type ChatRetryReplyInput,
   type ChatSendAs,
   type ChatSettingsInput,
   type ChatSettingsView,
@@ -440,6 +442,17 @@ export class ClientChat {
 
   async startTask(input: ChatStartTaskInput, caller: { agent: string; task: string }) {
     return this.deps.captain.startTask(await this.captainRoom(input.room, caller), input);
+  }
+
+  /** The owner opens a task from one message of a client chat. */
+  async makeTask(input: ChatMakeTaskInput) {
+    return this.deps.captain.makeTask(this.deps.rooms.room(input.room), input.item);
+  }
+
+  /** The owner sends a failed reply again. Whatever it becomes, the chat's lines are updated like a first send. */
+  async retryReply(input: ChatRetryReplyInput) {
+    const out = await this.deps.replies.retry(input.room, input.item);
+    return { draft: out.draft, state: out.state === "held" ? ("held" as const) : out.state };
   }
 
   layaDown(): boolean {

@@ -3,13 +3,15 @@ import {
   type ChatFile,
   type ClientOutcome,
   type ClientRow,
+  captainPayDecisionId,
   PAGE_PATH,
   PRIVATE,
+  parseDecisionId,
   REPLY_HOLD_LABEL,
   type RoomItem,
   replaceMentions,
 } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowDown, FileText, Info } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EMOJI_FONT } from "@/components/agent-avatar";
@@ -19,6 +21,7 @@ import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
+import { useSendDecision } from "@/features/decisions/use-send-decision";
 import { Markdown } from "@/features/room/markdown";
 import { useRoom } from "@/features/room/use-room";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -30,13 +33,16 @@ import {
   useContacts,
   useDecideReply,
   useEditReply,
+  useMakeTask,
   useMarkUs,
+  useRetryReply,
   useSamePerson,
   useUndoMerge,
   useUnlinkChat,
   useWhoIs,
 } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatBytes } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -391,6 +397,33 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
   }
 }
 
+/** The same card Needs you shows ("Captain blocked: no account"), here under the waiting message with its Pick buttons. */
+function NoAccountLine({ org }: { org: string }) {
+  const decision = useDecisions().data?.decisions.find((d) => d.id === captainPayDecisionId(org));
+  const { send, busy } = useSendDecision();
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-fg-faint">
+      <span>Captain blocked: no account</span>
+      {decision?.options.map((o) => (
+        <Button
+          key={o.id}
+          size="sm"
+          variant={o.primary === true ? "primary" : "secondary"}
+          disabled={busy}
+          onClick={() => send(decision, o.id)}
+        >
+          {o.label}
+        </Button>
+      ))}
+      {(decision === undefined || decision.options.length === 0) && (
+        <Link to={PAGE_PATH.today} className="underline hover:text-fg">
+          Choose the account
+        </Link>
+      )}
+    </span>
+  );
+}
+
 /**
  * What a message waiting on the captain waits on, with the button that unblocks it: the card in the captain's
  * lane (Allow or Deny answers that card), no account that may pay (a link to the account card in Needs you), or Stop everything
@@ -444,16 +477,7 @@ function WaitingLine({ org }: { org: string }) {
       </span>
     );
   }
-  if (blocker?.kind === "account") {
-    return (
-      <span className="text-xs text-fg-faint">
-        Waiting: the captain has no account to work with here.{" "}
-        <Link to={PAGE_PATH.today} className="underline hover:text-fg">
-          Choose the account
-        </Link>
-      </span>
-    );
-  }
+  if (blocker?.kind === "account") return <NoAccountLine org={org} />;
   return <span className="text-xs text-fg-faint">Working on it</span>;
 }
 
@@ -471,6 +495,8 @@ function OutcomeLine({
   const text = outcomeText(outcome, reply);
   const task = outcome.task;
   if (outcome.decision !== undefined && reply === undefined) {
+    // The captain has no account to run on: the same card as Needs you, with its buttons, right here.
+    if (parseDecisionId(outcome.decision)?.kind === "cpay") return <NoAccountLine org={org} />;
     return (
       <Link
         to="/decisions"
@@ -505,12 +531,15 @@ function Message({
 }) {
   const name = item.sender.name === "" ? "Unknown" : item.sender.name;
   return (
-    <article className="flex gap-2.5">
+    <article className="group flex gap-2.5">
       <Initial name={name} seed={item.sender.id} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
           <SenderName item={item} name={name} />
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.sentAt ?? item.at)}</span>
+          {item.us !== true && item.outcome?.task === undefined && (
+            <MakeTask room={item.task} item={item.id} />
+          )}
           {item.sender.verified ? null : <Badge>unverified</Badge>}
           {item.forwarded === true && <span className="shrink-0 text-xs text-fg-faint">forwarded</span>}
           {item.early === true && <span className="shrink-0 text-xs text-fg-faint">before the link</span>}
@@ -580,6 +609,33 @@ function SenderName({ item, name }: { item: Of<"client">; name: string }) {
   );
 }
 
+/** "Make a task": opens a task from this message through the captain's start path, then goes to it. */
+function MakeTask({ room, item }: { room: string; item: string }) {
+  const toast = useToast();
+  const make = useMakeTask();
+  const navigate = useNavigate();
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-5 px-1.5 text-xs text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+      disabled={make.isPending}
+      onClick={() =>
+        make.mutate(
+          { room, item },
+          {
+            onSuccess: (made) => void navigate({ to: "/t/$taskId", params: { taskId: made.task } }),
+            onError: (error) =>
+              toast("Could not make a task", { detail: describeError(error), tone: "error" }),
+          },
+        )
+      }
+    >
+      {make.isPending ? "Making..." : "Make a task"}
+    </Button>
+  );
+}
+
 function FileChip({ file }: { file: ChatFile }) {
   return (
     <li className="flex items-center gap-1.5 rounded-md border border-line bg-raised px-2 py-1 text-sm text-fg-soft">
@@ -594,11 +650,13 @@ function FileChip({ file }: { file: ChatFile }) {
 }
 
 function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
+  const toast = useToast();
+  const retry = useRetryReply();
   const agents = useAgentIndex();
   const boss = [...agents.values()].find((a) => a.isBoss);
   const you = item.by === "you";
   return (
-    <article className="flex gap-2.5">
+    <article className="group flex gap-2.5">
       {you ? (
         <Initial name="You" seed="you" />
       ) : (
@@ -628,6 +686,9 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
             {you ? "You" : item.as === "you" ? "You (by the captain)" : `@${boss?.id ?? "captain"}`}
           </span>
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.at)}</span>
+          {item.by === "captain" && (item.state === "sent" || item.state === "failed") && (
+            <MakeTask room={item.task} item={item.id} />
+          )}
         </div>
         <div className="max-w-[72ch] text-base text-fg">
           <Markdown text={withNames(item.text, item.mentions, "**")} size="chat" />
@@ -641,6 +702,22 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
           <span className="flex items-center gap-2">
             <Badge tone="red">Not sent</Badge>
             {item.result !== undefined && <span className="text-sm text-fg-muted">{item.result}</span>}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={retry.isPending}
+              onClick={() =>
+                retry.mutate(
+                  { room: item.task, item: item.id },
+                  {
+                    onError: (error) =>
+                      toast("Could not send again", { detail: describeError(error), tone: "error" }),
+                  },
+                )
+              }
+            >
+              {retry.isPending ? "Sending..." : "Retry"}
+            </Button>
           </span>
         )}
       </div>

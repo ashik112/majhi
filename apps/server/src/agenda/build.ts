@@ -40,6 +40,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   trust: 1,
   notifications: 1,
   incident: 1,
+  publish: 1,
 };
 
 /** The order of decisions among themselves: what blocks an agent first, then what is ready to ship. */
@@ -59,6 +60,8 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   notifications: 53,
   // An incident decision is on the agenda unless its open finding stands for it, with the same weight.
   incident: 100,
+  // A post waits for the owner's go: like a draft, read when there is time.
+  publish: 47,
   // A budget hold is handled below: it stops new work.
   budget: 85,
 };

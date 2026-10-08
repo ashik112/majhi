@@ -19,6 +19,7 @@ import {
   DEFAULT_CHAT_TITLES,
   didWords,
   didWordsInline,
+  fieldsFit,
   type HandoffFailed,
   handoffFailedFacts,
   isOwnerChat,
@@ -48,6 +49,7 @@ import {
   TASK_TYPE_OF_BRANCH,
   TASK_TYPES,
   type Task,
+  type TaskFieldsInput,
   type TaskId,
   type TaskKind,
   type TaskLink,
@@ -768,6 +770,12 @@ export class TaskService {
       throw new UserError(`The owner set the type of ${id}. Only the owner changes it.`, 409);
     }
     if (task.typing?.type === type && task.typing.by === by) return task;
+    if (task.fields !== undefined && task.fields.type !== type) {
+      throw new UserError(
+        `${id} holds a ${task.fields.type}'s fields, so it stays a ${task.fields.type}.`,
+        409,
+      );
+    }
     this.deps.store.tasks.setTyping(id, { type, by });
     // What the owner or the captain says it is, is the right answer to Laya's pick.
     this.deps.decisions?.resolve?.("typed", id, type, `the ${by} set it`);
@@ -775,6 +783,44 @@ export class TaskService {
     this.deps.room.publishTask(typed);
     this.deps.events.emitTask(id, true);
     return typed;
+  }
+
+  /**
+   * Sets what the kind holds (a post's draft, channel, schedule). The fields must be of the task's own
+   * type. Writing a draft again clears the owner's approval: a changed draft asks again.
+   */
+  setFields(id: string, input: TaskFieldsInput): Task {
+    const task = this.get(id);
+    if (!fieldsFit(task.typing, input)) {
+      throw new UserError(
+        `The fields of a ${input.type} do not fit ${id}, a ${task.typing?.type ?? "task with no type"}. Set its type first.`,
+        409,
+      );
+    }
+    this.deps.store.tasks.setFields(id, input);
+    return this.fieldsChanged(id);
+  }
+
+  /** The owner approved a post to go out: the record is kept, and the task's room says so. */
+  approvePost(id: string): Task {
+    const task = this.get(id);
+    const fields = task.fields;
+    if (fields?.type !== "post") throw new UserError(`${id} is not a post.`, 409);
+    if (fields.approvedAt !== undefined) return task;
+    this.deps.store.tasks.setFields(id, { ...fields, approvedAt: new Date().toISOString() });
+    this.deps.room.post(id, `publish-${Date.now()}`, {
+      type: "system",
+      level: "info",
+      text: `Approved to publish on ${fields.channel}${fields.schedule === undefined ? "" : `, ${fields.schedule}`}.`,
+    });
+    return this.fieldsChanged(id);
+  }
+
+  private fieldsChanged(id: string): Task {
+    const changed = this.get(id);
+    this.deps.room.publishTask(changed);
+    this.deps.events.emitTask(id, true);
+    return changed;
   }
 
   /**

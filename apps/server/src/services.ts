@@ -1658,6 +1658,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         );
         clientChat?.desk.retry();
       },
+      approvePost: (task) => tasks.approvePost(task),
       answerChatWait: (room, ref, option) => clientChat?.waits.answer(room, ref, option) ?? Promise.resolve(),
       answerIncidentAsk: (what, ref, option) =>
         incidentEngine?.answer(what, ref, option) ?? Promise.resolve(),
@@ -1681,6 +1682,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         await deployWorld.service.deploy({ record: step.record, retry: true }, "owner");
       },
     },
+    posts: () =>
+      store.tasks.openPosts().flatMap((id) => {
+        const found = store.tasks.get(id);
+        const fields = found?.fields;
+        if (found === undefined || fields?.type !== "post" || fields.approvedAt !== undefined) return [];
+        return [
+          {
+            task: found.id,
+            ...(found.org === undefined ? {} : { org: found.org }),
+            title: found.title,
+            channel: fields.channel,
+            ...(fields.schedule === undefined ? {} : { schedule: fields.schedule }),
+            at: found.updatedAt,
+          },
+        ];
+      }),
     extras: async () => [
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
