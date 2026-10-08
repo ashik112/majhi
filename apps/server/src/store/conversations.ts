@@ -47,6 +47,8 @@ interface Row {
   agent_text: string | null;
   owner_at: string | null;
   owner_text: string | null;
+  /** Who wrote the newest owner-side message: `captain`, `majhi` or `you`. */
+  owner_by: string | null;
   app: string | null;
   agent: string | null;
   unlinked: number | null;
@@ -144,7 +146,11 @@ export class ConversationsRepo {
             AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent')) AS owner_at,
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
-            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text,
+        (SELECT CASE WHEN json_extract(r.payload, '$.by') = 'captain' AND json_extract(r.payload, '$.as') IS NULL THEN 'captain'
+                     WHEN json_extract(r.payload, '$.by') = 'majhi' THEN 'majhi' ELSE 'you' END FROM room_items r
+          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_by
       FROM tasks t LEFT JOIN read_marks m ON m.id = t.id LEFT JOIN conversation_archive a ON a.id = t.id
       WHERE ${LISTED}
         AND (t.status != 'done' OR ${AGENT_CHAT} OR EXISTS (
@@ -191,8 +197,10 @@ function kindOf(row: Row): Conversation["kind"] {
 /** The newer of the newest agent and owner messages, as a one-line preview. */
 function lastOf(row: Row): { at: string; line: string } | undefined {
   const agent = row.agent_at === null ? undefined : { at: row.agent_at, line: oneLine(row.agent_text) };
+  // The writer is named as recorded: a reply the captain sent reads "Captain:", the owner's own "You:".
+  const who = row.owner_by === "captain" ? "Captain" : row.owner_by === "majhi" ? "majhi" : "You";
   const owner =
-    row.owner_at === null ? undefined : { at: row.owner_at, line: `You: ${oneLine(row.owner_text)}` };
+    row.owner_at === null ? undefined : { at: row.owner_at, line: `${who}: ${oneLine(row.owner_text)}` };
   if (agent === undefined) return owner;
   if (owner === undefined) return agent;
   return owner.at > agent.at ? owner : agent;

@@ -489,6 +489,7 @@ export class RunManager {
       mode: "queue" | "interrupt";
       /** More agents the owner addressed: the same message goes to their next turn too. */
       also?: readonly string[];
+      by?: "captain" | "majhi" | undefined;
     },
   ): Promise<RoomItem> {
     const item = this.postOwner(task.id, agent, input);
@@ -503,7 +504,13 @@ export class RunManager {
   postOwner(
     task: Task["id"],
     agent: string,
-    input: { text: string; attachments: Attachment[]; mode: "queue" | "interrupt" },
+    input: {
+      text: string;
+      attachments: Attachment[];
+      mode: "queue" | "interrupt";
+      /** Not the owner: the captain or majhi wrote it. */
+      by?: "captain" | "majhi" | undefined;
+    },
   ): RoomItem {
     // The run exists before the item: a run made later reads queued items back from the store.
     this.runFor(task, agent);
@@ -514,6 +521,7 @@ export class RunManager {
       attachments: input.attachments,
       queued: true,
       to: agent,
+      ...(input.by === undefined ? {} : { by: input.by }),
     });
     const item = this.deps.room.get(task, id);
     if (item === undefined) throw new Error("The message was not stored");

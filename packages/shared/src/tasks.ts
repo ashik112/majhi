@@ -754,6 +754,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     removed: z.boolean().optional(),
     /** The agent it went to. */
     to: IdSchema.optional(),
+    /** Who wrote it when it was not the owner: the captain or majhi itself. Absent: the owner. */
+    by: z.enum(["captain", "majhi"]).optional(),
   }),
   RoomItemBase.extend({
     type: z.literal("agent"),

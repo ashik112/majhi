@@ -3931,6 +3931,8 @@ export class TaskService {
     from?: string | undefined;
     mode: "queue" | "interrupt";
     agent?: string | undefined;
+    /** Who writes when it is not the owner: the captain's agent id, or `majhi`. The record and the card say so. */
+    by?: string | undefined;
   }): Promise<RoomItem> {
     let task = this.get(input.task);
     if (input.text.trim() === "" && input.attachments.length === 0)
@@ -3961,7 +3963,8 @@ export class TaskService {
     const attachments = await takePlanned(this.deps.uploads, planned, join(task.folder, "attachments"));
     if (attachments.length > 0) this.deps.store.tasks.addAttachments(task.id, attachments);
     // The owner wrote back: a review card and plain-text questions stop waiting.
-    this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
+    const writer = input.by === undefined ? undefined : this.cards.byCaptain(input.by) ? "captain" : "majhi";
+    this.cards.settle(task.id, "review", `Replied to @${agent}`, input.by ?? "owner");
     this.cards.replied(task.id);
     // The owner spoke: the loop guard counts agent turns from here.
     const state = this.deps.store.tasks.roomState(task.id);
@@ -3982,6 +3985,7 @@ export class TaskService {
       text: input.text,
       attachments,
       mode: input.mode,
+      by: writer,
     });
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emitTask(task.id, true);

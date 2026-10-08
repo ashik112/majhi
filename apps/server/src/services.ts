@@ -1687,6 +1687,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           text: FIX_MR_CHECKS_TEXT,
           attachments: [],
           mode: "queue",
+          by: "majhi",
         }),
       runDeployStep: async (task, project, env) => {
         const found = store.tasks.get(task);

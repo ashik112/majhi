@@ -379,6 +379,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         text,
         attachments: [],
         mode: "queue",
+        by: (await deps.lanes.boss()) ?? "majhi",
         ...(lead === undefined ? {} : { agent: lead }),
       });
     },

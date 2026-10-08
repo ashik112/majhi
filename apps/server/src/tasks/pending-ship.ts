@@ -102,6 +102,7 @@ export class PendingShips {
         attachments: [],
         mode: "queue",
         agent: lead,
+        by: "majhi",
       });
     } catch (err) {
       store.tasks.setPendingShip(task.id, undefined);

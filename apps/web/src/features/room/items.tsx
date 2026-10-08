@@ -431,17 +431,19 @@ function ContextLine({ item, repeat }: { item: Of<"context">; repeat: number }) 
 
 /** The owner's side of the conversation: a light bubble in the same column as the agents. */
 function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: AgentLive | undefined }) {
+  // Not the owner's: the captain (or majhi) wrote it into this task, and the record says so.
+  const who = item.by === "captain" ? "Captain" : item.by === "majhi" ? "majhi" : "You";
   return (
-    <article aria-label="You" className="flex gap-2.5">
+    <article aria-label={who} className="flex gap-2.5">
       <span
         aria-hidden="true"
         className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fg-soft text-[10px] font-semibold text-canvas"
       >
-        Y
+        {item.by === "captain" ? <Anchor className="size-3.5" /> : who.slice(0, 1).toUpperCase()}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className="text-base font-semibold text-fg">You</span>
+          <span className="text-base font-semibold text-fg">{who}</span>
           <Stamp at={item.at} />
           {item.removed === true && <span className="text-sm text-fg-faint">Removed, not sent</span>}
         </div>
