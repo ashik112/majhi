@@ -59,7 +59,18 @@ export class DeployPlanner {
 
   /** The steps of a task's plan, in order. */
   async stepsOf(task: Pick<Task, "id" | "repos">): Promise<DeployStep[]> {
-    const mine = this.deps.repo.ofTask(task.id);
+    const all = this.deps.repo.ofTask(task.id);
+    // One step per environment: a newer step of the same project and environment replaces an older one.
+    const mine = all.filter(
+      (r) =>
+        !all.some(
+          (o) =>
+            o.id !== r.id &&
+            o.project === r.project &&
+            o.env === r.env &&
+            (o.seq > r.seq || (o.seq === r.seq && o.id > r.id)),
+        ),
+    );
     if (mine.length === 0) return [];
     const out: DeployStep[] = [];
     let plan: Awaited<ReturnType<DeployPlanDeps["ship"]>> | undefined;

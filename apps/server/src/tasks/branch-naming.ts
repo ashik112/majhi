@@ -121,7 +121,35 @@ export function shortSlug(title: string): string {
     if (next.length > MAX_SLUG) break;
     out = next;
   }
-  return out === "" ? slug.slice(0, MAX_SLUG).replace(/-+$/, "") : out;
+  return out === "" ? slug.slice(0, MAX_SLUG).replace(/-+$/, "") : endOnWord(out);
+}
+
+const DANGLING = new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "to",
+  "on",
+  "in",
+  "at",
+  "by",
+  "for",
+  "and",
+  "or",
+  "with",
+  "when",
+  "is",
+  "are",
+  "if",
+  "as",
+]);
+
+/** Drops words that cannot end a name ("when", "the"), keeping at least one word. */
+function endOnWord(slug: string): string {
+  const words = slug.split("-");
+  while (words.length > 1 && DANGLING.has(words[words.length - 1] ?? "")) words.pop();
+  return words.join("-");
 }
 
 /** Whether a rendered branch is one git accepts and a run can write: a folder, then a name. */

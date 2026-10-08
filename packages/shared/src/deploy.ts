@@ -349,7 +349,7 @@ export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   "captain-next": "next",
   "waits-for-owner": "waits for you",
   "waits-for-previous": "waiting",
-  blocked: "blocked",
+  blocked: "cannot run yet",
   held: "held",
   queued: "queued",
   running: "deploying",
@@ -474,6 +474,8 @@ export const ProjectDeployViewSchema = z.object({
   environments: z.array(DeployEnvironmentSchema),
   /** Newest first. */
   history: z.array(DeployRecordSchema),
+  /** The deploys whose rollback is running now. */
+  rollingBack: z.array(z.number().int().positive()).default([]),
   /** The ship rule that covers the project's deploys, in words, when the owner set one. */
   rule: z.string().optional(),
 });

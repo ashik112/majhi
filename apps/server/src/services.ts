@@ -116,6 +116,7 @@ import { checkGitToken } from "./gitConnect/check.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { effectiveCommands } from "./handoff/commands.ts";
 import { HomeChecks } from "./handoff/home-checks.ts";
 import { defaultHandoffCpus, defaultHandoffMemory, maxHandoffMemory } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
@@ -146,6 +147,7 @@ import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
 import { landedNow } from "./memory/task-git.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
+import { FIX_MR_CHECKS_TEXT, failingMrDecisions } from "./mrs/decisions.ts";
 import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
@@ -1121,13 +1123,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let handoffService: HandoffService | undefined;
   // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
   let loopGuard: LoopGuard | undefined;
+  // The checks a project has, as the hand-off resolves them: the card's commands with the project's own on top.
+  const checksConfigured = async (project: string): Promise<boolean> => {
+    const commands = effectiveCommands(
+      cards.get(project)?.commands,
+      (await config.sections()).projects[project]?.handoff,
+    );
+    return [commands.test, commands.build, commands.lint, commands.typecheck].some(
+      (c) => c !== undefined && c.trim() !== "",
+    );
+  };
   // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
   const mergeGate = new MergeGate({
     handoff: () => handoffService,
-    configured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    configured: (project) => checksConfigured(project),
   });
   const wikiLines = wikiNotes({
     repo: store.wiki,
@@ -1354,7 +1363,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     events,
     tasks,
-    working: (id) => runs.working(id).length > 0,
+    // A turn that only waits in the queue counts: its agent has not committed yet.
+    working: (id) =>
+      runs.working(id).length > 0 || (store.tasks.get(id)?.team ?? []).some((a) => runs.hasWork(id, a)),
     captainMerges: (task) => captainMerges(task.id),
     landed: (id) => {
       const merged = store.tasks.get(id);
@@ -1628,6 +1639,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
       answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
+      fixMrChecks: (task) =>
+        tasks.send({
+          task,
+          text: FIX_MR_CHECKS_TEXT,
+          attachments: [],
+          mode: "queue",
+        }),
+      runDeployStep: async (task, project, env) => {
+        const found = store.tasks.get(task);
+        if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
+        const step = (await deployWorld.planner.stepsOf(found)).find(
+          (s) => s.project === project && s.env === env,
+        );
+        if (step?.record === undefined) throw new UserError("That deploy step is gone.", 409);
+        await deployWorld.service.deploy({ record: step.record, retry: true }, "owner");
+      },
     },
     extras: async () => [
       ...(outcomesService?.decisions() ?? []),
@@ -1635,6 +1662,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(incidentEngine?.decisions(() => undefined) ?? []),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
+      ...failingMrDecisions(
+        [...store.tasks.unmergedMrs()].flatMap((id) => {
+          const found = store.tasks.get(id);
+          return found === undefined ? [] : [found];
+        }),
+      ),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
@@ -2066,10 +2099,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    checksConfigured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text) => notifier.captain(key, text),
     incident: async (input) =>
       (
@@ -3112,6 +3142,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),
       mergeChecks: (id) => tasks.mergeChecks(id),
+      empty: async (id) => {
+        const check = await shipReadiness({ store, room, runs, mrs }, id);
+        return !check.ready && check.unmergeable === "empty";
+      },
       state: (id) => handoff.state(id),
       lastMessage: (id) => {
         room.flush(id);

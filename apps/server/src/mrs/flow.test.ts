@@ -153,6 +153,24 @@ describe("who merges", () => {
     expect((await get(id)).status).toBe("done");
   });
 
+  it("a failing pipeline is said once in the room and waits in Needs you with Fix with agent", async () => {
+    const id = await reviewed();
+    must(await cmd("tasks.openMrs", { id }));
+    await fake.update((s) => {
+      s.ci["remotes/api"] = "failing";
+      s.ci["remotes/web"] = "passing";
+    });
+    await tick();
+    await tick();
+    const said = (await notes(id)).filter((t) => t.includes("checks of the merge request failed"));
+    expect(said).toHaveLength(1);
+    const decisions = must(await cmd("decisions.list", {})) as {
+      decisions: { id: string; options: { id: string }[] }[];
+    };
+    const mine = decisions.decisions.find((d) => d.id === `mrci:${id}`);
+    expect(mine?.options.map((o) => o.id)).toEqual(["fix"]);
+  });
+
   /** Merges the PR of a fake repo the way its host would: moves the base to the head. */
   async function hostMerge(slug: string, _label: string) {
     const state = await fake.state();

@@ -1099,7 +1099,7 @@ export class HandoffService {
         const fresh =
           existing === undefined || existing.fresh.length === 0
             ? ""
-            : `, ${existing.fresh.length} new on this task`;
+            : ` ${existing.fresh.length === 1 ? "1 failure is new" : `${existing.fresh.length} failures are new`} on this task.`;
         return this.withLog(
           task,
           runId,
@@ -1109,7 +1109,7 @@ export class HandoffService {
             status: res.timedOut ? "timeout" : "fail",
             detail: res.timedOut
               ? `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)} on its retry${where}${more}`
-              : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""}${fresh})`,
+              : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}).${kind === "tests" ? " It failed again on a retry." : ""}${fresh}`,
             ms: total,
             output: tail,
             code: res.code,

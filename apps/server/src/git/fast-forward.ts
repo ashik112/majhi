@@ -43,10 +43,19 @@ export async function fastForwardBranch(req: {
     return { ok: true, moved: false, detail: `${branch} already has everything on ${to}.` };
   }
   if (!(await gitOk(source, ["merge-base", "--is-ancestor", old, next]))) {
-    const own = Number((await git(source, ["rev-list", "--count", `${next}..${old}`])).trim());
+    const subjects = async (range: string): Promise<{ count: number; text: string }> => {
+      const lines = (await git(source, ["log", "--format=%h %s", range]))
+        .trim()
+        .split("\n")
+        .filter((l) => l !== "");
+      return { count: lines.length, text: sample(lines) };
+    };
+    const own = await subjects(`${next}..${old}`);
+    const theirs = await subjects(`${old}..${next}`);
+    const n = (c: number) => `${c} commit${c === 1 ? "" : "s"}`;
     return {
       ok: false,
-      reason: `local ${branch} has ${own} commit${own === 1 ? "" : "s"} ${remote} lacks; push or merge them first.`,
+      reason: `Local ${branch} and ${remote} have each moved on: local ${branch} has ${n(own.count)} ${remote} lacks (${own.text}) and ${remote} has ${n(theirs.count)} local ${branch} lacks (${theirs.text}). Merge or rebase them in the project.`,
     };
   }
   const at = (await checkedOutAt(source)).get(branch);

@@ -53,6 +53,10 @@ export interface DecisionActions {
   answerIncidentAsk?(what: string, ref: string, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
+  /** The owner runs a deploy step that waits for them. */
+  runDeployStep?(task: string, project: string, env: string): Promise<unknown>;
+  /** The owner's words to the lead of a task whose merge request fails its checks. */
+  fixMrChecks?(task: string): Promise<unknown>;
   /** The Mac has notifications off for majhi: `settings` opens the pane, `check` sends a test. */
   answerNotifyAccess?(option: string): Promise<unknown>;
 }
@@ -438,6 +442,8 @@ export class InboxService {
     } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
+    else if (parsed.kind === "mrci") await actions.fixMrChecks?.(parsed.task);
+    else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");

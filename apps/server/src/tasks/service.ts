@@ -1973,7 +1973,7 @@ export class TaskService {
           rewritten = true;
           this.note(
             id,
-            `${repo.project}: ${result.how === "collapsed" ? "the checkpoints were folded into one commit" : "the task trailers were removed from the commits"} before they leave majhi.`,
+            `${repo.project}: ${result.how === "collapsed" ? "the checkpoints were folded into one commit" : "the commits were tidied"} before they leave majhi.`,
           );
         }
       } catch (err) {

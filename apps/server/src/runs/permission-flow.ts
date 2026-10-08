@@ -1,5 +1,5 @@
 import type { PermissionAsk } from "@majhi/acp";
-import { type CommandMeta, MAJHI_OPTION_PREFIX, type RoomItem } from "@majhi/shared";
+import { type CommandMeta, isDestructiveCommand, MAJHI_OPTION_PREFIX, type RoomItem } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -13,7 +13,9 @@ import {
   connectionVerdict,
   decidePermission,
   isMajhiTool,
+  isProcessTool,
   mcpToolOf,
+  neededPerm,
   toolAllowKey,
   withoutUnaskedModes,
 } from "./permissions.ts";
@@ -23,6 +25,18 @@ import type { AgentRun } from "./run.ts";
 const TASK_OPTION = `${MAJHI_OPTION_PREFIX}task`;
 const ALWAYS_OPTION = `${MAJHI_OPTION_PREFIX}always`;
 const READS_OPTION = `${MAJHI_OPTION_PREFIX}reads`;
+
+/**
+ * The key an "Always allow this command" is kept under: the exact command line of a plain shell command.
+ * A push, a merge request command, a destructive command and a background process are never kept.
+ */
+function shellAllowKey(ask: PermissionAsk): string | undefined {
+  if (ask.kind !== "execute" || isProcessTool(ask.title)) return undefined;
+  const command = (ask.command ?? ask.title).trim();
+  if (command === "" || command.length > 300 || neededPerm(ask) !== "shell" || isDestructiveCommand(command))
+    return undefined;
+  return `shell:${command}`;
+}
 
 /** The part of the connections service a card's "Always allow" and "It only reads" use. */
 export interface ConnectionToolRules {
@@ -66,14 +80,14 @@ export class PermissionFlow {
     const once = ask.options.find((o) => o.kind === "allow_once");
     // An MCP tool of a server that is not majhi's own can be allowed for good, in this workspace.
     const org = store.tasks.get(run.task)?.org;
-    const alwaysKey =
-      mcpToolOf(ask.title) === undefined || isMajhiTool(ask.title) || org === undefined || once === undefined
-        ? undefined
-        : toolAllowKey(ask.title);
+    const mcpKey =
+      mcpToolOf(ask.title) === undefined || isMajhiTool(ask.title) ? undefined : toolAllowKey(ask.title);
+    const alwaysKey = org === undefined || once === undefined ? undefined : (mcpKey ?? shellAllowKey(ask));
     const saved =
       alwaysKey !== undefined && org !== undefined && (await this.savedAlways(run.agent, org, alwaysKey));
+    const keptForTask = alwaysKey !== undefined && store.permissions.allowed(run.task, alwaysKey);
     const decision =
-      (verdict.kind === "read" || saved) && once !== undefined
+      (verdict.kind === "read" || saved || keptForTask) && once !== undefined
         ? ({ action: "allow", option: once.id, via: "perms" } as const)
         : decidePermission(ask, {
             perms: run.perms,
@@ -100,7 +114,7 @@ export class PermissionFlow {
               ? [
                   o,
                   ...(ask.options.some((x) => x.kind === "allow_always") ? [] : [TASK_CHOICE]),
-                  ALWAYS_CHOICE,
+                  mcpKey === undefined ? ALWAYS_COMMAND_CHOICE : ALWAYS_CHOICE,
                 ]
               : [o],
           );
@@ -226,7 +240,7 @@ export class PermissionFlow {
     return updated;
   }
 
-  /** Whether the owner already said "Always allow" for this agent, tool and workspace. */
+  /** Whether the owner already said "Always allow" for this agent, tool or command and workspace. */
   private async savedAlways(agent: string, org: string, key: string): Promise<boolean> {
     const config = this.deps.config;
     if (config === undefined) return false;
@@ -352,6 +366,11 @@ export class PermissionFlow {
 }
 
 const TASK_CHOICE = { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const };
+const ALWAYS_COMMAND_CHOICE = {
+  id: ALWAYS_OPTION,
+  name: "Always allow this command",
+  kind: "allow_always" as const,
+};
 const ALWAYS_CHOICE = { id: ALWAYS_OPTION, name: "Always allow this tool", kind: "allow_always" as const };
 
 const TOOL_OPTIONS = [

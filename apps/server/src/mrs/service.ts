@@ -1364,6 +1364,12 @@ export class MrService {
         ) {
           this.deps.store.tasks.setMr(task.id, repo.project, next);
           if (next.state === "merged") this.note(task.id, `${repo.project}: the merge request was merged.`);
+          if (next.state === "open" && next.ci === "failing" && repo.mr.ci !== "failing")
+            this.note(
+              task.id,
+              `${repo.project}: the checks of the merge request failed. Fix with agent is waiting in Needs you.`,
+              "error",
+            );
           if (next.state === "closed")
             this.note(task.id, `${repo.project}: the merge request was closed without merging.`, "error");
           this.publish(task.id);

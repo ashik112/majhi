@@ -61,7 +61,16 @@ export async function unshippedCommits(
     ]);
     return Number(out.trim()) || 0;
   }
-  return aheadOf(cwd, upstreams, tip);
+  const left = await aheadOf(cwd, upstreams, tip);
+  // The same fork point the clean-up uses: never more than the commits since the task started.
+  if (
+    repo.startCommit !== undefined &&
+    (await gitOk(cwd, ["merge-base", "--is-ancestor", repo.startCommit, tip]))
+  ) {
+    const since = Number((await git(cwd, ["rev-list", "--count", `${repo.startCommit}..${tip}`])).trim());
+    return Math.min(left, since);
+  }
+  return left;
 }
 
 /**

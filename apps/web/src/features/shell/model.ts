@@ -173,7 +173,7 @@ export function homeRowIds(
 
 /**
  * The banner, from the decisions the server lists and nothing else, so it cannot name something the
- * Needs you page does not. On a task's page it leaves out that task's own decisions. The prompt waiting
+ * Needs you page does not. On a task's page it shows only what belongs to no task: the task's own are on the page, other tasks' wait in Needs you. The prompt waiting
  * in the chat the owner has open points at itself.
  */
 export function deriveBanner(input: {
@@ -190,7 +190,7 @@ export function deriveBanner(input: {
     (d) =>
       input.onScreen?.has(d.id) !== true &&
       input.dismissed?.has(d.id) !== true &&
-      (input.openTask === undefined || d.task !== input.openTask),
+      (input.openTask === undefined || d.task === undefined),
   );
   const first = all.toSorted((a, b) => bannerRank(a) - bannerRank(b))[0];
   if (first === undefined) return null;
