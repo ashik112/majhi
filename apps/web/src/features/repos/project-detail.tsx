@@ -26,10 +26,11 @@ import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
 import { DeploySection } from "@/features/deploy/deploy-section";
 import type { ApiRequestError } from "@/lib/api";
-import { useProjectCards } from "@/lib/card-queries";
+import { useCheckLine, useProjectCards } from "@/lib/card-queries";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
+import { useDebounced } from "@/lib/search-queries";
 import { useGitStatus, useOrgs, useUpdateOrg } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
@@ -173,11 +174,12 @@ export function ProjectDetail({
           <ProjectCardSection project={project.id} org={project.org} />
         </div>
       )}
-      <DeploysAnchor project={project} />
+      {/* Without the repo there is nothing to deploy, check or push: only the settings that name the project stay. */}
+      {project.exists && <DeploysAnchor project={project} />}
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
-      <HandoffSection project={project} />
-      <RemotesSection project={project} repo={repo} />
+      {project.exists && <HandoffSection project={project} />}
+      {project.exists && <RemotesSection project={project} repo={repo} />}
       <LinksSection project={project} projects={projects} />
     </DetailPane>
   );
@@ -312,7 +314,7 @@ function NamesSection({
         <Field
           label="Base branch"
           hint={
-            repo?.branch
+            project.exists && repo?.branch
               ? `Blank uses the workspace's base, then the repo's default. Checked out now: ${repo.branch}.`
               : "Blank uses the workspace's base, then the repo's default."
           }
@@ -322,7 +324,7 @@ function NamesSection({
               {...props}
               value={draft.base}
               onChange={(e) => set({ base: e.target.value })}
-              placeholder="main"
+              placeholder={project.base ?? "Workspace default"}
               className="font-mono"
             />
           )}
@@ -365,10 +367,10 @@ function NamesSection({
 }
 
 const HANDOFF_ROWS = [
-  { key: "test", label: "Test", placeholder: "pnpm exec vitest run --changed {base}" },
-  { key: "build", label: "Build", placeholder: "pnpm build" },
-  { key: "lint", label: "Lint", placeholder: "pnpm lint" },
-  { key: "typecheck", label: "Typecheck", placeholder: "pnpm typecheck" },
+  { key: "test", label: "Test" },
+  { key: "build", label: "Build" },
+  { key: "lint", label: "Lint" },
+  { key: "typecheck", label: "Typecheck" },
 ] as const;
 
 /** Where a check's command comes from: this project's own setting, the repo's CI, or the project card. */
@@ -389,6 +391,51 @@ function sourceOf(
   return fromCard === undefined
     ? { command: undefined, from: "nothing found: no check runs", env: [] }
     : { command: fromCard, from: "from the project card", env: [] };
+}
+
+/** One check's command. A blank field shows what runs instead, faint; a set one says what runs of it, read-only. */
+function CheckField({
+  project,
+  label,
+  rowKey,
+  value,
+  card,
+  onChange,
+}: {
+  project: string;
+  label: string;
+  rowKey: (typeof HANDOFF_ROWS)[number]["key"];
+  value: string;
+  card: ProjectCard | undefined;
+  onChange: (value: string) => void;
+}) {
+  const source = sourceOf(rowKey, value, card);
+  const typed = useDebounced(value.trim(), 400);
+  const line = useCheckLine(project, typed);
+  const own = value.trim() !== "";
+  // What runs of a command set here: its read-only form, or why it is skipped. Only when it differs from the text.
+  const readOnly =
+    !own || line.data === undefined || typed !== value.trim()
+      ? undefined
+      : line.data.notRun !== undefined
+        ? `Not run: ${line.data.notRun}`
+        : line.data.runs !== undefined && line.data.runs !== typed
+          ? `Runs read-only as ${line.data.runs}`
+          : undefined;
+  const from = `${source.from[0]?.toUpperCase() ?? ""}${source.from.slice(1)}${source.env.length === 0 ? "" : `. Runs with ${source.env.join(" ")}`}`;
+  return (
+    <Field label={label} hint={readOnly === undefined ? from : `${from}. ${readOnly}`}>
+      {(props) => (
+        <Input
+          {...props}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={source.command ?? "Nothing runs"}
+          className="font-mono placeholder:text-fg-dim"
+        />
+      )}
+    </Field>
+  );
 }
 
 /** The commands the check before ship runs, where each came from, and how much memory a check may use. */
@@ -464,29 +511,20 @@ function HandoffSection({ project }: { project: ProjectView }) {
           <span className="font-mono">{"{base}"}</span> becomes the commit the task branched from.
         </p>
         <div className="grid gap-3">
-          {HANDOFF_ROWS.map((r) => {
-            const source = sourceOf(r.key, draft[r.key], card);
-            return (
-              <Field
-                key={r.key}
-                label={r.label}
-                hint={`${source.from[0]?.toUpperCase() ?? ""}${source.from.slice(1)}${source.env.length === 0 ? "" : `. Runs with ${source.env.join(" ")}`}`}
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    value={draft[r.key]}
-                    onChange={(e) => {
-                      if (state.kind !== "saving") setState(IDLE);
-                      setDraft((d) => ({ ...d, [r.key]: e.target.value }));
-                    }}
-                    placeholder={source.command ?? r.placeholder}
-                    className="font-mono"
-                  />
-                )}
-              </Field>
-            );
-          })}
+          {HANDOFF_ROWS.map((r) => (
+            <CheckField
+              key={r.key}
+              project={project.id}
+              label={r.label}
+              value={draft[r.key]}
+              card={card}
+              rowKey={r.key}
+              onChange={(value) => {
+                if (state.kind !== "saving") setState(IDLE);
+                setDraft((d) => ({ ...d, [r.key]: value }));
+              }}
+            />
+          ))}
           <Field
             label="Memory per check"
             hint={`The most one check of ${org?.name ?? "this workspace"} may use. A check that hits it says so. Blank: a quarter of this machine, at least 6g`}
@@ -500,7 +538,7 @@ function HandoffSection({ project }: { project: ProjectView }) {
                   if (state.kind !== "saving") setState(IDLE);
                   setMemory(e.target.value);
                 }}
-                placeholder="8g"
+                placeholder="Automatic"
                 className="font-mono"
               />
             )}

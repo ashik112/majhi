@@ -216,6 +216,18 @@ export class WikiRepo {
     });
   }
 
+  /** A removed project: its pages, their saved versions and its state go. The workspace's own pages are kept. */
+  removeProject(org: string, project: string): void {
+    this.transaction(() => {
+      const where = "org = ? AND project = ?";
+      this.db
+        .prepare(`DELETE FROM wiki_page_versions WHERE page_n IN (SELECT n FROM wiki_pages WHERE ${where})`)
+        .run(org, project);
+      this.db.prepare(`DELETE FROM wiki_pages WHERE ${where}`).run(org, project);
+      this.db.prepare(`DELETE FROM wiki_state WHERE ${where}`).run(org, project);
+    });
+  }
+
   /** Versions a save replaced, newest first. A version that does not parse is left out. */
   versions(org: string, project: string | undefined, id: WikiPageId): PageVersion[] {
     const row = this.row(org, project, id);

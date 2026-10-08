@@ -17,6 +17,7 @@ import {
   useMemorySearch,
   useRejectAllFacts,
 } from "@/lib/memory-queries";
+import { AddFactDialog } from "./add-fact-dialog";
 import { AutoDecisions } from "./auto-decisions";
 import { FactRow } from "./fact-row";
 import { factsOf, GLOBAL, type ProjectOrgs, shownFact } from "./model";
@@ -46,6 +47,7 @@ export function LessonsTab({
   const searching = query.trim() !== "";
   const orgNames = useMemo(() => new Map(orgs.map((o) => [o.id, o.name])), [orgs]);
   const ownScope = target === GLOBAL ? GLOBAL_SCOPE : projectScope(target);
+  const [adding, setAdding] = useState(false);
 
   const mine = useMemo(
     () => factsOf(target, facts.data ?? [], projectOrgs).filter(shownFact),
@@ -92,22 +94,27 @@ export function LessonsTab({
         note={total === 0 ? undefined : plural(total, "lesson")}
         {...(pending.length === 0 ? { className: "border-t-0" } : {})}
         actions={
-          total >= SEARCH_FROM && (
-            <div className="relative w-[240px]">
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-faint"
-              />
-              <Input
-                type="search"
-                aria-label="Search lessons"
-                placeholder="Search lessons"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="h-7 pl-8 text-sm"
-              />
-            </div>
-          )
+          <>
+            <Button size="sm" onClick={() => setAdding(true)}>
+              Add lesson
+            </Button>
+            {total >= SEARCH_FROM && (
+              <div className="relative w-[240px]">
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-faint"
+                />
+                <Input
+                  type="search"
+                  aria-label="Search lessons"
+                  placeholder="Search lessons"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="h-7 pl-8 text-sm"
+                />
+              </div>
+            )}
+          </>
         }
       >
         {search.isError && <p className="text-sm text-red">{describeError(search.error)}</p>}
@@ -132,6 +139,13 @@ export function LessonsTab({
         )}
       </DetailSection>
       <AutoDecisions events={decisions} facts={byId} error={events.error} />
+      {adding && (
+        <AddFactDialog
+          scope={ownScope}
+          where={target === GLOBAL ? "all projects" : target}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </>
   );
 }

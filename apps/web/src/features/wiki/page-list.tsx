@@ -22,6 +22,7 @@ export function PageList({
   notWritten,
   flowsNotChosen,
   workspace,
+  stub,
   onSelect,
 }: {
   entries: readonly ListEntry[];
@@ -34,6 +35,8 @@ export function PageList({
   flowsNotChosen: boolean;
   /** The workspace's own pages: no components, and its flows cross repos. */
   workspace: boolean;
+  /** The workspace's Overview row when no page is written yet: it opens the list of projects instead. */
+  stub?: { selected: boolean; sub: string; onSelect: () => void } | undefined;
   onSelect: (id: WikiPageId) => void;
 }) {
   return (
@@ -41,7 +44,7 @@ export function PageList({
       <div className="flex flex-col gap-1">
         {groupsOf(workspace).map(({ kind, label }) => {
           const rows = entries.filter((e) => e.summary.kind === kind);
-          if (rows.length === 0) return null;
+          if (rows.length === 0 && !(kind === "overview" && stub !== undefined)) return null;
           const count = kind === "gaps" ? openItems : rows.length;
           return (
             <section key={kind} aria-label={label} className="flex flex-col gap-px pb-2">
@@ -58,6 +61,28 @@ export function PageList({
                   </span>
                 )}
               </h2>
+              {kind === "overview" && stub !== undefined && (
+                <button
+                  type="button"
+                  aria-current={stub.selected ? "page" : undefined}
+                  onClick={stub.onSelect}
+                  className={cn(
+                    ROW,
+                    "min-h-[46px] flex-col justify-center gap-0.5 px-2.5 py-1.5",
+                    stub.selected && ROW_SELECTED,
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "w-full truncate text-body font-medium",
+                      stub.selected ? "text-fg" : "text-fg-soft",
+                    )}
+                  >
+                    {COPY.group.overview}
+                  </span>
+                  <span className="w-full truncate text-xs text-fg-faint">{stub.sub}</span>
+                </button>
+              )}
               {rows.map((e) => (
                 <Row key={e.summary.id} entry={e} on={e.summary.id === selected} onSelect={onSelect} />
               ))}

@@ -26,6 +26,12 @@ describe("a check never writes", () => {
     });
   });
 
+  it("never passes --fix through to a package script as an extra argument", async () => {
+    const out = await safeLine("pnpm lint --fix", async (name) => (name === "lint" ? "eslint ." : undefined));
+    expect(out.ok).toBe(true);
+    expect(out.ok && out.command.includes("--fix")).toBe(false);
+  });
+
   it("runs the tool of a package script that fixes, read-only, through the package manager", async () => {
     const out = await safeLine("pnpm lint", async (name) => (name === "lint" ? "eslint . --fix" : undefined));
     expect(out).toEqual({

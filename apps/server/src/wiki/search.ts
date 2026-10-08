@@ -133,6 +133,16 @@ export class WikiIndex implements PageIndex {
     this.db.transaction(() => this.remove(org, project ?? "", id))();
   }
 
+  /** Every piece of a removed project. */
+  dropProject(org: string, project: string): void {
+    this.db.transaction(() => {
+      const rows = this.db
+        .prepare("SELECT DISTINCT page FROM wiki_chunks WHERE org = ? AND project = ?")
+        .all(org, project) as { page: string }[];
+      for (const { page } of rows) this.remove(org, project, page);
+    })();
+  }
+
   private remove(org: string, project: string, page: string): void {
     const rows = this.db
       .prepare("SELECT id FROM wiki_chunks WHERE org = ? AND project = ? AND page = ?")

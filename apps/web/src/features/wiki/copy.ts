@@ -141,6 +141,7 @@ export const COPY = {
     flowsWhy: "The captain's answer could not be read.",
     pagesWhy: "The update did not get to these. Retry writes them again.",
     updateFailed: "Last update failed",
+    signedOut: (account: string) => `${account} is signed out`,
   },
   notes: {
     title: "Your notes",
@@ -158,6 +159,8 @@ export const COPY = {
     running: "Building the wiki for",
     failed: "The build failed",
     again: "Build again",
+    signedOut: (account: string) =>
+      `${account} writes the wiki and is signed out. Sign in to it, then build again.`,
   },
   diagram: { openFull: "Open full size" },
   table: { unit: "Unit", how: "How", file: "File" },

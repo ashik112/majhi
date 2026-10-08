@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSession, RuntimeOptions, TurnUsage } from "@majhi/acp";
+import { type AgentSession, isAuthFailure, type RuntimeOptions, type TurnUsage } from "@majhi/acp";
 import {
   type AuthMode,
   BRIEF_BULLETS,
@@ -24,7 +24,7 @@ import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { ask } from "../decisions/acp.ts";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import { itemLine, trimMiddle } from "../runs/handoff.ts";
 import { modelForTier, normalizeOffered } from "../runs/model-options.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -482,6 +482,8 @@ export interface HousekeeperDeps {
   majhiHome: string;
   /** Records the session's tokens and cost under the task. */
   usage?: UsageRecorder;
+  /** A session failed on the account's sign-in: the account is signed out until it is signed in again. */
+  markSignedOut?: ((account: string, detail: string) => Promise<void>) | undefined;
 }
 
 /** Nobody is set to do it, so there is nothing to tell the owner about. */
@@ -587,8 +589,25 @@ export class Housekeeper {
     mode: SessionMode,
     job: (session: OpenSession) => Promise<T>,
   ): Promise<{ value: T; agent: string; spent: Spend }> {
+    const resolved = await this.resolve(task.org);
+    try {
+      return await this.runResolved(resolved, task, mode, job);
+    } catch (err) {
+      // The account's sign-in is dead: say so where the owner looks (Accounts, Needs you), not only in this error.
+      if (isAuthFailure(err)) {
+        await this.deps.markSignedOut?.(resolved.fm.account, errorMessage(err)).catch(() => undefined);
+      }
+      throw err;
+    }
+  }
+
+  private async runResolved<T>(
+    { fm, account }: Awaited<ReturnType<Housekeeper["resolve"]>>,
+    task: JobTask,
+    mode: SessionMode,
+    job: (session: OpenSession) => Promise<T>,
+  ): Promise<{ value: T; agent: string; spent: Spend }> {
     const { deps } = this;
-    const { fm, account } = await this.resolve(task.org);
     let apiKey: string | undefined;
     if (account.auth === "api-key" && account.key !== undefined) {
       apiKey = await deps.secrets.get(secretName(account.key));

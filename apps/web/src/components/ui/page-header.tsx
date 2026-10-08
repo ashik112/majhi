@@ -12,6 +12,7 @@ export function PageHeader({
   subtitle,
   children,
   bottom = false,
+  wrapSubtitle = false,
   className,
 }: {
   title: string;
@@ -19,6 +20,8 @@ export function PageHeader({
   /** Buttons, search and filters, or tabs with `bottom`, aligned right. */
   children?: ReactNode;
   bottom?: boolean;
+  /** A long subtitle wraps to a second line instead of being cut. */
+  wrapSubtitle?: boolean;
   className?: string;
 }) {
   return (
@@ -32,7 +35,11 @@ export function PageHeader({
     >
       <div className={cn("flex min-w-0 items-baseline gap-3", bottom && "pb-2")}>
         <h1 className="shrink-0 text-[15px] leading-5 font-semibold tracking-[-0.01em] text-fg">{title}</h1>
-        {subtitle && <div className="min-w-0 line-clamp-2 text-sm text-fg-muted">{subtitle}</div>}
+        {subtitle && (
+          <div className={cn("min-w-0 text-sm text-fg-muted", wrapSubtitle ? "text-pretty" : "line-clamp-2")}>
+            {subtitle}
+          </div>
+        )}
       </div>
       {children && (
         <div className={cn("ml-auto flex shrink-0 items-center gap-3", bottom && "self-end")}>{children}</div>

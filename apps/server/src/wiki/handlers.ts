@@ -15,7 +15,7 @@ import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { WikiAsk } from "./ask.ts";
 import type { DriftOf } from "./drift.ts";
-import type { WikiRepo } from "./repo.ts";
+import { WORKSPACE_STATE, type WikiRepo } from "./repo.ts";
 import { flowsNotChosen, type WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
 import { answerAddress, answerCall, answerRole } from "./system/answers.ts";
@@ -39,7 +39,7 @@ export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "st
   projects: (org: string) => Promise<readonly string[]>;
   /** How far the code has moved past a built commit. Absent: the status leaves it out. */
   drift?: DriftOf;
-  service: Pick<WikiService, "start" | "estimate" | "progress" | "system" | "redraw">;
+  service: Pick<WikiService, "start" | "estimate" | "progress" | "system" | "redraw" | "signedOut">;
   asker: Pick<WikiAsk, "answer">;
 }
 
@@ -72,6 +72,8 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
     const drift =
       state.builtCommit === undefined ? undefined : await deps.drift?.(org, project, state.builtCommit);
     const running = deps.service.progress(org, project);
+    // Only a failed update points at the sign-in: the account is named so the owner can fix it from here.
+    const signedOut = state.lastError === undefined ? undefined : await deps.service.signedOut(org);
     return {
       org,
       project,
@@ -86,6 +88,7 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       failed: state.gaps.failed.map((f) => f.page),
       flowsNotChosen: flowsNotChosen(state),
       ...(state.lastError === undefined ? {} : { lastError: state.lastError }),
+      ...(signedOut === undefined ? {} : { signedOut }),
     };
   };
   const view = async (org: string, project: string | undefined) => {
@@ -93,7 +96,17 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       return { org, ...(project === undefined ? {} : { project }), enabled: false, pages: [], status: [] };
     }
     const projects = project === undefined ? await deps.projects(org) : [project];
+    const own = project === undefined ? repo.state(org, WORKSPACE_STATE) : undefined;
     return {
+      ...(own === undefined
+        ? {}
+        : {
+            workspace: {
+              failed: own.gaps.failed.map((f) => f.page),
+              flowsNotChosen: flowsNotChosen(own),
+              ...(own.lastError === undefined ? {} : { lastError: own.lastError }),
+            },
+          }),
       org,
       ...(project === undefined ? {} : { project }),
       enabled: true,

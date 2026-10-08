@@ -174,9 +174,9 @@ function VersionRow({ brief, project, now }: { brief: ProjectBrief; project: str
   const toast = useToast();
   return (
     <li className="flex flex-col border-t border-line first:border-t-0">
-      <div className="flex min-h-10 items-center gap-3 text-sm">
+      <div className="flex min-h-10 items-center gap-3 py-1 text-sm">
         <span className="tnum w-8 shrink-0 font-mono text-fg-muted">v{brief.version}</span>
-        <span className="min-w-0 flex-1 truncate text-fg-muted">
+        <span className="min-w-0 flex-1 text-fg-muted text-pretty">
           <SourceText brief={brief} />
           <span className="text-fg-faint"> · {formatAgo(brief.created_at, now)}</span>
         </span>

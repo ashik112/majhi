@@ -286,6 +286,13 @@ function AccountBlock({ account, now }: { account: AccountView; now: number }) {
         {account.usage?.plan && <span className="text-fg-faint">· {account.usage.plan} plan</span>}
       </p>
       <AccountMeters account={account} now={now} />
+      {account.status === "needs-login" && account.auth === "login" && (
+        <Button asChild size="sm" className="self-start">
+          <Link to="/accounts" search={{ account: account.id, signin: "start" }}>
+            Sign in
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }

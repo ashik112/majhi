@@ -24,3 +24,13 @@ export function useRefreshCard() {
     onSuccess: () => client.invalidateQueries({ queryKey: cardKeys.all }),
   });
 }
+
+/** What a check command runs before ship, in its read-only form (nothing is run to find out). */
+export function useCheckLine(project: string, command: string) {
+  return useQuery<CommandOutput<"projects.checkLine">, ApiRequestError>({
+    queryKey: [...cardKeys.all, "line", project, command],
+    queryFn: () => cmd("projects.checkLine", { project, command }),
+    enabled: command !== "",
+    staleTime: 60_000,
+  });
+}

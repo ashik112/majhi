@@ -176,9 +176,18 @@ export class ProjectMemory {
   // Briefs
 
   brief(project: string): { current?: ProjectBrief; versions: ProjectBrief[] } {
-    const versions = this.store.briefs(project);
+    // Older builds wrote the same text over and over: a run of identical versions shows as its newest one.
+    const versions = this.store
+      .briefs(project)
+      .filter((v, i, all) => all[i + 1]?.body !== v.body);
     const [current] = versions;
     return current === undefined ? { versions } : { current, versions };
+  }
+
+  /** A removed project: its brief and history are deleted. */
+  forgetBrief(project: string): void {
+    this.store.deleteBriefs(project);
+    this.changed();
   }
 
   currentBrief(project: string): ProjectBrief | undefined {
@@ -198,7 +207,7 @@ export class ProjectMemory {
   ): ProjectBrief | undefined {
     const current = this.store.brief(project);
     const body = applyPatch(current?.body, wiki ? withWikiArchitecture(patch) : patch);
-    if (body === undefined) return undefined;
+    if (body === undefined || body === current?.body) return undefined;
     const brief = this.store.addBrief({
       project,
       body,
@@ -223,6 +232,9 @@ export class ProjectMemory {
     const written = card === undefined || card === "" ? sections : { ...sections, "What it is": card };
     const body = applyPatch(undefined, wiki ? withWikiArchitecture(written) : written);
     if (body === undefined) throw new UserError("The Housekeeper wrote an empty brief.", 409);
+    // A new version only when the text changed: a refresh that finds the same brief writes nothing.
+    const current = this.store.brief(project);
+    if (current !== undefined && current.body === body) return current;
     const brief = this.store.addBrief({
       project,
       body,

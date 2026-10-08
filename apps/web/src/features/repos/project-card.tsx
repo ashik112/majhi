@@ -73,9 +73,13 @@ export function ProjectCardSection({ project, org }: { project: string; org: str
 }
 
 function CardBody({ card, onDescribe }: { card: ProjectCard; onDescribe: () => void }) {
-  const commands = COMMANDS.flatMap(([key, label]) =>
-    card.commands[key] === undefined ? [] : [{ label, text: card.commands[key] as string }],
-  );
+  // The line a check really runs (the repo's CI, in its read-only form) wins over the project's own script text,
+  // so this list and "Check before ship" say the same command.
+  const commands = COMMANDS.flatMap(([key, label]) => {
+    const ci = card.checks.find((c) => c.kind === key);
+    const text = ci === undefined ? card.commands[key] : (ci.runs ?? ci.command);
+    return text === undefined ? [] : [{ label, text }];
+  });
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {card.whatItIs === "" ? (
@@ -141,8 +145,10 @@ function CardBody({ card, onDescribe }: { card: ProjectCard; onDescribe: () => v
       <Block label="CI and deploy">
         <p className="m-0 text-sm text-fg-soft text-pretty">
           {card.ci.provider ? `${card.ci.provider}: ${card.ci.workflows.join(", ")}` : "No CI config found."}
-          {card.deploy.length > 0 ? ` Deploy: ${card.deploy.join(", ")}.` : ""}
         </p>
+        {card.deploy.length > 0 && (
+          <p className="m-0 text-sm text-fg-soft text-pretty">Deploy: {card.deploy.join(", ")}</p>
+        )}
       </Block>
       {card.remotes.length > 0 && (
         <Block label="Remotes">

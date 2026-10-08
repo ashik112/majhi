@@ -1953,6 +1953,13 @@ export const commands = {
     input: z.object({ project: IdSchema.optional() }),
     output: z.array(ProjectCardSchema),
   },
+  "projects.checkLine": {
+    risk: "read",
+    summary:
+      "What a check command runs before ship, in its read-only form: a lint or format command that rewrites files (--fix, --write) is turned into the form that only reports. Answers the line that runs, or why the check is skipped. Runs nothing",
+    input: z.object({ project: IdSchema, command: z.string().trim().min(1).max(500) }),
+    output: z.object({ runs: z.string().optional(), notRun: z.string().optional() }),
+  },
   "projects.cardRefresh": {
     risk: "change",
     summary:
