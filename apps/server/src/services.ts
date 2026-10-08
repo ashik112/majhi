@@ -32,7 +32,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
-import { isBossChat } from "./admin/boss.ts";
+import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
@@ -1353,11 +1353,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
-  const conversations = new ConversationsService({ store, events });
+  const conversations = new ConversationsService({
+    store,
+    events,
+    currentChat: () => {
+      const boss = config.knownBoss();
+      return boss === undefined ? undefined : findBossChat({ store, tasks }, boss)?.id;
+    },
+  });
   room.onWrite((task, item) => conversations.observe(task, item));
   const notices = new NoticesService({
     store,
     events,
+    contactName: (id) => store.client.contact(id)?.name,
     decisions: () => inbox.list(),
     update: () => readUpdateStatus(env.majhiHome),
   });

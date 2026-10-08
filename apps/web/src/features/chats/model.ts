@@ -46,12 +46,13 @@ export function rowTitle(row: Conversation, workspace: string): string {
 }
 
 /**
- * A row's name in the list and in the bubble's header. Only the current Captain chat reads "Captain"; an
- * archived one keeps a topic of its own, or "Captain · <date>" when it has none, so two rows never read alike.
+ * A row's name in the list and in the bubble's header. Only the current Captain chat (the server flags it)
+ * reads "Captain"; every other root Captain chat, archived or still open, keeps a topic of its own, or
+ * "Captain · <date>" when it has none, so two rows never read alike.
  */
 export function conversationName(row: Conversation, workspace: string, isCaptain: boolean): string {
   if (!isCaptain) return rowTitle(row, workspace);
-  if (row.archived !== true) return "Captain";
+  if (row.current === true) return "Captain";
   const own = chatTitle(row);
   if (own !== "New chat" && own !== "Captain") return own;
   const date = new Date(row.lastAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });

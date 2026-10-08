@@ -17,11 +17,19 @@ export class ConversationsService {
     private readonly deps: {
       store: Pick<Store, "conversations">;
       events: Pick<EventHub, "send">;
+      /** The id of the owner's current Captain chat (the one the bubble opens), when there is one. */
+      currentChat?: () => string | undefined;
     },
   ) {}
 
   list(): Conversation[] {
-    return this.deps.store.conversations.list();
+    const current = this.deps.currentChat?.();
+    return this.deps.store.conversations.list().map((c) => this.mark(c, current));
+  }
+
+  /** Flags the current Captain chat. Every other root Captain chat is an older one. */
+  private mark(conversation: Conversation, current: string | undefined): Conversation {
+    return conversation.id === current ? { ...conversation, current: true } : conversation;
   }
 
   /** The conversations whose messages hold the words. */
@@ -71,7 +79,7 @@ export class ConversationsService {
     this.deps.events.send({
       type: "conversation",
       id,
-      ...(conversation === undefined ? {} : { conversation }),
+      ...(conversation === undefined ? {} : { conversation: this.mark(conversation, this.deps.currentChat?.()) }),
     });
   }
 }

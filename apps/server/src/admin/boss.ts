@@ -105,6 +105,12 @@ export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<T
   if (boss === undefined) {
     throw new UserError("There is no captain yet. Create a root agent and make it the captain first.", 409);
   }
+  const current = await currentBossChat(deps, boss, fresh);
+  await retireOlder(deps, boss, current.id);
+  return current;
+}
+
+async function currentBossChat(deps: BossChatDeps, boss: string, fresh: boolean): Promise<Task> {
   // Newest first.
   for (const summary of deps.store.tasks.list(false)) {
     if (summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss) continue;
@@ -120,6 +126,18 @@ export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<T
     break;
   }
   return titled(deps, await openChat(deps, boss));
+}
+
+/** Only one root captain chat stays open: the others are closed and archived, still listed with their history. */
+async function retireOlder(deps: BossChatDeps, boss: string, keep: string): Promise<void> {
+  for (const summary of deps.store.tasks.list(false)) {
+    if (summary.id === keep || summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss)
+      continue;
+    const task = deps.tasks.get(summary.id);
+    if (isAutonomyChat(task)) continue;
+    await deps.tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
+    deps.store.conversations.archive(task.id, true);
+  }
 }
 
 /** The captain chat is called "Captain" whatever was first said in it. */
