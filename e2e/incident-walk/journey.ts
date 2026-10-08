@@ -184,9 +184,14 @@ async function clientSaysDown(w: World): Promise<string> {
   const sent = await until("the first reply in Slack", async () => w.slack.sent[0], 120_000);
   const tasks = await incidentTasks();
   if (tasks.length !== 1) throw new Error(`expected one incident task, saw ${tasks.length}`);
-  const task = await cmd("tasks.get", { id: tasks[0].id });
-  const linked = (task.links ?? []).filter((l: any) => l.type === "client");
-  if (linked.length === 0) throw new Error("the chat is not linked to the incident task");
+  const task = await until(
+    "the chat to be linked to the incident task",
+    async () => {
+      const t = await cmd("tasks.get", { id: tasks[0].id });
+      return (t.links ?? []).some((l: any) => l.type === "client") ? t : false;
+    },
+    60_000,
+  );
   const watches = JSON.stringify(await cmd("watch.overview", { org: "acme" }));
   if (!watches.includes(WATCH_NAME)) throw new Error("the captain did not add the watch");
   return `the captain opened or joined ${task.id}, told the client: "${sent.text}", and added the watch "${WATCH_NAME}"`;
