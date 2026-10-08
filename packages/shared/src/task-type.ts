@@ -16,6 +16,8 @@ export const TASK_TYPES = [
   "design",
   "test",
   "chore",
+  "support",
+  "post",
 ] as const;
 export const TaskTypeSchema = z.enum(TASK_TYPES);
 export type TaskType = z.infer<typeof TaskTypeSchema>;
@@ -29,6 +31,8 @@ export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   design: "Design",
   test: "Test",
   chore: "Chore",
+  support: "Support",
+  post: "Post",
 };
 
 /** Who set a type: the owner, the captain, or majhi's own reading of the text and source at intake. */
@@ -64,6 +68,8 @@ export const BRANCH_TYPE_OF: Record<TaskType, BranchType> = {
   design: "feat",
   test: "test",
   chore: "chore",
+  support: "chore",
+  post: "chore",
 };
 
 /** The task type a branch type suggests, for a title that reads like one. */
@@ -108,3 +114,39 @@ export function findingTaskType(source: FindingSource, severity: FindingSeverity
   const row = FINDING_TYPE[source];
   return row === undefined ? undefined : severity === "high" ? (row.high ?? row.type) : row.type;
 }
+
+/**
+ * What a kind of task holds beyond the common fields, in one object on the task, discriminated by its
+ * type. Only a post has any today: its draft, the channel it goes to and when. A kind with nothing to
+ * hold has no member. `fieldsFit` is the one check that the object belongs to the task's own type.
+ */
+export const PostFieldsSchema = z.object({
+  type: z.literal("post"),
+  /** The text to publish. */
+  draft: z.string().max(10_000),
+  /** Where it goes, in the owner's words ("LinkedIn, Acme page"). */
+  channel: z.string().trim().min(1).max(120),
+  /** When it goes out, as written ("Tue 14 Oct 10:00"). Absent: when approved. */
+  schedule: z.string().trim().min(1).max(120).optional(),
+  /**
+   * When the owner approved it. Set once; a post with it asks nothing more. No real channel is connected
+   * yet, so this is the record that it was approved to go out.
+   */
+  approvedAt: z.string().optional(),
+});
+export type PostFields = z.infer<typeof PostFieldsSchema>;
+
+export const TaskFieldsSchema = z.discriminatedUnion("type", [PostFieldsSchema]);
+export type TaskFields = z.infer<typeof TaskFieldsSchema>;
+
+/** Whether `fields` belong to a task of this type: a post's fields on a bug are refused. */
+export function fieldsFit(typing: TaskTyping | undefined, fields: TaskFields): boolean {
+  return typing?.type === fields.type;
+}
+
+/**
+ * What a caller may write: the fields without the owner's approval. `approvedAt` is set only by the
+ * owner's answer to the publish decision, never by a command that writes the draft.
+ */
+export const TaskFieldsInputSchema = z.discriminatedUnion("type", [PostFieldsSchema.omit({ approvedAt: true })]);
+export type TaskFieldsInput = z.infer<typeof TaskFieldsInputSchema>;

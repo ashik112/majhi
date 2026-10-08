@@ -54,6 +54,8 @@ export interface DecisionActions {
   /** Something in a client chat waits for the owner: a claim, a who-is, a message left for a person. */
   answerCaptainPay?(org: string, account: string): Promise<unknown>;
   answerChatWait?(room: string, ref: string, option: string): Promise<unknown>;
+  /** The owner approved a post to publish. */
+  approvePost?(task: string): Promise<unknown> | unknown;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
   /** The owner runs a deploy step that waits for them. */
@@ -83,6 +85,8 @@ export interface InboxDeps {
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
+  /** Post tasks whose draft waits for approval to publish. */
+  posts?: () => NonNullable<DecisionSources["posts"]>;
   /** High incidents nobody has acknowledged. */
   incidents?: () => NonNullable<DecisionSources["incidents"]>;
   /** What the outbound gate holds for the owner. */
@@ -293,6 +297,7 @@ export class InboxService {
       ...(deps.clientDraft === undefined ? {} : { clientDraft: deps.clientDraft }),
       batches: (await deps.outbound?.batchesDue()) ?? [],
       incidents: deps.incidents?.() ?? [],
+      posts: deps.posts?.() ?? [],
       orgName: (org) => names[org],
       extras: (await deps.extras?.()) ?? [],
     });
@@ -448,6 +453,7 @@ export class InboxService {
     else if (parsed.kind === "mrci") await actions.fixMrChecks?.(parsed.task);
     else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
+    else if (parsed.kind === "publish") await actions.approvePost?.(parsed.task);
     else if (parsed.kind === "cpay") await actions.answerCaptainPay?.(parsed.org, input.option);
     else if (parsed.kind === "cwait") await actions.answerChatWait?.(parsed.room, parsed.ref, input.option);
     else if (parsed.kind === "draft") {

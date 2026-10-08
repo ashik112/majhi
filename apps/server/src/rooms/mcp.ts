@@ -190,7 +190,13 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "set_type",
     command: "tasks.setType",
     description:
-      "Set a task's type: bug, incident, feature, request, research, design, test or chore. Only the captain may, and only for a task of its own workspace; a type the owner set stays. Use it for a task that has no type yet.",
+      "Set a task's type: bug, incident, feature, request, research, design, test, chore, support or post. Only the captain may, and only for a task of its own workspace; a type the owner set stays. Use it for a task that has no type yet.",
+  },
+  {
+    name: "set_fields",
+    command: "tasks.setFields",
+    description:
+      "Set what a post task holds: its draft, channel and optional schedule. The task's type must be post (set it first). Only the captain may, for a task of its own workspace. The owner is asked to approve the post before anything goes out.",
   },
   {
     name: "plan",
@@ -578,7 +584,7 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
       tools: [
         ...listed(
           TASK_TOOLS.filter(
-            (t) => (merge || t.command !== "tasks.merge") && (captain || t.command !== "tasks.setType"),
+            (t) => (merge || t.command !== "tasks.merge") && (captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields")),
           ),
           true,
         ),

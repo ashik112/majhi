@@ -104,6 +104,8 @@
   --c-type-design: #f58fb8;
   --c-type-test: #9bd36a;
   --c-type-chore: #8d98a8;
+  --c-type-support: var(--c-coral);
+  --c-type-post: #8f9cf5;
 
   /* Status lamps */
   --c-lamp-working: #3fd4f5;
@@ -244,6 +246,8 @@
   --c-type-design: #c0306f;
   --c-type-test: #47790f;
   --c-type-chore: #5d6b7e;
+  --c-type-support: var(--c-coral);
+  --c-type-post: #4a55c4;
 
   --c-lamp-working: #0a7694;
   --c-lamp-needs: #cf2a2a;

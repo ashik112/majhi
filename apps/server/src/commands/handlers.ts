@@ -867,6 +867,16 @@ export function createHandlers({
       if ("refusal" in who) throw new UserError(who.refusal, 409);
       return services.tasks.setType(input.id, input.type, who.by);
     },
+    "tasks.setFields": async (input, ctx) => {
+      const task = services.tasks.get(input.id);
+      const who = typist(ctx.meta.actor, {
+        boss: await services.lanes.boss(),
+        lane: ctx.meta.task === undefined ? undefined : services.lanes.orgOf(ctx.meta.task),
+        taskOrg: task.org ?? PRIVATE,
+      });
+      if ("refusal" in who) throw new UserError(who.refusal, 409);
+      return services.tasks.setFields(input.id, input.fields);
+    },
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
       const own = (await services.projects.list()).find(

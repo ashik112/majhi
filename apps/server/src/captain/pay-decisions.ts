@@ -25,10 +25,11 @@ export class PayDecisions {
         id: captainPayDecisionId(org),
         kind: "sign-in",
         org,
-        title: `${name} has no account for the captain`,
+        title: "Captain blocked: no account",
+        sentence: `${name} has work for the captain and no account to run it on. Pick one of your accounts to pay for it.`,
         options: choices.map((id, i) => ({
           id,
-          label: `Pay with ${id}`,
+          label: `Pick ${id}`,
           ...(i === 0 ? { primary: true as const } : {}),
         })),
         at,

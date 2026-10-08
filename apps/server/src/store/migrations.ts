@@ -2006,6 +2006,13 @@ DROP TABLE captain_lanes;
 ALTER TABLE captain_lanes_by_job RENAME TO captain_lanes;
 `,
   },
+  {
+    // What a kind of task holds beyond the common fields (a post's draft, channel, schedule): one JSON object
+    // (TaskFields) discriminated by the task's type. NULL for every task made before, and for kinds with none.
+    id: 187,
+    name: "task kind fields",
+    sql: `ALTER TABLE tasks ADD COLUMN fields TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

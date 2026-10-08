@@ -414,7 +414,7 @@ import {
   SkillUpdateInputSchema,
 } from "./skills.ts";
 import { TaskAreasSchema, TaskDetailSchema } from "./task-trail.ts";
-import { TaskTypeSchema } from "./task-type.ts";
+import { TaskFieldsInputSchema, TaskTypeSchema } from "./task-type.ts";
 import {
   AttachmentSchema,
   CardActionSchema,
@@ -2207,8 +2207,15 @@ export const commands = {
   "tasks.setType": {
     risk: "change",
     summary:
-      "Set a task's type (bug, incident, feature, request, research, design, test or chore). The owner may set any task's; the captain only a task of its own workspace, and never over a type the owner set",
+      "Set a task's type (bug, incident, feature, request, research, design, test, chore, support or post). The owner may set any task's; the captain only a task of its own workspace, and never over a type the owner set",
     input: z.object({ id: TaskIdSchema, type: TaskTypeSchema }),
+    output: TaskSchema,
+  },
+  "tasks.setFields": {
+    risk: "change",
+    summary:
+      "Set what a kind of task holds beyond the common fields: a post's draft, channel and schedule. The fields must be of the task's own type (a post's fields on a bug are refused), so set the type first. Setting a post's draft again asks the owner to approve it to publish. The owner may set any task's; the captain only a task of its own workspace",
+    input: z.object({ id: TaskIdSchema, fields: TaskFieldsInputSchema }),
     output: TaskSchema,
   },
   "tasks.create": {

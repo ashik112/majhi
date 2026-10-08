@@ -11,6 +11,7 @@ import {
   MessageCircleQuestion,
   MessageSquareReply,
   Scale,
+  Send,
   ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -35,6 +36,7 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   incident: <BellRing aria-hidden="true" />,
   trust: <Scale aria-hidden="true" />,
   notifications: <BellRing aria-hidden="true" />,
+  publish: <Send aria-hidden="true" />,
 };
 
 export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; className?: string }) {
