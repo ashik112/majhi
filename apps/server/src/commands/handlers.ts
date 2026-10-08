@@ -745,6 +745,7 @@ export function createHandlers({
       await services.cards.refreshMoved();
       return services.cards.listLive(input.project);
     },
+    "projects.checkLine": (input) => services.cards.checkLine(input.project, input.command),
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
