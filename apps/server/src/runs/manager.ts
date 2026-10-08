@@ -475,6 +475,10 @@ export class RunManager {
       attachments: task.attachments,
       queued: false,
       to: agent,
+      // A brief the owner did not write says who made the task: the captain, or majhi on a client, watch or schedule's behalf.
+      ...(task.origin === undefined || task.origin.kind === "owner"
+        ? {}
+        : { by: task.origin.kind === "captain" ? ("captain" as const) : ("majhi" as const) }),
     });
     run.queue.unshift({ kind: "brief" });
   }
