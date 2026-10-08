@@ -1,6 +1,7 @@
 import {
   type AutonomyMode,
   type AutonomySettings,
+  type CaptainBlocker,
   type CaptainChore,
   type CaptainOrg,
   type CaptainRunChoreResult,
@@ -450,6 +451,7 @@ export class CaptainService {
       .orgSpends()
       .catch(() => ({ of: (): Spend => ({ tokens: 0, cost: 0 }), tz: "" }));
     let day = localDay(this.now(), zoneOr(settings.autonomy.tz));
+    const asking = this.deps.store.room.pendingPermissions();
     for (const org of workspaceIds(sections.orgs)) {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
@@ -473,6 +475,7 @@ export class CaptainService {
         ...(paid === undefined || "problem" in paid ? {} : { pays: paid.account }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
+        ...blockerOf(paid, asking, [lane, this.deps.lanes.chat(org, "reacting")]),
         chores: choresNow(
           authority,
           { mode, stopped: state.stopped },
@@ -678,4 +681,30 @@ export class CaptainService {
 function publicAction(a: StoredAction) {
   const { key: _key, run: _run, undoData: _undo, ...rest } = a;
   return rest;
+}
+
+/** The permission card waiting in a lane, or the account that cannot pay: the one thing the owner can answer to unblock it. */
+function blockerOf(
+  paid: { problem: string } | { account: string; own: boolean } | undefined,
+  asking: readonly RoomItem[],
+  chats: readonly (string | undefined)[],
+): { blocker: CaptainBlocker } | Record<string, never> {
+  if (paid !== undefined && "problem" in paid) return { blocker: { kind: "account", why: paid.problem } };
+  for (const item of asking) {
+    if (item.type !== "permission" || !chats.includes(item.task)) continue;
+    const allow = item.options.find((o) => o.kind === "allow_once");
+    const deny = item.options.find((o) => o.kind === "reject_once");
+    if (allow === undefined || deny === undefined) continue;
+    return {
+      blocker: {
+        kind: "permission",
+        task: item.task,
+        item: item.id,
+        title: item.title,
+        allow: allow.id,
+        deny: deny.id,
+      },
+    };
+  }
+  return {};
 }

@@ -134,6 +134,25 @@ export const CaptainChoreStateSchema = z.object({
 });
 export type CaptainChoreState = z.infer<typeof CaptainChoreStateSchema>;
 
+/**
+ * What keeps the captain from working in a workspace right now, derived from live state and stored nowhere:
+ * a permission card waiting in one of its lanes (with the two answers that settle it), or no account that may
+ * pay for its turns. Stop everything is the status's own `stopped`.
+ */
+export const CaptainBlockerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("permission"),
+    task: TaskIdSchema,
+    item: z.string(),
+    /** What it asks to run, as the card says it. */
+    title: z.string(),
+    allow: z.string(),
+    deny: z.string(),
+  }),
+  z.object({ kind: z.literal("account"), why: z.string() }),
+]);
+export type CaptainBlocker = z.infer<typeof CaptainBlockerSchema>;
+
 /** One workspace on the Captain page. */
 export const CaptainOrgSchema = z.object({
   org: z.string(),
@@ -157,6 +176,8 @@ export const CaptainOrgSchema = z.object({
   lane: TaskIdSchema.optional(),
   /** What the thread is doing: the captain is in a turn, something waits on the owner, or neither. */
   thread: z.enum(["working", "waiting", "idle"]).default("idle"),
+  /** Why a message waiting on the captain here waits, when something the owner can fix is in the way. */
+  blocker: CaptainBlockerSchema.optional(),
   chores: z.array(CaptainChoreStateSchema),
 });
 export type CaptainOrg = z.infer<typeof CaptainOrgSchema>;
