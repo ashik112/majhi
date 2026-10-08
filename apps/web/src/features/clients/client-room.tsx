@@ -613,6 +613,14 @@ function HeldReply({ item, people }: { item: Of<"client-reply">; people: readonl
             <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
               Edit
             </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ id, decision: "discard" }, { onError: fail("Could not discard") })}
+            >
+              Discard
+            </Button>
           </>
         )}
       </div>

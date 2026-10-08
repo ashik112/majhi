@@ -289,6 +289,21 @@ export const WatchConditionSchema = z.discriminatedUnion("type", [
 ]);
 export type WatchCondition = z.infer<typeof WatchConditionSchema>;
 
+/**
+ * What each condition means, always as the alert trigger: a condition is when the watch ALERTS, never what
+ * the owner expects. The captain, the form, the plan and the breach lines all read this one map.
+ */
+export const CONDITION_ALERT: Record<WatchCondition["type"], string> = {
+  contains: "Alert when the text appears",
+  notContains: "Alert when the text is missing",
+  above: "Alert when the value goes over",
+  below: "Alert when the value goes under",
+  changed: "Alert when it changes",
+  down: "Alert when it is down",
+  atLimit: "Alert at its limit",
+  resets: "Alert when the limit resets",
+};
+
 /** The fixes majhi knows. Never one that drops, deletes or truncates data. */
 export const WATCH_FIXES = [
   "kill_queries",
@@ -463,17 +478,20 @@ export type WatchPlan = z.infer<typeof WatchPlanSchema>;
  * What a watch can be, as typed data for the captain: every kind with its one-line meaning and every condition.
  * Derived from the schemas, so a kind or condition added there reaches the captain's instructions at once.
  */
-export function watchCatalogue(): { kinds: { kind: WatchSort; means: string }[]; conditions: string[] } {
+export function watchCatalogue(): { kinds: { kind: WatchSort; means: string }[]; conditions: { condition: WatchCondition["type"]; means: string }[] } {
   return {
     kinds: WATCH_KINDS.map((kind) => ({ kind, means: WATCH_KIND_ONE[kind] })),
-    conditions: WatchConditionSchema.options.map((o) => o.shape.type.value),
+    conditions: WatchConditionSchema.options.map((o) => ({
+      condition: o.shape.type.value,
+      means: CONDITION_ALERT[o.shape.type.value],
+    })),
   };
 }
 
 /** The catalogue as one line of text. */
 export function watchCatalogueLine(): string {
   const { kinds, conditions } = watchCatalogue();
-  return `kinds: ${kinds.map((k) => `${k.kind} (${k.means})`).join(", ")}; conditions: ${conditions.join(", ")}`;
+  return `kinds: ${kinds.map((k) => `${k.kind} (${k.means})`).join(", ")}; conditions (each is the alert trigger, never what you expect): ${conditions.map((c) => `${c.condition} (${c.means})`).join("; ")}`;
 }
 
 export const WatchSaveInputSchema = z.object({

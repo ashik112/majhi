@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isAbsolute, normalize } from "node:path";
 import {
+  CONDITION_ALERT,
   type AutomationAction,
   type AutomationRun,
   databaseQueryProblem,
@@ -1241,22 +1242,19 @@ export class WatchEngine {
     const c = w.def.condition;
     const every = w.def.everyMin % 60 === 0 ? `${w.def.everyMin / 60} h` : `${w.def.everyMin} min`;
     const on = conn === undefined ? "" : ` on ${conn.name}`;
-    const cond =
-      c.type === "above"
-        ? `alert above ${fmt(c.value)}${c.forMin > 0 ? ` for ${c.forMin} min` : ""}`
-        : c.type === "below"
-          ? `alert below ${fmt(c.value)}${c.forMin > 0 ? ` for ${c.forMin} min` : ""}`
-          : c.type === "changed"
-            ? "alert on a change"
-            : c.type === "atLimit"
-              ? "alert at its limit"
-              : c.type === "resets"
-                ? "act when it resets"
-                : c.type === "down"
-                  ? "alert when it is down"
-                  : c.type === "contains"
-                    ? `alert when it contains "${c.text}"`
-                    : `alert when it no longer contains "${c.text}"`;
+    const cond = (() => {
+      const head = CONDITION_ALERT[c.type].toLowerCase();
+      switch (c.type) {
+        case "above":
+        case "below":
+          return `${head} ${fmt(c.value)}${c.forMin > 0 ? ` for ${c.forMin} min` : ""}`;
+        case "contains":
+        case "notContains":
+          return `${head} "${c.text}"`;
+        default:
+          return head;
+      }
+    })();
     const phone = w.def.fire.alert.on && w.def.fire.alert.phone ? " · phone alert on" : "";
     const acts = w.def.fire.run !== undefined && !w.def.fire.alert.on;
     let what: string;
