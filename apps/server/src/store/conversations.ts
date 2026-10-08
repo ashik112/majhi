@@ -81,7 +81,7 @@ export class ConversationsRepo {
     const like = `%${query.toLowerCase().split("\\").join("\\\\").split("%").join("\\%").split("_").join("\\_")}%`;
     // A captain line tagged to a task belongs to that task, so it finds the task, not the thread.
     const rows = this.db.all<{ task: string }>(sql`
-      SELECT DISTINCT coalesce(r.about, r.task) AS task FROM room_items r JOIN tasks t ON t.id = r.task
+      SELECT DISTINCT t.id AS task FROM room_items r JOIN tasks t ON t.id = coalesce(r.about, r.task)
        WHERE r.type IN ('agent', 'owner', 'client', 'client-reply') AND ${LISTED}
          AND lower(json_extract(r.payload, '$.text')) LIKE ${like} ESCAPE '\\'
        LIMIT ${LIST_LIMIT}`);
