@@ -96,7 +96,7 @@ describe("escalation", () => {
     expect(w.ops.repo.incident(id)?.timeline.map((t) => t.kind)).toEqual(["opened", "alerted", "action", "acked"]);
     // Acknowledging twice changes nothing.
     await w.ops.watch.ack(id);
-    expect(w.ops.repo.incident(id)?.timeline).toHaveLength(3);
+    expect(w.ops.repo.incident(id)?.timeline).toHaveLength(4);
     // It is still open until its checks are green.
     expect(w.ops.repo.open()).toHaveLength(1);
   });

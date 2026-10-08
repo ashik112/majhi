@@ -335,6 +335,7 @@ describe('"any update?" from a client', () => {
       status: "resolved",
       openedAt: new Date(now.getTime() - 3_600_000).toISOString(),
       resolvedAt: now.toISOString(),
+      timeline: [{ at: now.toISOString(), kind: "resolved", text: "All checks green" }],
     } as OpsIncident;
     const soaking = await t.incidents.answer(t.rooms[0] as string);
     expect(soaking?.text).not.toContain("resolved");
