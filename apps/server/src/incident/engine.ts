@@ -156,6 +156,18 @@ function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
   return (k === "watch" || k === "deploy" || k === "client") && t.typing?.by !== "owner";
 }
 
+/**
+ * An incident that never started: typed incident, or opened by a watch or a deploy, or the old client-claim
+ * incident (an ops task with no repo). A client's request proposed as a task is none of these and stays put.
+ */
+function isStuckIncident(t: Pick<Task, "typing" | "origin" | "kind" | "repos">): boolean {
+  if (t.typing?.type === "incident") return true;
+  if (t.typing?.by === "owner") return false;
+  const k = t.origin?.kind;
+  if (k === "watch" || k === "deploy") return true;
+  return k === "client" && t.kind === "ops" && t.repos.length === 0;
+}
+
 export class IncidentEngine {
   /** Tasks whose watch went green with nothing shipped and whose owner has not answered yet, as of the last sweep. */
   private recovered = new Set<string>();
@@ -646,7 +658,7 @@ export class IncidentEngine {
   private async adoptStuck(org: string): Promise<boolean> {
     let started = false;
     for (const t of this.unfinished()) {
-      if (t.org !== org || t.status !== "inbox" || !isIncidentTask(t)) continue;
+      if (t.org !== org || t.status !== "inbox" || !isStuckIncident(t)) continue;
       if (t.typing?.type !== "incident") this.deps.tasks.setType(t.id, "incident", "captain");
       if (await this.tryStart(t.id)) started = true;
     }
