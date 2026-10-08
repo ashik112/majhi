@@ -465,6 +465,42 @@ describe("restore", () => {
     }
   });
 
+  it("verifies a recent safety backup before reusing it", async () => {
+    const name = await backup.before("before-update");
+    expect(name).toBeDefined();
+    expect(await backup.before("before-migration")).toBeUndefined();
+    await writeFile(join(home, "backups", name ?? ""), "corrupt archive");
+    // A recent timestamp alone cannot exempt the update from its safety copy.
+    now = new Date(now.getTime() + 1000);
+    const replacement = await backup.before("before-update");
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(name);
+    expect((await backup.verify(replacement)).result.ok).toBe(true);
+  });
+
+  it("blocks migration when its safety backup cannot be written", async () => {
+    const old = mkdtempSync(join(tmpdir(), "majhi-premigrate-fail-"));
+    try {
+      await writeFile(join(old, "key"), `${identity}\n`);
+      const db = new Database(join(old, "majhi.db"));
+      migrate(db, MIGRATIONS.slice(0, 5));
+      db.close();
+      await writeFile(join(old, "backups"), "not a directory");
+      const env = {
+        majhiHome: old,
+        secretsKeyFile: join(old, "key"),
+        version: "1",
+        commit: "c",
+      } as ServerEnv;
+      await expect(prepareStart(env)).rejects.toThrow("Database migration blocked");
+      const unchanged = new Database(join(old, "majhi.db"));
+      expect(unchanged.prepare("SELECT max(id) FROM migrations").pluck().get()).toBe(MIGRATIONS[4]?.id);
+      unchanged.close();
+    } finally {
+      await rm(old, { recursive: true, force: true });
+    }
+  });
+
   it("refuses a name that is not a backup", async () => {
     await expect(backup.restore("../../etc/passwd")).rejects.toThrow();
     await expect(backup.restore("majhi-daily-20260101T000000Z.age")).rejects.toThrow();
