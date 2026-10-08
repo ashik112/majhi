@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import { MessageCircle } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useBoss } from "@/features/boss/boss-context";
@@ -19,6 +20,7 @@ export const ChatDock = memo(function ChatDock() {
   const button = useRef<HTMLButtonElement>(null);
   const unread = useUnreadTotal();
   const { open: bossOpen } = useBoss();
+  const onChats = useRouterState({ select: (state) => state.location.pathname.startsWith("/chats") });
   const close = useCallback(() => {
     setOpen(false);
     button.current?.focus();
@@ -38,7 +40,8 @@ export const ChatDock = memo(function ChatDock() {
   }, [open, close]);
 
   // The Captain drawer covers the corner and is a chat of its own: the button waits until it closes.
-  if (bossOpen) return null;
+  // On the Chats page the list is the page itself, so the button would only cover its actions.
+  if (bossOpen || onChats) return null;
   return (
     <div data-chat-dock="">
       {open && (

@@ -3,6 +3,8 @@ import {
   type ChatFile,
   type ClientOutcome,
   type ClientRow,
+  PAGE_PATH,
+  PRIVATE,
   REPLY_HOLD_LABEL,
   type RoomItem,
   replaceMentions,
@@ -20,6 +22,7 @@ import { useToast } from "@/components/ui/toast";
 import { Markdown } from "@/features/room/markdown";
 import { useRoom } from "@/features/room/use-room";
 import { useAgentIndex } from "@/lib/agent-index";
+import { useAnswerLaneCard, useCaptainCommand, useWaitingOn } from "@/lib/captain-queries";
 import {
   useChatHolder,
   useChatSend,
@@ -231,7 +234,7 @@ function Log({
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           if (pinned.current) setUnseen(false);
         }}
-        className="scroll-fade flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 focus-visible:outline-none"
+        className="scroll-fade flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-1 pb-6 pl-0.5 focus-visible:outline-none"
       >
         {more && (
           <Button variant="ghost" size="sm" className="self-center" onClick={() => void loadOlder()}>
@@ -388,8 +391,83 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
   }
 }
 
+/**
+ * What a message waiting on the captain waits on, with the button that unblocks it: the card in the captain's
+ * lane (Allow or Deny answers that card), no account that may pay (a link to the account card in Needs you), or Stop everything
+ * (Resume). Read from the captain's status, nothing stored. Nothing in the way: the plain "Working on it".
+ */
+function WaitingLine({ org }: { org: string }) {
+  const toast = useToast();
+  const status = useWaitingOn(org).data;
+  const answer = useAnswerLaneCard();
+  const resume = useCaptainCommand("captain.resume");
+  const blocker = status?.orgs[0]?.blocker;
+  const fail = (title: string) => (error: unknown) =>
+    toast(title, { detail: describeError(error), tone: "error" });
+  if (status?.stopped === true) {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-xs text-fg-faint">
+        Waiting: Stop everything is on
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={resume.isPending}
+          onClick={() =>
+            resume.mutate(
+              { input: {}, reason: "Owner resumed the captain" },
+              { onError: fail("Could not resume") },
+            )
+          }
+        >
+          Resume
+        </Button>
+      </span>
+    );
+  }
+  if (blocker?.kind === "permission") {
+    const pick = (option: string) =>
+      answer.mutate(
+        { task: blocker.task, item: blocker.item, option },
+        { onError: fail("Could not answer") },
+      );
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-fg-faint">
+        <span className="min-w-0 truncate">
+          The captain is waiting for your OK on <code className="font-mono">{blocker.title}</code>
+        </span>
+        <Button size="sm" variant="primary" disabled={answer.isPending} onClick={() => pick(blocker.allow)}>
+          Allow
+        </Button>
+        <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => pick(blocker.deny)}>
+          Deny
+        </Button>
+      </span>
+    );
+  }
+  if (blocker?.kind === "account") {
+    return (
+      <span className="text-xs text-fg-faint">
+        Waiting: the captain has no account to work with here.{" "}
+        <Link to={PAGE_PATH.today} className="underline hover:text-fg">
+          Choose the account
+        </Link>
+      </span>
+    );
+  }
+  return <span className="text-xs text-fg-faint">Working on it</span>;
+}
+
 /** The faint line under a message. A task or incident it became is a link. */
-function OutcomeLine({ outcome, reply }: { outcome: ClientOutcome; reply: Of<"client-reply"> | undefined }) {
+function OutcomeLine({
+  outcome,
+  reply,
+  org,
+}: {
+  outcome: ClientOutcome;
+  reply: Of<"client-reply"> | undefined;
+  org: string;
+}) {
+  if (outcome.state === "working") return <WaitingLine org={org} />;
   const text = outcomeText(outcome, reply);
   const task = outcome.task;
   if (outcome.decision !== undefined && reply === undefined) {
@@ -462,6 +540,7 @@ function Message({
           <OutcomeLine
             outcome={item.outcome}
             reply={item.outcome.draft === undefined ? undefined : replies.get(item.outcome.draft)}
+            org={row.org ?? PRIVATE}
           />
         )}
       </div>
@@ -623,6 +702,16 @@ function HeldReply({ item, people }: { item: Of<"client-reply">; people: readonl
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
               Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={decide.isPending}
+              onClick={() =>
+                decide.mutate({ id, decision: "discard" }, { onError: fail("Could not discard") })
+              }
+            >
+              Discard
             </Button>
           </>
         )}

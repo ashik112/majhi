@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ActorSchema } from "./actor.ts";
 import { AccountStatusSchema, ToolIdSchema, UsageWindowSchema } from "./accounts.ts";
+import { ActorSchema } from "./actor.ts";
 import { IdSchema } from "./ids.ts";
 import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from "./settings.ts";
 import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } from "./tasks.ts";
@@ -286,6 +286,8 @@ export const AutonomyLaneSchema = z.object({
   name: z.string(),
   /** The lane's chat. Absent until the captain is first woken there. */
   chat: TaskIdSchema.optional(),
+  /** The on-call lane's chat, where urgent client and incident work runs beside the main lane. Absent until first used. */
+  onCall: TaskIdSchema.optional(),
   /** The captain is in a turn in this lane. */
   working: z.boolean(),
   nowDoing: z.string().optional(),

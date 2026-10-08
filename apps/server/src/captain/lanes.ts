@@ -2,6 +2,7 @@ import {
   CAPTAIN_LANE_BRIEF,
   captainPayDecisionId,
   type Job,
+  ON_CALL_SUFFIX,
   PRIVATE,
   STOPPED_WHY,
   type Task,
@@ -63,19 +64,22 @@ export class Lanes {
     }
   }
 
-  /** The lane's chat, when it exists. */
-  chat(org: string): string | undefined {
-    const id = this.deps.repo.lane(org);
+  /**
+   * The lane's chat, when it exists. `reacting` is the on-call lane: urgent work (a client message, an
+   * incident) runs there in parallel with a long backlog turn. Same captain, same account and tools.
+   */
+  chat(org: string, job: Job = "backlog"): string | undefined {
+    const id = this.deps.repo.lane(org, job);
     return id !== undefined && this.deps.store.tasks.has(id) ? id : undefined;
   }
 
   /** Every lane with a chat that still exists. */
-  all(): { org: string; chat: string }[] {
+  all(): { org: string; chat: string; job: Job }[] {
     return this.deps.repo.lanes().filter((l) => this.deps.store.tasks.has(l.chat));
   }
 
   /** The lane's chat, made on first use and reopened when it was closed. A new captain gets a new one. */
-  async ensure(org: string): Promise<Task> {
+  async ensure(org: string, job: Job = "backlog"): Promise<Task> {
     const boss = await this.boss();
     if (boss === undefined)
       throw new UserError("There is no captain yet. Choose one on the Agents page.", 409);
@@ -83,7 +87,7 @@ export class Lanes {
     if (org !== PRIVATE && sections.orgs[org] === undefined) {
       throw new UserError(`There is no workspace ${org}.`, 404);
     }
-    const id = this.deps.repo.lane(org);
+    const id = this.deps.repo.lane(org, job);
     const found = id === undefined ? undefined : this.deps.store.tasks.get(id);
     if (found !== undefined && found.team[0] === boss) {
       return found.status === "done" ? this.deps.tasks.reopen(found.id) : found;
@@ -99,13 +103,14 @@ export class Lanes {
     });
     const at = this.deps.now().toISOString();
     // The lane is named for its workspace; the brief stays the marker.
+    const name = `Captain: ${sections.orgs[org]?.name ?? "Private"}`;
     this.deps.store.tasks.setText(
       made.id,
-      `Captain: ${sections.orgs[org]?.name ?? "Private"}`,
+      job === "reacting" ? `${name}${ON_CALL_SUFFIX}` : name,
       made.brief,
       at,
     );
-    this.deps.repo.setLane(org, made.id, at);
+    this.deps.repo.setLane(org, made.id, at, job);
     return this.deps.store.tasks.get(made.id) ?? made;
   }
 
@@ -188,7 +193,7 @@ export class Lanes {
     const rest = await this.deps.rest?.(org, picked.account, job);
     if (rest !== undefined) return { sent: false, why: rest };
     try {
-      const chat = await this.ensure(org);
+      const chat = await this.ensure(org, job);
       const boss = chat.team[0];
       if (boss === undefined) return { sent: false, why: "the lane has no captain" };
       await this.deps.tasks.tellAgent({ task: chat.id, agent: boss, text, settled, by: "majhi" });

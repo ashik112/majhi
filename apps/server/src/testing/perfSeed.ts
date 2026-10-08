@@ -94,7 +94,9 @@ export function seedPerfVolume(sqlite: Database.Database, volume: PerfVolume = P
       }
     }
     // One lane chat per workspace, with some chores run today.
-    const lane = sqlite.prepare("INSERT INTO captain_lanes (org, chat, created_at) VALUES (?, ?, ?)");
+    const lane = sqlite.prepare(
+      "INSERT INTO captain_lanes (org, job, chat, created_at) VALUES (?, 'backlog', ?, ?)",
+    );
     const run = sqlite.prepare(
       `INSERT INTO captain_runs (org, chore, day, started_at, ended_at, status, trigger, actions, tokens)
        VALUES (?, ?, ?, ?, ?, 'done', 'schedule', 3, 1200)`,

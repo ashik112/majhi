@@ -1988,6 +1988,24 @@ UPDATE tasks SET origin = json_object('kind', 'chat', 'room', (
     sql: `ALTER TABLE findings ADD COLUMN dismissed_by TEXT;
 ALTER TABLE autonomy_events ADD COLUMN by TEXT;`,
   },
+  {
+    // The captain's lane per workspace and job: backlog and routine turns keep the first chat, and urgent
+    // reacting work (a client message, an incident) gets a second one, so it never queues behind a long turn.
+    id: 186,
+    name: "captain lanes per job",
+    sql: `
+CREATE TABLE captain_lanes_by_job (
+  org TEXT NOT NULL,
+  job TEXT NOT NULL DEFAULT 'backlog' CHECK (job IN ('backlog', 'reacting')),
+  chat TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (org, job)
+);
+INSERT INTO captain_lanes_by_job (org, job, chat, created_at) SELECT org, 'backlog', chat, created_at FROM captain_lanes;
+DROP TABLE captain_lanes;
+ALTER TABLE captain_lanes_by_job RENAME TO captain_lanes;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

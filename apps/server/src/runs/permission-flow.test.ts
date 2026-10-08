@@ -2,10 +2,11 @@ import type { PermissionAsk } from "@majhi/acp";
 import type { RoomItem } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import type { ConfigService } from "../config/service.ts";
+import type { GateWrite } from "../connections/gate.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { RunLive } from "./live.ts";
-import { PermissionFlow } from "./permission-flow.ts";
+import { connectionCommandKey, PermissionFlow } from "./permission-flow.ts";
 import type { AgentRun } from "./run.ts";
 
 /** A flow over fakes: the room keeps items by id, the store keeps allowances. Only what the flow calls. */
@@ -20,7 +21,7 @@ function flow() {
     get: (_task: string, id: string) => items.get(id),
   } as unknown as RoomService;
   const store = {
-    tasks: { get: () => ({ org: "acme" }) },
+    tasks: { get: () => ({ org: "acme", folder: "/Users/owner/tasks/T-1", repos: [] }) },
     permissions: {
       allow: (task: string, key: string) => {
         allowances.add(key);
@@ -184,5 +185,31 @@ describe("Always allow on an MCP tool that is not a connection's", () => {
     const again = await permissions.ask({ ...run, pending: new Map() } as AgentRun, ask(tool), signal);
     expect(again).toBe("once");
     expect(items.get("perm:4:2")).toMatchObject({ state: "auto" });
+  });
+});
+
+describe("Always allow on a connection's command write", () => {
+  const write = (action: string, extra: Partial<GateWrite> = {}): GateWrite => ({
+    connection: "gh-acme",
+    action,
+    why: "it changes something",
+    destructive: false,
+    allowed: false,
+    ...extra,
+  });
+
+  it("is offered for one plain command write, kept per connection and exact action", () => {
+    expect(connectionCommandKey([write("gh run rerun 12")])).toBe("connection:gh-acme:gh run rerun 12");
+  });
+
+  it("is never offered for a push, a merge request, a deploy, a destructive write or several writes", () => {
+    expect(connectionCommandKey([write("git push origin main")])).toBeUndefined();
+    expect(connectionCommandKey([write("gh pr merge 12")])).toBeUndefined();
+    expect(connectionCommandKey([write("gh pr create --fill")])).toBeUndefined();
+    expect(connectionCommandKey([write("glab mr merge 4")])).toBeUndefined();
+    expect(connectionCommandKey([write("doctl apps create-deployment deploy")])).toBeUndefined();
+    expect(connectionCommandKey([write("gh run delete 12", { destructive: true })])).toBeUndefined();
+    expect(connectionCommandKey([write("gh run rerun 1"), write("gh run rerun 2")])).toBeUndefined();
+    expect(connectionCommandKey([write("create_issue", { tool: "create_issue" })])).toBeUndefined();
   });
 });

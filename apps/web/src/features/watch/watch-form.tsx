@@ -1,4 +1,5 @@
 import {
+  CONDITION_ALERT,
   PRIVATE,
   type UsageSource,
   WATCH_KIND_ONE,
@@ -1195,22 +1196,24 @@ export function WatchForm({
                   value={d.ctype}
                   onChange={(e) => set("ctype", e.target.value as Draft["ctype"])}
                 >
-                  {numeric && <option value="above">It goes above</option>}
-                  {numeric && <option value="below">It goes below</option>}
-                  <option value="changed">It changes</option>
+                  {numeric && <option value="above">{CONDITION_ALERT.above}</option>}
+                  {numeric && <option value="below">{CONDITION_ALERT.below}</option>}
+                  <option value="changed">{CONDITION_ALERT.changed}</option>
                   {d.kind === "usage" && d.usageSource !== "spend" && (
-                    <option value="atLimit">It reaches its limit</option>
+                    <option value="atLimit">{CONDITION_ALERT.atLimit}</option>
                   )}
                   {d.kind === "usage" && d.usageSource !== "spend" && (
-                    <option value="resets">It resets (was at its limit)</option>
+                    <option value="resets">{CONDITION_ALERT.resets}</option>
                   )}
                   {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
-                    <option value="contains">It contains text</option>
+                    <option value="contains">{CONDITION_ALERT.contains}</option>
                   )}
                   {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
-                    <option value="notContains">It stops containing text</option>
+                    <option value="notContains">{CONDITION_ALERT.notContains}</option>
                   )}
-                  {(d.kind === "website" || d.kind === "custom") && <option value="down">It is down</option>}
+                  {(d.kind === "website" || d.kind === "custom") && (
+                    <option value="down">{CONDITION_ALERT.down}</option>
+                  )}
                 </Select>
               )}
             </Field>

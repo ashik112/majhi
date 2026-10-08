@@ -40,7 +40,7 @@ async function lane() {
   const { h } = w;
   expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
-  const chat = await h.majhi.services.autonomy.laneChat("acme");
+  const chat = await h.majhi.services.autonomy.laneChat("acme", "backlog");
   if (chat === undefined) throw new Error("no lane for Acme");
   h.majhi.services.playbooks.catalog.register(SWEEP);
   return { w, h, chat };

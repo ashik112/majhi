@@ -483,6 +483,8 @@ export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
  * and autonomous mode wake it with that workspace's matters only.
  */
 export const CAPTAIN_LANE_BRIEF = "Captain lane";
+/** What the title of a workspace's second, on-call lane ends with: "Captain: Acme (on call)". */
+export const ON_CALL_SUFFIX = " (on call)";
 
 /**
  * The brief of a client room: a chat in a chat app with a client (docs/briefs/client-chats.md). It is a

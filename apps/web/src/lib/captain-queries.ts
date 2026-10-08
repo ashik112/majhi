@@ -19,6 +19,27 @@ export function useCaptainStatus() {
   });
 }
 
+/**
+ * The workspace's captain status while a message waits on it. The `captain` topic refetches it, and the server
+ * emits that topic when a card for the owner appears or goes, so the reason it waits shows and goes without polling.
+ */
+export function useWaitingOn(org: string) {
+  return useQuery<CaptainStatus, ApiRequestError>({
+    queryKey: statusKey,
+    queryFn: () => cmd("captain.status", {}),
+    select: (status) => ({ ...status, orgs: status.orgs.filter((o) => o.org === org) }),
+  });
+}
+
+/** Answers the permission card that keeps the captain waiting in a lane. */
+export function useAnswerLaneCard() {
+  const client = useQueryClient();
+  return useMutation<unknown, ApiRequestError, { task: string; item: string; option: string }>({
+    mutationFn: (input) => cmd("room.permission", input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.captain }),
+  });
+}
+
 /** The wiki component names of a workspace, for the areas a ship rule covers. Rarely change, so kept for a minute. */
 export function useAreaNames(org: string) {
   return useQuery<CommandOutput<"tasks.areaNames">, ApiRequestError>({

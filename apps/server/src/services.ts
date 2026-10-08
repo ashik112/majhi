@@ -906,6 +906,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containerRunner: env.runner.mode === "container",
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: (task, rows) => events.emitTask(task, rows ? true : undefined),
+    onCardChange: () => events.emit(["captain"]),
     onSkillsChanged: () => events.emit(["skills"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task, refused) => {
