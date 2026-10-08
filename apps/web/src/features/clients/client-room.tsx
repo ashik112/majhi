@@ -393,7 +393,7 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
 
 /**
  * What a message waiting on the captain waits on, with the button that unblocks it: the card in the captain's
- * lane (Allow or Deny answers that card), no account that may pay (a link to the Captain page), or Stop everything
+ * lane (Allow or Deny answers that card), no account that may pay (a link to the account card in Needs you), or Stop everything
  * (Resume). Read from the captain's status, nothing stored. Nothing in the way: the plain "Working on it".
  */
 function WaitingLine({ org }: { org: string }) {
@@ -448,8 +448,8 @@ function WaitingLine({ org }: { org: string }) {
     return (
       <span className="text-xs text-fg-faint">
         Waiting: the captain has no account to work with here.{" "}
-        <Link to={PAGE_PATH.captain} search={{ thread: org }} className="underline hover:text-fg">
-          Fix the account
+        <Link to={PAGE_PATH.today} className="underline hover:text-fg">
+          Choose the account
         </Link>
       </span>
     );
