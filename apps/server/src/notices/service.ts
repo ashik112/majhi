@@ -1,4 +1,10 @@
-import { NOTICE_DAYS, type NoticeList, type NoticesMarkReadInput, type OwnerDecision, type UpdateStatus } from "@majhi/shared";
+import {
+  NOTICE_DAYS,
+  type NoticeList,
+  type NoticesMarkReadInput,
+  type OwnerDecision,
+  type UpdateStatus,
+} from "@majhi/shared";
 import type { EventHub } from "../events/hub.ts";
 import type { Store } from "../store/index.ts";
 import { buildFeed } from "./feed.ts";

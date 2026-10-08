@@ -84,7 +84,9 @@ export class ConversationsService {
     this.deps.events.send({
       type: "conversation",
       id,
-      ...(conversation === undefined ? {} : { conversation: this.mark(conversation, this.deps.currentChat?.()) }),
+      ...(conversation === undefined
+        ? {}
+        : { conversation: this.mark(conversation, this.deps.currentChat?.()) }),
     });
   }
 }

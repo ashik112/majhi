@@ -1,4 +1,11 @@
-import { mentionedContacts, mentionNames, type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
+import {
+  mentionedContacts,
+  mentionNames,
+  type RoomItem,
+  RoomItemSchema,
+  type RoomSearchHit,
+  type TaskId,
+} from "@majhi/shared";
 import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
@@ -601,7 +608,11 @@ export function markedWindow(text: string, words: readonly string[]): string {
   const end = Math.min(text.length, first + 100);
   const spans: [number, number][] = [];
   for (const w of words) {
-    for (let at = lower.indexOf(w, start); at >= 0 && at + w.length <= end; at = lower.indexOf(w, at + w.length))
+    for (
+      let at = lower.indexOf(w, start);
+      at >= 0 && at + w.length <= end;
+      at = lower.indexOf(w, at + w.length)
+    )
       spans.push([at, at + w.length]);
   }
   spans.sort((a, b) => a[0] - b[0]);

@@ -37,7 +37,6 @@ import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
-import { noticesHandlers } from "../notices/handlers.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -51,6 +50,7 @@ import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf, repoSlug, rewriteRemoteUrl } from "../mrs/remote.ts";
+import { noticesHandlers } from "../notices/handlers.ts";
 import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
 import { opsHandlers } from "../ops/handlers.ts";
 import {

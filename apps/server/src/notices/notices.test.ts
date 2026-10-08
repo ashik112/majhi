@@ -74,12 +74,14 @@ describe("notices.markRead", () => {
     const agent = {
       command: "notices.markRead" as const,
       meta: { actor: { kind: "agent", id: "builder" } } as unknown as Parameters<
-        typeof handlers["notices.markRead"]
+        (typeof handlers)["notices.markRead"]
       >[1]["meta"],
     };
     await expect(handlers["notices.markRead"]({ upTo: "2026-02-01T10:00:00.000Z" }, agent)).rejects.toThrow(
       "owner's",
     );
-    await expect(handlers["notices.list"]({}, { ...agent, command: "notices.list" })).rejects.toThrow("owner's");
+    await expect(handlers["notices.list"]({}, { ...agent, command: "notices.list" })).rejects.toThrow(
+      "owner's",
+    );
   });
 });

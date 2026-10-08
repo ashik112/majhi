@@ -167,11 +167,6 @@ import {
   ConversationSearchResultSchema,
 } from "./conversations.ts";
 import {
-  NoticeListSchema,
-  NoticesListInputSchema,
-  NoticesMarkReadInputSchema,
-} from "./notices.ts";
-import {
   DecisionLabelSchema,
   EvalInputSchema,
   EvalReportSchema,
@@ -309,6 +304,7 @@ import {
   RefreshMrsResultSchema,
   RepoDiffSchema,
 } from "./mrs.ts";
+import { NoticeListSchema, NoticesListInputSchema, NoticesMarkReadInputSchema } from "./notices.ts";
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import {
@@ -1736,8 +1732,7 @@ export const commands = {
   },
   "notices.markRead": {
     risk: "change",
-    summary:
-      "Mark the bell's rows read up to a time, or one row. The mark never moves back. Owner only",
+    summary: "Mark the bell's rows read up to a time, or one row. The mark never moves back. Owner only",
     input: NoticesMarkReadInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },

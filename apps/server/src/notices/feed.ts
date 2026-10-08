@@ -1,18 +1,18 @@
 import {
+  actorOfName,
   CAPTAIN,
   ClientOutcomeSchema,
   type DeployRecord,
-  actorOfName,
+  didWords,
+  incidentDecisionId,
+  mentionNames,
+  NOTICE_LIMIT,
   type Notice,
   type NoticeList,
-  NOTICE_LIMIT,
   type OwnerDecision,
   PRIVATE,
-  type UpdateStatus,
-  didWords,
-  mentionNames,
-  incidentDecisionId,
   signInDecisionId,
+  type UpdateStatus,
 } from "@majhi/shared";
 import { z } from "zod";
 import { oneLine } from "../notify/attention.ts";
@@ -96,7 +96,8 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
   // The same button as on the Needs you page: the primary answer, unless it needs typed words.
   const main = d.options.find((o) => o.primary === true && o.text !== true);
   const hint = d.suggestion;
-  const hinted = hint === undefined ? undefined : (d.options.find((o) => o.id === hint.option)?.label ?? hint.option);
+  const hinted =
+    hint === undefined ? undefined : (d.options.find((o) => o.id === hint.option)?.label ?? hint.option);
   const says =
     hint === undefined || hinted === undefined
       ? undefined
@@ -111,7 +112,16 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
     needsYou: true,
     link: d.link,
     ...(main === undefined ? { openLabel: d.kind === "sign-in" ? "Sign in" : "Open" } : {}),
-    ...(main === undefined ? {} : { answer: { decision: d.id, option: main.id, label: main.label, ...(says === undefined ? {} : { says }) } }),
+    ...(main === undefined
+      ? {}
+      : {
+          answer: {
+            decision: d.id,
+            option: main.id,
+            label: main.label,
+            ...(says === undefined ? {} : { says }),
+          },
+        }),
   };
 }
 
@@ -180,7 +190,11 @@ function clientNotices(
     } else {
       const reply = parse(ClientReply, line.payload);
       // A held reply is a decision already; the owner's own replies need no bell.
-      if (reply === undefined || reply.by !== "captain" || (reply.state !== "sent" && reply.state !== "failed"))
+      if (
+        reply === undefined ||
+        reply.by !== "captain" ||
+        (reply.state !== "sent" && reply.state !== "failed")
+      )
         continue;
       const key = `${line.room}:reply`;
       if (seen.has(key)) continue;
@@ -215,10 +229,7 @@ const PAUSE_WORDS: Readonly<Record<string, string>> = {
 };
 
 /** A task in review, done or paused. The owner's own moves are left out, and so is what Needs you already holds. */
-function taskNotices(
-  rows: readonly TaskStatusRow[],
-  waiting: ReadonlySet<string>,
-): Omit<Notice, "read">[] {
+function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string>): Omit<Notice, "read">[] {
   const out: Omit<Notice, "read">[] = [];
   for (const row of rows) {
     const actor = actorOfName(row.actor);
@@ -256,7 +267,11 @@ function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[]
   return deploys.map((d) => {
     const where = `${d.project} to ${d.env}`;
     const words =
-      d.state === "live" ? `Deploy ${where}: live` : d.state === "failed" ? `Deploy ${where} failed` : `Deploy ${where} rolled back`;
+      d.state === "live"
+        ? `Deploy ${where}: live`
+        : d.state === "failed"
+          ? `Deploy ${where} failed`
+          : `Deploy ${where} rolled back`;
     const detail = d.state === "live" ? d.task : (d.reason ?? d.task);
     return {
       id: `deploy:${d.id}:${d.state}`,
@@ -266,7 +281,10 @@ function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[]
       subject: oneLine(words, 160),
       ...(detail === undefined ? {} : { detail: oneLine(detail) }),
       needsYou: false,
-      link: d.task === undefined ? { kind: "page" as const, page: "projects" as const } : { kind: "task" as const, id: d.task },
+      link:
+        d.task === undefined
+          ? { kind: "page" as const, page: "projects" as const }
+          : { kind: "task" as const, id: d.task },
     };
   });
 }
@@ -279,7 +297,9 @@ function incidentNotices(
   const out: Omit<Notice, "read">[] = [];
   const link = { kind: "page" as const, page: "watch" as const };
   for (const row of rows) {
-    const detail = oneLine(row.service === null ? `${row.severity} severity` : `${row.service}, ${row.severity} severity`);
+    const detail = oneLine(
+      row.service === null ? `${row.severity} severity` : `${row.service}, ${row.severity} severity`,
+    );
     if (row.openedAt >= since && !waiting.has(incidentDecisionId(row.id))) {
       out.push({
         id: `incident:${row.id}:opened`,
@@ -331,7 +351,11 @@ function updateNotices(update: UpdateStatus | undefined, since: string): Omit<No
       kind: "update" as const,
       at: update.startedAt,
       subject: update.state === "done" ? "majhi updated" : "majhi update failed",
-      detail: oneLine(update.state === "done" ? `Build ${update.commit.slice(0, 7)}` : (update.error ?? update.commit.slice(0, 7))),
+      detail: oneLine(
+        update.state === "done"
+          ? `Build ${update.commit.slice(0, 7)}`
+          : (update.error ?? update.commit.slice(0, 7)),
+      ),
       needsYou: false,
       link: { kind: "page" as const, page: "setup" as const },
     },
@@ -344,7 +368,9 @@ function updateNotices(update: UpdateStatus | undefined, since: string): Omit<No
  * A row is read when its time is not after the "seen up to" mark, or the owner read it on its own.
  */
 export function buildFeed(src: FeedSources): NoticeList {
-  const waiting = new Set(src.decisions.flatMap((d) => (d.task === undefined ? [] : [`${d.kind}:${d.task}`, d.id])));
+  const waiting = new Set(
+    src.decisions.flatMap((d) => (d.task === undefined ? [] : [`${d.kind}:${d.task}`, d.id])),
+  );
   const all = [
     ...src.decisions.map(decisionNotice),
     ...clientNotices(src.clientLines, src.contactName),
