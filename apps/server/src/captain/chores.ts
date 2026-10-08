@@ -46,9 +46,10 @@ export function memoryKey(fact: number): string {
   return `memory:${fact}`;
 }
 
-/** Why the captain opens a merge request: who merges it, and the row or rule that says so. */
 const lowerFirst = (text: string) => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+const upperFirst = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
+/** Why the captain opens a merge request: who merges it, and the row or rule that says so. */
 function mrReason(workspace: string, plan: ShipPlan, host: string): string {
   return plan.steps.merge === "captain"
     ? `In ${workspace} the captain decides when work is merged and pushed, and the project works through merge requests, so it opens the merge request on ${host} and merges it once it is green`
@@ -457,6 +458,50 @@ export function createChores(
               },
             });
             continue;
+          }
+          // Where the owner merges, the lead still brings main in and resolves, so the owner's merge can go.
+          if (check.conflict === true && !ruleOff(run, "ship-conflict")) {
+            const key = `ship:conflict:${t.id}:`;
+            if (run.times(key) < MAX_UNCOMMITTED_NUDGES) {
+              await run.act({
+                key: `${key}${t.heads}`,
+                text: `Asked the lead of ${t.id} to bring main in and resolve the conflicts: ${t.title}`,
+                reason: check.why,
+                task: t.id,
+                recheck: async () => away(t.id),
+                do: async () => {
+                  await ports.askChanges(
+                    org,
+                    t.id,
+                    `Captain: ${upperFirst(check.why)}. Bring the base branch into your branch, resolve the conflicts, run the tests and commit. Do not merge.`,
+                  );
+                  return { undoNote: "A message to the lead: nothing to undo" };
+                },
+              });
+              continue;
+            }
+          }
+          // Nothing committed: a lead that stopped on a question in prose buries it. Told once to ask with a card.
+          if (check.unmergeable === "empty" && !ruleOff(run, "ship-checks")) {
+            const key = `ship:empty:${t.id}:`;
+            if (run.times(key) < 1) {
+              await run.act({
+                key: `${key}${t.heads}`,
+                text: `Asked the lead of ${t.id} to ask the owner with a card or do the work: ${t.title}`,
+                reason: check.why,
+                task: t.id,
+                recheck: async () => away(t.id),
+                do: async () => {
+                  await ports.askChanges(
+                    org,
+                    t.id,
+                    "Captain: Nothing is committed on this task. If you need something from the owner, ask with the ask tool so it shows as a card, then end your turn. Otherwise do the work and commit it.",
+                  );
+                  return { undoNote: "A message to the lead: nothing to undo" };
+                },
+              });
+              continue;
+            }
           }
           // Uncommitted work: the lead is told once per state of it, twice at most, then it is left for the owner.
           if (check.uncommitted !== undefined && !ruleOff(run, "ship-checks")) {
