@@ -178,6 +178,15 @@ export class DeployRepo {
     );
   }
 
+  /** Deploys that ended (live, failed or rolled back) since a time, newest first. */
+  endedSince(since: string, limit: number): DeployRecord[] {
+    return this.rows(
+      "SELECT * FROM deploys WHERE state IN ('live', 'failed', 'rolled-back') AND updated_at >= ? ORDER BY id DESC LIMIT ?",
+      since,
+      limit,
+    );
+  }
+
   /** Deploys that were running when majhi stopped: they are followed again at start. */
   active(): DeployRecord[] {
     return this.rows("SELECT * FROM deploys WHERE state IN ('queued', 'running', 'verifying') ORDER BY id");

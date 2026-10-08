@@ -94,6 +94,8 @@ import { DockerCli } from "./containers/docker.ts";
 import { ImageCheckFailed, runImageCheck } from "./containers/image-check.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { ConversationsService } from "./conversations/service.ts";
+import { NoticesService } from "./notices/service.ts";
+import { readUpdateStatus } from "./system/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
 import { builtinRegistry } from "./decisions/builtinSlots.ts";
 import { CalibrationStore } from "./decisions/calibrationStore.ts";
@@ -422,6 +424,8 @@ export interface Services {
   inbox: InboxService;
   /** The chat dock: task rooms and captain threads with their unread counts. */
   conversations: ConversationsService;
+  /** The bell: what happened lately, read from the records each event lives in. */
+  notices: NoticesService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
@@ -1351,6 +1355,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   room.onWrite((task, item) => captain.roomWrote(task, item));
   const conversations = new ConversationsService({ store, events });
   room.onWrite((task, item) => conversations.observe(task, item));
+  const notices = new NoticesService({
+    store,
+    events,
+    decisions: () => inbox.list(),
+    update: () => readUpdateStatus(env.majhiHome),
+  });
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
   const chatSweep = setInterval(() => background.run(async () => chatMemory?.sweep()), CHAT_SWEEP_MS);
@@ -3303,6 +3313,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     autonomy,
     inbox,
     conversations,
+    notices,
     captain,
     findings,
     playbooks,

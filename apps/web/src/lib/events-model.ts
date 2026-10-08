@@ -17,9 +17,9 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "skills":
       return [queryKeys.skills];
     case "projects":
-      return [queryKeys.projects, queryKeys.onboarding];
+      return [queryKeys.projects, queryKeys.onboarding, queryKeys.notices];
     case "tasks":
-      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda, queryKeys.conversations];
+      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda, queryKeys.conversations, queryKeys.notices];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":
@@ -39,7 +39,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "autonomy":
       return [queryKeys.autonomy, queryKeys.decisions, queryKeys.agenda];
     case "captain":
-      return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda];
+      return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda, queryKeys.notices];
     case "agenda":
       return [queryKeys.agenda];
     case "findings":
@@ -53,9 +53,11 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
         queryKeys.agenda,
       ];
     case "ops":
-      return [queryKeys.ops, queryKeys.decisions, queryKeys.findings];
+      return [queryKeys.ops, queryKeys.decisions, queryKeys.findings, queryKeys.notices];
     case "clients":
-      return [queryKeys.clients, queryKeys.decisions, queryKeys.incident];
+      return [queryKeys.clients, queryKeys.decisions, queryKeys.incident, queryKeys.notices];
+    case "notices":
+      return [queryKeys.notices];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
@@ -90,7 +92,11 @@ export function planEvent(event: ServerEvent): EventPlan {
   const tasks: string[] = [];
   const waits: string[] = [];
   // A conversation event is applied to the cached list as it is (see `patchConversation`): nothing to read.
-  if (event.type === "hello" || event.type === "conversation") return { keys: [], tasks, waits };
+  // A client's chat also has a line in the bell; an agent's streamed reply does not, so only chat apps count.
+  if (event.type === "hello") return { keys: [], tasks, waits };
+  if (event.type === "conversation") {
+    return { keys: event.conversation?.app === undefined ? [] : [queryKeys.notices], tasks, waits };
+  }
   if (event.type === "attention") {
     // The item is new: the lists that count it must show it at once.
     add(topicQueryKeys("tasks"));
@@ -101,7 +107,7 @@ export function planEvent(event: ServerEvent): EventPlan {
       tasks.push(...event.tasks);
       if (event.rows !== true) {
         waits.push(...event.tasks);
-        add([queryKeys.agenda]);
+        add([queryKeys.agenda, queryKeys.notices]);
       }
     } else add(topicQueryKeys(topic));
   }
@@ -147,6 +153,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "checks",
   "wiki",
   "clients",
+  "notices",
 ];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */

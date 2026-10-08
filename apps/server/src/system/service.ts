@@ -179,13 +179,18 @@ export class SystemService {
   }
 
   /** What the helper wrote to `update.json`. Missing or unreadable means no update has run. */
-  private async readUpdate(): Promise<UpdateStatus | undefined> {
-    try {
-      const text = await readFile(join(this.deps.majhiHome, UPDATE_STATUS_FILE), "utf8");
-      const parsed = UpdateStatusSchema.safeParse(JSON.parse(text));
-      return parsed.success ? parsed.data : undefined;
-    } catch {
-      return undefined;
-    }
+  readUpdate(): Promise<UpdateStatus | undefined> {
+    return readUpdateStatus(this.deps.majhiHome);
+  }
+}
+
+/** The helper's status file in majhi's home, read and checked. */
+export async function readUpdateStatus(majhiHome: string): Promise<UpdateStatus | undefined> {
+  try {
+    const text = await readFile(join(majhiHome, UPDATE_STATUS_FILE), "utf8");
+    const parsed = UpdateStatusSchema.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
   }
 }

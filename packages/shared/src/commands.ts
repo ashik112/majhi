@@ -167,6 +167,11 @@ import {
   ConversationSearchResultSchema,
 } from "./conversations.ts";
 import {
+  NoticeListSchema,
+  NoticesListInputSchema,
+  NoticesMarkReadInputSchema,
+} from "./notices.ts";
+import {
   DecisionLabelSchema,
   EvalInputSchema,
   EvalReportSchema,
@@ -1719,6 +1724,21 @@ export const commands = {
     summary:
       "Hide a conversation from the Chats list, or bring it back. The history stays; a task room follows its task. Owner only",
     input: ConversationArchiveInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  // The bell ---------------------------------------------------------------------
+  "notices.list": {
+    risk: "read",
+    summary:
+      "The bell's feed: what happened in the last week, newest first, read from decisions, client rooms, task history, deploys, incidents and the update file. Each row says whether the owner has read it. Owner only",
+    input: NoticesListInputSchema,
+    output: NoticeListSchema,
+  },
+  "notices.markRead": {
+    risk: "change",
+    summary:
+      "Mark the bell's rows read up to a time, or one row. The mark never moves back. Owner only",
+    input: NoticesMarkReadInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "notify.pending": {
