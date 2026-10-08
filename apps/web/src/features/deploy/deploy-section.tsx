@@ -1,9 +1,10 @@
-import type { ProjectView } from "@majhi/shared";
+import type { DeployTier, ProjectView } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
 import { DetailSection } from "@/components/ui/list-detail";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot } from "@/components/ui/status-dot";
@@ -12,11 +13,15 @@ import { useBoss } from "@/features/boss/boss-context";
 import { wsTab } from "@/features/captain/panel-model";
 import { useProjectCards } from "@/lib/card-queries";
 import { cn } from "@/lib/cn";
-import { useDeployView } from "@/lib/deploy-queries";
+import { useDeployView, useSetEnvironments } from "@/lib/deploy-queries";
 import { useWiki, useWikiUpdate } from "@/lib/wiki-queries";
 import { DEPLOY_PAGE_ID, lastReached, reachedLook, runHost, runsLine } from "./deploy-model";
 import { TaskLink } from "./task-link";
-import { TierChip } from "./tier-chip";
+
+const TIERS: readonly { value: DeployTier; label: string }[] = [
+  { value: "staging", label: "Staging" },
+  { value: "production", label: "Production" },
+];
 
 /** Earlier deploys of an environment shown under its row. */
 const HISTORY_SHOWN = 8;
@@ -28,6 +33,8 @@ function DeployPageButton({ project }: { project: ProjectView }) {
   const navigate = useNavigate();
   const toast = useToast();
   const has = wiki.data?.pages.some((p) => p.id === DEPLOY_PAGE_ID) ?? true;
+  // No pages at all: the page needs the wiki first, so the button builds the whole project's wiki.
+  const built = (wiki.data?.pages.length ?? 1) > 0;
   if (has || wiki.data?.enabled === false) {
     return (
       <Button asChild size="sm">
@@ -43,27 +50,34 @@ function DeployPageButton({ project }: { project: ProjectView }) {
       disabled={build.isPending}
       onClick={() =>
         build.mutate(
-          { org: project.org, project: project.id, page: DEPLOY_PAGE_ID },
+          built
+            ? { org: project.org, project: project.id, page: DEPLOY_PAGE_ID }
+            : { org: project.org, project: project.id },
           {
             onSuccess: () =>
               void navigate({
                 to: "/wiki",
-                search: { org: project.org, project: project.id, id: DEPLOY_PAGE_ID },
+                search: built
+                  ? { org: project.org, project: project.id, id: DEPLOY_PAGE_ID }
+                  : { org: project.org, project: project.id },
               }),
             onError: (error) =>
-              toast("Could not write the deploy page", { detail: error.message, tone: "error" }),
+              toast(built ? "Could not write the deploy page" : "Could not build the wiki", {
+                detail: error.message,
+                tone: "error",
+              }),
           },
         )
       }
     >
-      {build.isPending ? "Writing..." : "Write deploy page"}
+      {build.isPending ? "Writing..." : built ? "Write deploy page" : "Build the wiki"}
     </Button>
   );
 }
 
 /** What the captain is asked to do when a project has no environments: read how it deploys, then propose them. */
 export function setupDeploysAsk(project: string): string {
-  return `Set up deploys for ${project}. Read its Deploys wiki page and its CI files, then add its environments with the branch each deploys from and its check address, in the order they go live. Add them as production: I will change a tier myself if one is staging. Tell me what you found in a line or two.`;
+  return `Set up deploys for ${project}. Read its Deploys wiki page and its CI files, then add its environments with the branch each deploys from and its check address, in the order they go live. Add them as production; I can switch a tier to staging on its row. Tell me what you found in a line or two.`;
 }
 
 /** Where the project is deployed: one row per environment with its branch and check address, and what reached it last. */
@@ -72,6 +86,8 @@ export function DeploySection({ project }: { project: ProjectView }) {
   const boss = useBoss();
   const found = useProjectCards().data?.get(project.id)?.deploy ?? [];
   const [open, setOpen] = useState<string>();
+  const setTier = useSetEnvironments();
+  const toast = useToast();
 
   if (view.isPending) {
     return (
@@ -121,7 +137,7 @@ export function DeploySection({ project }: { project: ProjectView }) {
           const expanded = open === environment.env;
           return (
             <li key={environment.env} className="border-t border-line first:border-t-0">
-              <div className="grid min-h-9 grid-cols-[136px_92px_minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-sm">
+              <div className="grid min-h-11 grid-cols-[minmax(0,148px)_auto_minmax(0,1fr)_auto] items-center gap-3 py-1 text-sm">
                 <span className="flex min-w-0 items-center gap-1">
                   <button
                     type="button"
@@ -137,41 +153,52 @@ export function DeploySection({ project }: { project: ProjectView }) {
                       className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-90")}
                     />
                   </button>
-                  <span className="truncate font-mono text-fg" title={environment.env}>
-                    {environment.env}
-                  </span>
+                  {environment.env !== environment.tier && (
+                    <span className="truncate font-mono text-fg" title={environment.env}>
+                      {environment.env}
+                    </span>
+                  )}
                 </span>
-                <span>
-                  <TierChip tier={environment.tier} />
+                <Segmented<DeployTier>
+                  label={`Tier of ${environment.env}`}
+                  value={environment.tier}
+                  segments={TIERS}
+                  onChange={(tier) => {
+                    if (tier === environment.tier) return;
+                    setTier.mutate(
+                      {
+                        project: project.id,
+                        environments: environments.map((e) => (e.env === environment.env ? { ...e, tier } : e)),
+                      },
+                      {
+                        onError: (error) =>
+                          toast("Could not change the tier", { detail: error.message, tone: "error" }),
+                      },
+                    );
+                  }}
+                />
+                <span className="flex min-w-0 items-center gap-3 font-mono text-xs text-fg-soft">
+                  <span className="shrink-0">{environment.branch ?? project.base ?? "base branch"}</span>
+                  {environment.check !== undefined && (
+                    <span className="min-w-0 truncate text-fg-faint" title={environment.check}>
+                      {environment.check}
+                    </span>
+                  )}
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5 text-fg-soft">
+                <span className="flex min-w-0 shrink-0 items-center gap-2 text-xs text-fg-faint">
                   {first !== undefined && reached !== undefined && (
                     <>
                       <HostGlyph host={runHost(first)} className="size-3.5" />
-                      <span className="min-w-0 truncate font-mono text-xs" title={runsLine(reached.runs)}>
+                      <span className="max-w-40 truncate font-mono" title={runsLine(reached.runs)}>
                         {runsLine(reached.runs)}
                       </span>
                     </>
                   )}
-                </span>
-                <span className="flex shrink-0 items-center gap-2 text-xs text-fg-faint">
                   {look !== undefined && (
                     <>
                       <Dot tone={look.tone} size={6} />
                       {look.text}
                     </>
-                  )}
-                </span>
-              </div>
-              <div className="grid grid-cols-[136px_92px_minmax(0,1fr)_auto] gap-3 pb-1 text-xs text-fg-faint">
-                <span className="col-start-3 col-end-5 flex min-w-0 items-center gap-3">
-                  <span className="shrink-0 font-mono">
-                    {environment.branch ?? project.base ?? "base branch"}
-                  </span>
-                  {environment.check !== undefined && (
-                    <span className="min-w-0 truncate font-mono" title={environment.check}>
-                      {environment.check}
-                    </span>
                   )}
                 </span>
               </div>

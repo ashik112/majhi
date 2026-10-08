@@ -4,6 +4,7 @@ import type { AppSearch } from "@/router";
 type SearchName =
   | "agent"
   | "account"
+  | "signin"
   | "connection"
   | "org"
   | "create"

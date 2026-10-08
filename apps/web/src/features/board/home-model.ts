@@ -689,7 +689,7 @@ function linkAction(decision: OwnerDecision): BannerAction {
     case "limits":
       return { kind: "page", to: "/limits" };
     case "account":
-      return { kind: "page", to: "/accounts", search: { account: link.id } };
+      return { kind: "page", to: "/accounts", search: { account: link.id, signin: "1" } };
     case "playbooks":
       return { kind: "page", to: "/playbooks" };
     case "watch":
@@ -750,7 +750,7 @@ export function queuedActions(item: QueuedItem): ActionSpec[] {
       return [
         {
           kind: "go",
-          action: { kind: "page", to: "/accounts", search: { account: blocker.account } },
+          action: { kind: "page", to: "/accounts", search: blocker.why === "signed-out" ? { account: blocker.account, signin: "1" } : { account: blocker.account } },
           label: blocker.why === "signed-out" ? "Sign in" : "Open account",
         },
         start,

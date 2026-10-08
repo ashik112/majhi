@@ -17,6 +17,7 @@ import { COPY } from "./copy";
 import { gapCount } from "./model";
 import { type ListEntry, PageList } from "./page-list";
 import { type LoadedPage, PageView } from "./page-view";
+import { SignInButton } from "./sign-in-button";
 import { SourceViewer } from "./source-viewer";
 import { UpdateDialog } from "./update-dialog";
 import { useWikiWorkspaces } from "./use-wiki-switch";
@@ -61,19 +62,25 @@ export function WikiView() {
 }
 
 /** The status of a whole workspace as one line: the commits its projects are behind in all, and the most behind one's build. */
-function workspaceStatus(org: string, statuses: readonly WikiStatus[]): WikiStatus | undefined {
+function workspaceStatus(
+  org: string,
+  statuses: readonly WikiStatus[],
+  own: { failed: readonly WikiPageId[]; lastError?: string | undefined } | undefined,
+): WikiStatus | undefined {
   if (statuses.length === 0) return undefined;
   const worst = [...statuses].sort((a, b) => (b.behind ?? 0) - (a.behind ?? 0))[0];
   if (worst === undefined) return undefined;
   const behind = statuses.reduce((n, s) => n + (s.behind ?? 0), 0);
   const running = statuses.find((s) => s.running);
-  const lastError = statuses.find((s) => s.lastError !== undefined)?.lastError;
+  const lastError = own?.lastError ?? statuses.find((s) => s.lastError !== undefined)?.lastError;
+  const signedOut = statuses.find((s) => s.signedOut !== undefined)?.signedOut;
   const base = {
     org,
     project: worst.project,
     changed: statuses.flatMap((s) => s.changed),
     oldRules: statuses.some((s) => s.oldRules),
-    failed: [...new Set(statuses.flatMap((s) => s.failed))],
+    failed: [...new Set([...statuses.flatMap((s) => s.failed), ...(own?.failed ?? [])])],
+    ...(signedOut === undefined ? {} : { signedOut }),
     flowsNotChosen: statuses.some((s) => s.flowsNotChosen),
     ...(lastError === undefined ? {} : { lastError }),
     ...(worst.builtCommit === undefined ? {} : { builtCommit: worst.builtCommit }),
@@ -123,11 +130,14 @@ function Scope({
     [statuses],
   );
   const status = whole
-    ? workspaceStatus(org, statuses)
+    ? workspaceStatus(org, statuses, everything.data?.workspace)
     : (own.data?.status.find((s) => s.project === project) ?? statuses.find((s) => s.project === project));
   const changed = useMemo(() => new Set(status?.changed ?? []), [status]);
-  // A page that failed belongs to one project, so the workspace's own list marks none.
-  const failed = useMemo(() => new Set(whole ? [] : (status?.failed ?? [])), [status, whole]);
+  // A page that failed belongs to one project, so the workspace's own list marks only its own failures.
+  const failed = useMemo(
+    () => new Set(whole ? (everything.data?.workspace?.failed ?? []) : (status?.failed ?? [])),
+    [status, whole, everything.data],
+  );
   const loaded = useMemo<LoadedPage[]>(
     () =>
       summaries.flatMap((summary, i) => {
@@ -313,6 +323,7 @@ function NoPages({
     );
   }
   const failed = status?.lastError;
+  const signedOut = status?.signedOut;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
       <h2 className="text-md font-semibold">
@@ -324,10 +335,15 @@ function NoPages({
       </h2>
       {!building && (
         <>
-          <p className="max-w-[520px] text-base text-fg-muted text-pretty">{failed ?? COPY.build.body}</p>
-          <Button variant="primary" className="mt-2" onClick={onBuild}>
-            {failed !== undefined ? COPY.build.again : COPY.build.button}
-          </Button>
+          <p className="max-w-[520px] text-base text-fg-muted text-pretty">
+            {signedOut !== undefined ? COPY.build.signedOut(signedOut) : (failed ?? COPY.build.body)}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            {signedOut !== undefined && <SignInButton account={signedOut} primary />}
+            <Button variant={signedOut === undefined ? "primary" : "secondary"} onClick={onBuild}>
+              {failed !== undefined ? COPY.build.again : COPY.build.button}
+            </Button>
+          </div>
         </>
       )}
     </div>

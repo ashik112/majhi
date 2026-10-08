@@ -1748,8 +1748,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         : `The wiki cannot be written here: ${errorMessage(err)}`;
     }
   };
+  const wikiSignedOut = async (org: string) => {
+    try {
+      const { fm } = await housekeeper.resolve(org);
+      return (await accounts.needsLogin(fm.account)) ? fm.account : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const wiki = new WikiService({
     repo: store.wiki,
+    signedOut: wikiSignedOut,
     enabled: wikiOn,
     projects: async () =>
       (await projects.infos()).map((p) => ({

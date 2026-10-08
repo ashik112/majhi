@@ -72,6 +72,17 @@ export function AccountsView() {
   );
   const first = groups.find((g) => g.items[0])?.items[0];
   const selected = all.find((a) => a.id === (linked ?? picked)) ?? first;
+  // A "Sign in" link (?account=<id>&signin=1) starts that account's sign-in, like "Sign in again".
+  const [signin, setSignin] = useSearchParam("signin");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run when the link is followed and the account is known
+  useEffect(() => {
+    if (signin === undefined || linked === undefined || !accounts.isSuccess) return;
+    const target = all.find((a) => a.id === linked);
+    if (target !== undefined && target.status === "needs-login" && target.auth === "login") {
+      setDialog({ kind: "signin", account: target });
+    }
+    setSignin(undefined);
+  }, [signin, linked, accounts.isSuccess]);
   const select = (id: string) => {
     setAdding(undefined);
     setPicked(id);
@@ -348,6 +359,8 @@ function AccountRow({
 }) {
   const status = statusText(account, now);
   const usage = account.auth === "login" ? account.usage : undefined;
+  // A signed-out account cannot be read: no meters, like its detail.
+  const meters = account.status === "needs-login" ? undefined : usage;
   const tool = tools?.find((t) => t.id === account.tool)?.name ?? account.tool;
   const kind = account.auth === "api-key" ? "API key" : usage?.plan;
   return (
@@ -371,10 +384,10 @@ function AccountRow({
         >
           {account.id}
         </button>
-        {(usage?.window || usage?.weekly) && (
+        {(meters?.window || meters?.weekly) && (
           <span className="tnum ml-auto flex shrink-0 gap-2 font-mono text-xs">
-            {usage.window && <Figure label="5h" pct={usage.window.usedPct} />}
-            {usage.weekly && <Figure label="wk" pct={usage.weekly.usedPct} />}
+            {meters.window && <Figure label="5h" pct={meters.window.usedPct} />}
+            {meters.weekly && <Figure label="wk" pct={meters.weekly.usedPct} />}
           </span>
         )}
       </span>

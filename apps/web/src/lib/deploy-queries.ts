@@ -53,3 +53,16 @@ export function useHoldDeploy() {
     onSuccess: after,
   });
 }
+
+/** The whole list of a project's environments, written back (a tier change is one row of it). */
+export function useSetEnvironments() {
+  const after = useAfterDeploy();
+  return useMutation<
+    CommandOutput<"projects.setEnvironments">,
+    ApiRequestError,
+    CommandInput<"projects.setEnvironments">
+  >({
+    mutationFn: (input) => cmd("projects.setEnvironments", input),
+    onSuccess: after,
+  });
+}

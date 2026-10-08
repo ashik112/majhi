@@ -6,6 +6,7 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pick, type PickOption } from "@/components/ui/pick";
 import { badgeLetters, plural } from "@/lib/format";
+import { SignInButton } from "./sign-in-button";
 import { COPY } from "./copy";
 import type { WikiWorkspace } from "./use-wiki-switch";
 
@@ -140,12 +141,15 @@ function StatusLine({
       </span>
     );
   }
+  // A page the last update did not write is not "up to date", whatever the commits say.
+  const notWritten = status.failed.length + (status.flowsNotChosen ? 1 : 0);
   return (
     <span className="flex min-w-0 items-center gap-3 text-sm text-fg-muted" role="status">
       {status.lastError !== undefined && (
         <span className="flex items-center gap-1.5 text-red" title={status.lastError}>
           <span aria-hidden="true" className="size-1.5 rounded-full bg-red" />
-          {COPY.failed.updateFailed}
+          {status.signedOut === undefined ? COPY.failed.updateFailed : COPY.failed.signedOut(status.signedOut)}
+          {status.signedOut !== undefined && <SignInButton account={status.signedOut} />}
         </span>
       )}
       {status.builtCommit === undefined ? (
@@ -173,10 +177,16 @@ function StatusLine({
           <span
             aria-hidden="true"
             className={
-              status.behind > 0 ? "size-1.5 rounded-full bg-amber" : "size-1.5 rounded-full bg-green"
+              status.behind > 0 || notWritten > 0
+                ? "size-1.5 rounded-full bg-amber"
+                : "size-1.5 rounded-full bg-green"
             }
           />
-          {status.behind > 0 ? `${plural(status.behind, "commit")} behind` : "Up to date"}
+          {status.behind > 0
+            ? `${plural(status.behind, "commit")} behind`
+            : notWritten > 0
+              ? `${plural(notWritten, "page")} not written`
+              : "Up to date"}
         </span>
       )}
       {status.oldRules && <span className="whitespace-nowrap text-amber">Older rules</span>}

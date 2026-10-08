@@ -740,6 +740,8 @@ const statusBase = {
   /** The last update could not choose the main flows. The next update asks again. */
   flowsNotChosen: z.boolean().default(false),
   lastError: z.string().max(500).optional(),
+  /** The writer's account when it is signed out: the update cannot run until it is signed in again. */
+  signedOut: IdSchema.optional(),
 };
 
 /** One project's wiki state. A run in progress says which phase it is in; an idle one says nothing about a phase. */
@@ -795,6 +797,10 @@ export const WikiViewSchema = z.object({
   pages: z.array(WikiPageSummarySchema),
   /** The project's state, or every project's when the scope is the workspace. */
   status: z.array(WikiStatusSchema),
+  /** Only for the workspace's own wiki: the pages its last update could not write, and why it stopped. */
+  workspace: z
+    .object({ failed: z.array(WikiPageIdSchema), lastError: z.string().max(500).optional() })
+    .optional(),
 });
 export type WikiView = z.infer<typeof WikiViewSchema>;
 

@@ -96,6 +96,8 @@ export interface WikiServiceDeps {
   /** What the writer's model costs per million tokens. Absent: the estimate has no dollars and only the token cap holds. */
   price: (org: string) => Promise<Price | undefined>;
   index?: PageIndex | undefined;
+  /** The account the workspace's writer runs on, when it is signed out; undefined when it is fine or unknown. */
+  signedOut?: ((org: string) => Promise<string | undefined>) | undefined;
   /** The wiki changed (progress, pages, state): the UI refetches. */
   changed: () => void;
   now?: () => Date;
@@ -148,6 +150,11 @@ export class WikiService {
   /** How the workspace's projects connect, drawn from the stored facts and the owner's answers. No reader, no model. */
   system(org: string) {
     return this.workspace.system(org);
+  }
+
+  /** The workspace writer's account, when it is signed out. */
+  async signedOut(org: string): Promise<string | undefined> {
+    return (await this.deps.signedOut?.(org)) ?? undefined;
   }
 
   /** Draws again what depends on the links (every Gaps page, the workspace overview's picture) after an answer or a role choice. */
