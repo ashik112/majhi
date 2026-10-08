@@ -200,7 +200,8 @@ function FootNav() {
           ? { text: String(accounts?.length ?? 0) }
           : undefined,
     skills: undefined,
-    usage: toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined,
+    // The count alone: "Health & usage" plus "N to fix" does not fit the rail at 1100.
+    usage: toFix > 0 ? { text: String(toFix), tone: "check" } : undefined,
   };
   return (
     <div className="flex shrink-0 flex-col gap-px border-t border-line pt-2">
