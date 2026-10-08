@@ -201,6 +201,9 @@ jobs:
           publish laya majhi-laya "$VERSION" "$VERSION-cpu"
           publish laya-cuda majhi-laya "$VERSION-cuda"
 
+      - name: Package runtime files
+        run: sh scripts/package-release.sh "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/runtime"
+
       # The tag and the release in one call, at the commit the images were built from. A rerun after a
       # failure past this step finds the release and goes on.
       - name: Create the tag and the release
@@ -213,6 +216,11 @@ jobs:
             gh release create "$VERSION" --target "$GITHUB_SHA" --title "majhi $VERSION" \
               --notes-file "$RUNNER_TEMP/notes.md" --latest=false
           fi
+
+      - name: Upload runtime package
+        run: |
+          gh release upload "$VERSION" "$RUNNER_TEMP/runtime/majhi-runtime.tar.gz" \
+            "$RUNNER_TEMP/runtime/majhi-runtime.tar.gz.sha256" "$RUNNER_TEMP/runtime/release.json" --clobber
 
       # Last: installs and updates follow this pointer (GitHub's latest release).
       - name: Mark it latest

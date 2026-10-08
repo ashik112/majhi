@@ -1,5 +1,6 @@
 import { type DockerRuntime, DockerRuntimeSchema } from "@majhi/shared";
 import { filtersOff, GUARD_CONFIG, GUARD_ENV, LIST_FILTERS, withConfig } from "./gitGuard.ts";
+import { readPackage } from "./releasePackage.ts";
 import type { ExecFn } from "./remount.ts";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -44,6 +45,8 @@ export async function guardedGit(
 
 /** HEAD and dirtiness of the majhi checkout. Undefined when git fails or the folder is not a checkout. */
 export async function readRepo(ctx: GitContext): Promise<RepoState | undefined> {
+  const packaged = await readPackage(ctx.repo);
+  if (packaged !== undefined) return { commit: packaged.commit, dirty: false };
   try {
     const head = (await guardedGit(ctx, ["rev-parse", "HEAD"])).trim();
     if (!HEAD.test(head)) return undefined;
@@ -60,6 +63,7 @@ export async function readRepo(ctx: GitContext): Promise<RepoState | undefined> 
  * first, at most 20. Empty when `from` is not in this checkout.
  */
 export async function commitSubjects(ctx: GitContext, from: string, to = "HEAD"): Promise<string[]> {
+  if (await readPackage(ctx.repo)) return [];
   if (!HEAD.test(from) || (to !== "HEAD" && !HEAD.test(to))) return [];
   try {
     // No signature check either: a planted `log.showSignature` would run the repo's `gpg.program`.

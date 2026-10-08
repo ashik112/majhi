@@ -1,5 +1,19 @@
 # Progress
 
+## Release packages instead of source checkouts (branch `feat/release-packages`, built, not merged)
+
+**Plan.** Build a runtime-only release archive and checksum, change the installer to download it, and make host updates read packaged version metadata and restore runtime files on failure. Keep development checkouts and older release installs working. Verify archive containment, checksum failures, config preservation, update rollback, targeted host tests and typecheck.
+
+**What works.** `scripts/package-release.sh` creates `majhi-runtime.tar.gz`, its SHA-256 checksum and `release.json`. The archive has exactly 12 regular files: runtime setup scripts, Compose configuration, minimal Dockerfiles over prebuilt images, the owner user layer, license and version metadata. It excludes app sources and Git history. The release workflow uploads all assets before marking a release latest. Installation validates the checksum and exact archive entries before replacing anything, preserves `.env` and generated mounts, and restores the previous package on startup failure. Existing source checkouts stay intact; the installer carries their settings to a sibling `app-runtime` directory. Host updates read the published commit without Git, stage a package and restore runtime files and settings if building or startup fails. Development and legacy checkout updates keep their existing paths. Release endpoints can point to a separate distribution host.
+
+**How to try it.** After publishing a release with the new assets, use the existing install line in README. Update works through the same button in majhi. Development still uses `make up`.
+
+**Verified.** 34 targeted tests pass across release packages, releases, updates, repo info and Git guards. They cover real package downloads from a local HTTP server, startup with stubbed Docker and host services, checksum mismatch, extra archive files, symlinks, settings preservation, checkout preservation and rollback after build or startup failure. All five workspace typechecks pass. Biome checks the touched TypeScript files, shell syntax checks pass, the workflow YAML parses, and Compose resolves the packaged server, runner, CPU Laya and CUDA Laya release references. A missing local link to the already installed, locked `@types/mdast` package was restored for typecheck; no dependency manifests changed.
+
+**Left.** Publishing and repository visibility have not changed. Keeping the source private also needs a public distribution location for the installer and assets. Runtime JavaScript remains inspectable in Docker images. No license enforcement is added. Packaged installs show update availability but no Git commit-subject list. Power loss during replacement is not exercised; an interrupted command-line install may leave its lock or previous package for recovery. No real release images were pulled or started in this task. No majhi merge tool is exposed in this session.
+
+Owner check: install the first published packaged release with real images on the supported computers.
+
 ## One home, one voice, slice 1 (branch `feat/one-home-voice`, built, not merged)
 
 The captain speaks where the thing lives: about a task, in that task; elsewhere, in the workspace thread. Slice 2 (board kind tags, post and support types, bubble Now list, client-room Make a task and Not sent) is a separate branch.

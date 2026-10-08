@@ -93,9 +93,9 @@ async function main(): Promise<void> {
   const path = deps.path;
   const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =
-    config.repo === undefined || gitBin === undefined
+    config.repo === undefined
       ? undefined
-      : { git: gitBin, repo: config.repo, env: { ...process.env, PATH: path }, exec };
+      : { git: gitBin ?? "git", repo: config.repo, env: { ...process.env, PATH: path }, exec };
   const bundle = join(config.majhiHome, "bin", "majhi-host.mjs");
   const secretsKeyFile =
     process.env.MAJHI_SECRETS_KEY ?? join(config.home, ".config", "majhi", "secrets.key");

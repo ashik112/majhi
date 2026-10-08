@@ -101,7 +101,7 @@ keyring_problem() {
 }
 
 check_warnings() {
-  if ! command -v git >/dev/null 2>&1; then
+  if [ ! -f "${REPO_DIR:-.}/release.json" ] && ! command -v git >/dev/null 2>&1; then
     warn "git is not installed, so majhi cannot update itself. Install git to turn updates on."
   fi
 
