@@ -1,4 +1,4 @@
-import { type ContactView, mentionToken, type RoomItem, replaceMentions } from "@majhi/shared";
+import { type ContactView, mentionName, mentionToken, type RoomItem, replaceMentions } from "@majhi/shared";
 
 /** A person a reply can mention: the contact's id and the name the owner sees. */
 export interface Person {
@@ -33,7 +33,7 @@ export function roomPeople(
 
 /** A reply as the owner edits it: each mention token is `@Name`. */
 export function tokensToNames(text: string, people: readonly Person[]): string {
-  return replaceMentions(text, (id) => `@${people.find((p) => p.id === id)?.name ?? "someone"}`);
+  return replaceMentions(text, (id) => `@${mentionName(id, undefined, (c) => people.find((p) => p.id === c)?.name)}`);
 }
 
 const isWordChar = (ch: string): boolean => ch.toLowerCase() !== ch.toUpperCase() || (ch >= "0" && ch <= "9");

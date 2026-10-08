@@ -191,6 +191,7 @@ export function createHandlers({
     store: services.store,
     tasks: services.tasks,
     agents: services.agentStore,
+    conversationChanged: (id: string) => services.conversations.changed(id),
   });
   const adoptDeps = (ctx: CommandContext): AdoptDeps => ({
     readToken: async (via, host) =>
