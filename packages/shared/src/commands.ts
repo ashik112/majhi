@@ -18,6 +18,7 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import { CallerSchema } from "./actor.ts";
 import {
   AgendaBriefInputSchema,
   AgendaConfigureInputSchema,
@@ -90,25 +91,25 @@ import {
   ChatEditReplyInputSchema,
   ChatGroupsInputSchema,
   ChatGroupsSchema,
+  ChatHistoryInputSchema,
+  ChatHistoryResultSchema,
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
   ChatKeepCountInputSchema,
   ChatKeepCountSchema,
   ChatLinkInputSchema,
   ChatMarkUsInputSchema,
-  ChatPersonInputSchema,
-  ChatHistoryInputSchema,
-  ChatHistoryResultSchema,
   ChatOpenIncidentInputSchema,
   ChatOpenIncidentResultSchema,
+  ChatPersonInputSchema,
   ChatReplyInputSchema,
   ChatReplyResultSchema,
-  ChatStartTaskInputSchema,
-  ChatStartTaskResultSchema,
   ChatSendAsInputSchema,
   ChatSendInputSchema,
   ChatSettingsInputSchema,
   ChatSettingsViewSchema,
+  ChatStartTaskInputSchema,
+  ChatStartTaskResultSchema,
   ChatUnignoreInputSchema,
   ChatUnlinkInputSchema,
   ChatUserTokenInputSchema,
@@ -498,12 +499,6 @@ import {
  */
 export const RiskClassSchema = z.enum(["read", "change", "destructive", "outbound"]);
 export type RiskClass = z.infer<typeof RiskClassSchema>;
-
-export const ActorSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("owner") }),
-  z.object({ kind: z.literal("agent"), id: z.string().min(1) }),
-]);
-export type Actor = z.infer<typeof ActorSchema>;
 
 export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
   risk: RiskClass;
@@ -4309,7 +4304,7 @@ export type CommandOutput<N extends CommandName> = z.infer<(typeof commands)[N][
 
 /** Optional metadata sent with a command, recorded in the config history. */
 export const CommandMetaSchema = z.object({
-  actor: ActorSchema.default({ kind: "owner" }),
+  actor: CallerSchema.default({ kind: "owner" }),
   reason: z.string().max(500).optional(),
   /**
    * The task the calling agent runs in. Set by majhi on the MCP and admin paths only; the HTTP

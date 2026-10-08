@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ActorSchema } from "./actor.ts";
 import { AccountStatusSchema, ToolIdSchema, UsageWindowSchema } from "./accounts.ts";
 import { IdSchema } from "./ids.ts";
 import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from "./settings.ts";
@@ -200,6 +201,8 @@ export const AutonomyEventSchema = z.object({
   item: z.string().optional(),
   /** For `task` events: the status the task reached. The daily summary reads it. */
   status: TaskStatusSchema.optional(),
+  /** Who did it. Absent on a line from before actors were kept. */
+  by: ActorSchema.optional(),
 });
 export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
 

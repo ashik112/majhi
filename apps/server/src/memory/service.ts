@@ -54,8 +54,9 @@ export interface MemoryDeps {
   embedWaitMs?: number;
 }
 
+/** How a fact's log keeps who did it: `owner`, `captain`, `majhi`, or `agent:<id>`. */
 export function actorName(actor: Actor): string {
-  return actor.kind === "owner" ? "owner" : `agent:${actor.id}`;
+  return actor.kind === "agent" ? `agent:${actor.id}` : actor.kind;
 }
 
 export interface Recalled {
@@ -218,7 +219,7 @@ export class MemoryService {
       text: input.text,
       scope: input.scope,
       ...(who === "owner" ? { kind: "statement" as const, source: "owner" as const } : {}),
-      agent: who === "owner" ? "owner" : who.slice("agent:".length),
+      agent: who.startsWith("agent:") ? who.slice("agent:".length) : who,
       status: "active",
       pinned: input.pinned,
       decidedBy: who,

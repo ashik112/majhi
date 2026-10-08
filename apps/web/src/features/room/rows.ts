@@ -1,6 +1,6 @@
 import type { RoomItem } from "@majhi/shared";
 import { contextLine } from "./model";
-import { ownerNotice, type Quiet, quietGroup, sameMoment } from "./system-lines";
+import { type Quiet, quietGroup, sameMoment } from "./system-lines";
 
 type SystemItem = Extract<RoomItem, { type: "system" }>;
 
@@ -23,7 +23,7 @@ export function beatOf(row: Row): Beat {
   if (row.kind === "steps") return "activity";
   switch (row.item.type) {
     case "owner":
-      return ownerNotice(row.item) === undefined ? "message" : "line";
+      return "message";
     case "agent":
     case "diagram":
     case "client":

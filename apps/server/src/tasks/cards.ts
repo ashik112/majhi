@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type Actor,
+  type Caller,
   type CardOutcome,
   type CardState,
   type PausedReason,
@@ -15,10 +16,10 @@ import type { RoomPayload, Store } from "../store/index.ts";
 type Card = Extract<RoomItem, { type: "review" | "paused" }>;
 type CardType = Card["type"];
 
-/** Who did something to a card, as the room shows it: `owner`, an agent id, or `majhi`. */
+/** Who did something to a card, as the room shows it: `owner`, `captain`, `majhi` or an agent id. */
 export function actorName(actor: Actor | undefined): string {
   if (actor === undefined || actor.kind === "owner") return "owner";
-  return actor.id;
+  return actor.kind === "agent" ? actor.id : actor.kind;
 }
 
 /**

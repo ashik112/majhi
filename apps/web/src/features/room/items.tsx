@@ -36,7 +36,7 @@ import { Markdown } from "./markdown";
 import { MediaView, RoomTaskContext, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionSummary, toolLabel } from "./model";
 import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
-import { ownerNotice, type Quiet, valueParts } from "./system-lines";
+import { type Quiet, valueParts } from "./system-lines";
 import { ToolRow } from "./tool-row";
 
 /** The inset of everything that is not a message: it lines up with the text beside the avatars. */
@@ -398,9 +398,6 @@ function ContextLine({ item, repeat }: { item: Of<"context">; repeat: number }) 
 
 /** The owner's side of the conversation: a light bubble in the same column as the agents. */
 function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: AgentLive | undefined }) {
-  // What majhi once wrote as the owner (an approval, a choice) reads as the plain line it is.
-  const notice = ownerNotice(item);
-  if (notice) return <QuietLine quiet={notice} at={item.at} />;
   return (
     <article aria-label="You" className="flex gap-2.5">
       <span

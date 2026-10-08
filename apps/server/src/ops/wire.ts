@@ -6,6 +6,7 @@ import type {
   OpsIncident,
   OwnerDecision,
 } from "@majhi/shared";
+import { OWNER } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import type { ConnectionTester } from "../connections/tester.ts";
 import { errorMessage } from "../errors.ts";
@@ -134,7 +135,7 @@ export function createOps(w: OpsWiring): Ops {
     },
     decisions: w.inbox,
     // The watch is built below; an acknowledgement only comes from a later request.
-    ack: (id) => watch.ack(id),
+    ack: (id) => watch.ack(id, OWNER),
     changed: w.changed,
   });
   const ports: ProbePorts = {

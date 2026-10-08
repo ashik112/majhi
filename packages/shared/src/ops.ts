@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ActorSchema } from "./actor.ts";
 import { IdSchema } from "./ids.ts";
 
 /**
@@ -113,6 +114,8 @@ export const OpsTimelineEntrySchema = z.object({
   text: z.string().max(8000),
   /** On a `resolved` entry: `stopped` when the watch was paused or removed, so nothing recovered. Absent: its checks went green. */
   closedBy: z.enum(["green", "stopped"]).optional(),
+  /** Who did it. Absent on entries from before actors were kept, and on what the checks themselves recorded. */
+  by: ActorSchema.optional(),
 });
 export type OpsTimelineEntry = z.infer<typeof OpsTimelineEntrySchema>;
 

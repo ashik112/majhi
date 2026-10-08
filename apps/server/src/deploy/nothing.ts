@@ -1,4 +1,4 @@
-import { PRIVATE, type Task } from "@majhi/shared";
+import { CAPTAIN, didWords, OWNER, PRIVATE, type Task } from "@majhi/shared";
 import type { CaptainRepo } from "../captain/repo.ts";
 import { headsOf } from "../ship/heads.ts";
 
@@ -31,10 +31,7 @@ export function createNothingDeploys(deps: NothingDeploysDeps): NothingDeploys {
         day: await deps.day(org),
         at: deps.now().toISOString(),
         text: `Nothing deploys for ${task.id}: ${task.title}`,
-        reason:
-          by === "captain"
-            ? "The captain planned its deploy and found nothing in the change that deploys"
-            : "You planned its deploy and found nothing in the change that deploys",
+        reason: `${didWords(by === "captain" ? CAPTAIN : OWNER, "planned", "its deploy and found nothing in the change that deploys")}`,
         task: task.id,
         outcome: "skipped",
       });
