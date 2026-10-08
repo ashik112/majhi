@@ -1,11 +1,10 @@
 import { type OnboardingStepId, onboardingStepId } from "@majhi/shared";
 import { useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/lib/queries";
 import { openNewTaskOnArrival } from "@/onboarding/arrive";
 import { gateStep } from "@/onboarding/model";
-import { OnboardingFlow } from "@/onboarding/onboarding-flow";
 import { clearOnboardingRequest, useOnboardingRequest } from "@/onboarding/reopen";
 import {
   endJourney,
@@ -18,6 +17,10 @@ import {
 import { useJourney } from "@/onboarding/use-journey";
 import { ConfigError } from "./config-error";
 import { ServerError } from "./server-error";
+
+const OnboardingFlow = lazy(() =>
+  import("@/onboarding/onboarding-flow").then((module) => ({ default: module.OnboardingFlow })),
+);
 
 /** Stands in for the whole app while the config loads: a sidebar and a board of blocks. */
 function AppLoading() {
@@ -87,20 +90,22 @@ export function AppGate({ children }: { children: ReactNode }) {
 
   if (state.status === "first-run" || open) {
     return (
-      <OnboardingFlow
-        key={session}
-        start={state.status === "first-run" ? "welcome" : (open ?? "welcome")}
-        onLater={() => {
-          finishLater();
-          setLater(true);
-          setOpen(null);
-        }}
-        onArrive={() => {
-          endJourney();
-          openNewTaskOnArrival();
-          setOpen(null);
-        }}
-      />
+      <Suspense fallback={<AppLoading />}>
+        <OnboardingFlow
+          key={session}
+          start={state.status === "first-run" ? "welcome" : (open ?? "welcome")}
+          onLater={() => {
+            finishLater();
+            setLater(true);
+            setOpen(null);
+          }}
+          onArrive={() => {
+            endJourney();
+            openNewTaskOnArrival();
+            setOpen(null);
+          }}
+        />
+      </Suspense>
     );
   }
 

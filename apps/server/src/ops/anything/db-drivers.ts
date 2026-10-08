@@ -1,7 +1,4 @@
 import { type MongoCommand, numberAtPath, parseMongoCommand } from "@majhi/shared";
-import { MongoClient } from "mongodb";
-import { createConnection } from "mysql2/promise";
-import pg from "pg";
 import { Unavailable } from "./checks.ts";
 
 /**
@@ -69,6 +66,7 @@ async function postgresOnce(
   ssl: false | { rejectUnauthorized: boolean },
 ): Promise<string> {
   const statementMs = Math.min(timeoutMs, 30_000);
+  const { default: pg } = await import("pg");
   const client = new pg.Client({
     host: u.hostname,
     port: u.port === "" ? 5432 : Number(u.port),
@@ -115,6 +113,7 @@ async function mysqlOnce(
   timeoutMs: number,
   ssl: false | { rejectUnauthorized: boolean },
 ): Promise<string> {
+  const { createConnection } = await import("mysql2/promise");
   const conn = await createConnection({
     host: u.hostname,
     port: u.port === "" ? 3306 : Number(u.port),
@@ -194,6 +193,7 @@ export async function runMongo(url: string, text: string, timeoutMs: number): Pr
     throw new Unavailable("the URL is not a MongoDB address");
   }
   const name = decodeURIComponent(u.pathname.replace(/^\//, ""));
+  const { MongoClient } = await import("mongodb");
   const client = new MongoClient(url, {
     serverSelectionTimeoutMS: CONNECT_MS,
     connectTimeoutMS: CONNECT_MS,
