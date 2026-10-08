@@ -806,7 +806,7 @@ export function createHandlers({
     },
     "projects.holdDeploy": async (input, ctx) => {
       if (ctx.meta.actor.kind !== "owner") throw new UserError("Only the owner holds a deploy.", 409);
-      return services.deploy.service.hold(input);
+      return services.deploy.service.hold(input, await resolveActor(services, ctx.meta));
     },
     "projects.remove": async (input, ctx) => {
       const org = (await services.projects.infos()).find((p) => p.id === input.id)?.org;
@@ -1458,22 +1458,22 @@ export function createHandlers({
       return services.memory.search(input.query, { scopes, status: input.status, limit: input.limit });
     },
     "memory.list": async (input) => services.memory.list(input),
-    "memory.add": (input, ctx) => services.memory.add(input, ctx.meta.actor),
+    "memory.add": async (input, ctx) => services.memory.add(input, await resolveActor(services, ctx.meta)),
     "memory.edit": async (input, ctx) =>
-      services.memory.edit(input.id, { text: input.text, scope: input.scope }, ctx.meta.actor),
-    "memory.approve": async (input, ctx) => services.memory.approve(input.id, ctx.meta.actor, input.reason),
-    "memory.reject": async (input, ctx) => services.memory.reject(input.id, ctx.meta.actor, input.reason),
-    "memory.forget": async (input, ctx) => services.memory.forget(input.id, ctx.meta.actor, input.reason),
-    "memory.undo": async (input, ctx) => services.memory.undo(input.event, ctx.meta.actor),
+      services.memory.edit(input.id, { text: input.text, scope: input.scope }, await resolveActor(services, ctx.meta)),
+    "memory.approve": async (input, ctx) => services.memory.approve(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.reject": async (input, ctx) => services.memory.reject(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.forget": async (input, ctx) => services.memory.forget(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.undo": async (input, ctx) => services.memory.undo(input.event, await resolveActor(services, ctx.meta)),
     "memory.extract": async (input) => services.extraction.extract(input.task),
-    "memory.promote": async (input, ctx) => services.promotion.promote(input.id, ctx.meta.actor),
-    "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, ctx.meta.actor),
+    "memory.promote": async (input, ctx) => services.promotion.promote(input.id, await resolveActor(services, ctx.meta)),
+    "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, await resolveActor(services, ctx.meta)),
     "memory.events": async (input) => services.memory.events(input),
     "memory.approveAll": async (input, ctx) => ({
-      count: services.memory.decideAll("approve", input.ids, ctx.meta.actor),
+      count: services.memory.decideAll("approve", input.ids, await resolveActor(services, ctx.meta)),
     }),
     "memory.rejectAll": async (input, ctx) => ({
-      count: services.memory.decideAll("reject", input.ids, ctx.meta.actor),
+      count: services.memory.decideAll("reject", input.ids, await resolveActor(services, ctx.meta)),
     }),
     "memory.records": async (input) =>
       services.memory.project.records({ query: input.query, project: input.project, limit: input.limit }),

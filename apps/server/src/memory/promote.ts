@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Caller, type Fact, parseScope, type Task } from "@majhi/shared";
+import { type Actor, type Fact, parseScope, type Task } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { git, gitOk } from "../git/git.ts";
@@ -24,7 +24,7 @@ export interface PromotionDeps {
 export class Promotion {
   constructor(private readonly deps: PromotionDeps) {}
 
-  async promote(id: number, actor: Caller): Promise<{ fact: Fact; task: string }> {
+  async promote(id: number, actor: Actor): Promise<{ fact: Fact; task: string }> {
     const { memory } = this.deps;
     const fact = memory.get(id);
     if (fact === undefined) throw new UserError(`Fact ${id} does not exist.`, 404);

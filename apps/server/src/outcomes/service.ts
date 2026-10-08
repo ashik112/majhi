@@ -28,6 +28,7 @@ import {
   type TrustList,
   trustDecisionId,
 } from "@majhi/shared";
+import { didWords, didWordsInline, OWNER } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { UserError } from "../errors.ts";
 import { addDays, dayStart, localDay, weekStart } from "../usage/ranges.ts";
@@ -65,11 +66,11 @@ const ROW_NAME: Record<AuthorityRow, string> = {
 
 /** What the owner did, for the line that says why a line dropped. */
 const TAKEN_BACK = {
-  undone: "you undid",
-  reverted: "you reverted",
-  "merged-reverted": "you reverted",
-  rejected: "you rejected",
-  overruled: "you overruled",
+  undone: didWordsInline(OWNER, "undid"),
+  reverted: didWordsInline(OWNER, "reverted"),
+  "merged-reverted": didWordsInline(OWNER, "reverted"),
+  rejected: didWordsInline(OWNER, "rejected"),
+  overruled: didWordsInline(OWNER, "overruled"),
 } as const;
 
 const MODE_NAME: Record<OutboundMode, string> = { draft: "Draft", batch: "Batch", auto: "Auto" };
@@ -303,7 +304,7 @@ export class OutcomesService {
     const at = now.toISOString();
     const name = await this.deps.orgName(org);
     const was = this.describe(back);
-    const what = `${TAKEN_BACK[back.result as keyof typeof TAKEN_BACK] ?? "you took back"} "${was.endsWith(".") ? was.slice(0, -1) : was}"`;
+    const what = `${TAKEN_BACK[back.result as keyof typeof TAKEN_BACK] ?? didWordsInline(OWNER, "took back")} "${was.endsWith(".") ? was.slice(0, -1) : was}"`;
     if (isOutboundKey(key)) {
       const channel = key.slice("outbound:".length) as OutboundChannel;
       this.deps.outbound.applyLadder(org, channel, "draft");
@@ -463,14 +464,14 @@ export class OutcomesService {
       else this.repo.closeNotice(n.id, "accepted", at);
     } else if (n.kind === "demoted") {
       if (option === "restore" && from !== undefined) {
-        await this.apply(n.org, n.key, from, "You gave it back after a demotion");
+        await this.apply(n.org, n.key, from, didWords(OWNER, "gave it back after a demotion"));
         this.repo.setTrust(n.org, n.key, { since: at });
         this.repo.closeNotice(n.id, "undone", at);
       } else {
         this.repo.closeNotice(n.id, "accepted", at);
       }
     } else if (option === "promote" && to !== undefined) {
-      await this.apply(n.org, n.key, to, "You accepted the captain's proposal");
+      await this.apply(n.org, n.key, to, didWords(OWNER, "accepted the captain's proposal"));
       this.repo.setTrust(n.org, n.key, {
         since: at,
         ...(to === "auto" ? { autoOk: true } : {}),

@@ -1,4 +1,13 @@
-import { chatWaitDecisionId, type OwnerDecision, type RoomItem, type TaskId } from "@majhi/shared";
+import {
+  type Actor,
+  chatWaitDecisionId,
+  didWords,
+  MAJHI,
+  OWNER,
+  type OwnerDecision,
+  type RoomItem,
+  type TaskId,
+} from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -118,11 +127,12 @@ export class ChatWaits {
   /** Closes the finding of every message a person already answered in the chat. Run on each pass. */
   settle(): void {
     for (const room of this.rooms()) {
-      for (const item of this.scan(room).answered) this.close(room, item, "Answered in the chat");
+      for (const item of this.scan(room).answered) this.close(room, item, "Answered in the chat", MAJHI);
     }
   }
 
-  private close(room: RoomRow, item: ClientItem, why: string): void {
+  private close(room: RoomRow, item: ClientItem, why: string, by: Actor): void {
+    const rights = { kind: "owner" } as const;
     const { finding } = item.outcome ?? {};
     writeOutcome(this.deps, room.id, item, {
       state: "handled",
@@ -131,7 +141,7 @@ export class ChatWaits {
     });
     if (finding === undefined) return;
     try {
-      this.deps.findings.dismiss(finding, why, { kind: "owner" });
+      this.deps.findings.dismiss(finding, why, rights, by);
     } catch {
       // Closed already.
     }
@@ -147,7 +157,12 @@ export class ChatWaits {
     }
     const found = this.deps.room.get(roomId, ref);
     if (found?.type !== "client") throw new UserError("That message is gone.", 409);
-    this.close(room, found, option === "dismiss" ? "You said it is not an outage" : "You handled it");
+    this.close(
+      room,
+      found,
+      option === "dismiss" ? didWords(OWNER, "said it is not an outage") : didWords(OWNER, "handled it"),
+      OWNER,
+    );
     this.deps.changed();
   }
 }

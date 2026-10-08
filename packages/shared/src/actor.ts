@@ -45,12 +45,12 @@ export function didWords(actor: Actor | undefined, verb: string, rest = ""): str
   return `${actorWords(actor)} ${verb}${tail}`;
 }
 
-/** The old narrow `by` strings (`owner`, `captain`, `majhi`, an agent id) as an Actor. */
+/** The stored `by` strings (`owner`, `captain`, `majhi`, an agent id, or `agent:<id>`) as an Actor. */
 export function actorOfName(name: string): Actor {
   if (name === "owner" || name === "you") return OWNER;
   if (name === "captain") return CAPTAIN;
   if (name === "majhi") return MAJHI;
-  return { kind: "agent", id: name };
+  return { kind: "agent", id: name.startsWith("agent:") ? name.slice("agent:".length) : name };
 }
 
 /** `didWords` for the middle of a sentence: "you cancelled it", "the captain cancelled it". */

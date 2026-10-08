@@ -1981,10 +1981,12 @@ UPDATE tasks SET origin = json_object('kind', 'chat', 'room', (
 `,
   },
   {
-    // Who dismissed a finding (the Actor as JSON). Dismissals from before have none.
+    // Who did it, as the Actor in JSON: who dismissed a finding, and who an autonomy History line is
+    // about. Rows from before have none.
     id: 185,
-    name: "finding dismissed by",
-    sql: `ALTER TABLE findings ADD COLUMN dismissed_by TEXT;`,
+    name: "who did it",
+    sql: `ALTER TABLE findings ADD COLUMN dismissed_by TEXT;
+ALTER TABLE autonomy_events ADD COLUMN by TEXT;`,
   },
 ];
 

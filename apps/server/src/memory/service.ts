@@ -1,5 +1,5 @@
 import {
-  type Caller,
+  type Actor,
   detectSecrets,
   type Fact,
   type FactHit,
@@ -54,8 +54,9 @@ export interface MemoryDeps {
   embedWaitMs?: number;
 }
 
-export function actorName(actor: Caller): string {
-  return actor.kind === "owner" ? "owner" : `agent:${actor.id}`;
+/** How a fact's log keeps who did it: `owner`, `captain`, `majhi`, or `agent:<id>`. */
+export function actorName(actor: Actor): string {
+  return actor.kind === "agent" ? `agent:${actor.id}` : actor.kind;
 }
 
 export interface Recalled {
@@ -211,14 +212,14 @@ export class MemoryService {
   }
 
   /** The owner adds an active fact. */
-  async add(input: { text: string; scope: MemoryScope; pinned: boolean }, actor: Caller): Promise<Fact> {
+  async add(input: { text: string; scope: MemoryScope; pinned: boolean }, actor: Actor): Promise<Fact> {
     refuseSecrets(input.text);
     const who = actorName(actor);
     const fact = this.store.insert({
       text: input.text,
       scope: input.scope,
       ...(who === "owner" ? { kind: "statement" as const, source: "owner" as const } : {}),
-      agent: who === "owner" ? "owner" : who.slice("agent:".length),
+      agent: who.startsWith("agent:") ? who.slice("agent:".length) : who,
       status: "active",
       pinned: input.pinned,
       decidedBy: who,
@@ -232,13 +233,13 @@ export class MemoryService {
   // ---------------------------------------------------------------------------
   // Status
 
-  approve(id: number, actor: Caller, reason?: string): Fact {
+  approve(id: number, actor: Actor, reason?: string): Fact {
     const fact = this.move(id, ["pending", "rejected"], "active", "approved", actor, reason);
     if (actor.kind === "owner") this.ownerChose?.(id, "approved");
     return fact;
   }
 
-  reject(id: number, actor: Caller, reason?: string): Fact {
+  reject(id: number, actor: Actor, reason?: string): Fact {
     const fact = this.move(id, ["pending"], "rejected", "rejected", actor, reason);
     if (actor.kind === "owner") this.ownerChose?.(id, "rejected");
     return fact;
@@ -253,7 +254,7 @@ export class MemoryService {
    * Approves or rejects every pending fact, or the pending ones among `ids`. Each is its own logged
    * step, so each can be undone. Facts that are no longer pending are skipped. Resolves how many moved.
    */
-  decideAll(action: "approve" | "reject", ids: readonly number[] | undefined, actor: Caller): number {
+  decideAll(action: "approve" | "reject", ids: readonly number[] | undefined, actor: Actor): number {
     const pending =
       ids === undefined
         ? this.store.list({ status: "pending", limit: 10_000 })
@@ -266,7 +267,7 @@ export class MemoryService {
   }
 
   /** Retires an active fact: valid to is set, and it is no longer recalled. */
-  forget(id: number, actor: Caller, reason?: string): Fact {
+  forget(id: number, actor: Actor, reason?: string): Fact {
     return this.move(id, ["active"], "retired", "retired", actor, reason);
   }
 
@@ -277,7 +278,7 @@ export class MemoryService {
   async edit(
     id: number,
     patch: { text?: string | undefined; scope?: MemoryScope | undefined },
-    actor: Caller,
+    actor: Actor,
   ): Promise<Fact> {
     const fact = this.mustGet(id);
     const text = patch.text === undefined || patch.text === fact.text ? undefined : patch.text;
@@ -295,7 +296,7 @@ export class MemoryService {
     return edited;
   }
 
-  pin(id: number, pinned: boolean, actor: Caller): Fact {
+  pin(id: number, pinned: boolean, actor: Actor): Fact {
     const fact = this.mustGet(id);
     if (fact.status !== "active")
       throw new UserError(`Fact ${id} is ${fact.status}. Only an active fact can be pinned.`, 409);
@@ -310,7 +311,7 @@ export class MemoryService {
     from: readonly FactStatus[],
     to: FactStatus,
     action: "approved" | "rejected" | "retired",
-    actor: Caller,
+    actor: Actor,
     reason: string | undefined,
   ): Fact {
     return this.step(id, from, to, action, actorName(actor), { reason });
@@ -386,7 +387,7 @@ export class MemoryService {
    * Reverses one logged step and logs the reversal. The fact must still be where the step left it:
    * a later change comes off first. A candidate that was never added has nothing to restore.
    */
-  undo(eventId: number, actor: Caller): Fact {
+  undo(eventId: number, actor: Actor): Fact {
     const event = this.store.getEvent(eventId);
     if (event === undefined) throw new UserError(`There is no event ${eventId} in the memory log.`, 404);
     if (event.undone) throw new UserError("That step is already undone.", 409);
@@ -418,7 +419,7 @@ export class MemoryService {
   }
 
   /** Marks the fact as promoted to a repo's AGENTS.md by `task`. */
-  setPromoted(id: number, task: string, actor: Caller): Fact {
+  setPromoted(id: number, task: string, actor: Actor): Fact {
     const fact = this.mustGet(id);
     this.store.setPromoted(id, task);
     this.log(fact, "promoted", actorName(actor), `Added to AGENTS.md by ${task}.`);

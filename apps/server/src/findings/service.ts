@@ -377,7 +377,8 @@ export class FindingsService {
     return out;
   }
 
-  dismiss(id: number, reason: string, actor: FindingActor): Finding {
+  /** `by` names who really did it when the call runs with another actor's rights (majhi closing what the chat answered). */
+  dismiss(id: number, reason: string, actor: FindingActor, by?: Actor): Finding {
     const found = this.get(id);
     this.mayChange(actor, found);
     if (found.status === "dismissed" || !canMoveFinding(found.status, "dismissed")) {
@@ -387,7 +388,7 @@ export class FindingsService {
       at: this.at(),
       status: "dismissed",
       dismissedReason: reason,
-      dismissedBy: actorOfFinding(actor),
+      dismissedBy: by ?? actorOfFinding(actor),
     });
     this.labelled(actor, found, "dismiss", `the owner dismissed it: ${reason}`);
     this.deps.changed?.();

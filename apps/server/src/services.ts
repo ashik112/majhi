@@ -1697,6 +1697,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
+  /** An audit row whose agent is the captain's is the captain's, not an agent's. */
+  const logAsCaptain = (row: Parameters<typeof store.permissions.log>[0]): void => {
+    void lanes
+      .boss()
+      .catch(() => undefined)
+      .then((boss) =>
+        store.permissions.log(row.agent === boss && row.by === "agent" ? { ...row, by: "captain" } : row),
+      );
+  };
   const lanes = new Lanes({
     repo: captainRepo,
     store,
@@ -2788,7 +2797,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: (ids) => {
       for (const id of ids) runs.remountAgent(id);
     },
-    audit: (row) => store.permissions.log(row),
+    audit: (row) => logAsCaptain(row),
     roots: async () => {
       const loaded = await config.load();
       if (loaded.state.status !== "loaded") return [];
@@ -3104,7 +3113,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         ),
     },
     orgs: async () => Object.keys((await config.sections()).orgs),
-    audit: (row) => store.permissions.log(row),
+    audit: (row) => logAsCaptain(row),
   });
   const installRequests = new InstallRequests({
     tasks,

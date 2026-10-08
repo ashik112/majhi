@@ -104,6 +104,7 @@ interface EventDbRow {
   unsure: number;
   item: string | null;
   status: string | null;
+  by: string | null;
 }
 
 /** A JSON column read with a schema; anything that does not parse reads as `fallback`. */
@@ -270,8 +271,8 @@ export class AutonomyRepo {
   addEvent(e: NewEvent): number {
     const res = this.db
       .prepare(
-        `INSERT INTO autonomy_events (at, kind, text, reason, task, org, agent, command, outcome, unsure, item, status)
-         VALUES (@at, @kind, @text, @reason, @task, @org, @agent, @command, @outcome, @unsure, @item, @status)`,
+        `INSERT INTO autonomy_events (at, kind, text, reason, task, org, agent, command, outcome, unsure, item, status, by)
+         VALUES (@at, @kind, @text, @reason, @task, @org, @agent, @command, @outcome, @unsure, @item, @status, @by)`,
       )
       .run({
         at: e.at,
@@ -286,6 +287,7 @@ export class AutonomyRepo {
         unsure: e.unsure === true ? 1 : 0,
         item: e.item ?? null,
         status: e.status ?? null,
+        by: e.by === undefined ? null : JSON.stringify(e.by),
       });
     return Number(res.lastInsertRowid);
   }
@@ -535,6 +537,15 @@ function eventOf(r: EventDbRow): AutonomyEvent[] {
     ...(r.unsure === 1 ? { unsure: true } : {}),
     ...present("item", r.item),
     ...present("status", r.status),
+    ...(r.by === null ? {} : { by: jsonOrUndefined(r.by) }),
   });
   return out.success ? [out.data] : [];
+}
+
+function jsonOrUndefined(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
