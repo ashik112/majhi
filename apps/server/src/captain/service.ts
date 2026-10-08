@@ -30,7 +30,7 @@ import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { MEMORY_WAITING, pausedToday } from "./rules.ts";
+import { MEMORY_WAITING, pausedToday, restHolds } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -217,8 +217,9 @@ export class CaptainService {
     const sections = await this.deps.config.sections();
     for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
-      if (ws === undefined || ws.rest !== undefined) continue;
+      if (ws === undefined) continue;
       for (const chore of choresNow(ws.authority, ws, ws.rules?.ships)) {
+        if (ws.rest !== undefined && restHolds(chore)) continue;
         if (
           this.runner.running(org, chore) ||
           pausedToday(this.repo.chore(org, chore).offAt, this.now(), ws.tz)

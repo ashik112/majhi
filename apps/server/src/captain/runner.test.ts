@@ -210,7 +210,7 @@ describe("the chore runner", () => {
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
     t.state.stopped = false;
     t.state.rest = "outside working hours (09:00 to 17:00)";
-    expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
+    expect(await t.runner.start("acme", "cards", "go")).toBeUndefined();
     t.state.rest = undefined;
     t.state.authority = ALL_ASK;
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();

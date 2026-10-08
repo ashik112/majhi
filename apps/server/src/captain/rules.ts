@@ -1,4 +1,4 @@
-import type { AutonomyOrg, CaptainChore } from "@majhi/shared";
+import { type AutonomyOrg, type CaptainChore, READ_ONLY_CHORES } from "@majhi/shared";
 import { localDay } from "../usage/ranges.ts";
 
 /**
@@ -61,4 +61,12 @@ export function branchAllowed(rules: AutonomyOrg | undefined, branch: string, ba
 /** Whether an AI tool is allowed in the workspace. No list: every tool. */
 export function providerAllowed(rules: AutonomyOrg | undefined, tool: string): boolean {
   return rules?.providers === undefined || rules.providers.includes(tool);
+}
+
+/**
+ * Whether working hours and freezes hold this chore. Looking never waits (the chores that only file findings), and
+ * shipping is held per task, by its own ship plan, which an incident's fix is exempt from.
+ */
+export function restHolds(chore: CaptainChore): boolean {
+  return chore !== "ship" && !READ_ONLY_CHORES.has(chore);
 }

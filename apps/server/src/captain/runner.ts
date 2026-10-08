@@ -11,7 +11,7 @@ import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { FAILURES_PAUSE, PASS_BOUND, pausedToday } from "./rules.ts";
+import { FAILURES_PAUSE, PASS_BOUND, pausedToday, restHolds } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -259,7 +259,7 @@ export class ChoreRun {
     if (now === undefined || !choresNow(now.authority, now, now.rules?.ships).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
-    if (now.rest !== undefined) throw new RunEnd("rested", now.rest);
+    if (now.rest !== undefined && restHolds(this.chore)) throw new RunEnd("rested", now.rest);
     this.ws = now;
     return a.recheck?.();
   }
@@ -355,7 +355,7 @@ export class ChoreRunner {
       if (deps.enabled?.(org, chore) === false) {
         return no(`${CHORE_LABEL[chore]} is turned off in ${ws.name}. Turn it on in Playbooks.`);
       }
-      if (ws.rest !== undefined) return no(`${ws.name} is resting: ${ws.rest}`);
+      if (ws.rest !== undefined && restHolds(chore)) return no(`${ws.name} is resting: ${ws.rest}`);
       if (pausedToday(deps.repo.chore(org, chore).offAt, deps.now(), ws.tz))
         return no(`${CHORE_LABEL[chore]} failed twice in a row and tries again tomorrow.`);
       const at = deps.now().toISOString();
