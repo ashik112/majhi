@@ -9,7 +9,7 @@ import {
 } from "@majhi/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { EventHub } from "./events/hub.ts";
-import { isLoopbackOrigin } from "./http/origin.ts";
+import { isOwnerOrigin } from "./http/origin.ts";
 import type { TerminalManager } from "./terminal/manager.ts";
 import { serveTerminal } from "./terminal/socket.ts";
 
@@ -38,13 +38,19 @@ export interface RoomFeed {
  */
 export function attachSockets(
   server: UpgradeSource,
-  deps: { events: EventHub; build?: string | undefined; terminals: TerminalManager; rooms: RoomFeed },
+  deps: {
+    origin?: string;
+    events: EventHub;
+    build?: string | undefined;
+    terminals: TerminalManager;
+    rooms: RoomFeed;
+  },
 ): { close: () => void } {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
     const origin = req.headers.origin;
-    if (origin !== undefined && !isLoopbackOrigin(origin)) return reject(socket, 403, "Forbidden");
+    if (origin !== undefined && !isOwnerOrigin(origin, deps.origin)) return reject(socket, 403, "Forbidden");
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
     if (path === "/api/events") {

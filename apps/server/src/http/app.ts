@@ -17,12 +17,13 @@ import { opsPhoneRoutes } from "../ops/routes.ts";
 import { type RoomMcpDeps, roomMcpRoutes } from "../rooms/mcp.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
 import type { UploadStore } from "../uploads/store.ts";
-import { isLoopbackOrigin } from "./origin.ts";
+import { isOwnerOrigin } from "./origin.ts";
 import { type TaskFilesDeps, taskFileRoutes } from "./taskFiles.ts";
 import { type WikiFilesDeps, wikiFileRoutes } from "./wikiFiles.ts";
 
 export interface AppDeps {
   version: string;
+  origin?: string;
   /** Git commit the image was built from. `/health` reports it so a browser can tell a new server from the old one. */
   commit?: string;
   /** Id of the web bundle served from `webDist`. `/health` reports it so an open tab can tell it is out of date. */
@@ -58,6 +59,16 @@ const NOT_BUILT =
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+  app.use("/api/*", async (c, next) => {
+    const origin = c.req.header("origin");
+    if (
+      (origin !== undefined && !isOwnerOrigin(origin, deps.origin)) ||
+      (origin === undefined && c.req.header("sec-fetch-site") === "cross-site")
+    ) {
+      return c.json({ error: "Only majhi's own pages can access this API" } satisfies ApiError, 403);
+    }
+    await next();
+  });
 
   // Agent runs share a network with majhi so they can reach their MCP tools. Everything else,
   // the commands above all, answers only the owner.
@@ -82,11 +93,9 @@ export function createApp(deps: AppDeps): Hono {
   );
 
   app.post("/api/cmd/:name", async (c) => {
-    // Browsers send Origin on cross-site POSTs. Only pages served from this
-    // machine may run commands, so a website cannot change the config.
-    const origin = c.req.header("origin");
-    if (origin !== undefined && !isLoopbackOrigin(origin)) {
-      return c.json({ error: "Commands only run from majhi's own pages" } satisfies ApiError, 403);
+    // JSON requires a preflight across origins; the API guard above enforces the configured origin.
+    if (c.req.header("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+      return c.json({ error: "Commands require application/json" } satisfies ApiError, 415);
     }
     const body = await c.req.text();
     let input: unknown = {};
@@ -143,7 +152,7 @@ export function createApp(deps: AppDeps): Hono {
   return app;
 }
 
-export { isLoopbackOrigin };
+export { isLoopbackOrigin } from "./origin.ts";
 
 /** The peer address of a request served by @hono/node-server; undefined in tests that call `app.request`. */
 function remoteAddress(env: unknown): string | undefined {

@@ -49,7 +49,10 @@ describe("room socket", () => {
       connect(`${base}/api/tasks/ACM-1/room`, { origin: "https://evil.example" }).opened,
     ).rejects.toThrow("HTTP 403");
     await expect(connect(`${base}/api/tasks/nope/room`).opened).rejects.toThrow("HTTP 404");
-    const ok = connect(`${base}/api/tasks/ACM-1/room`, { origin: "http://localhost:5173" });
+    await expect(
+      connect(`${base}/api/tasks/ACM-1/room`, { origin: "http://127.0.0.1:5173" }).opened,
+    ).rejects.toThrow("HTTP 403");
+    const ok = connect(`${base}/api/tasks/ACM-1/room`, { origin: "http://127.0.0.1:7070" });
     await ok.opened;
     ok.ws.close();
   });
