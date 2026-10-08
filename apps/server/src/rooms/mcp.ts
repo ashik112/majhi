@@ -110,7 +110,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "ask",
     description:
-      "Post a question card to the room: one or more questions with preset options (shown as buttons or a dropdown) and optionally a free-text field. The owner's answer goes back to you as your next message. Use it whenever you need a decision from the owner (which approach, which option, whether to do something). Do not use it to ask for a merge or a review: majhi shows the owner a review card with Ship and Ask for changes when your work is done. A question in plain text is only a fallback.",
+      'Post a question card to the room: one or more questions with preset options (shown as buttons or a dropdown) and optionally a free-text field. With freeText on, the card adds its own "Something else" box: never add an "Other" option, its click sends only the option id, without text. The owner\'s answer goes back to you as your next message. Use it whenever you need a decision from the owner (which approach, which option, whether to do something). Do not use it to ask for a merge or a review: majhi shows the owner a review card with Ship and Ask for changes when your work is done. A question in plain text is only a fallback.',
     input: z.object({
       questions: z
         .array(
