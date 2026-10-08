@@ -349,7 +349,7 @@ export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   "captain-next": "next",
   "waits-for-owner": "waits for you",
   "waits-for-previous": "waiting",
-  blocked: "blocked",
+  blocked: "cannot run yet",
   held: "held",
   queued: "queued",
   running: "deploying",
