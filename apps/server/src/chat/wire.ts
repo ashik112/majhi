@@ -6,6 +6,7 @@ import {
   effectiveIncident,
   type Holds,
   PRIVATE,
+  type ServerEvent,
 } from "@majhi/shared";
 import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -30,6 +31,7 @@ import { ClientChat, type ClientChatDeps } from "./service.ts";
 import { ChatSettings, dayBegins } from "./settings.ts";
 import { ClientTriage, type ToolLessModel } from "./triage.ts";
 import { ChatWaits } from "./waits.ts";
+import { ChatWork, type WorkDeps } from "./work.ts";
 
 /** Where each chat app keeps its tokens among the connection's secret entries. */
 export const TOKEN_VARIABLES: Partial<
@@ -50,6 +52,7 @@ export interface ClientChatWiring {
   secretOf: (connection: string, name: string) => Promise<string | undefined>;
   housekeeper: Pick<Housekeeper, "ask">;
   wiki: (org: string, question: string) => Promise<{ answer: string; found: boolean }>;
+  /** Why no model can be asked for a workspace at all (none chosen, signed out), or undefined. */
   rest: (org: string) => Promise<string | undefined>;
   findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find" | "ofTask" | "adopt" | "get">;
   /** The ops watch, for the watch incident an incident task is linked to. */
@@ -65,6 +68,14 @@ export interface ClientChatWiring {
   reopenIncident: IncidentsDeps["reopen"];
   /** Tells an incident task's lead something, as majhi. */
   askLead: IncidentsDeps["askLead"];
+  /** Makes a task for a chat message. */
+  createTask: WorkDeps["create"];
+  /** Task changes: a task started from a chat tells its client when it is ready. */
+  events: { subscribe(listener: (event: ServerEvent) => void): () => void };
+  /** Starts a task the captain made for a chat, the way the incident engine starts one: whatever Auto-pilot says. */
+  startTask: (task: string) => Promise<void>;
+  /** Tells a task's lead something, as majhi. */
+  tellTask: (task: string, text: string) => Promise<void>;
   /** The captain's History, through the autonomy event log. */
   history?: ChatHistory | undefined;
   decisions: LayaDecisions | undefined;
@@ -90,6 +101,7 @@ export interface ClientChatParts {
   incidents: ClientIncidents;
   settings: ChatSettings;
   waits: ChatWaits;
+  work: ChatWork;
 }
 
 /** Builds the client chat parts and joins them. The gate is made first and calls `replies` through the closures given to it. */
@@ -223,6 +235,22 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
+  let triageNow: ClientTriage | undefined;
+  const work = new ChatWork({
+    store: w.store,
+    room: w.room,
+    findings: w.findings,
+    create: w.createTask,
+    start: w.startTask,
+    tell: w.tellTask,
+    replies,
+    write: (room, item, facts) => {
+      if (triageNow === undefined) throw new Error("Chats are not ready.");
+      return triageNow.write(room.org as string, room, item, facts);
+    },
+    history: w.history,
+    changed: w.changed,
+  });
   const triage = new ClientTriage({
     store: w.store,
     room: w.room,
@@ -231,6 +259,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     replies,
     wiki: w.wiki,
     rest: w.rest,
+    work,
     incidents: (org, room) => incidents.candidates(org, room),
     incident: incidents,
     history: w.history,
@@ -244,6 +273,10 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     layaAnswered: (answered) => {
       layaDown = !answered;
     },
+  });
+  triageNow = triage;
+  w.events.subscribe((event) => {
+    if (event.type === "changed" && event.tasks !== undefined) void work.changedTasks(event.tasks);
   });
   const settings = new ChatSettings({
     store: w.store,
@@ -297,5 +330,5 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
-  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings, waits };
+  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings, waits, work };
 }

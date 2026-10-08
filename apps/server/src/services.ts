@@ -2551,7 +2551,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   const incidentEngineNow = new IncidentEngine({
-    halted: () => captainRepo.isStopped(),
+    blocked: () => autonomy.reactingBlocked(),
     store,
     facts: incidentFacts,
     room,
@@ -2653,6 +2653,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await tasks.reopen(task);
     },
     askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
+    createTask: (input) => tasks.create(input),
+    events,
+    startTask: async (task) => {
+      const blocked = autonomy.reactingBlocked();
+      if (blocked !== undefined) throw new UserError(`${blocked}.`, 409);
+      await tasks.start(task, "majhi");
+    },
+    tellTask: (task, text) => tasks.postFromScheduler({ task, text, from: "chat" }),
     history: ({ text, org, task }) =>
       void autonomy.event({
         kind: "decision",

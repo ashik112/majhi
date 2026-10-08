@@ -336,6 +336,15 @@ export class AutonomyService {
     return may(await this.policy(org), { now: this.now() }, { job: "reacting", act: "start" }, askedWhy).ok;
   }
 
+  /**
+   * Why a reaction (an incident's investigation, a client's request) may not start work now, or undefined: only
+   * Stop everything holds it. Auto-pilot, the rows and the hours do not.
+   */
+  reactingBlocked(): string | undefined {
+    const work = mayWork({ autopilot: this.repo.state().mode, stopped: this.halted() }, "reacting");
+    return work.ok ? undefined : work.why;
+  }
+
   /** The workspace's policy for `may`: its rows, hours and freezes, and the two live switches. */
   private async policy(org: string): Promise<CaptainPolicy> {
     const settings = (await this.deps.config.settings()).autonomy;
