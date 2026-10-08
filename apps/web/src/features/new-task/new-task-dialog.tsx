@@ -116,6 +116,7 @@ export function NewTaskDialog({
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
   const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [parent, setParent] = useState<string[]>([]);
+  const [notForCaptain, setNotForCaptain] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
   const seeded = useRef(false);
   // One id per dialog session: the server returns the first task for a repeated id, so a double
@@ -191,6 +192,7 @@ export function NewTaskDialog({
         ...(kindPick !== undefined && kind === kindPick ? { kind } : {}),
         ...(typePick === undefined ? {} : { type: typePick }),
         ...linkFields(parent[0], dependsOn),
+        ...(notForCaptain ? { noAutonomy: true } : {}),
         ...(agentOverride ? { agent: agentOverride } : {}),
       },
       {
@@ -500,6 +502,15 @@ export function NewTaskDialog({
               </div>
             </>
           )}
+
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-base text-fg">
+            <input
+              type="checkbox"
+              checked={notForCaptain}
+              onChange={(event) => setNotForCaptain(event.target.checked)}
+            />
+            Not for the captain
+          </label>
 
           {warnings.length > 0 && (
             <ul aria-label="Warnings" className="m-0 flex list-none flex-col gap-1 p-0">

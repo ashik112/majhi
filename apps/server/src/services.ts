@@ -12,6 +12,7 @@ import {
   effectiveIncident,
   failureFromError,
   GLOBAL_CONNECTIONS,
+  isClientRoom,
   isOwnerChat,
   type Job,
   type MrHost,
@@ -678,8 +679,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   const budgetLimited = async (task: string, agent: string): Promise<string | undefined> => {
     const found = store.tasks.get(task);
-    // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held.
-    if (found !== undefined && isBossChat(found)) return undefined;
+    // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held. Nor is an incident or a
+    // client's chat: a reaction goes on past a cap, and the budget's own 100% alert has told the owner.
+    if (found !== undefined && (isBossChat(found) || isIncidentTask(found) || isClientRoom(found))) {
+      return undefined;
+    }
     const org = found?.org ?? null;
     const stored = await agentStore.get(agent);
     const account =

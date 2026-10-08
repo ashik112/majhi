@@ -155,3 +155,16 @@ export function inQuietHours(
   const now = localMinutes(at, quiet.tz);
   return from < to ? now >= from && now < to : now >= from || now < to;
 }
+
+/** Milliseconds from `at` until the quiet hours end (at least a second), or undefined when `at` is not in them. */
+export function quietEndsIn(
+  at: number,
+  quiet: { from?: string | undefined; to?: string | undefined; tz?: string | undefined },
+): number | undefined {
+  if (!inQuietHours(at, quiet)) return undefined;
+  const to = quiet.to === undefined ? undefined : minutesOf(quiet.to);
+  if (to === undefined) return undefined;
+  const minutes = (to - localMinutes(at, quiet.tz) + 1440) % 1440;
+  const sinceMinute = at % 60_000;
+  return Math.max(1000, minutes * 60_000 - sinceMinute);
+}

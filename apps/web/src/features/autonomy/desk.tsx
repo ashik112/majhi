@@ -57,7 +57,7 @@ export function useExclude() {
         {
           onSuccess: () =>
             on
-              ? toast(`${task} is left alone`, {
+              ? toast(`${task} is not for the captain`, {
                   detail: "The captain will not start, message or change it.",
                 })
               : toast(`The captain may take ${task} again`),

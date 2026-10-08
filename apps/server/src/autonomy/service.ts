@@ -84,7 +84,7 @@ import { ancestorsOf } from "../tasks/planner.ts";
 import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
-import { addDays, dayStart, defaultTimeZone, localDay, validZone, zoneOr } from "../usage/ranges.ts";
+import { addDays, dayStart, localDay, validZone, zoneOr } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
 import {
@@ -3143,7 +3143,7 @@ export class AutonomyService {
     const rest = await this.capWhy(org, account);
     if (rest === undefined || job === "backlog") return rest;
     this.deps.tell?.(
-      `cap-passed:${rest}:${localDay(this.now(), zoneOr((await this.deps.config.settings()).autonomy.tz))}`,
+      `captain-cap:passed:${rest}:${localDay(this.now(), zoneOr((await this.deps.config.settings()).autonomy.tz))}`,
       `${await this.orgName(org)}: ${rest}. Incidents and client chats keep going. Everything else waits.`,
     );
     return undefined;

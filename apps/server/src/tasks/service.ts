@@ -284,6 +284,8 @@ export interface CreateInput {
   dependsOn?: string[] | undefined;
   /** Makes the new task a fix task of this one: a `follow-up` link to it. */
   followUpOf?: string | undefined;
+  /** Marked Not for the captain from the start. */
+  noAutonomy?: boolean | undefined;
   /** When those count as met. Default `merged`. */
   dependsWhen?: "merged" | "ready" | undefined;
   /** Connection ids its root agents get beyond the task's org's. */
@@ -639,6 +641,7 @@ export class TaskService {
       await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
       if (promoting === undefined) {
         store.tasks.insert(task);
+        if (input.noAutonomy === true) store.tasks.setNoAutonomy(id, true);
         store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
         if (input.start) store.tasks.setStartWhenReady(id, true);
       } else {
