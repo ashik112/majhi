@@ -529,6 +529,11 @@ export function isCaptainLane(task: Pick<Task, "kind" | "brief">): boolean {
   return task.kind === "chat" && task.brief === CAPTAIN_LANE_BRIEF;
 }
 
+/** True for a captain lane or the root Captain chat: the captain's own threads, never a task to the owner. */
+export function isCaptainThread(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && (task.brief === CAPTAIN_LANE_BRIEF || task.brief === BOSS_CHAT_BRIEF);
+}
+
 /** A chat title from the owner's first message: its first line, trimmed and cut to fit. */
 export function chatTitleFrom(text: string): string | undefined {
   const line = text
@@ -579,7 +584,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   trail: TrailSchema,
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
-  /** A workspace thread of the captain (5.18): not a task to the owner, never listed by `tasks.list`. */
+  /** A workspace thread of the captain (5.18) or the root Captain chat: not a task to the owner. The board, Tree, counts and search leave it out. */
   lane: z.boolean().optional(),
   /**
    * The task or chat waits for the owner on an item: an approval, a permission, a secret, a question.
@@ -971,6 +976,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     reason: PausedReasonSchema,
     /** The cause in words, when it is more specific than the reason ("claude-acme is signed out"). */
     why: z.string().optional(),
+    /** The account a signed-out pause waits on. A lane runs on its workspace's account, not its agent's own. */
+    account: z.string().min(1).optional(),
     /** Set when the captain paused it, itself or through autonomous mode (5.18). Older cards lack it. */
     by: CaptainBySchema.optional(),
     state: CardStateSchema,

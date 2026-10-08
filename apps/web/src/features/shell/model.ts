@@ -127,6 +127,7 @@ export type BannerAction =
         id?: string;
         tab?: string;
         section?: string;
+        thread?: string;
         create?: string;
       };
     }

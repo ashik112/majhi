@@ -54,7 +54,11 @@ export type DecisionSuggestion = z.infer<typeof DecisionSuggestionSchema>;
 export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("task"), id: TaskIdSchema, item: z.string().optional() }),
   z.object({ kind: z.literal("chat"), id: TaskIdSchema }),
-  z.object({ kind: z.literal("captain") }),
+  z.object({
+    kind: z.literal("captain"),
+    /** The workspace thread to open. Absent: the Captain page. */
+    org: z.string().min(1).optional(),
+  }),
   z.object({ kind: z.literal("limits") }),
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
   z.object({ kind: z.literal("playbooks") }),

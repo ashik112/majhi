@@ -23,13 +23,6 @@ export interface Workspace {
   color: string | undefined;
 }
 
-export const KIND_LABEL: Record<Conversation["kind"], string> = {
-  client: "Client",
-  task: "Task",
-  agent: "Agent",
-  captain: "Captain",
-};
-
 /** Private first, then each workspace. */
 export function workspaces(orgs: readonly OrgView[] | undefined): Workspace[] {
   return [
@@ -50,6 +43,19 @@ export function workspaceOf(row: Conversation, all: readonly Workspace[]): Works
 export function rowTitle(row: Conversation, workspace: string): string {
   if (row.kind === "captain") return `Captain in ${workspace}`;
   return row.kind === "agent" ? chatTitle(row) : row.title;
+}
+
+/**
+ * A row's name in the list and in the bubble's header. Only the current Captain chat reads "Captain"; an
+ * archived one keeps a topic of its own, or "Captain · <date>" when it has none, so two rows never read alike.
+ */
+export function conversationName(row: Conversation, workspace: string, isCaptain: boolean): string {
+  if (!isCaptain) return rowTitle(row, workspace);
+  if (row.archived !== true) return "Captain";
+  const own = chatTitle(row);
+  if (own !== "New chat" && own !== "Captain") return own;
+  const date = new Date(row.lastAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `Captain · ${date}`;
 }
 
 /** Chats are client rooms and the owner's own chats (the Captain, agents). Task rooms and captain threads have their own pages. */

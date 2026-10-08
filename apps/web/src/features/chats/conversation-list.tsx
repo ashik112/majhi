@@ -31,8 +31,7 @@ import { useNow } from "@/lib/use-now";
 import {
   badgeText,
   chatTitle,
-  KIND_LABEL,
-  rowTitle,
+  conversationName,
   visibleConversations,
   type Workspace,
   workspaceOf,
@@ -137,7 +136,6 @@ export function ConversationList({
               workspace={workspaceOf(row, all)}
               isCaptain={row.kind === "agent" && row.org === undefined && row.agent === captain}
               active={row.id === selected}
-              showKind={filter.kind === "all"}
               now={now}
               onOpen={() => onOpen(row)}
               items={actions.items(row)}
@@ -210,27 +208,34 @@ function KindIcon({ row, isCaptain }: { row: Conversation; isCaptain: boolean })
   return <SquareCheck aria-hidden="true" className="size-4" />;
 }
 
+/** The second line's "who": the agent, the chat app, or all workspaces for the owner's chat with the captain. */
+function whoOf(row: Conversation, isCaptain: boolean): string | undefined {
+  if (isCaptain) return "All workspaces";
+  if (row.kind === "client") return row.app === undefined ? undefined : CHAT_APP_LABEL[row.app];
+  if (row.kind === "agent" && row.agent !== undefined) return `@${row.agent}`;
+  return undefined;
+}
+
 function Row({
   row,
   workspace,
   isCaptain,
   active,
-  showKind,
   now,
   onOpen,
   items,
 }: {
   row: Conversation;
   workspace: Workspace;
-  /** The owner's chat with the captain: it belongs to no workspace, so it has no workspace badge. */
+  /** An owner chat with the captain: it belongs to no workspace, so it has no workspace badge. */
   isCaptain: boolean;
   active: boolean;
-  showKind: boolean;
   now: number;
   onOpen: () => void;
   items: MenuItem[];
 }) {
-  const title = isCaptain ? "Captain" : rowTitle(row, workspace.name);
+  const title = conversationName(row, workspace.name, isCaptain);
+  const who = whoOf(row, isCaptain);
   const unread = row.archived === true ? 0 : row.unread;
   return (
     <div className="group relative">
@@ -239,7 +244,7 @@ function Row({
         aria-current={active ? "true" : undefined}
         onClick={onOpen}
         className={cn(
-          "flex w-full cursor-pointer items-start gap-2.5 rounded-lg py-2 pr-12 pl-2 text-left transition-colors hover:bg-raised",
+          "flex w-full cursor-pointer items-start gap-2.5 rounded-lg py-2 pr-2 pl-2 text-left transition-colors hover:bg-raised",
           active && "bg-selected shadow-[inset_0_0_0_1px_var(--c-line-control)]",
         )}
       >
@@ -249,63 +254,66 @@ function Row({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span
             className={cn(
-              "min-w-0 truncate text-base",
+              "min-w-0 truncate pr-9 text-base",
               unread > 0 ? "font-semibold text-fg" : "text-fg-soft",
             )}
           >
             {title}
           </span>
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
             {!isCaptain && (
               <OrgBadge
                 label={workspace.letters}
                 color={workspace.color}
                 size="xs"
-                className="size-[14px] text-[6px]"
+                className="size-[14px] shrink-0 text-[6px]"
               />
             )}
-            {(showKind || isCaptain) && (
-              <Badge className="h-4 px-1 text-2xs" data-kind={row.kind}>
-                {isCaptain ? "Captain" : KIND_LABEL[row.kind]}
-              </Badge>
+            <span className="min-w-0 truncate">
+              {isCaptain ? who : workspace.name}
+              {!isCaptain && who !== undefined && <span className="text-fg-faint">{` · ${who}`}</span>}
+            </span>
+            {row.unlinked === true && <Badge className="h-4 shrink-0 px-1 text-2xs">Unlinked</Badge>}
+          </span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className={cn("min-w-0 flex-1 truncate text-sm", unread > 0 ? "text-fg-soft" : "text-fg-faint")}
+            >
+              {row.lastLine}
+            </span>
+            {unread > 0 && (
+              <span
+                role="img"
+                aria-label={`${unread} unread`}
+                className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 font-mono text-2xs font-semibold text-accent-ink tabular-nums"
+              >
+                {badgeText(unread)}
+              </span>
             )}
-            {row.unlinked === true && <Badge className="h-4 px-1 text-2xs">Unlinked</Badge>}
-            <span className="truncate text-sm text-fg-faint">{row.lastLine}</span>
           </span>
         </span>
       </button>
-      <div className="pointer-events-none absolute top-2 right-2 bottom-2 flex flex-col items-end justify-between">
-        <div className="grid">
-          <span className="col-start-1 row-start-1 self-center font-mono text-2xs text-fg-faint tabular-nums group-focus-within:invisible group-hover:invisible group-has-[[aria-expanded=true]]:invisible">
-            {shortAgo(row.lastAt, now)}
-          </span>
-          <div className="pointer-events-auto invisible col-start-1 row-start-1 group-focus-within:visible group-hover:visible group-has-[[aria-expanded=true]]:visible">
-            <Menu
-              label={`Options for ${title}`}
-              items={items}
-              trigger={(props) => (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Options for ${title}`}
-                  className="size-5"
-                  {...props}
-                >
-                  <MoreHorizontal aria-hidden="true" />
-                </Button>
-              )}
-            />
-          </div>
+      <div className="pointer-events-none absolute top-2 right-2 grid">
+        <span className="col-start-1 row-start-1 self-center font-mono text-2xs text-fg-faint tabular-nums group-focus-within:invisible group-hover:invisible group-has-[[aria-expanded=true]]:invisible">
+          {shortAgo(row.lastAt, now)}
+        </span>
+        <div className="pointer-events-auto invisible col-start-1 row-start-1 group-focus-within:visible group-hover:visible group-has-[[aria-expanded=true]]:visible">
+          <Menu
+            label={`Options for ${title}`}
+            items={items}
+            trigger={(props) => (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Options for ${title}`}
+                className="size-5"
+                {...props}
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </Button>
+            )}
+          />
         </div>
-        {unread > 0 && (
-          <span
-            role="img"
-            aria-label={`${unread} unread`}
-            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 font-mono text-2xs font-semibold text-accent-ink tabular-nums"
-          >
-            {badgeText(unread)}
-          </span>
-        )}
       </div>
     </div>
   );

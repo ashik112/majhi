@@ -51,7 +51,16 @@ export interface DecisionSources {
   subject: (task: string) => Subject | undefined;
   budgets: readonly BudgetAsk[];
   /** Accounts the owner has to sign in again. */
-  signedOut: readonly { id: string; at: string }[];
+  signedOut: readonly {
+    id: string;
+    at: string;
+    /** What waits on this sign-in, in words ("Captain in Globex"): their pauses are not cards of their own. */
+    waits?: readonly string[] | undefined;
+  }[];
+  /** Paused cards that wait on a signed-out account: the account's sign-in decision carries them. */
+  foldedPauses?: ReadonlySet<string>;
+  /** Workspaces whose captain has no account to run on: their one "Captain blocked" decision carries a lane's pause. */
+  unpaidOrgs?: ReadonlySet<string>;
   recommendations: ReadonlyMap<string, Recommendation>;
   /**
    * Tasks in review that cannot merge now, by task id: why, and whether there is simply nothing to
@@ -413,6 +422,15 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const item of src.items) {
     const subject = src.subject(item.task);
     if (subject === undefined) continue;
+    // One card per problem: a pause that a sign-in or a payer fixes is told in that decision, not twice.
+    if (src.foldedPauses?.has(item.id) === true) continue;
+    if (
+      subject.lane === true &&
+      item.type === "paused" &&
+      subject.org !== undefined &&
+      src.unpaidOrgs?.has(subject.org) === true
+    )
+      continue;
     const draft = draftOf(
       item,
       subject,
@@ -421,19 +439,32 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     if (draft === undefined) continue;
     const id = decisionIdOf(item);
     const workspace = subject.org === undefined ? undefined : src.orgName?.(subject.org);
+    // A pause of the captain's own thread is a captain item: no task id or title, its reason, and Open goes to its thread.
+    const captainItem =
+      subject.lane === true && draft.kind === "paused"
+        ? {
+            title: workspace === undefined ? "Captain paused" : `Captain paused in ${workspace}`,
+            sentence: item.type === "paused" && item.why !== undefined ? oneLine(item.why, 200) : draft.title,
+          }
+        : undefined;
     out.push({
       id,
       kind: draft.kind,
       ...(subject.org === undefined ? {} : { org: subject.org }),
       task: item.task,
-      taskTitle: subject.title,
+      taskTitle: captainItem?.title ?? subject.title,
       ...(subject.chat ? { chat: true as const } : {}),
-      title: draft.title,
-      sentence: draft.sentence ?? draft.title,
+      title: captainItem?.title ?? draft.title,
+      sentence: captainItem?.sentence ?? draft.sentence ?? draft.title,
       ...(draft.blocked === undefined ? {} : { blocked: draft.blocked }),
       ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
-      link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
+      link:
+        captainItem !== undefined
+          ? { kind: "captain", ...(subject.org === undefined ? {} : { org: subject.org }) }
+          : subject.chat
+            ? { kind: "chat", id: item.task }
+            : { kind: "task", id: item.task, item: item.id },
     });
   }
 
@@ -568,7 +599,11 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       id: signInDecisionId(account.id),
       kind: "sign-in",
       title: `Sign in ${account.id}: its agents cannot run until you do`,
-      sentence: `${account.id} is signed out. Its agents cannot run until you sign in again.`,
+      sentence: `${account.id} is signed out. Its agents cannot run until you sign in again.${
+        account.waits === undefined || account.waits.length === 0
+          ? ""
+          : ` Waiting on it: ${account.waits.join(", ")}.`
+      }`,
       options: [],
       at: account.at,
       link: { kind: "account", id: account.id },
