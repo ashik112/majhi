@@ -146,7 +146,7 @@ export const SHIP_STEP_LABEL: Record<ShipStep | "push", string> = {
   push: "Push",
   deployStaging: "Deploy staging",
   deployProduction: "Deploy production",
-  tell: "Tell the client",
+  tell: "Client replies",
 };
 
 function listOr(items: readonly string[]): string {

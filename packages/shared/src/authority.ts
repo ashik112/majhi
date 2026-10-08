@@ -72,7 +72,7 @@ export const AUTHORITY_LABEL: Record<AuthorityRow, string> = {
   push: "Push and open merge requests",
   deployStaging: "Deploy to staging",
   deployProduction: "Deploy to production",
-  tell: "Tell the client",
+  tell: "Client replies",
   own: "Own work: approve routine requests of tasks it started",
 };
 
@@ -86,7 +86,7 @@ export const AUTHORITY_SHORT: Record<AuthorityRow, string> = {
   push: "push",
   deployStaging: "deploy staging",
   deployProduction: "deploy production",
-  tell: "tell the client",
+  tell: "client replies",
   own: "own work",
 };
 
@@ -100,7 +100,7 @@ export const AUTHORITY_REFUSAL: Record<AuthorityRow, string> = {
   push: "when work is pushed, so the captain does not push it",
   deployStaging: "when work is deployed to staging, so the captain does not deploy it",
   deployProduction: "when work is deployed to production, so the captain does not deploy it",
-  tell: "what the client is told, so the captain does not tell them",
+  tell: "what clients are told, so the captain does not send client replies",
   own: "the routine requests of work the captain started, so the captain does not approve them",
 };
 

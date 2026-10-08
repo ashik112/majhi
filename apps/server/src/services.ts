@@ -2631,6 +2631,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ),
     secretOf: connectionSecret,
     housekeeper: reactingHousekeeper,
+    blocked: () => autonomy.reactingBlocked(),
     wiki: async (org, question) => {
       const out = await wikiAsk.answer(org, undefined, question, "reacting");
       return { answer: out.answer, found: out.found };

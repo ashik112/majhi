@@ -59,7 +59,7 @@ const ROW_NAME: Record<AuthorityRow, string> = {
   push: "Push",
   deployStaging: "Deploy to staging",
   deployProduction: "Deploy to production",
-  tell: "Tell the client",
+  tell: "Client replies",
   own: "Own work",
 };
 

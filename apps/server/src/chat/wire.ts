@@ -51,6 +51,8 @@ export interface ClientChatWiring {
   connectionIds: () => Promise<{ org: string; id: string; connection: ConnectionConfig }[]>;
   secretOf: (connection: string, name: string) => Promise<string | undefined>;
   housekeeper: Pick<Housekeeper, "ask">;
+  /** Why a reaction may not act now (Stop everything), or undefined. */
+  blocked?: (() => string | undefined) | undefined;
   wiki: (org: string, question: string) => Promise<{ answer: string; found: boolean }>;
   /** Why no model can be asked for a workspace at all (none chosen, signed out), or undefined. */
   rest: (org: string) => Promise<string | undefined>;
@@ -184,11 +186,11 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     ...(w.now === undefined ? {} : { now: w.now }),
     ...(w.log === undefined ? {} : { log: w.log }),
   });
-  const tell = async (org: string): Promise<AuthorityChoice> => {
-    // The row as the owner set it. Tell does not wait for Autonomous: a client message is answered either way.
-    const { autonomy } = await w.config.settings();
-    return authorityOf(autonomy, org).tell;
-  };
+  // The line for a reply in a client chat is the chat's own Replies switch (its holder): `captain` is checked before a
+  // reply gets here, so the reply sends, still behind the fixed holds. The workspace's Tell row is only the default holder
+  // of a newly linked chat. Stop everything holds it: the reply is a draft for the owner.
+  const tell = async (_org: string): Promise<AuthorityChoice> =>
+    w.blocked?.() === undefined ? "decide" : "ask";
   const holds = async (org: string): Promise<Holds> =>
     effectiveHolds((await w.config.settings()).autonomy.orgs[org]?.holds);
   const replies = new ClientReplies({

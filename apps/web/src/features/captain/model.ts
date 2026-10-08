@@ -41,7 +41,7 @@ export const AUTHORITY_ROW_TEXT: Record<
     isNew: true,
   },
   deployProduction: { label: "Deploy production", hint: "Only by a rule you set", isNew: true },
-  tell: { label: "Tell the client", hint: "Replies to a client chat", isNew: true },
+  tell: { label: "Client replies", hint: "Replies to a client chat", isNew: true },
   own: { label: "Own work", hint: "Routine requests of tasks it started", detail: OWN_WORK_LINE },
 };
 

@@ -36,7 +36,7 @@ const STEPS: readonly { step: ShipStep; column: string; name: string }[] = [
   { step: "merge", column: "Merge", name: "Merge" },
   { step: "deployStaging", column: "Staging", name: "Deploy staging" },
   { step: "deployProduction", column: "Production", name: "Deploy production" },
-  { step: "tell", column: "Tell", name: "Tell the client" },
+  { step: "tell", column: "Replies", name: "Client replies" },
 ];
 
 const STEP_WIDTH = "w-20 shrink-0";
