@@ -75,6 +75,8 @@ interface Lane {
   news: Set<string>;
   /** Lines of the batch that are backlog news: they go only while Auto-pilot is on and under no cap. */
   backlog: Set<string>;
+  /** Lines that go to the main lane whatever their gate: which lane hears a line is not which gate holds it. */
+  main: Set<string>;
   /** The facts and the news lines of the last tick, or of the captain's last turn after it. */
   lastFacts: string | undefined;
   lastNews: Set<string>;
@@ -113,6 +115,7 @@ export class AutonomyDriver {
         counts: new Map(),
         news: new Set(),
         backlog: new Set(),
+        main: new Set(),
         lastFacts: undefined,
         lastNews: new Set(),
         timer: undefined,
@@ -145,7 +148,13 @@ export class AutonomyDriver {
    * Something the captain should look at happened in a workspace: batched into that lane's next
    * tick. Without a workspace it goes to every lane of a workspace where the captain starts work.
    */
-  wake(line: string, org?: string, kind: WakeKind = "news", job: Job = "reacting"): boolean {
+  wake(
+    line: string,
+    org?: string,
+    kind: WakeKind = "news",
+    job: Job = "reacting",
+    toMain = false,
+  ): boolean {
     const { autonomy } = this.deps;
     if (autonomy.halted() || (job === "backlog" && autonomy.mode() !== "on")) return false;
     if (org === undefined) {
@@ -153,19 +162,20 @@ export class AutonomyDriver {
       void (job === "backlog" ? autonomy.runsOrgs() : autonomy.thinksIn())
         .then((orgs) => {
           if (generation !== this.generation || autonomy.halted()) return;
-          for (const o of orgs) this.wakeLane(o, line, kind, job);
+          for (const o of orgs) this.wakeLane(o, line, kind, job, toMain);
         })
         .catch(() => undefined);
       return true;
     }
-    this.wakeLane(org, line, kind, job);
+    this.wakeLane(org, line, kind, job, toMain);
     return true;
   }
 
   /** Adds a line to the lane's batch; a line that is there already is counted, not repeated. */
-  private wakeLane(org: string, line: string, kind: WakeKind, job: Job): void {
+  private wakeLane(org: string, line: string, kind: WakeKind, job: Job, toMain: boolean): void {
     const lane = this.lane(org);
     if (job === "backlog") lane.backlog.add(line);
+    if (toMain) lane.main.add(line);
     if (lane.counts.has(line)) {
       // Seen again: counted, and moved to the end, where the digest shows the newest.
       lane.counts.set(line, (lane.counts.get(line) ?? 0) + 1);
@@ -178,6 +188,7 @@ export class AutonomyDriver {
         lane.counts.delete(dropped);
         lane.news.delete(dropped);
         lane.backlog.delete(dropped);
+        lane.main.delete(dropped);
       }
     }
     if (lane.timer !== undefined || lane.afterTurn) return;
@@ -213,6 +224,7 @@ export class AutonomyDriver {
     for (const line of lane.backlog) {
       lane.counts.delete(line);
       lane.news.delete(line);
+      lane.main.delete(line);
       lane.reasons = lane.reasons.filter((r) => r !== line);
     }
     lane.backlog.clear();
@@ -228,6 +240,7 @@ export class AutonomyDriver {
     lane.counts.clear();
     lane.news.clear();
     lane.backlog.clear();
+    lane.main.clear();
   }
 
   /**
@@ -277,7 +290,9 @@ export class AutonomyDriver {
   private async deliver(org: string, lane: Lane): Promise<void> {
     // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
     const job: Job = lane.reasons.every((r) => lane.backlog.has(r)) ? "backlog" : "reacting";
-    const chat = await this.deps.autonomy.laneChat(org, job);
+    // The gate (Auto-pilot, hours) follows `job`; the lane that hears it is the main one when every line goes there.
+    const into: Job = lane.reasons.every((r) => lane.backlog.has(r) || lane.main.has(r)) ? "backlog" : "reacting";
+    const chat = await this.deps.autonomy.laneChat(org, job, into);
     if (chat === undefined) {
       // At rest (working hours, a freeze) backlog news is kept and delivered when the captain resumes, not lost.
       if (job === "backlog" && (await this.deps.autonomy.restingWhy(org)) !== undefined) {

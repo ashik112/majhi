@@ -1,6 +1,7 @@
 import { isCaptainLane, PAGE_PATH, PRIVATE, type Task } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useCaptainStatus } from "@/lib/captain-queries";
 
 /**
  * A captain thread is not a task, so its old addresses (/t/HOO-2, /chats/HOO-2, a task link in a
@@ -11,8 +12,16 @@ export function useLaneRedirect(task: Task | undefined): boolean {
   const navigate = useNavigate();
   const lane = task !== undefined && isCaptainLane(task);
   const org = task?.org ?? PRIVATE;
+  const status = useCaptainStatus().data;
+  // The on-call chat is the Urgent tab of its workspace's thread.
+  const urgent = status?.orgs.some((o) => o.org === org && o.onCall === task?.id) === true;
   useEffect(() => {
-    if (lane) void navigate({ to: PAGE_PATH.captain, search: { thread: org }, replace: true });
-  }, [lane, org, navigate]);
+    if (lane && status !== undefined)
+      void navigate({
+        to: PAGE_PATH.captain,
+        search: { thread: org, ...(urgent ? { urgent: true as const } : {}) },
+        replace: true,
+      });
+  }, [lane, status, urgent, org, navigate]);
   return lane;
 }

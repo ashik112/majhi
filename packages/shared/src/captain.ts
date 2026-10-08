@@ -176,6 +176,9 @@ export const CaptainOrgSchema = z.object({
   lane: TaskIdSchema.optional(),
   /** What the thread is doing: the captain is in a turn, something waits on the owner, or neither. */
   thread: z.enum(["working", "waiting", "idle"]).default("idle"),
+  /** The same captain's on-call (Urgent) thread here, once it exists, and what it is doing. */
+  onCall: TaskIdSchema.optional(),
+  urgent: z.enum(["working", "waiting", "idle"]).default("idle"),
   /** Why a message waiting on the captain here waits, when something the owner can fix is in the way. */
   blocker: CaptainBlockerSchema.optional(),
   chores: z.array(CaptainChoreStateSchema),

@@ -11,9 +11,13 @@ export function threadsOf(orgs: readonly CaptainOrg[]): CaptainOrg[] {
 
 /** The tab id of a workspace's thread, and the workspace of a tab id. */
 export const wsTab = (org: string): PanelTab => `ws:${org}`;
+/** The tab of a workspace's Urgent thread: the same captain's on-call lane. */
+export const urgentTab = (org: string): PanelTab => `urgent:${org}`;
 export function orgOfTab(tab: PanelTab): string | undefined {
-  return tab.startsWith("ws:") ? tab.slice(3) : undefined;
+  if (tab.startsWith("ws:")) return tab.slice(3);
+  return tab.startsWith("urgent:") ? tab.slice(7) : undefined;
 }
+export const isUrgentTab = (tab: PanelTab): boolean => tab.startsWith("urgent:");
 
 /**
  * The tab to show: the asked one when it exists, else the owner's own chat. "All" is that chat too:
@@ -23,7 +27,10 @@ export function orgOfTab(tab: PanelTab): string | undefined {
 export function validTab(tab: PanelTab, threads: readonly CaptainOrg[]): PanelTab {
   const org = orgOfTab(tab);
   if (org === undefined) return "talk";
-  return threads.some((t) => t.org === org) ? tab : "talk";
+  const found = threads.find((t) => t.org === org);
+  if (found === undefined) return "talk";
+  // An Urgent tab goes back to Main when the workspace has no Urgent thread.
+  return isUrgentTab(tab) && found.onCall === undefined ? wsTab(found.org) : tab;
 }
 
 /** What waits in a thread, for the chip's tooltip. */

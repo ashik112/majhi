@@ -4216,7 +4216,7 @@ export const commands = {
     risk: "change",
     summary:
       "Start fresh in a workspace's captain thread: ends the thread's session and starts a new one that carries a short summary of the old one. The thread's messages stay. Owner only",
-    input: z.object({ org: z.string() }),
+    input: z.object({ org: z.string(), urgent: z.boolean().optional() }),
     output: z.object({ item: RoomItemSchema }),
   },
   "captain.reportBug": {

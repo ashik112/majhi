@@ -45,6 +45,8 @@ export interface AppSearch {
   tab?: string;
   /** On Captain: the workspace whose thread is shown. */
   thread?: string;
+  /** On Captain, with `thread`: show that workspace's Urgent thread. */
+  urgent?: true;
   /** On Hub setup: the section shown. */
   section?: string;
   /** On Decisions: the decision shown. */
@@ -82,6 +84,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const project = text(search.project);
   const tab = text(search.tab);
   const thread = text(search.thread);
+  const urgent = thread && search.urgent === true || search.urgent === "true" ? true : undefined;
   const section = text(search.section);
   const scope = text(search.scope);
   const about = text(search.about);
@@ -109,6 +112,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
     ...(thread ? { thread } : {}),
+    ...(urgent ? { urgent } : {}),
     ...(section ? { section } : {}),
     ...(scope ? { scope } : {}),
     ...(about ? { about } : {}),

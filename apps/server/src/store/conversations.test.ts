@@ -62,4 +62,21 @@ describe("conversations list", () => {
     expect(store.conversations.list().find((c) => c.id === "CHAT-1")?.archived).toBeUndefined();
     expect(store.conversations.archive("NOPE", true)).toBe(false);
   });
+
+  it("leaves a captain's on-call lane out of the list and the search: it is the Urgent tab of the thread", () => {
+    const store = new Store(":memory:");
+    store.tasks.insert(task("CAP-1", { kind: "chat", brief: CAPTAIN_LANE_BRIEF, org: "acme" }));
+    store.tasks.insert(task("CAP-2", { kind: "chat", brief: CAPTAIN_LANE_BRIEF, org: "acme" }));
+    for (const [chat, job] of [
+      ["CAP-1", "backlog"],
+      ["CAP-2", "reacting"],
+    ]) {
+      store.raw
+        .prepare("INSERT INTO captain_lanes (org, job, chat, created_at) VALUES ('acme', ?, ?, 'x')")
+        .run(job, chat);
+      store.room.upsert(chat as string, `a-${chat}`, { type: "agent", agent: "dev", text: "site is down" });
+    }
+    expect(store.conversations.list().map((c) => c.id)).toEqual(["CAP-1"]);
+    expect(store.conversations.matching("site")).toEqual(["CAP-1"]);
+  });
 });

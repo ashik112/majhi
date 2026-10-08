@@ -44,7 +44,7 @@ export function captainHandlers(
     },
     "captain.startFresh": async (input, ctx) => {
       ownerOnly(ctx);
-      return captain.startFresh(input.org);
+      return captain.startFresh(input.org, input.urgent === true ? "reacting" : "backlog");
     },
     "captain.undo": async (input, ctx) => {
       ownerOnly(ctx);

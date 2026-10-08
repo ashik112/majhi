@@ -198,7 +198,7 @@ export interface AutonomyDeps {
 /** What the service tells the driver (part B, `driver.ts`). */
 export interface DriverHooks {
   /** For one workspace, or every workspace where the captain starts work when `org` is absent. */
-  wake(line: string, org?: string, kind?: "news" | "soft", job?: Job): boolean;
+  wake(line: string, org?: string, kind?: "news" | "soft", job?: Job, toMain?: boolean): boolean;
   onMode(mode: AutonomyMode): void;
   fire(org: string): Promise<void>;
   loopEnded(task: string): void;
@@ -390,7 +390,7 @@ export class AutonomyService {
    * starts work or does upkeep, and no rest. When the lane's chat was removed or closed, majhi makes or reopens it
    * first and says so in the feed. Undefined: Stop everything is on, nothing waits for this job, or there is no captain.
    */
-  async laneChat(org: string, job: Job = "reacting"): Promise<string | undefined> {
+  async laneChat(org: string, job: Job = "reacting", into: Job = job): Promise<string | undefined> {
     if (mayWork({ autopilot: this.repo.state().mode, stopped: this.halted() }, job).ok !== true)
       return undefined;
     if (job === "backlog") {
@@ -398,13 +398,13 @@ export class AutonomyService {
       if (policy.authority.start !== "decide" && policy.authority.upkeep !== "decide") return undefined;
       if (restOf(policy, this.now()) !== undefined) return undefined;
     }
-    const before = this.deps.lanes.chat(org, job);
+    const before = this.deps.lanes.chat(org, into);
     const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
     const boss = await this.bossId();
     if (boss === undefined) return undefined;
     if (found !== undefined && found.status !== "done" && found.team[0] === boss) return found.id;
     try {
-      const chat = await this.deps.lanes.ensure(org, job);
+      const chat = await this.deps.lanes.ensure(org, into);
       const name = await this.orgName(org);
       this.event({
         kind: "mode",
@@ -451,8 +451,14 @@ export class AutonomyService {
   }
 
   /** A line on why the captain should look again: it goes into the next tick of that workspace's lane, or every lane. */
-  private wake(line: string, org?: string, kind: "news" | "soft" = "news", job: Job = "backlog"): boolean {
-    return this.driver?.wake(line, org, kind, job) ?? false;
+  private wake(
+    line: string,
+    org?: string,
+    kind: "news" | "soft" = "news",
+    job: Job = "backlog",
+    toMain = false,
+  ): boolean {
+    return this.driver?.wake(line, org, kind, job, toMain) ?? false;
   }
 
   /** Sends a lane's waiting wakes now, without the wait that batches them. */
@@ -475,6 +481,19 @@ export class AutonomyService {
    */
   news(line: string, org: string): boolean {
     return this.wake(line, org, "news", "reacting");
+  }
+
+  /**
+   * Routine news (an update, a chore's note): it goes to the workspace's main lane only, and only while Auto-pilot is
+   * on. The Urgent lane hears only reactions: client chats, incidents and watch fires (`news`).
+   */
+  routine(line: string, org: string): boolean {
+    return this.wake(line, org, "news", "backlog");
+  }
+
+  /** A finding: a reaction (only Stop everything holds it), heard in the main lane. */
+  finding(line: string, org: string): boolean {
+    return this.wake(line, org, "news", "reacting", true);
   }
 
   /**
@@ -2220,7 +2239,13 @@ export class AutonomyService {
    * `keep` it is also a standing instruction for that workspace's lane, as a config commit.
    */
   async guide(
-    input: { text: string; keep: boolean; attachments?: string[] | undefined; org?: string | undefined },
+    input: {
+      text: string;
+      keep: boolean;
+      attachments?: string[] | undefined;
+      org?: string | undefined;
+      urgent?: boolean | undefined;
+    },
     change: { command: string; meta: CommandMeta },
   ): Promise<{ chat: TaskId; instruction?: AutonomyInstruction }> {
     if (detectSecrets(input.text).length > 0) {
@@ -2239,7 +2264,7 @@ export class AutonomyService {
     if ((await this.bossId()) === undefined) {
       throw new UserError("There is no captain yet. Make a root agent the captain first.", 409);
     }
-    const chat = await this.deps.lanes.ensure(org);
+    const chat = await this.deps.lanes.ensure(org, input.urgent === true ? "reacting" : "backlog");
     let instruction: AutonomyInstruction | undefined;
     if (input.keep) {
       const { instructions } = (await this.deps.config.settings()).autonomy;

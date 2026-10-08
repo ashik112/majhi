@@ -18,9 +18,10 @@ const LIST_LIMIT = 200;
 
 /**
  * What the list holds: every task room, each workspace's captain thread, client chats and the chats
- * the owner started with an agent. Only the old autonomy chat is left out (the captain threads replace it).
+ * the owner started with an agent. The old autonomy chat is left out (the captain threads replace it), and so is a captain's on-call lane: it is the Urgent tab of that workspace's captain thread.
  */
-const LISTED = sql`NOT (t.kind = 'chat' AND t.brief = ${AUTONOMY_CHAT_BRIEF})`;
+const LISTED = sql`NOT (t.kind = 'chat' AND t.brief = ${AUTONOMY_CHAT_BRIEF})
+  AND t.id NOT IN (SELECT chat FROM captain_lanes WHERE job = 'reacting')`;
 /** A chat that became a task: its origin names itself. It stays one conversation, listed as the chat it was. */
 const PROMOTED = sql`(json_extract(t.origin, '$.kind') = 'chat' AND json_extract(t.origin, '$.room') = t.id)`;
 /** The chats the owner started with an agent: they stay listed after they are done. */
