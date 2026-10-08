@@ -44,7 +44,7 @@ describe("the account of a client workspace's lane", () => {
     const out = await lanes({ acmeAccounts: false }).account("acme");
     expect(out).toEqual({
       problem:
-        "Acme has no account of its own for the captain, and claude-personal is a Private account. Pick the account that pays for Acme under More rules",
+        "Acme has no account of its own for the captain, and claude-personal is a Private account. Pick the account that pays in Captain, Permissions, Acme, Hours, freezes and more",
     });
   });
 
@@ -56,7 +56,7 @@ describe("the account of a client workspace's lane", () => {
     const other = await lanes({ acmeAccounts: true, chosen: "claude-globex" }).account("acme");
     expect(other).toEqual({
       problem:
-        "claude-globex belongs to globex, so it cannot pay for Acme. Pick an account of Acme under More rules",
+        "claude-globex belongs to globex, so it cannot pay for Acme. Pick an account of Acme in Captain, Permissions, Acme, Hours, freezes and more",
     });
   });
 });

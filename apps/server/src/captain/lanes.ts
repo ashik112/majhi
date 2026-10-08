@@ -127,8 +127,8 @@ export class Lanes {
       return {
         problem:
           account.org === PRIVATE
-            ? `${name(org)} has no account of its own for the captain, and ${id} is a Private account. Pick the account that pays for ${name(org)} under More rules`
-            : `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} under More rules`,
+            ? `${name(org)} has no account of its own for the captain, and ${id} is a Private account. Pick the account that pays in Captain, Permissions, ${name(org)}, Hours, freezes and more`
+            : `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} in Captain, Permissions, ${name(org)}, Hours, freezes and more`,
       };
     }
     if (!providerAllowed(rules, account.tool)) {
