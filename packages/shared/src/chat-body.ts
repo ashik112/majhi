@@ -167,3 +167,24 @@ export function slackMentions(text: string): ChatMention[] {
 export function mentionLabel(name: string, place?: string): string {
   return place === undefined || place === "" ? `@${name}` : `@${name} (${place})`;
 }
+
+/** What a mention reads as when neither the message nor the contact list names the person. */
+export const UNKNOWN_MENTION = "contact";
+
+/** The name a mention token shows: the message's own map first, then the contact list, never the id. */
+export function mentionName(
+  contact: string,
+  names?: Readonly<Record<string, string>>,
+  lookup?: (contact: string) => string | undefined,
+): string {
+  return names?.[contact] ?? lookup?.(contact) ?? UNKNOWN_MENTION;
+}
+
+/** A text for a preview: every mention token reads `@Name`. */
+export function mentionNames(
+  text: string,
+  names?: Readonly<Record<string, string>>,
+  lookup?: (contact: string) => string | undefined,
+): string {
+  return replaceMentions(text, (id) => `@${mentionName(id, names, lookup)}`);
+}

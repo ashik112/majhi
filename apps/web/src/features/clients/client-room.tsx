@@ -9,6 +9,7 @@ import {
   parseDecisionId,
   REPLY_HOLD_LABEL,
   type RoomItem,
+  mentionName,
   replaceMentions,
 } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -54,7 +55,7 @@ import { mentionQuery, namesToTokens, type Person, roomPeople, tokensToNames } f
 
 /** A text with each mention token shown as the person's name. */
 function withNames(text: string, names: Record<string, string> | undefined, wrap = ""): string {
-  return replaceMentions(text, (id) => `${wrap}@${names?.[id] ?? "someone"}${wrap}`);
+  return replaceMentions(text, (id) => `${wrap}@${mentionName(id, names)}${wrap}`);
 }
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;

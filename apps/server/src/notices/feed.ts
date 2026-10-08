@@ -10,6 +10,7 @@ import {
   PRIVATE,
   type UpdateStatus,
   didWords,
+  mentionNames,
   incidentDecisionId,
   signInDecisionId,
 } from "@majhi/shared";
@@ -28,6 +29,8 @@ export interface FeedSources {
   deploys: readonly DeployRecord[];
   update: UpdateStatus | undefined;
   marks: { seen: string | undefined; rows: ReadonlySet<string> };
+  /** A contact's name, for a mention the message carries no name for. */
+  contactName?: ((contact: string) => string | undefined) | undefined;
   /** Only this workspace's rows. */
   org?: string | undefined;
   /** Oldest time a non-waiting event may have (ISO). */
@@ -85,6 +88,11 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
       subject = d.title;
       detail = d.taskTitle;
   }
+  // A detail that only repeats the subject says nothing: the decision's own sentence (a pause's reason) goes there.
+  if (detail === undefined || detail === subject || detail === d.title) {
+    const sentence = d.sentence;
+    detail = sentence === undefined || sentence === subject || sentence === d.title ? undefined : sentence;
+  }
   // The same button as on the Needs you page: the primary answer, unless it needs typed words.
   const main = d.options.find((o) => o.primary === true && o.text !== true);
   const hint = d.suggestion;
@@ -113,12 +121,14 @@ const ClientMessage = z.object({
   us: z.boolean().optional(),
   deleted: z.boolean().optional(),
   text: z.string().default(""),
+  mentions: z.record(z.string(), z.string()).optional(),
   outcome: ClientOutcomeSchema.optional(),
 });
 const ClientReply = z.object({
   by: z.enum(["captain", "you"]),
   state: z.enum(["held", "sent", "failed", "discarded"]),
   text: z.string().default(""),
+  mentions: z.record(z.string(), z.string()).optional(),
 });
 
 /** Whether a client message should reach the owner, by the chat's Notify setting. An urgent one always does. */
@@ -139,7 +149,10 @@ function parse<T>(schema: z.ZodType<T>, payload: string): T | undefined {
 }
 
 /** The newest client message and the newest reply sent to a client, per room: a busy chat is one row, not thirty. */
-function clientNotices(lines: readonly ClientLine[]): Omit<Notice, "read">[] {
+function clientNotices(
+  lines: readonly ClientLine[],
+  contactName: FeedSources["contactName"],
+): Omit<Notice, "read">[] {
   const out: Omit<Notice, "read">[] = [];
   const seen = new Set<string>();
   // Lines come newest first.
@@ -160,7 +173,7 @@ function clientNotices(lines: readonly ClientLine[]): Omit<Notice, "read">[] {
         org,
         at: line.at,
         subject: oneLine(line.title, 160),
-        detail: oneLine(`${name}: ${msg.text}`),
+        detail: oneLine(`${name}: ${mentionNames(msg.text, msg.mentions, contactName)}`),
         needsYou: false,
         link,
       });
@@ -183,7 +196,7 @@ function clientNotices(lines: readonly ClientLine[]): Omit<Notice, "read">[] {
             : `Reply failed in ${line.title}`,
           160,
         ),
-        detail: oneLine(reply.text),
+        detail: oneLine(mentionNames(reply.text, reply.mentions, contactName)),
         needsYou: false,
         link,
       });
@@ -334,7 +347,7 @@ export function buildFeed(src: FeedSources): NoticeList {
   const waiting = new Set(src.decisions.flatMap((d) => (d.task === undefined ? [] : [`${d.kind}:${d.task}`, d.id])));
   const all = [
     ...src.decisions.map(decisionNotice),
-    ...clientNotices(src.clientLines),
+    ...clientNotices(src.clientLines, src.contactName),
     ...taskNotices(src.taskStatuses, waiting),
     ...deployNotices(src.deploys),
     ...incidentNotices(src.incidents, waiting, src.since),

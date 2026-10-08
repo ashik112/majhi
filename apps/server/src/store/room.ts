@@ -1,7 +1,8 @@
-import { type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
+import { mentionNames, type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
 import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
+import { storedMentions } from "./mentions.ts";
 import { roomItems } from "./schema.ts";
 
 /** An item's own fields: everything but the ones the store assigns. */
@@ -107,6 +108,10 @@ export class RoomRepo {
   private prepared: ReturnType<typeof roomStatements> | undefined;
 
   constructor(private readonly db: Db) {}
+
+  /** A contact's stored name, for a mention a message carries no name for. */
+  private readonly contactName = (id: string): string | undefined =>
+    this.db.get<{ name: string }>(sql`SELECT name FROM contacts WHERE id = ${id}`)?.name;
 
   private get q(): ReturnType<typeof roomStatements> {
     this.prepared ??= roomStatements(this.db);
@@ -487,7 +492,8 @@ export class RoomRepo {
     const rows = this.db.all<SearchRow>(sql`
       SELECT coalesce(r.about, r.task) AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
         coalesce(json_extract(r.payload, '$.agent'), json_extract(r.payload, '$.from')) AS agent,
-        snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet
+        snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet,
+        json_extract(r.payload, '$.mentions') AS mentions
       FROM room_search
       JOIN room_items r ON r.rowid = room_search.rowid
       JOIN tasks t ON t.id = coalesce(r.about, r.task)
@@ -502,7 +508,7 @@ export class RoomRepo {
       type: row.type,
       ...(row.agent === null ? {} : { agent: row.agent }),
       at: row.at,
-      snippet: snippetParts(row.snippet),
+      snippet: snippetParts(mentionNames(row.snippet, storedMentions(row.mentions), this.contactName)),
     }));
   }
 
@@ -558,6 +564,7 @@ interface SearchRow {
   at: string;
   agent: string | null;
   snippet: string;
+  mentions: string | null;
 }
 
 /** Bracket the matched words in a snippet. They are control characters, which no message holds. */

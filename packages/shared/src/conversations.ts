@@ -31,6 +31,8 @@ export const ConversationSchema = z.object({
   unlinked: z.boolean().optional(),
   /** The owner hid it. It keeps its history and is listed under Archived. */
   archived: z.boolean().optional(),
+  /** The owner's current Captain chat, the one the bubble opens. Every other root Captain chat is an older one. */
+  current: z.boolean().optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 

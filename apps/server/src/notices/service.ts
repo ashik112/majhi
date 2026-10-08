@@ -19,6 +19,8 @@ export class NoticesService {
       /** What waits for the owner now. */
       decisions: () => Promise<OwnerDecision[]>;
       update: () => Promise<UpdateStatus | undefined>;
+      /** A contact's name, for a mention a message carries no name for. */
+      contactName?: (contact: string) => string | undefined;
       now?: () => Date;
     },
   ) {}
@@ -41,6 +43,7 @@ export class NoticesService {
       incidents: store.notices.incidents(since, PER_SOURCE),
       deploys: store.deploys.endedSince(since, PER_SOURCE),
       update,
+      contactName: this.deps.contactName,
       marks: store.notices.marks(),
       org,
       since,
