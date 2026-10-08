@@ -1,6 +1,6 @@
 # Progress
 
-## Security, run recovery and captain regressions (branch `fix/security-runs-captain`, ready for review)
+## Security, run recovery and captain regressions (branch `fix/security-runs-captain`, merged)
 
 Plan: reproduce the reported secret-script and scan false positives, isolate runner probes, guard checkpoints during git operations, correct restart notices, extend main captain clipboard and file access safely, resolve watch recovery, and reproduce the reported unit and Docker-test failures. Add targeted regression tests for security, git state and incident state transitions, then run typechecks. Preserve the existing doctl fix.
 
@@ -21,6 +21,8 @@ Validation: workspace typechecks and the web build pass. Targeted security, git 
 Try: open the main captain chat and ask it to copy a value from a registered project, or link a file from another task. A recovered watch closes after its configured green window. An automatic checkpoint leaves an unfinished git operation untouched.
 
 Owner-only checks: real connection scripts, host clipboard programs and concurrent health checks against the installed Docker runner.
+
+Merge approved by the owner on 2026-10-09. Main has not moved since the fixes were checked. Majhi's merge tool is unavailable in this session, so this approved merge uses Git. The fixes are merged locally; no push was requested.
 
 ## Security and update recovery (branch `fix/update-recovery`, merged)
 
