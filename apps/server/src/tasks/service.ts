@@ -1960,6 +1960,7 @@ export class TaskService {
           branch: repo.branch,
           base: repo.base,
           stackCommit: repo.stack?.commit,
+          startCommit: repo.startCommit,
           published: await published(repo).then((ref) => (ref === undefined ? undefined : { ref })),
           taskId: id,
           subject: titleFor(
