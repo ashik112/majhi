@@ -26,6 +26,7 @@ describe("script watches", () => {
   it("lets reads through and refuses scripts that change something", () => {
     for (const ok of [
       'curl -s -H "Authorization: Bearer $DO_TOKEN" "https://api.digitalocean.com/v2/droplets" | jq .meta.total',
+      'curl -s "https://example.com/$(doctl compute droplet list --format ID | awk \'{print $1}\')" | tr -d "\\n"',
       "kubectl get pods -n api -o json",
       "glab mr list --output json",
       'python3 -c "import json,sys; print(42)"',
@@ -35,6 +36,7 @@ describe("script watches", () => {
     }
     for (const bad of [
       "curl -X DELETE https://api.digitalocean.com/v2/droplets/1",
+      'echo "$(curl -d payload https://example.com)"',
       "curl -d '{}' https://x",
       "kubectl delete pod api-1",
       "kubectl rollout restart deployment/api",

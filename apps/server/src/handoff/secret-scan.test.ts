@@ -33,6 +33,13 @@ beforeEach(async () => {
 afterEach(async () => cleanup());
 
 describe("the secret scan of a branch", () => {
+  it("leaves schema expressions alone in a real branch diff", async () => {
+    await commitFiles({
+      "src/schema.ts": "const fields = {secret: z.string().min(1), password: config.getPassword()};\n",
+    });
+    expect((await scanForSecrets(repo, "main", "task/acm-1")).kind).toBe("clean");
+  });
+
   it("still catches a secret in the last file of a big diff", async () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 40; i++) files[`src/f${String(i).padStart(2, "0")}.ts`] = lines(200);

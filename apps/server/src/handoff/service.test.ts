@@ -209,6 +209,21 @@ describe("a red hand-off", () => {
   });
 });
 
+describe("readiness scan feedback", () => {
+  it("does not claim a scan diagnostic was printed by a command", async () => {
+    const w = world();
+    w.state.ready = {
+      ok: false,
+      why: "secret scan: src/config.ts line 3, rule assigned, value [hidden, 24 chars]",
+    };
+    const result = await w.service.ensure("ACM-1", { force: false });
+    expect(result.verdict).toBe("red");
+    expect(w.calls.exec).toEqual([]);
+    expect(w.calls.tell[0]?.text).toContain("src/config.ts line 3");
+    expect(w.calls.tell[0]?.text).not.toContain("what the command printed");
+  });
+});
+
 describe("a task that changed no code", () => {
   it("is green with no failed checks, runs nothing and tells nobody", async () => {
     const w = world();

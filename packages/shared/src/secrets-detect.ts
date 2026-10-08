@@ -110,6 +110,12 @@ export function detectSecrets(text: string): SecretMatch[] {
       const start = (m.index ?? 0) + (group === undefined ? 0 : m[0].lastIndexOf(value));
       const end = start + value.length;
       if (kind === "assigned" && (/^secret:\S/i.test(m[0]) || isCodeIdentifier(value))) continue;
+      // An unquoted RHS may be schema code or a property reference, not a credential literal.
+      const quoted = /[:=]\s*["']/.test(m[0]);
+      const expression =
+        /^(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\(/.test(value) ||
+        /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value);
+      if (kind === "assigned" && !quoted && expression) continue;
       // A hash-length hex value is a secret only when a keyword such as `api_key` points at it.
       const hexBlob = HEX_ONLY.test(value) && value.length >= 32;
       if (kind === "assigned" && !hexBlob && !looksRandom(value, 3, 2)) continue;
