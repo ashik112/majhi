@@ -1360,7 +1360,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     events,
     tasks,
-    working: (id) => runs.working(id).length > 0,
+    // A turn that only waits in the queue counts: its agent has not committed yet.
+    working: (id) =>
+      runs.working(id).length > 0 || (store.tasks.get(id)?.team ?? []).some((a) => runs.hasWork(id, a)),
     captainMerges: (task) => captainMerges(task.id),
     landed: (id) => {
       const merged = store.tasks.get(id);
