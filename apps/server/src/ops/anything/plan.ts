@@ -1,6 +1,6 @@
 import {
-  CONDITION_ALERT,
   type AutomationAction,
+  CONDITION_ALERT,
   type WatchCheck,
   WatchCheckSchema,
   type WatchCondition,

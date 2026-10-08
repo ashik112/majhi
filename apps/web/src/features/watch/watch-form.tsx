@@ -1211,7 +1211,9 @@ export function WatchForm({
                   {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
                     <option value="notContains">{CONDITION_ALERT.notContains}</option>
                   )}
-                  {(d.kind === "website" || d.kind === "custom") && <option value="down">{CONDITION_ALERT.down}</option>}
+                  {(d.kind === "website" || d.kind === "custom") && (
+                    <option value="down">{CONDITION_ALERT.down}</option>
+                  )}
                 </Select>
               )}
             </Field>

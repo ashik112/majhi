@@ -478,7 +478,10 @@ export type WatchPlan = z.infer<typeof WatchPlanSchema>;
  * What a watch can be, as typed data for the captain: every kind with its one-line meaning and every condition.
  * Derived from the schemas, so a kind or condition added there reaches the captain's instructions at once.
  */
-export function watchCatalogue(): { kinds: { kind: WatchSort; means: string }[]; conditions: { condition: WatchCondition["type"]; means: string }[] } {
+export function watchCatalogue(): {
+  kinds: { kind: WatchSort; means: string }[];
+  conditions: { condition: WatchCondition["type"]; means: string }[];
+} {
   return {
     kinds: WATCH_KINDS.map((kind) => ({ kind, means: WATCH_KIND_ONE[kind] })),
     conditions: WatchConditionSchema.options.map((o) => ({

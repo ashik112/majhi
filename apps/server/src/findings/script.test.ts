@@ -55,7 +55,7 @@ describe("findings through a captain turn", () => {
       ],
       { task: chat, onResult: (r) => seen.push(r.text) },
     );
-    await h.majhi.services.lanes.tell("acme", "Wake: findings sweep", "wake");
+    await h.majhi.services.lanes.tell("acme", "Wake: findings sweep", "wake", "reacting");
     const calls = await script.calls(4);
 
     // The Globex list is refused or empty, and the changes are refused.
