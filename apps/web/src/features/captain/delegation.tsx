@@ -353,12 +353,9 @@ function Grid({
           workspaces start as You.
         </p>
       )}
-      {mode !== "on" && (
-        <p className="mt-2 text-xs text-fg-faint text-pretty">
-          Auto-pilot is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
-          it is on, except Tell the client, which follows its row.
-        </p>
-      )}
+      <p className="mt-2 text-xs text-fg-faint text-pretty">
+        The lines apply always. Auto-pilot only controls backlog work.
+      </p>
     </fieldset>
   );
 }

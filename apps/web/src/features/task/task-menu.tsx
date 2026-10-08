@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
+import { useExclude } from "@/features/autonomy/desk";
 import { ApiRequestError } from "@/lib/api";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
 import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/lib/task-queries";
@@ -19,6 +20,7 @@ export function TaskMenu({ task }: { task: Task }) {
   const toast = useToast();
   const open = useOpenInEditor();
   const editor = useEditorLabel();
+  const exclude = useExclude();
   const [scheduling, setScheduling] = useState(false);
   const anchor = useRef<HTMLSpanElement>(null);
   const closeSchedule = useCallback(() => setScheduling(false), []);
@@ -31,6 +33,16 @@ export function TaskMenu({ task }: { task: Task }) {
           ...(task.kind === "chat"
             ? []
             : [{ label: "Priority and due", onSelect: () => setScheduling(true) }]),
+          ...(task.kind === "chat"
+            ? []
+            : [
+                {
+                  label: "Not for the captain",
+                  checked: task.noAutonomy === true,
+                  disabled: exclude.busy,
+                  onSelect: () => exclude.set(task.id, task.noAutonomy !== true),
+                },
+              ]),
           task.status === "done"
             ? {
                 label: "Reopen task",

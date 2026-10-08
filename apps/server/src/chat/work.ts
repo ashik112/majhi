@@ -59,7 +59,7 @@ const oneLine = (text: string, max: number): string => {
 export class ChatWork {
   constructor(private readonly deps: WorkDeps) {}
 
-  /** The one place a chat starts a task. Today it takes the incident engine's start path; the captain's rule gate will decide here. */
+  /** The one place a chat starts a task. A reaction: only Stop everything holds it (`startTask` in services asks the rule set). */
   async startFromChat(task: string): Promise<void> {
     await this.deps.start(task);
   }

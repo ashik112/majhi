@@ -233,7 +233,6 @@ export const TrustNoticeKindSchema = z.enum(TRUST_KINDS);
 export type TrustNoticeKind = z.infer<typeof TrustNoticeKindSchema>;
 
 /** The thresholds of the ladder. Not settings: the spec's numbers. */
-export const TRUST_DEMOTE_BELOW = 80;
 export const TRUST_PROMOTE_ABOVE = 95;
 export const TRUST_MUTE_ABOVE = 70;
 export const TRUST_QUIET_DAYS = 7;

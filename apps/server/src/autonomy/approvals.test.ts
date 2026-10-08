@@ -101,10 +101,9 @@ describe("autonomous mode deciding the cards that would wait", () => {
     const refused = (await t.events()).filter((e) => e.kind === "refused");
     expect(refused).toHaveLength(2);
     expect(JSON.stringify(refused)).not.toContain(key);
-    // Off, the captain's chat still keeps to the hard limits; its other calls wait for the owner.
+    // Off, the captain's chat still keeps to the hard limits.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
     expect((await t.call("majhi_tasks_push", { id: "ACM-1", deleteAfter: true })).isError).toBe(true);
-    expect((await t.call("majhi_orgs_update", { id: "acme", name: "Acme Two" })).text).toBe(WAITING_TEXT);
   });
 });
 

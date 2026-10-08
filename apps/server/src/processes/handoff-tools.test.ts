@@ -54,8 +54,6 @@ function setup() {
       return passed();
     },
     review: async () => ({ gaps: [], tokens: 0 }),
-    autonomous: () => false,
-    modelBlocked: () => undefined,
     tell: async (id, text) => {
       told.push({ id, text });
     },

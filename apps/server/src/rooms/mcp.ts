@@ -330,6 +330,8 @@ export interface RoomMcpDeps {
   processes: ProcessManager;
   /** The hand-off check: `majhi-processes` lets an agent read and rerun its own task's. */
   handoff: HandoffService;
+  /** Whether the Start line lets the captain start a task that came in, such as a fix task: the owner's click is asked only when it does not. */
+  captainStarts: (org: string | undefined) => Promise<boolean>;
   /** Absent when majhi cannot run containers: there is no `/mcp/containers` then. */
   containers?: ContainersMcpDeps;
   memory: MemoryMcpDeps;
@@ -634,16 +636,22 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         // In a captain lane, only the lane's workspace (5.18).
         return ok(JSON.stringify(await deps.admin.narrowForLane(caller.task, rows), null, 2));
       }
-      // A fix task never starts without the owner: no lead_start, no `auto` mode, no saved rule.
+      // A fix task follows the Start line of its workspace: with Start on Captain it starts, with Start on You it waits for the owner's click.
       let confirm = false;
       if (tool.command === "tasks.start") {
-        confirm = isFixTask(deps, args.id);
+        confirm = isFixTask(deps, args.id) && !(await deps.captainStarts(orgOfTask(deps, caller.task)));
         if (!confirm) {
           const started = await leadStart(deps, caller, args);
           if (started !== undefined) return started;
         }
       }
-      if (tool.command === "tasks.create" && typeof args.followUpOf === "string") args.start = false;
+      if (
+        tool.command === "tasks.create" &&
+        typeof args.followUpOf === "string" &&
+        !(await deps.captainStarts(orgOfTask(deps, caller.task)))
+      ) {
+        args.start = false;
+      }
       const result = await deps.admin.call(caller, toolName(tool.command), args, { confirm });
       return result.isError ? fail(result.text) : ok(result.text);
     } catch (err) {
@@ -670,6 +678,10 @@ async function readOtherRoom(caller: ToolCaller, deps: RoomMcpDeps, raw: unknown
   } catch (err) {
     return fail(errorMessage(err));
   }
+}
+
+function orgOfTask(deps: RoomMcpDeps, task: string): string | undefined {
+  return deps.store.tasks.get(task)?.org;
 }
 
 /** A task made as the follow-up of another (an ops task's fix task): it holds a `follow-up` link. */

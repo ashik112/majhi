@@ -1,4 +1,4 @@
-import type { AutonomyOrg, CaptainChore } from "@majhi/shared";
+import { type AutonomyOrg, type CaptainChore, READ_ONLY_CHORES } from "@majhi/shared";
 import { localDay } from "../usage/ranges.ts";
 
 /**
@@ -23,8 +23,13 @@ export const LOOP_GUARD_ANSWERS = 3;
 /** A workspace with this many memories its memory chore has not looked at runs the chore, not only daily. */
 export const MEMORY_WAITING = 10;
 
-/** Two failures in a row turn a chore off for the workspace. */
-export const FAILURES_OFF = 2;
+/** Two failures in a row pause a chore for the rest of the workspace's day. It tries again the next day. */
+export const FAILURES_PAUSE = 2;
+
+/** Whether a chore that failed at `offAt` still waits: until the end of that day in the workspace's zone. */
+export function pausedToday(offAt: string | undefined, now: Date, tz: string): boolean {
+  return offAt !== undefined && localDay(new Date(offAt), tz) === localDay(now, tz);
+}
 
 /** Chores that run at a fixed time each day; the rest run when something happens. */
 export const DAILY_CHORES: readonly CaptainChore[] = [
@@ -40,44 +45,7 @@ export const DAILY_CHORES: readonly CaptainChore[] = [
   "wiki",
 ];
 
-/**
- * Why the captain rests in this workspace right now: outside its working hours or on a freeze date,
- * both in the workspace's zone. Undefined: it may act.
- */
-export function restWhy(rules: AutonomyOrg | undefined, now: Date, tz: string): string | undefined {
-  if (rules === undefined) return undefined;
-  const day = localDay(now, tz);
-  const frozen = (rules.freeze ?? []).find((f) => f.from <= day && day <= f.to);
-  if (frozen !== undefined) {
-    return frozen.from === frozen.to
-      ? `${day} is a freeze date`
-      : `${frozen.from} to ${frozen.to} is a freeze`;
-  }
-  if (rules.hours !== undefined && !withinHours(rules.hours, clockAt(now, tz))) {
-    return `outside working hours (${rules.hours.from} to ${rules.hours.to})`;
-  }
-  return undefined;
-}
-
-/** `HH:MM` now in the zone. */
-export function clockAt(now: Date, tz: string): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: tz,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const h = parts.find((p) => p.type === "hour")?.value ?? "00";
-  const m = parts.find((p) => p.type === "minute")?.value ?? "00";
-  return `${h}:${m}`;
-}
-
-/** Whether `clock` is in `[from, to)`, with hours that may run over midnight. */
-export function withinHours(hours: { from: string; to: string }, clock: string): boolean {
-  return hours.from < hours.to
-    ? clock >= hours.from && clock < hours.to
-    : clock >= hours.from || clock < hours.to;
-}
+export { clockIn as clockAt, withinHours } from "@majhi/shared";
 
 /** Why the owner typing keeps the captain out of a task, or undefined. One line, the same everywhere. */
 export function typingWhy(task: string, typing: boolean): string | undefined {
@@ -93,4 +61,12 @@ export function branchAllowed(rules: AutonomyOrg | undefined, branch: string, ba
 /** Whether an AI tool is allowed in the workspace. No list: every tool. */
 export function providerAllowed(rules: AutonomyOrg | undefined, tool: string): boolean {
   return rules?.providers === undefined || rules.providers.includes(tool);
+}
+
+/**
+ * Whether working hours and freezes hold this chore. Looking never waits (the chores that only file findings), and
+ * shipping is held per task, by its own ship plan, which an incident's fix is exempt from.
+ */
+export function restHolds(chore: CaptainChore): boolean {
+  return chore !== "ship" && !READ_ONLY_CHORES.has(chore);
 }

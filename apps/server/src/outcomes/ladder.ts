@@ -1,4 +1,4 @@
-import { GOOD_OUTCOMES, TRUST_DEMOTE_BELOW, TRUST_MUTE_ABOVE, TRUST_PROMOTE_ABOVE } from "@majhi/shared";
+import { GOOD_OUTCOMES, TRUST_MUTE_ABOVE, TRUST_PROMOTE_ABOVE } from "@majhi/shared";
 import type { OutcomeRow } from "./repo.ts";
 
 /**
@@ -15,13 +15,6 @@ export function windowOf(rows: readonly OutcomeRow[]): Window {
   let kept = 0;
   for (const r of rows) if (r.result !== undefined && GOOD_OUTCOMES.includes(r.result)) kept++;
   return { judged: rows.length, kept };
-}
-
-/** Fewer than N judged outputs say nothing yet: the ladder never moves on thin evidence. */
-export function shouldDemote(rows: readonly OutcomeRow[], n: number): boolean {
-  if (rows.length < n) return false;
-  const w = windowOf(rows.slice(0, n));
-  return w.kept * 100 < TRUST_DEMOTE_BELOW * w.judged;
 }
 
 /**

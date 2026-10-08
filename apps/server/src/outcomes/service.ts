@@ -32,7 +32,7 @@ import type Database from "better-sqlite3";
 import { UserError } from "../errors.ts";
 import { addDays, dayStart, localDay, weekStart } from "../usage/ranges.ts";
 import { deriveAll, KEEP_AFTER_MS } from "./derive.ts";
-import { percent, shouldDemote, shouldMute, shouldPropose, windowOf } from "./ladder.ts";
+import { percent, shouldMute, shouldPropose, windowOf } from "./ladder.ts";
 import { monthLine, monthWindow, projectedSpend, raisedCeiling } from "./money.ts";
 import { type Derived, type OutcomeRow, OutcomesRepo, type TrustNotice } from "./repo.ts";
 import { choreTokens, laneSpend, monthSpend, playbookRuns, playbookTokens, startedSpend } from "./spend.ts";
@@ -41,10 +41,11 @@ import { findingsTally, tallyOf, ZERO_TALLY } from "./tally.ts";
 /**
  * Outcomes, the scorecard, the trust ladder and the one monthly ceiling (SPEC 5.18, captain v2 step 8).
  * A pass reads every captain output with its judgment now (derive.ts), keeps it joined to its
- * workspace, authority row, playbook and task, and then runs the ladder: below 80 percent kept over
- * the last N a row drops to You (a channel to Draft) by itself and says so in Decisions; above 95
- * percent it only proposes; a playbook whose findings are mostly dismissed is muted to a weekly
- * schedule and one click undoes it. The ladder moves down by itself and up only on the owner's word.
+ * workspace, authority row, playbook and task, and then runs the ladder: when the owner undoes or
+ * reverses an output the captain made on a row, that row drops to You (a channel to Draft) and the
+ * owner is told in Decisions; above 95 percent kept it only proposes; a playbook whose findings are
+ * mostly dismissed is muted to a weekly schedule and one click undoes it. A line moves down only
+ * when the owner took something back, and up only on the owner's word.
  */
 
 const WEEKLY: Cadence = { kind: "weekly", day: 1, at: "08:00" };
@@ -58,9 +59,18 @@ const ROW_NAME: Record<AuthorityRow, string> = {
   push: "Push",
   deployStaging: "Deploy to staging",
   deployProduction: "Deploy to production",
-  tell: "Tell the client",
+  tell: "Client replies",
   own: "Own work",
 };
+
+/** What the owner did, for the line that says why a line dropped. */
+const TAKEN_BACK = {
+  undone: "you undid",
+  reverted: "you reverted",
+  "merged-reverted": "you reverted",
+  rejected: "you rejected",
+  overruled: "you overruled",
+} as const;
 
 const MODE_NAME: Record<OutboundMode, string> = { draft: "Draft", batch: "Batch", auto: "Auto" };
 
@@ -237,8 +247,9 @@ export class OutcomesService {
     const n = this.window;
     const t = this.repo.trust(org, key);
     const rows = this.repo.judgedForKey(org, key, t.since, n);
-    if (this.canDrop(key, setting) && shouldDemote(rows, n)) {
-      await this.demote(org, key, setting, rows, now);
+    const back = this.repo.takenBackSince(org, key, t.since);
+    if (this.canDrop(key, setting) && back !== undefined) {
+      await this.demote(org, key, setting, back, now);
       return;
     }
     const up = this.stepUp(key, setting);
@@ -286,58 +297,41 @@ export class OutcomesService {
     org: string,
     key: string,
     setting: string,
-    rows: OutcomeRow[],
+    back: OutcomeRow,
     now: Date,
   ): Promise<void> {
-    const n = this.window;
-    const w = windowOf(rows.slice(0, n));
     const at = now.toISOString();
     const name = await this.deps.orgName(org);
-    const evidence = this.evidenceOf(rows.slice(0, n));
+    const was = this.describe(back);
+    const what = `${TAKEN_BACK[back.result as keyof typeof TAKEN_BACK] ?? "you took back"} "${was.endsWith(".") ? was.slice(0, -1) : was}"`;
     if (isOutboundKey(key)) {
       const channel = key.slice("outbound:".length) as OutboundChannel;
       this.deps.outbound.applyLadder(org, channel, "draft");
       this.repo.setTrust(org, key, { since: at, autoOk: false });
-      const ch = OUTBOUND_CHANNEL_LABEL[channel];
       this.repo.addNotice({
         org,
         key,
         kind: "demoted",
-        text: `${name}: ${ch} went back to Draft. Only ${w.kept} of the last ${w.judged} were kept (${percent(w)}%).`,
-        evidence,
+        text: `${OUTBOUND_CHANNEL_LABEL[channel]} is back to Draft in ${name}: ${what}.`,
+        evidence: "Give it back to let it send by itself again.",
         data: { from: setting, to: "draft" },
         at,
       });
     } else {
       const row = key as AuthorityRow;
-      await this.deps.setAuthority(
-        org,
-        row,
-        "ask",
-        `Trust ladder: ${w.kept} of the last ${w.judged} kept, under 80 percent`,
-      );
+      await this.deps.setAuthority(org, row, "ask", `Trust ladder: ${what}`);
       this.repo.setTrust(org, key, { since: at });
       this.repo.addNotice({
         org,
         key,
         kind: "demoted",
-        text: `${name}: ${ROW_NAME[row]} went back to You. Only ${w.kept} of the last ${w.judged} were kept (${percent(w)}%).`,
-        evidence,
+        text: `${ROW_NAME[row]} is back to You in ${name}: ${what}.`,
+        evidence: "Give it back to let the captain do it again.",
         data: { from: setting, to: "ask" },
         at,
       });
     }
     this.deps.changed?.();
-  }
-
-  /** The bad outcomes of a window, as lines the owner can check: what it was and what became of it. */
-  private evidenceOf(rows: readonly OutcomeRow[]): string {
-    const bad = rows.filter(
-      (r) => r.result !== undefined && !["kept", "accepted", "approved"].includes(r.result),
-    );
-    const lines = bad.slice(0, 5).map((r) => `${this.describe(r)} (${r.result?.replace("-", " ")})`);
-    const more = bad.length - lines.length;
-    return more > 0 ? `${lines.join("; ")}; and ${more} more.` : `${lines.join("; ")}.`;
   }
 
   private describe(r: OutcomeRow): string {

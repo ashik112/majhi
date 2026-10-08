@@ -32,7 +32,7 @@ export interface OpsWiring {
   secrets: SecretsPort;
   notifier: Notifier;
   /** News for a workspace's captain lane. */
-  wake: (org: string, text: string) => void;
+  wake: (org: string, text: string) => boolean;
   /** The owner switched an outcome rule off in a workspace. */
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   orgName: (org: string) => Promise<string>;

@@ -263,6 +263,18 @@ export class OutcomesRepo {
     );
   }
 
+  /** The newest output the owner took back or answered against on a line since it last moved, or undefined. */
+  takenBackSince(org: string, key: string, since: string | undefined): OutcomeRow | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM outcomes WHERE org = ? AND key = ? AND settled_at > ?
+           AND result IN ('undone', 'reverted', 'merged-reverted', 'rejected', 'overruled')
+         ORDER BY settled_at DESC, id DESC LIMIT 1`,
+      )
+      .get(org, key, since ?? "") as Raw | undefined;
+    return row === undefined ? undefined : rowOf(row);
+  }
+
   // ---------------------------------------------------------------------------
   // The ladder
 

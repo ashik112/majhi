@@ -46,14 +46,12 @@ export interface HandoffWiring {
   dockerShim?: ExecDeps["dockerShim"];
   /** The ship decision leaves the merge of this task to the captain: only then does it have a lead resolve a conflict. */
   mergeDecides: (task: string) => Promise<boolean>;
-  /** Autonomous is on. */
-  autonomous: () => boolean;
   /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** A project's own hand-off commands from majhi.yaml, when set. They win over its card's. */
   handoffCommands?: ((project: string) => Promise<HandoffCommands | undefined>) | undefined;
-  /** The monthly ceiling is reached, in words, or undefined. Bound late. */
-  ceilingHeld: () => string | undefined;
+  /** A task whose review serves a reaction (an incident): a spend cap does not stop it. */
+  reacting?: ((task: string) => boolean) | undefined;
   changed: (task: string) => void;
   now?: (() => Date) | undefined;
   options?: HandoffOptions | undefined;
@@ -241,12 +239,11 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         dockerShim: w.dockerShim,
       }),
     review: async (task, prompt) => {
-      const { value } = await w.housekeeper.ask({ id: task.id, org: task.org }, prompt, parseReview);
+      const job = w.reacting?.(task.id) === true ? "reacting" : "backlog";
+      const { value } = await w.housekeeper.ask({ id: task.id, org: task.org, job }, prompt, parseReview);
       return { gaps: value, tokens: tokensOf(prompt, value.join("\n")) };
     },
-    autonomous: w.autonomous,
     ruleOff: (org, rule) => w.ruleOff?.(org, rule) === true,
-    modelBlocked: () => w.ceilingHeld(),
     tell: (id, text, failed) => w.tasks.handoffTell({ task: id, text, failed }),
     hold: (id, line) => {
       w.tasks.cards.checkHeld(id, line);

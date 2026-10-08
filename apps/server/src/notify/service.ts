@@ -2,7 +2,15 @@ import type { AttentionEvent, NotificationsSettings, RoomItem } from "@majhi/sha
 import { decisionsNeedText, roomDecisionId } from "@majhi/shared";
 import type { EventHub } from "../events/hub.ts";
 import { isDecisionItem } from "../inbox/build.ts";
-import { type Attention, attentionOf, inQuietHours, pathOf, type Subject, subjectName } from "./attention.ts";
+import {
+  type Attention,
+  attentionOf,
+  inQuietHours,
+  pathOf,
+  quietEndsIn,
+  type Subject,
+  subjectName,
+} from "./attention.ts";
 
 /** An item that was answered within this long never sends anything. */
 export const SETTLE_MS = 5_000;
@@ -75,7 +83,28 @@ export class Notifier {
   /** When each of the last notifications went out, so a steady drip still groups. */
   private recent: number[] = [];
 
+  /** Notifications that arrived in quiet hours, sent when they end. Held here, never dropped. */
+  private held: (() => Promise<void>)[] = [];
+  private release: NodeJS.Timeout | undefined;
+
   constructor(private readonly deps: NotifierDeps) {}
+
+  /** Keeps a notification until the quiet hours end, then replays it once. */
+  private holdForQuiet(
+    replay: () => Promise<void>,
+    quiet: { from?: string | undefined; to?: string | undefined; tz?: string | undefined },
+  ): void {
+    this.held.push(replay);
+    if (this.release !== undefined) return;
+    const wait = quietEndsIn(this.now(), quiet) ?? 1000;
+    this.release = setTimeout(() => {
+      this.release = undefined;
+      const replays = this.held;
+      this.held = [];
+      for (const run of replays) void run().catch(() => undefined);
+    }, wait);
+    this.release.unref();
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now();
@@ -161,10 +190,9 @@ export class Notifier {
   }): Promise<void> {
     const settings = await this.deps.settings();
     const now = this.now();
-    if (
-      n.severity !== "high" &&
-      inQuietHours(now, { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz })
-    ) {
+    const quiet = { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz };
+    if (n.severity !== "high" && inQuietHours(now, quiet)) {
+      this.holdForQuiet(() => this.incident(n), quiet);
       return;
     }
     const event = {
@@ -196,19 +224,17 @@ export class Notifier {
       .settings()
       .then(async (settings) => {
         if (settings.muted.includes("brief")) return;
-        if (
-          inQuietHours(this.now(), {
-            from: settings.quiet_from,
-            to: settings.quiet_to,
-            tz: settings.quiet_tz,
-          })
-        ) {
+        const quiet = { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz };
+        const send = () =>
+          this.deliver(
+            { id: key, kind: "brief", title: "Morning brief", text, path: BRIEF_PATH, count: 1 },
+            settings,
+          );
+        if (inQuietHours(this.now(), quiet)) {
+          this.holdForQuiet(send, quiet);
           return;
         }
-        await this.deliver(
-          { id: key, kind: "brief", title: "Morning brief", text, path: BRIEF_PATH, count: 1 },
-          settings,
-        );
+        await send();
       })
       .catch(() => undefined);
   }
@@ -243,7 +269,9 @@ export class Notifier {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
     clearTimeout(this.collect);
+    clearTimeout(this.release);
     this.buffer = [];
+    this.held = [];
   }
 
   /** Drops an alert still in its quiet wait. It was never sent, so a later decision for the item may still alert. */
@@ -297,8 +325,22 @@ export class Notifier {
     this.recent = this.recent.filter((at) => now - at < BURST_WINDOW_MS);
     const wanted = batch.filter((w) => !settings.muted.includes(w.attention.kind));
     if (wanted.length === 0) return;
-    if (inQuietHours(now, { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz }))
+    const quiet = { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz };
+    if (inQuietHours(now, quiet)) {
+      // Still waiting for the owner when the quiet hours end: those, and only those, are told then.
+      this.holdForQuiet(
+        () =>
+          this.send(
+            wanted.filter((w) => {
+              const item = this.deps.item(w.task, w.id);
+              const subject = this.deps.subject(w.task) ?? w.subject;
+              return w.task === "" || (item !== undefined && isDecisionItem(item, subject));
+            }),
+          ),
+        quiet,
+      );
       return;
+    }
     const total = this.recent.length + wanted.length;
     if (total > BURST_MAX) {
       for (let i = 0; i < wanted.length; i += 1) this.recent.push(now);

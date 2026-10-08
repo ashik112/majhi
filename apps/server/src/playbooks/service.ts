@@ -6,6 +6,8 @@ import {
   type CustomPlaybookSpec,
   CustomPlaybookSpecSchema,
   cadenceLabel,
+  choreSwitchWhy,
+  mayWork,
   type Playbook,
   type PlaybookActivity,
   type PlaybookRun,
@@ -17,10 +19,12 @@ import {
   type PlaybookView,
   PRIVATE,
   type QuietHours,
+  READ_ONLY_CHORES,
 } from "@majhi/shared";
 import type { ScheduleService } from "../automation/service.ts";
-import { choresNow, OFF_CHORES } from "../captain/levels.ts";
+import { choresNow } from "../captain/levels.ts";
 import type { CaptainRepo } from "../captain/repo.ts";
+import { pausedToday } from "../captain/rules.ts";
 import type { ChoreRunner, Workspace } from "../captain/runner.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -229,19 +233,25 @@ export class PlaybookService implements ChorePlaybooks {
     if (def.scope === "business" && org !== PRIVATE)
       return "It runs once for the whole business, from Private.";
     const e = this.effective(def, org);
+    const switches = { autopilot: this.deps.mode(), stopped: ws.stopped === true };
+    // Looking only (a chore that files findings, a read-only sensor) is never held by hours.
+    let looksOnly = def.readOnly === true;
     if (def.runner.kind === "chore") {
       const chore = def.runner.chore;
-      if (this.deps.mode() !== "on" && !OFF_CHORES.includes(chore)) return "Auto-pilot is off.";
-      if (!choresNow(ws.authority, ws.mode, ws.rules?.ships).includes(chore)) {
+      looksOnly = READ_ONLY_CHORES.has(chore);
+      const switched = choreSwitchWhy(switches, chore);
+      if (switched !== undefined) return `${switched}.`;
+      if (!choresNow(ws.authority, ws, ws.rules?.ships).includes(chore)) {
         return `The Delegation row that governs it is on You in ${ws.name}.`;
       }
       const off = this.deps.captain.repo.chore(org, chore);
-      if (off.offAt !== undefined)
-        return `Turned off after failures: ${off.offWhy ?? "two runs failed in a row"}.`;
+      if (pausedToday(off.offAt, this.now(), ws.tz))
+        return `Failed twice in a row, tries again tomorrow: ${off.offWhy ?? "two runs failed"}.`;
     } else {
-      // A read-only playbook (the sensors) only files findings that wait, so Autonomous off and
-      // Upkeep on You do not hold it.
-      if (!def.readOnly && this.deps.mode() !== "on") return "Auto-pilot is off.";
+      // A read-only playbook (the sensors) only files findings that wait, so Auto-pilot off and
+      // Upkeep on You do not hold it. Stop everything holds every playbook.
+      const work = mayWork(switches, def.readOnly === true ? "reacting" : "backlog");
+      if (!work.ok) return `${work.why}.`;
       if (!def.readOnly && ws.authority.upkeep !== "decide") return `Upkeep is on You in ${ws.name}.`;
       if (def.runner.kind === "rules") {
         const runner = this.rules[def.runner.id];
@@ -252,7 +262,8 @@ export class PlaybookService implements ChorePlaybooks {
       }
     }
     // A watch keeps looking while the workspace rests: an outage does not wait for working hours.
-    if (ws.rest !== undefined && def.watch !== true) return `${ws.name} is resting: ${ws.rest}.`;
+    if (ws.rest !== undefined && def.watch !== true && !looksOnly)
+      return `${ws.name} is resting: ${ws.rest}.`;
     if (!manual && e.stored.backoffUntil !== undefined) {
       const until = new Date(e.stored.backoffUntil);
       if (until.getTime() > this.now().getTime()) {

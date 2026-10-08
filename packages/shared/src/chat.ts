@@ -493,7 +493,7 @@ export type ReplyHold = z.infer<typeof ReplyHoldSchema>;
 
 /** The line a held reply shows beside "Reply waits for you": what in the reply made it wait. */
 export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
-  tell: "Tell is set to You",
+  tell: "Client replies is set to You",
   limit: "Daily limit reached",
   secret: "Holds a secret",
   "other-client": "Names another client",

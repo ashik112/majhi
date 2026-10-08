@@ -35,6 +35,7 @@ function planner(
   environments: DeployEnvironment[] = [],
   into?: string,
   needsPlan = false,
+  over: { halted?: boolean; backlog?: boolean } = {},
 ) {
   const tasks = new Map<string, Task>([
     ["ACM-1", task("ACM-1", "acme", "bug", into)],
@@ -51,11 +52,13 @@ function planner(
         },
       }),
     mode: () => mode,
+    halted: () => over.halted === true,
+    backlog: () => over.backlog === true,
+    incident: () => false,
     areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
     environments: async () => environments,
     needsDeployPlan: async () => needsPlan,
     viaMergeRequests: async () => way === "merge-request",
-    zone: () => "UTC",
     now: () => new Date("2026-10-04T10:00:00.000Z"),
   });
 }
@@ -70,8 +73,27 @@ describe("who ships a task", () => {
     expect((await p.plan("ACM-2")).steps.merge).toBe("owner");
   });
 
-  it("is the owner's everywhere while Autonomous is off", async () => {
-    expect((await planner("off").plan("ACM-1")).steps.merge).toBe("owner");
+  it("ships a task the owner started by its own line while Auto-pilot is off", async () => {
+    expect((await planner("off").plan("ACM-1")).steps.merge).toBe("captain");
+  });
+
+  it("leaves a backlog task to the owner while Auto-pilot is off", async () => {
+    expect(
+      (await planner("off", "local", [], undefined, false, { backlog: true }).plan("ACM-1")).steps.merge,
+    ).toBe("owner");
+    expect(
+      (await planner("on", "local", [], undefined, false, { backlog: true }).plan("ACM-1")).steps.merge,
+    ).toBe("captain");
+  });
+
+  it("leaves everything to the owner while Stop everything is on", async () => {
+    const plan = await planner("on", "local", [], undefined, false, { halted: true }).plan("ACM-1");
+    expect([plan.steps.merge, plan.steps.push, plan.steps.deployProduction, plan.steps.tell]).toEqual([
+      "owner",
+      "owner",
+      "owner",
+      "owner",
+    ]);
   });
 
   it("says how the task lands, and names the rule that decided", async () => {
@@ -104,11 +126,13 @@ describe("a merge into the branch of an environment", () => {
       settings: async () =>
         AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...ALL_ASK }, ships: [open] } } }),
       mode: () => "on",
+      halted: () => false,
+      backlog: () => false,
+      incident: () => false,
       areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
       environments: async () => deployOnMain("staging"),
       needsDeployPlan: async () => false,
       viaMergeRequests: async () => false,
-      zone: () => "UTC",
       now: () => new Date("2026-10-04T10:00:00.000Z"),
     });
     const plan = await p.plan("ACM-1");

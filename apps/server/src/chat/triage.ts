@@ -69,8 +69,6 @@ export interface TriageDeps {
   };
   /** What a request or a question the wiki cannot answer becomes: a task that starts at once. */
   work: Pick<ChatWork, "begin">;
-  /** Told before each read: a budget cap is reached or not. A client chat goes on past it and the owner hears of it once. */
-  pastCap?: ((org: string) => Promise<void>) | undefined;
   /** The captain's History: one line for each thing it does for a client. */
   history?: ChatHistory | undefined;
   /** True when the text tries to instruct an agent. Such a message is only read by the owner. */
@@ -364,7 +362,6 @@ export class ClientTriage {
     }
     const rest = await this.deps.rest(org);
     if (rest !== undefined) throw new Error(rest);
-    await this.deps.pastCap?.(org).catch(() => undefined);
     const incidents = this.deps.incidents(org, room.id);
     const linked = this.deps.incident.linked(room.id);
     const prompt = [
