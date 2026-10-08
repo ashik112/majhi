@@ -136,6 +136,11 @@ export const roomItems = sqliteTable(
       sql`CASE WHEN json_valid(payload) THEN coalesce(json_extract(payload, '$.state') = 'pending', 0) ELSE 0 END`,
       { mode: "virtual" },
     ),
+    /** The task a captain thread line is about, read from the payload (virtual column, migration 190). */
+    about: text("about").generatedAlwaysAs(
+      sql`CASE WHEN json_valid(payload) THEN json_extract(payload, '$.about') END`,
+      { mode: "virtual" },
+    ),
   },
   (t) => [
     primaryKey({ columns: [t.task, t.id] }),

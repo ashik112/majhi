@@ -30,7 +30,6 @@ import { authorityOf, choresNow, migratePickOrgs, workspaceIds } from "./levels.
 import { laneOfScope } from "./memory-scopes.ts";
 import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
-import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
 import { MEMORY_WAITING, pausedToday, restHolds } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
@@ -83,8 +82,6 @@ export interface CaptainDeps {
   ownerCards?: (org: string) => Promise<number>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
-  /** What the relay of a lane captain's message into the root chat reads and writes. Without it, no relay. */
-  relay?: Pick<RelayDeps, "bossChat" | "post">;
   /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
   triggerMs?: number;
   now?: () => Date;
@@ -108,21 +105,11 @@ export class CaptainService {
   private plays: ChorePlaybooks;
   /** The rest of the playbook scheduler, run in the same minute sweep. */
   private playbookSweep: (() => Promise<void>) | undefined;
-  private readonly relay: RootRelay | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = deps.repo ?? new CaptainRepo(deps.store.raw);
-    this.relay =
-      deps.relay === undefined
-        ? undefined
-        : new RootRelay({
-            ...deps.relay,
-            config: deps.config,
-            lanes: deps.lanes,
-            now: () => this.now(),
-          });
     this.laneGate = new LaneGate({
       repo: this.repo,
       ports: deps.ports,
@@ -308,12 +295,6 @@ export class CaptainService {
   /** A deploy went live: the next environment of its project may go now, so the ship chore looks again. */
   deployChanged(org: string): void {
     this.trigger(org, "ship", "A deploy went live", "majhi");
-  }
-
-  /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
-  turnEnded(turn: { task: string; agent: string; text: string }): void {
-    if (this.relay === undefined || turn.agent !== this.boss) return;
-    void this.relay.relay(turn.task, turn.text).catch(() => undefined);
   }
 
   /** A room item was written: a new card or question wakes the chore that answers it. */

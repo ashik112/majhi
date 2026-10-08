@@ -1478,6 +1478,9 @@ export class TaskService {
   /** Adds an agent that can work in the task's org. With `lead`, it goes first. */
   async addToTeam(id: string, agent: string, options: { lead?: boolean; by?: string } = {}): Promise<Task> {
     const task = this.get(id);
+    // The captain speaks from its workspace lane and never joins a task's team on an agent's say-so.
+    if (options.by !== undefined && agent === this.deps.config.knownBoss())
+      throw new UserError(`The captain does not join a task's team. Ask it in the lane: ${id} shows what it says.`, 409);
     const state = this.deps.store.tasks.roomState(id);
     const removed = state.removed ?? [];
     if (options.by !== undefined && removed.includes(agent))
@@ -4152,10 +4155,12 @@ export class TaskService {
     return answered;
   }
 
-  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {
-    this.get(id);
+  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number, beforeAt?: string) {
+    const task = this.get(id);
     this.deps.room.flush(id);
     if (afterSeq !== undefined) return this.deps.store.room.pageAfter(id, limit, afterSeq);
+    // The merged read pages by time: a line of the captain's thread has another room's seq.
+    if (beforeAt !== undefined) return this.deps.room.read(task, limit, beforeAt);
     return this.deps.store.room.page(id, limit, beforeSeq);
   }
 

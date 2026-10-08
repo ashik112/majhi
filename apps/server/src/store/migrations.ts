@@ -2006,6 +2006,19 @@ DROP TABLE captain_lanes;
 ALTER TABLE captain_lanes_by_job RENAME TO captain_lanes;
 `,
   },
+  {
+    // A line of a captain's workspace thread can be about a task (`about` in the payload): the task page reads those
+    // lines from the thread's room, and the thread leaves them out. A virtual column and an index make both reads
+    // one lookup. Nothing to backfill: SQLite computes it from the payload.
+    id: 190,
+    name: "room items about a task",
+    sql: `
+ALTER TABLE room_items ADD COLUMN about TEXT GENERATED ALWAYS AS (
+  CASE WHEN json_valid(payload) THEN json_extract(payload, '$.about') END
+) VIRTUAL;
+CREATE INDEX room_items_about ON room_items (about, at) WHERE about IS NOT NULL;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

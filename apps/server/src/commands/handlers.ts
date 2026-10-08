@@ -1144,6 +1144,15 @@ export function createHandlers({
           return { item: asked };
         }
       }
+      if (input.to === "captain" && ctx.meta.actor.kind === "owner" && input.attachments.length === 0) {
+        const task = services.tasks.get(input.task);
+        const posted = services.hears.postOwner(task, captured.text);
+        if (posted !== undefined) {
+          noteSecrets(services, input.task, captured.saved);
+          await services.hears.hear(task, { kind: "owner" }, captured.text);
+          return { item: posted };
+        }
+      }
       const item = await services.tasks.send({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, input.task, captured.saved);
       return { item };
@@ -1165,7 +1174,7 @@ export function createHandlers({
     }),
     "tasks.plan": (input) => services.tasks.plan(input.id),
     "room.items": async (input) =>
-      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq),
+      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq, input.beforeAt),
     "room.around": async (input) => services.tasks.itemsAround(input.task, input.item, input.limit),
     "room.search": async (input) => services.tasks.searchRooms(input.query, input.limit, input.org),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),

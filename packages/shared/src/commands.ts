@@ -2809,6 +2809,8 @@ export const commands = {
       mode: z.enum(["queue", "interrupt"]).default("queue"),
       /** Default: the agent @mentioned in the text, else the task's first agent. */
       agent: IdSchema.optional(),
+      /** The owner's message to the captain about this task (the task page's default): the workspace captain hears it, no agent is woken. */
+      to: z.literal("captain").optional(),
     }),
     output: z.object({ item: RoomItemSchema }),
   },
@@ -2850,6 +2852,8 @@ export const commands = {
       task: TaskIdSchema,
       beforeSeq: z.number().int().optional(),
       afterSeq: z.number().int().optional(),
+      /** Older than this `at`: the merged read of a task or a captain thread pages by time, not by seq. */
+      beforeAt: z.string().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),
     output: z.object({ items: z.array(RoomItemSchema), more: z.boolean() }),

@@ -629,6 +629,11 @@ const RoomItemBase = z.object({
   /** Increases with every insert or update in the task; clients keep the highest. */
   seq: z.number().int().nonnegative(),
   at: z.string(),
+  /**
+   * A line of the captain's workspace thread that is about this task. It stays in the thread's room (one stored
+   * copy); the task's timeline reads it from there (`roomWithCaptain`) and the workspace thread leaves it out.
+   */
+  about: TaskIdSchema.optional(),
 });
 
 export const ToolContentSchema = z.discriminatedUnion("type", [
@@ -1093,6 +1098,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     failed: HandoffFailedSchema.optional(),
     /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
     action: z.enum(["memory-retry", "runner-memory"]).optional(),
+    /** A pointer line in a workspace thread: the task this line is about ("Opened PYZ-19: nbr is down"). Linked, never copied. */
+    pointer: TaskIdSchema.optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

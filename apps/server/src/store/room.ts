@@ -159,6 +159,57 @@ export class RoomRepo {
     return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
+  /** A room's items newest first by `at`, older than `olderThan` when given. */
+  pageAt(task: string, limit: number, olderThan?: string): { items: RoomItem[]; more: boolean } {
+    return this.mergedPageAny([task], limit, olderThan);
+  }
+
+  private mergedPageAny(rooms: readonly string[], limit: number, olderThan?: string) {
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          inArray(roomItems.task, [...rooms]),
+          olderThan === undefined ? undefined : lt(roomItems.at, olderThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
+  /**
+   * Items of several rooms read as one, newest first by `at`, at most `limit`, and whether older ones exist.
+   * `about`: only the lines tagged with that task. `untagged`: only the lines about no task. `olderThan` and `newerThan`
+   * are `at` bounds, exclusive. The captain's thread and a task's timeline are reads of this kind (`roomWithCaptain`).
+   */
+  mergedPage(
+    rooms: readonly string[],
+    which: { about: string } | { untagged: true },
+    limit: number,
+    bounds: { olderThan?: string; newerThan?: string } = {},
+  ): { items: RoomItem[]; more: boolean } {
+    if (rooms.length === 0) return { items: [], more: false };
+    const tag = "about" in which ? eq(roomItems.about, which.about) : sql`${roomItems.about} IS NULL`;
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          inArray(roomItems.task, [...rooms]),
+          tag,
+          bounds.olderThan === undefined ? undefined : lt(roomItems.at, bounds.olderThan),
+          bounds.newerThan === undefined ? undefined : gt(roomItems.at, bounds.newerThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
   /** The next `limit` items after `afterSeq`, newest first, and whether newer ones exist beyond them. */
   pageAfter(task: string, limit: number, afterSeq: number): { items: RoomItem[]; more: boolean } {
     const rows = this.q.after.all({ task, seq: afterSeq, limit: limit + 1 });

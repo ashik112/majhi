@@ -31,7 +31,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
-import { findBossChat, isBossChat } from "./admin/boss.ts";
+import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
@@ -186,6 +186,7 @@ import { createCards } from "./projectcard/wire.ts";
 import { ProjectService } from "./projects/service.ts";
 import { GraphRunner } from "./reader/run.ts";
 import { CodeGraphTools } from "./reader/tools.ts";
+import { CaptainHears } from "./captain/hears.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
@@ -457,6 +458,8 @@ export interface Services {
   wikiAsk: WikiAsk;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
+  /** What the owner or a worker says to the captain about a task. */
+  hears: CaptainHears;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -958,8 +961,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
+      // The captain's turn in a lane is over: its last words are stored with their tag, then the lane is about nothing.
+      room.flush(turn.task);
+      room.setSubject(turn.task, undefined);
       idleWatch.turnEnded(turn);
-      captainRef.current?.turnEnded(turn);
       return coordinator.turnEnded(turn);
     },
     onCheckpoint: (task) => background.run(() => tasks.restackOnto(task)),
@@ -1483,7 +1488,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
     changed: () => events.emit(["schedules"]),
   });
+  const hearsRef: { current: CaptainHears | undefined } = { current: undefined };
   const coordinator = new RoomCoordinator({
+    hears: {
+      hear: async (task, from, text) =>
+        (await hearsRef.current?.hear(task, from, text)) ?? { heard: false, why: "the captain is not ready" },
+    },
     store,
     room,
     runs,
@@ -1717,6 +1727,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account, job) => autonomy.laneRest(org, account, job),
     halted: () => captainRepo.isStopped(),
+    about: (chat, task) => {
+      if (runs.working(chat).length === 0) room.setSubject(chat, task as TaskId);
+    },
+  });
+  const hears = new CaptainHears({ lanes, room });
+  hearsRef.current = hears;
+  room.useCaptain({
+    lanesOf: (org) => lanes.chatsOf(org),
+    orgOfLane: (chat) => lanes.orgOf(chat),
   });
   const payDecisions = new PayDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
@@ -2208,14 +2227,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
-    relay: {
-      bossChat: async () => {
-        const boss = await lanes.boss();
-        const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);
-        return boss === undefined || chat === undefined ? undefined : { chat: chat.id, agent: boss };
-      },
-      post: (task, id, payload) => room.post(task as TaskId, id, payload),
-    },
     ports: captainWorld({
       machineBusy: () => busyReason(machine.get()?.host),
       store,
@@ -3250,6 +3261,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     wiki,
     wikiTools,
     wikiAsk,
+    hears,
     captainTell: new CaptainTell({
       tasks,
       lanes,

@@ -20,7 +20,7 @@ import {
   scriptProblem,
   type TaskId,
 } from "@majhi/shared";
-import { actorOfName, didWords, OWNER } from "@majhi/shared";
+import { actorOfName, didWords, OWNER, TaskIdSchema } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
@@ -258,6 +258,7 @@ export class AdminService {
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
+      this.aboutTask(caller, spec.command, input);
       const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
       // What the captain may not do alone becomes a proposal for the owner: no policy, rule, mode or trust applies.
       if (CAPTAIN_PROPOSALS.has(spec.command)) {
@@ -298,6 +299,17 @@ export class AdminService {
     } catch (err) {
       return error(errorMessage(err));
     }
+  }
+
+  /**
+   * The captain in its lane acts on a task (a call that changes something and names the task): the lane's lines
+   * from here to the end of the turn are about that task, so they show in its timeline and not in the workspace thread.
+   */
+  private aboutTask(caller: AdminCaller, command: CommandName, input: Record<string, unknown>): void {
+    if (commands[command].risk === "read") return;
+    const named = command.startsWith("tasks.") ? (input.task ?? input.id) : input.task;
+    const parsed = TaskIdSchema.safeParse(named);
+    if (parsed.success) this.deps.room.setSubject(caller.task, parsed.data);
   }
 
   /**
