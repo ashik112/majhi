@@ -24,7 +24,11 @@ compose_env() {
   HOST_UID=$(id -u)
   HOST_GID=$(id -g)
   # The commit baked into the image, so majhi can tell when newer code is on disk.
-  MAJHI_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo dev)
+  if [ -f release.json ]; then
+    MAJHI_COMMIT=$(sed -n 's/.*"commit":"\([^"]*\)".*/\1/p' release.json)
+  else
+    MAJHI_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo dev)
+  fi
   # This computer's time zone, for days, weeks and months of tokens and cost. Where /etc/localtime is
   # a copy, not a link, systemd's timedatectl knows it.
   MAJHI_TZ=$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p' | grep . ||

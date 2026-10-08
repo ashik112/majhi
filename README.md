@@ -106,19 +106,19 @@ And you always know the bill: tokens, cost and every account's usage window, per
 majhi runs on macOS, Linux and Windows through WSL2. With Docker running (see below for your OS), one line installs it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ashik112/majhi-releases/main/install.sh | sh
 ```
 
-It checks the computer first and stops with the step to take when something is missing. It keeps majhi in `~/.majhi/app` at the latest release, pulls that release's images (amd64 and arm64) instead of building them, starts majhi on http://127.0.0.1:7070 and opens it. After that, updates are one click in majhi, and running the line again is safe: it updates to the latest release too. `MAJHI_VERSION=v1.2.3` before `sh` installs that release instead.
+It checks the computer first and stops with the step to take when something is missing. It downloads a runtime package into `~/.majhi/app`, verifies its SHA-256 checksum, and pulls that release's images (amd64 and arm64). It builds only the local user layer, starts majhi on http://127.0.0.1:7070 and opens it. After that, updates are one click in majhi, and running the line again is safe: it updates to the latest release too. `MAJHI_VERSION=v1.2.3` before `sh` installs that release instead. The package contains setup scripts, Compose configuration and version metadata. It contains no app source checkout or Git history. If `~/.majhi/app` already holds a source checkout, the installer leaves it intact and installs into `~/.majhi/app-runtime`, carrying over its `.env` settings.
 
-**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk. Every merge to main with a `feat`, `fix` or `perf` commit becomes a release on its own (`.github/workflows/release.yml`).
+**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk. Every merge to main with a `feat`, `fix` or `perf` commit becomes a release on its own (`.github/workflows/release.yml`). The source workflow pushes only the runtime package, checksum, metadata and distribution files to the public `majhi-releases` repository using its own deploy key. The public workflow publishes assets before marking the release latest. Source version tags stay in the source repository. `MAJHI_DOWNLOAD_URL` and `MAJHI_LATEST_URL` let the installer use a separate release host.
 
 ### macOS
 
 You need:
 
 - OrbStack or Docker Desktop
-- git and Node 20 or newer (`brew install git node`)
+- Node 20 or newer (`brew install node`), plus git and make for the from-source path
 
 Then run the install line above.
 
@@ -130,7 +130,7 @@ You need:
 
 - [Docker Engine](https://docs.docker.com/engine/install/) running as root, with the Compose plugin. Docker Desktop for Linux and rootless Docker are not supported yet.
 - Your user in the `docker` group: `sudo usermod -aG docker $USER`, then log out and back in
-- git and Node 20 or newer (and make, for the from-source path)
+- Node 20 or newer (and git and make, for the from-source path)
 - systemd, which most distros run
 - `secret-tool` (`libsecret-tools` on Debian and Ubuntu, `libsecret` on Fedora and Arch) and a keyring such as GNOME Keyring, which keeps a copy of majhi's secrets key. Without one, export the key on majhi's Health page and keep the file safe.
 - `notify-send` (`libnotify-bin` on Debian and Ubuntu) for notifications
@@ -148,7 +148,7 @@ You need:
 - WSL2 with a Linux distro: `wsl --install` in PowerShell sets up Ubuntu
 - Docker Desktop, set to start when you sign in (Settings > General), with WSL integration on for the distro (Settings > Resources > WSL integration)
 - systemd in the distro. Ubuntu from `wsl --install` has it. Otherwise add `systemd=true` under `[boot]` in `/etc/wsl.conf`, then run `wsl --shutdown` in Windows.
-- git and Node 20 or newer in the distro (and make, for the from-source path)
+- Node 20 or newer in the distro (and git and make, for the from-source path)
 
 Run the line in the distro's terminal. Keep your repos in the distro (for example under `~/code`), not under `/mnt/c`, which is much slower to reach from Linux.
 

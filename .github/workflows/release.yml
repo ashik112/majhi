@@ -4,7 +4,8 @@
 #   2. build: the server, runner and Laya images for linux/amd64 and linux/arm64, each CPU on its own
 #      runner, natively, pushed by digest only: no version tag yet.
 #   3. release, only when every build passed: tags the images ghcr.io/<owner>/majhi-*:<version>,
-#      creates the git tag and the GitHub release with notes from the commits, then marks it latest.
+#      publishes runtime assets to majhi-releases, whose workflow creates the public release,
+#      then records the source tag here.
 #      install.sh and the host helper read that latest release, so a failed run publishes nothing.
 #
 # Images without the owner's user: compose adds it on each computer (Dockerfile, docker/owner.sh).
@@ -201,19 +202,48 @@ jobs:
           publish laya majhi-laya "$VERSION" "$VERSION-cpu"
           publish laya-cuda majhi-laya "$VERSION-cuda"
 
-      # The tag and the release in one call, at the commit the images were built from. A rerun after a
-      # failure past this step finds the release and goes on.
-      - name: Create the tag and the release
+      - name: Package runtime files
+        run: sh scripts/package-release.sh "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/runtime"
+
+      - name: Publish to the public distribution repository
+        env:
+          RELEASES_DEPLOY_KEY: ${{ secrets.MAJHI_RELEASES_DEPLOY_KEY }}
+          MAJHI_DISTRIBUTION_REPO: ${{ github.repository_owner }}/majhi-releases
         run: |
           set -eu
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "$VERSION exists already"
-          else
-            sh scripts/next-version.sh notes >"$RUNNER_TEMP/notes.md"
-            gh release create "$VERSION" --target "$GITHUB_SHA" --title "majhi $VERSION" \
-              --notes-file "$RUNNER_TEMP/notes.md" --latest=false
-          fi
+          [ -n "$RELEASES_DEPLOY_KEY" ] || { echo "::error::MAJHI_RELEASES_DEPLOY_KEY is not configured"; exit 1; }
+          key="$RUNNER_TEMP/releases-key"
+          hosts="$RUNNER_TEMP/releases-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          (umask 077; printf '%s\n' "$RELEASES_DEPLOY_KEY" >"$key")
+          # GitHub host keys come from its authenticated HTTPS API.
+          gh api meta --jq '.ssh_keys[] | "github.com " + .' >"$hosts"
+          [ -s "$hosts" ]
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes"
+          sh scripts/publish-release.sh "$VERSION" "$GITHUB_SHA" "$RUNNER_TEMP/runtime"
 
-      # Last: installs and updates follow this pointer (GitHub's latest release).
-      - name: Mark it latest
-        run: gh release edit "$VERSION" --latest
+      - name: Wait for public release assets
+        env:
+          DISTRIBUTION_REPO: ${{ github.repository_owner }}/majhi-releases
+        run: |
+          set -eu
+          # The public repository publishes with its own GITHUB_TOKEN after the deploy-key push.
+          for attempt in $(seq 1 60); do
+            if gh release view "$VERSION" --repo "$DISTRIBUTION_REPO" \
+              --json assets --jq '.assets[].name' >"$RUNNER_TEMP/public-assets" 2>/dev/null &&
+              grep -qx 'majhi-runtime.tar.gz' "$RUNNER_TEMP/public-assets" &&
+              grep -qx 'majhi-runtime.tar.gz.sha256' "$RUNNER_TEMP/public-assets" &&
+              grep -qx 'release.json' "$RUNNER_TEMP/public-assets"; then
+              break
+            fi
+            [ "$attempt" -lt 60 ] || { echo "::error::Public release assets were not published in time"; exit 1; }
+            sleep 10
+          done
+
+      - name: Record source release tag
+        run: |
+          set -eu
+          # Source versioning keeps its tags here. Public tags contain only distribution files.
+          if ! git rev-parse --quiet --verify "refs/tags/$VERSION" >/dev/null; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$VERSION" -f "sha=$GITHUB_SHA" >/dev/null
+          fi

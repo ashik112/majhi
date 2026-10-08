@@ -1,0 +1,2 @@
+ARG LAYA_FROM
+FROM ${LAYA_FROM} AS laya

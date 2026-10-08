@@ -63,6 +63,7 @@ export * from "./playbooks.ts";
 export * from "./processes.ts";
 export * from "./project-card.ts";
 export * from "./project-create.ts";
+export * from "./release-package.ts";
 export * from "./remote-repos.ts";
 export * from "./rooms.ts";
 export * from "./schedule-time.ts";

@@ -2,15 +2,14 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { UPLOAD_PACK } from "./gitGuard.ts";
+import { readPackage, readPublishedPackage, replacePackage, writeRuntime } from "./releasePackage.ts";
 import { type GitContext, guardedGit, type RepoState, readRepo } from "./repoInfo.ts";
 
 /**
- * A release install (install.sh) keeps a checkout of a release tag and names two things in the
- * checkout's `.env`: MAJHI_VERSION, the release it runs, so compose takes that release's images, and
- * MAJHI_LATEST_URL, the latest-release pointer (GitHub's releases API), which the release workflow
- * moves only once every image is pushed. A dev checkout has no MAJHI_VERSION and builds what is on
- * disk. An update on a release install first moves the checkout to the latest release; the build
- * after it is the same `docker compose build` either way.
+ * Release installs name their version and release endpoints in .env. New installs hold only
+ * runtime setup files and release.json; older installs keep a tagged checkout. Development
+ * checkouts have no MAJHI_VERSION and build the code on disk. Both release formats retain their
+ * previous files and settings until the new images start successfully.
  */
 
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
@@ -50,10 +49,14 @@ export interface InstalledRelease {
   version: string;
   /** Where the latest release is read. Without it the install stays on its release. */
   latestUrl: string | undefined;
+  downloadUrl?: string | undefined;
 }
 
 /** The last value of `name` in a `.env` text, without quotes. Undefined when unset or empty. */
-export function dotenvValue(dotenv: string, name: "MAJHI_VERSION" | "MAJHI_LATEST_URL"): string | undefined {
+export function dotenvValue(
+  dotenv: string,
+  name: "MAJHI_VERSION" | "MAJHI_LATEST_URL" | "MAJHI_DOWNLOAD_URL",
+): string | undefined {
   const pattern = new RegExp(`^\\s*${name}\\s*=(.*)$`);
   let found: string | undefined;
   for (const line of dotenv.split(/\r?\n/)) {
@@ -66,7 +69,13 @@ export function dotenvValue(dotenv: string, name: "MAJHI_VERSION" | "MAJHI_LATES
 /** The release a `.env` text names. Undefined on a dev checkout. */
 export function releaseIn(dotenv: string): InstalledRelease | undefined {
   const version = dotenvValue(dotenv, "MAJHI_VERSION");
-  return version === undefined ? undefined : { version, latestUrl: dotenvValue(dotenv, "MAJHI_LATEST_URL") };
+  return version === undefined
+    ? undefined
+    : {
+        version,
+        latestUrl: dotenvValue(dotenv, "MAJHI_LATEST_URL"),
+        downloadUrl: dotenvValue(dotenv, "MAJHI_DOWNLOAD_URL"),
+      };
 }
 
 /** The `.env` text with MAJHI_VERSION set to `version` on the last line, every other line kept. */
@@ -95,9 +104,15 @@ async function tagCommit(ctx: GitContext, tag: string): Promise<string | undefin
   return COMMIT.test(commit) ? commit : undefined;
 }
 
-/** The release the pointer names, with its commit. Fetches the remote's tags when it is not here yet. */
+/** The release the pointer names, with its commit, read from package metadata or legacy Git tags. */
 async function latestRelease(ctx: GitContext, url: string, latest: LatestFn): Promise<Release> {
   const tag = await latest(url);
+  if (await readPackage(ctx.repo)) {
+    const release = releaseIn(await readDotenv(ctx.repo));
+    if (!release?.downloadUrl) throw new Error("The runtime install names no MAJHI_DOWNLOAD_URL");
+    const metadata = await readPublishedPackage(release.downloadUrl, tag);
+    return { tag, commit: metadata.commit };
+  }
   const here = await tagCommit(ctx, tag);
   if (here !== undefined) return { tag, commit: here };
   await guardedGit(ctx, ["fetch", "--quiet", "--tags", UPLOAD_PACK, "origin"], false, FETCH_TIMEOUT_MS);
@@ -133,16 +148,17 @@ export function createTargetReader(
   };
 }
 
-/** Where a release install was before an update moved it, so a failed update can put it back. */
+/** Previous release files and settings, so a failed update can put them back. */
 export interface Moved {
   from: string;
   to: string;
   head: string;
   dotenv: string;
+  files?: Record<string, string>;
 }
 
 /**
- * On a release install, moves the checkout and `.env` to the release the pointer names. Undefined on
+ * On a release install, updates runtime files or the legacy checkout and `.env`. Undefined on
  * a dev checkout, without a pointer, or when it runs that release already. Throws when the pointer
  * or the tag cannot be read; nothing has moved then.
  */
@@ -163,14 +179,28 @@ export async function moveToLatest(
   const target = await latestRelease(ctx, release.latestUrl, latest);
   if (target.tag === release.version) return undefined;
   await say(`Moving from majhi ${release.version} to ${target.tag}`);
-  await checkout(ctx, `refs/tags/${target.tag}`);
-  await writeDotenv(ctx.repo, withVersion(dotenv, target.tag));
-  return { from: release.version, to: target.tag, head, dotenv };
+  const packaged = await readPackage(ctx.repo);
+  let files: Record<string, string> | undefined;
+  if (packaged) {
+    if (!release.downloadUrl) throw new Error("The runtime install names no MAJHI_DOWNLOAD_URL");
+    files = await replacePackage(ctx, { version: target.tag, commit: target.commit }, release.downloadUrl);
+  } else {
+    await checkout(ctx, `refs/tags/${target.tag}`);
+  }
+  try {
+    await writeDotenv(ctx.repo, withVersion(dotenv, target.tag));
+  } catch (err) {
+    if (files) await writeRuntime(ctx.repo, files);
+    else await checkout(ctx, head);
+    throw err;
+  }
+  return { from: release.version, to: target.tag, head, dotenv, ...(files ? { files } : {}) };
 }
 
-/** Puts the checkout and `.env` back where `moveToLatest` found them. */
+/** Restores the runtime files or legacy checkout and `.env`. */
 export async function moveBack(ctx: GitContext, moved: Moved): Promise<void> {
-  await checkout(ctx, moved.head);
+  if (moved.files) await writeRuntime(ctx.repo, moved.files);
+  else await checkout(ctx, moved.head);
   await writeDotenv(ctx.repo, moved.dotenv);
 }
 

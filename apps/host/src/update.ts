@@ -6,6 +6,7 @@ import { errorMessage } from "./errors.ts";
 import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
 import { type LatestFn, type Moved, moveBack, moveToLatest } from "./release.ts";
+import { readPackage } from "./releasePackage.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
 
@@ -51,7 +52,7 @@ export interface UpdateOptions {
  * Returns a function that rebuilds majhi from the checkout and restarts it, as `make up` does:
  * build with the same environment and the commit baked in, keep the secrets key, regenerate the
  * mounts, `up -d --wait`, then install the helper from the new image and let the login service
- * restart it. On a release install it first moves the checkout to the latest release (release.ts),
+ * restart it. On a release install it first updates runtime files or the legacy checkout (release.ts),
  * and the same build then takes that release's images instead of compiling: compose decides.
  * It reports to `update.json` because the server that would relay progress is replaced part-way.
  * It never throws. Returns false when an update is already running.
@@ -92,12 +93,21 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     await write().catch(() => undefined);
   };
 
+  let pendingMove: Moved | undefined;
+  const restorePackage = async (): Promise<void> => {
+    if (pendingMove === undefined) return;
+    const moved = pendingMove;
+    pendingMove = undefined;
+    await putBack(git, moved, say);
+  };
+
   try {
-    await say("Reading the code on disk");
+    await say("Reading the installed version");
     const before = await readRepo(git);
     if (before === undefined)
-      throw new Error("The majhi folder is not a git checkout, so there is nothing to build.");
+      throw new Error("The majhi folder has neither a runtime package nor a source checkout.");
     const moved = await moveToLatest(git, before.commit, say, options.latest);
+    pendingMove = moved;
     const repo = moved === undefined ? before : ((await readRepo(git)) ?? before);
     status.commit = repo.commit;
     if (repo.dirty) await say("The folder has changes you have not committed. They are part of this build.");
@@ -116,9 +126,11 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     }
     const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
     await say(
-      moved === undefined
-        ? "Building the new image. This takes a few minutes"
-        : `Getting the majhi ${moved.to} images`,
+      moved !== undefined
+        ? `Getting the majhi ${moved.to} images`
+        : (await readPackage(git.repo)) !== undefined
+          ? "Getting the installed release images"
+          : "Building the new image. This takes a few minutes",
     );
     // The runner image too: agents run in it (it is never started by compose). Laya's as `make up` does.
     const build = ["compose", "--profile", "runner", ...(laya ? ["--profile", "laya"] : []), "build"];
@@ -129,7 +141,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       });
     } catch (err) {
       // The running majhi was not touched; only the checkout moved.
-      if (moved !== undefined) await putBack(git, moved, say);
+      await restorePackage();
       throw err;
     }
 
@@ -145,7 +157,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
           ? "The new majhi did not start. Going back to the previous version"
           : "No previous version to go back to",
       );
-      if (moved !== undefined) await putBack(git, moved, say);
+      await restorePackage();
       if (server) {
         await goBack(step, remount.repo, previous, mounts).then(
           () => say("Went back to the previous version"),
@@ -155,6 +167,8 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       throw new Error(`${errorMessage(err)}${reason === undefined ? "" : `\n${reason}`}`);
     }
 
+    // The new server passed its health check. From here the installed release is committed.
+    pendingMove = undefined;
     await cleanAfterUpdate(
       step,
       say,
@@ -171,6 +185,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       options.exit();
     }
   } catch (err) {
+    await restorePackage();
     status.state = "failed";
     status.error = errorMessage(err);
     await say(`Failed: ${errorMessage(err).split("\n", 1)[0]}`);
@@ -314,12 +329,11 @@ export async function cleanAfterUpdate(
   await removeOwnLeftovers(step, majhiHome, say, tags).catch(() => undefined);
 }
 
-/** Puts a release install's checkout and `.env` back on the release it ran. */
+/** Restores a release install's runtime files or checkout and `.env`. */
 async function putBack(git: GitContext, moved: Moved, say: (text: string) => Promise<void>): Promise<void> {
   await moveBack(git, moved).then(
     () => say(`Back on majhi ${moved.from}`),
-    (err: unknown) =>
-      say(`Could not put the checkout back on ${moved.from}: ${errorMessage(err).split("\n", 1)[0]}`),
+    (err: unknown) => say(`Could not restore majhi ${moved.from}: ${errorMessage(err).split("\n", 1)[0]}`),
   );
 }
 
