@@ -40,6 +40,9 @@ export type ConnectionState = z.infer<typeof ConnectionStateSchema>;
  * - `setup-needed`: a setting at the service must be turned on (an API, an admin switch).
  * - `app-in-testing`: Google's app is in Testing, so its sign-in ends after 7 days.
  * - `mcp-error`: the MCP server answered with a protocol error.
+ * - `privacy-on`: a chat bot is in groups but only sees messages that mention it.
+ * - `webhook-set`: a chat bot has a webhook, so majhi cannot read its messages.
+ * - `not-in-channel`: a chat bot is not a member of a chat linked to it.
  * - `unexpected`: the service answered, but not with what the check needs.
  */
 export const FailureReasonSchema = z.enum([
@@ -60,6 +63,9 @@ export const FailureReasonSchema = z.enum([
   "setup-needed",
   "app-in-testing",
   "mcp-error",
+  "privacy-on",
+  "webhook-set",
+  "not-in-channel",
   "unexpected",
 ]);
 export type FailureReason = z.infer<typeof FailureReasonSchema>;
@@ -83,6 +89,9 @@ export const FAILURE_LINE: Record<FailureReason, string> = {
   "setup-needed": "A setting at the service is off",
   "app-in-testing": "The Google app is still in Testing",
   "mcp-error": "The MCP server answered with an error",
+  "privacy-on": "The bot only sees messages that mention it",
+  "webhook-set": "A webhook is set on the bot, so majhi cannot read it",
+  "not-in-channel": "The bot is not in a linked chat",
   unexpected: "The service answered something majhi does not understand",
 };
 
@@ -105,6 +114,9 @@ export const FAILURE_FIX: Record<FailureReason, string> = {
   "setup-needed": "Turn the setting on at the service, then check again.",
   "app-in-testing": "Publish the app in the Google console, then sign in again.",
   "mcp-error": "Check again. If it keeps happening, remove it and connect it again.",
+  "privacy-on": "Turn the bot's group privacy off in its chat app, then check again.",
+  "webhook-set": "Remove the webhook, then check again.",
+  "not-in-channel": "Add the bot to the chat, then check again.",
   unexpected: "Check again. If it keeps happening, the service may have changed.",
 };
 
@@ -119,6 +131,9 @@ export const TRANSIENT_FAILURES: ReadonlySet<FailureReason> = new Set<FailureRea
   "timeout",
   "helper-offline",
 ]);
+
+/** Reasons the owner fixes at the service itself, then asks majhi to look again. */
+const FIX_THEN_CHECK: ReadonlySet<FailureReason> = new Set<FailureReason>(["privacy-on", "not-in-channel"]);
 
 /** Reasons where signing in again is the fix. */
 const SIGN_IN_AGAIN: ReadonlySet<FailureReason> = new Set<FailureReason>([
@@ -137,7 +152,7 @@ const SIGN_IN_TYPES: ReadonlySet<string> = new Set(["api", "chat", "git", "mcp"]
  * check again for a failure that passes by itself, reconnect for a sign-in that ended, else open it to fix.
  */
 export function failureAction(type: string, reason: FailureReason): "check" | "reconnect" | "fix" {
-  if (TRANSIENT_FAILURES.has(reason)) return "check";
+  if (TRANSIENT_FAILURES.has(reason) || FIX_THEN_CHECK.has(reason)) return "check";
   return SIGN_IN_AGAIN.has(reason) && SIGN_IN_TYPES.has(type) ? "reconnect" : "fix";
 }
 
@@ -190,7 +205,13 @@ export type ConnectionHealth = z.infer<typeof ConnectionHealthSchema>;
 
 /** What a check found, before the state machine reads it. */
 export type CheckOutcome =
-  | { ok: true; checked: string[]; account?: string | undefined }
+  | {
+      ok: true;
+      checked: string[];
+      account?: string | undefined;
+      /** It works, and something short of failing still needs the owner: the state is needs-attention. */
+      attention?: ConnectionFailure | undefined;
+    }
   | { ok: false; failure: ConnectionFailure };
 
 export type HealthEvent =
@@ -200,13 +221,27 @@ export type HealthEvent =
 /**
  * The only way a state changes.
  * - `start` (a connect or a reconnect) goes to `connecting` from anywhere.
- * - A passing result goes to `connected` from anywhere.
+ * - A passing result goes to `connected` from anywhere, or to `needs-attention` when it passed with an
+ *   `attention` (the credential works and something the owner must do remains).
  * - A failing result from `connected` or `needs-attention` goes to `needs-attention`, keeping the last
  *   time it passed. From `connecting`, `failed` or no state it goes to `failed`.
  */
 export function nextHealth(prev: ConnectionHealth | undefined, event: HealthEvent): ConnectionHealth {
   if (event.type === "start") return { state: "connecting", since: event.at };
   const { outcome, at } = event;
+  if (outcome.ok && outcome.attention !== undefined) {
+    const f = outcome.attention;
+    return {
+      state: "needs-attention",
+      at,
+      reason: f.reason,
+      fix: f.fix ?? FAILURE_FIX[f.reason],
+      ...(f.fixUrl === undefined ? {} : { fixUrl: f.fixUrl }),
+      lastVerifiedAt: at,
+      checked: outcome.checked.length > 0 ? outcome.checked : ["Called the service with the stored sign-in"],
+      ...(outcome.account === undefined ? {} : { account: outcome.account }),
+    };
+  }
   if (outcome.ok) {
     return {
       state: "connected",

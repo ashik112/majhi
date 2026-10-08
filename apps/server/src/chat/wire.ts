@@ -22,7 +22,7 @@ import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { Contacts } from "./contacts.ts";
 import type { ChatHistory } from "./history.ts";
-import { type ChatConnectionInfo, ChatHub } from "./hub.ts";
+import { type ChatConnectionInfo, ChatHub, type HubDeps } from "./hub.ts";
 import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
@@ -88,6 +88,8 @@ export interface ClientChatWiring {
   /** Whether the read loops run: only the real server's. */
   polling: boolean;
   changed: () => void;
+  /** A read loop has a trouble or has none now: the connection's health follows it. */
+  troubled?: HubDeps["troubled"];
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -183,6 +185,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     },
     polling: w.polling,
     changed: w.changed,
+    ...(w.troubled === undefined ? {} : { troubled: w.troubled }),
     ...(w.now === undefined ? {} : { now: w.now }),
     ...(w.log === undefined ? {} : { log: w.log }),
   });

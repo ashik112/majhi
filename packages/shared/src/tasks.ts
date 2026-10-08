@@ -1013,6 +1013,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     sentAt: z.string().optional(),
     /** The app says the sender took it back. The text stays here for the owner. */
     deleted: z.boolean().optional(),
+    /** It arrived before the chat was linked to a workspace: kept so the room starts with what was said first. */
+    early: z.literal(true).optional(),
   }),
   /**
    * A reply to the client. `held` waits for the owner (`hold` says why), `sent` went out, `failed` did not,

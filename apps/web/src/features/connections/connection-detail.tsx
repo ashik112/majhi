@@ -27,6 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { SignIn } from "@/features/git-signin/sign-in";
 import { cn } from "@/lib/cn";
+import { useConfirmWebhook } from "@/lib/client-queries";
 import { useConnectCommand } from "@/lib/connect-queries";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
@@ -191,6 +192,8 @@ function StatusBlock({
   const fix = fixOf(health);
   const reasons = failureSentences(view);
   const re = useReconnect(view);
+  const toast = useToast();
+  const removeWebhook = useConfirmWebhook();
   const [other, setOther] = useState(false);
   const failed = health?.state === "failed" || health?.state === "needs-attention";
   return (
@@ -226,6 +229,24 @@ function StatusBlock({
                 <ExternalLink aria-hidden="true" />
                 Open the page
               </a>
+            </Button>
+          )}
+          {failed && health.reason === "webhook-set" && view.type === "chat" && (
+            <Button
+              variant="primary"
+              disabled={removeWebhook.isPending}
+              onClick={() =>
+                removeWebhook.mutate(
+                  { connection: view.id },
+                  {
+                    onSuccess: onCheck,
+                    onError: (error) =>
+                      toast("Could not remove the webhook", { detail: describeError(error), tone: "error" }),
+                  },
+                )
+              }
+            >
+              {removeWebhook.isPending ? "Removing" : "Remove webhook"}
             </Button>
           )}
           {status.action === "reconnect" && re.canReconnect && (

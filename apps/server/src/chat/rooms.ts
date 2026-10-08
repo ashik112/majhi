@@ -4,6 +4,7 @@ import {
   type ChatApp,
   type ChatHolder,
   CLIENT_CHAT_BRIEF,
+  externalKeyText,
   type ClientList,
   type ClientRoom,
   type ClientRow,
@@ -21,7 +22,7 @@ import type { Store } from "../store/index.ts";
 
 export interface RoomsDeps {
   store: Store;
-  room: Pick<RoomService, "post" | "publishTask">;
+  room: Pick<RoomService, "post" | "postExternal" | "publishTask">;
   majhiHome: string;
   /** Whether a workspace exists. */
   knownOrg: (org: string) => Promise<boolean>;
@@ -129,8 +130,19 @@ export class ClientRooms {
       room.chat.chat,
       org,
     );
-    if (before !== undefined && room.org === undefined && this.deps.store.room.count(id) === 0) {
+    // What the chat said while it was unlinked goes back into the old room, after what it already holds.
+    const said = this.deps.store.room.page(id, 100).items.toReversed();
+    if (
+      before !== undefined &&
+      room.org === undefined &&
+      said.every((i) => i.type === "client" && i.early === true)
+    ) {
       this.deps.store.tasks.remove(id);
+      for (const item of said) {
+        if (item.type !== "client") continue;
+        const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = item;
+        this.deps.room.postExternal(before.id as TaskId, externalKeyText(item.external), item.id, () => payload);
+      }
       const back = this.patch(before, { archived: undefined, ignored: undefined, trouble: undefined });
       const refreshed = this.refresh(back, { title: room.chat.title, people: room.chat.people });
       const task = this.deps.store.tasks.get(before.id);
@@ -149,6 +161,8 @@ export class ClientRooms {
     const room = this.room(id);
     if (room.org !== undefined)
       throw new UserError("A linked chat is not ignored. Remove the bot from it instead.", 409);
+    // What an unlinked chat said before is thrown away with it.
+    this.deps.store.room.deleteAll(id);
     return this.patch(room, { ignored: true });
   }
 
@@ -233,6 +247,22 @@ export class ClientRooms {
       unread: conversation?.unread ?? 0,
       waiting: held.has(r.id),
     };
+  }
+
+  /** The groups and channels of an account that are linked to a workspace: the chats majhi is meant to read. */
+  linkedChats(app: ChatApp, account: string): string[] {
+    return this.deps.store.client
+      .rooms()
+      .filter(
+        (r) =>
+          r.org !== undefined &&
+          r.chat.app === app &&
+          r.chat.account === account &&
+          r.chat.kind !== "private" &&
+          r.chat.archived !== true &&
+          r.chat.ignored !== true,
+      )
+      .map((r) => r.chat.chat);
   }
 
   /** The text of a room's newest items of a type, newest first. */

@@ -128,6 +128,15 @@ export const TgUser = z.object({
 });
 export type TgUser = z.infer<typeof TgUser>;
 
+/** `getMe`: who the bot is, and (Telegram's own flags) whether it may join groups and read all of their messages. */
+export const TgBotMe = z.object({
+  id: z.number(),
+  first_name: z.string().default(""),
+  username: z.string().optional(),
+  can_join_groups: z.boolean().optional(),
+  can_read_all_group_messages: z.boolean().optional(),
+});
+
 export const TgChat = z.object({
   id: z.number(),
   type: z.string(),

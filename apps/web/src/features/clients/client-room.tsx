@@ -424,6 +424,7 @@ function Message({
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.sentAt ?? item.at)}</span>
           {item.sender.verified ? null : <Badge>unverified</Badge>}
           {item.forwarded === true && <span className="shrink-0 text-xs text-fg-faint">forwarded</span>}
+          {item.early === true && <span className="shrink-0 text-xs text-fg-faint">before the link</span>}
           {item.revisions.length > 0 && (
             <span
               className="shrink-0 text-xs text-fg-faint"

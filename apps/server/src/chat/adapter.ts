@@ -80,6 +80,28 @@ export interface ChatChannelList {
   you?: { state: "ok"; name: string; scopes: string[] | undefined } | { state: "refused"; fix: string };
 }
 
+/**
+ * What a look at a bot found, as typed facts. The connection's Test turns them into a state; nothing here is text to match.
+ * A refused token throws (Telegram 401, Slack `invalid_auth`) and is read by its code.
+ */
+export type ChatProbe =
+  | {
+      app: "telegram";
+      /** The bot's @name. */
+      bot: string;
+      canJoinGroups: boolean;
+      /** False while group privacy is on: the bot only gets @mentions, commands and replies in groups. */
+      readsAllGroupMessages: boolean;
+      /** The address of a webhook set on the bot, which blocks `getUpdates`. Undefined when none. */
+      webhook: string | undefined;
+    }
+  | {
+      app: "slack";
+      bot: string;
+      /** The linked channels the bot is not a member of. */
+      notIn: { id: string; name: string }[];
+    };
+
 /** One interface for every chat app. Slack, Discord and email are written against it, not beside it. */
 export interface ChatAdapter {
   app: ChatApp;
@@ -96,6 +118,8 @@ export interface ChatAdapter {
   ): Promise<{ message: string; as?: "you" }>;
   /** Checks the owner's user token (`conn.userToken`) against the same workspace as the bot. Throws a refusal with its fix. */
   asYou?(conn: ChatConnection): Promise<ChatAsYou>;
+  /** Asks the app about the bot now: who it is and what keeps it from reading `linked` chats. Throws a refusal. */
+  probe?(conn: ChatConnection, linked: readonly string[]): Promise<ChatProbe>;
   /** The channels of the workspace, for the owner's channel picker. Only apps with channels have it. */
   channels?(conn: ChatConnection): Promise<ChatChannelList>;
   /** The bot joins a public channel. Only apps that allow it have it. */

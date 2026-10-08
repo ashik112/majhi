@@ -84,17 +84,18 @@ describe("the Slack adapter", () => {
     await r.w.rooms.link(room.id, "acme");
 
     const first = api.post({ channel: "C1OPS", user: "U1SARA", text: "Orders page is down" });
-    await until(() => r.clientItems(room.id).length === 1, "the first item");
+    await until(() => r.clientItems(room.id).length === 2, "the first item");
     api.redeliver(api.lastEvent());
     api.redeliver(api.lastEvent());
     // A reply in the thread of the first message comes in after the repeats, so they were all read by then.
     api.post({ channel: "C1OPS", user: "U1SARA", text: "still down", thread: first.ts });
-    await until(() => r.clientItems(room.id).length === 2, "the thread reply");
+    await until(() => r.clientItems(room.id).length === 3, "the thread reply");
 
     const items = r.clientItems(room.id);
     expect(items.map((i) => (i.type === "client" ? i.text : ""))).toEqual([
       "still down",
       "Orders page is down",
+      "hello",
     ]);
     const reply = items[0];
     expect(reply?.type === "client" ? reply.thread : undefined).toBe(first.ts);
@@ -115,7 +116,7 @@ describe("the Slack adapter", () => {
     if (room === undefined) throw new Error("no room");
     await r.w.rooms.link(room.id, "acme");
     const root = api.post({ channel: "C1OPS", user: "U1SARA", text: "Checkout fails" });
-    await until(() => r.clientItems(room.id).length === 1, "the first message");
+    await until(() => r.clientItems(room.id).length === 2, "the first message");
     const cursor = r.saved.at(-1);
     expect(cursor?.position.C1OPS).toBe(root.ts);
     stop();
@@ -127,7 +128,7 @@ describe("the Slack adapter", () => {
     const before = api.called("conversations.history").length;
 
     r.start(cursor);
-    await until(() => r.clientItems(room.id).length === 3, "the gap to fill");
+    await until(() => r.clientItems(room.id).length === 4, "the gap to fill");
     const asked = api.called("conversations.history").slice(before);
     // The history is read from the read position, and the thread of the last message is asked for what came after it.
     expect(asked).toHaveLength(1);
@@ -140,13 +141,13 @@ describe("the Slack adapter", () => {
         .clientItems(room.id)
         .map((i) => (i.type === "client" ? i.text : ""))
         .toSorted(),
-    ).toEqual(["Checkout fails", "any news?", "it is urgent"]);
+    ).toEqual(["Checkout fails", "any news?", "hello", "it is urgent"]);
 
     // Asking again from the same old position stores nothing twice.
     const again = reader(api);
     again.start(cursor);
     await until(() => again.saved.length > 0, "the second catch-up");
-    expect(r.clientItems(room.id)).toHaveLength(3);
+    expect(r.clientItems(room.id)).toHaveLength(4);
     expect(r.gaps).toEqual([]);
   });
 
@@ -163,7 +164,7 @@ describe("the Slack adapter", () => {
     api.post({ channel: "C1OPS", user: "U1SARA", text: "one" });
     api.sendTeam = false;
     api.post({ channel: "C1OPS", user: "U1SARA", text: "two" });
-    await until(() => r.clientItems(room.id).length === 2, "the live messages");
+    await until(() => r.clientItems(room.id).length === 3, "the live messages");
     const cursor = r.saved.at(-1);
     stop();
     api.holdEvents = true;
@@ -171,7 +172,7 @@ describe("the Slack adapter", () => {
     api.sendTeam = true;
     api.post({ channel: "C1OPS", user: "U1SARA", text: "four" });
     r.start(cursor);
-    await until(() => r.clientItems(room.id).length === 4, "the history");
+    await until(() => r.clientItems(room.id).length === 5, "the history");
     expect(new Set(r.delivered.map((e) => e.sender.id))).toEqual(new Set(["U1SARA"]));
     expect(r.w.store.client.senders(room.id).map((s) => s.id)).toEqual(["U1SARA"]);
     expect(r.w.store.client.contactsOf("acme")).toHaveLength(1);

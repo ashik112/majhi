@@ -261,6 +261,7 @@ export const SlackConversation = z.object({
     name: z.string().optional(),
     is_im: z.boolean().optional(),
     is_mpim: z.boolean().optional(),
+    is_member: z.boolean().optional(),
     num_members: z.number().optional(),
     user: z.string().optional(),
   }),

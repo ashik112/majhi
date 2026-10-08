@@ -123,7 +123,7 @@ it("sends the captain's reply with the owner's token, and its echo is not read a
     "Thanks",
   ]);
   expect(t.w.rooms.room(t.room.id).chat.holder).toBe("captain");
-  expect(t.items().filter((i) => i.type === "client").length).toBe(2);
+  expect(t.items().filter((i) => i.type === "client").length).toBe(3);
   const reply = t.items().find((i) => i.type === "client-reply");
   expect(reply).toMatchObject({ by: "captain", as: "you", state: "sent" });
 });
