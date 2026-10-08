@@ -6,6 +6,7 @@ import {
   captainPayDecisionId,
   PAGE_PATH,
   PRIVATE,
+  parseDecisionId,
   REPLY_HOLD_LABEL,
   type RoomItem,
   replaceMentions,
@@ -494,6 +495,8 @@ function OutcomeLine({
   const text = outcomeText(outcome, reply);
   const task = outcome.task;
   if (outcome.decision !== undefined && reply === undefined) {
+    // The captain has no account to run on: the same card as Needs you, with its buttons, right here.
+    if (parseDecisionId(outcome.decision)?.kind === "cpay") return <NoAccountLine org={org} />;
     return (
       <Link
         to="/decisions"

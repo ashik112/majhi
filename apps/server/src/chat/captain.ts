@@ -172,14 +172,19 @@ export class CaptainChat {
   /** The client message a reply answers: the one it names, else the newest client message before it. */
   private answered(
     room: RoomRow,
-    reply: { replyTo?: string | undefined; seq: number },
+    reply: { replyTo?: string | undefined; at: string },
   ): ClientItem | undefined {
     const clients = this.deps.store.room
       .page(room.id, 200)
       .items.filter((i): i is ClientItem => i.type === "client" && i.us !== true);
     const named =
       reply.replyTo === undefined ? undefined : clients.find((c) => c.external.message === reply.replyTo);
-    return named ?? clients.filter((c) => c.seq < reply.seq).toSorted((a, b) => b.seq - a.seq)[0];
+    // An outcome written on a message stores it again with a new seq, so the order is the time it was sent.
+    const sent = (c: ClientItem) => c.sentAt ?? c.at;
+    return (
+      named ??
+      clients.filter((c) => sent(c) <= reply.at).toSorted((a, b) => sent(b).localeCompare(sent(a)))[0]
+    );
   }
 
   /** The captain's reply went through the rails: it is what became of the messages it answered. */
