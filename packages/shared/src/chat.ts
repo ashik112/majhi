@@ -114,6 +114,8 @@ export const ClientOutcomeSchema = z.strictObject({
   urgent: z.boolean().optional(),
   /** The task or incident it became or joined: the line links to it. */
   task: z.string().max(100).optional(),
+  /** The Needs you decision that holds this message back: the line links to it, and the desk wakes the captain again once it is answered. */
+  decision: z.string().max(300).optional(),
   /** The finding this message was filed as: closed when the message is dealt with. */
   finding: z.number().int().positive().optional(),
   /** A question went out asking the client for what is missing. */

@@ -23,7 +23,7 @@ export interface DeskDeps {
     text: string,
     settled: string,
     job: Job,
-  ) => Promise<{ sent: true; chat: string } | { sent: false; why: string }>;
+  ) => Promise<{ sent: true; chat: string } | { sent: false; why: string; decision?: string }>;
   changed: () => void;
   debounceMs?: number;
   log?: (line: string) => void;
@@ -81,7 +81,9 @@ export class ChatDesk {
       if (room.org === undefined || room.chat.holder !== "captain" || this.pending.has(room.id)) continue;
       for (const item of this.deps.store.room.page(room.id, 60).items.toReversed()) {
         if (item.type !== "client" || item.us === true) continue;
-        if (item.outcome?.state !== "waits" || item.outcome.why?.startsWith(NOT_READING) !== true) continue;
+        if (item.outcome?.state !== "waits") continue;
+        if (item.outcome.decision === undefined && item.outcome.why?.startsWith(NOT_READING) !== true)
+          continue;
         if (Date.parse(item.sentAt ?? item.at) < since) continue;
         this.queue(room, `message:${item.id}`, this.messageBlock(room, item), undefined, item);
       }
@@ -130,11 +132,18 @@ export class ChatDesk {
     ].join("\n\n");
     const sent = await this.deps.wake(now.org, text, "Client chat", "reacting").catch((err: unknown) => ({
       sent: false as const,
+      decision: undefined,
       why: err instanceof Error ? err.message : "The captain could not be woken.",
     }));
     if (!sent.sent) {
       this.deps.log?.(`chat: the captain was not woken for ${room.id}: ${sent.why}`);
-      markWorking(this.deps, room.id, { state: "waits", why: `${NOT_READING}: ${sent.why}` });
+      markWorking(
+        this.deps,
+        room.id,
+        sent.decision === undefined
+          ? { state: "waits", why: `${NOT_READING}: ${sent.why}` }
+          : { state: "waits", why: `${sent.why}.`, decision: sent.decision },
+      );
       this.deps.changed();
       return;
     }

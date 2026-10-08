@@ -1,4 +1,11 @@
-import { CAPTAIN_LANE_BRIEF, type Job, PRIVATE, STOPPED_WHY, type Task } from "@majhi/shared";
+import {
+  CAPTAIN_LANE_BRIEF,
+  captainPayDecisionId,
+  type Job,
+  PRIVATE,
+  STOPPED_WHY,
+  type Task,
+} from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -30,7 +37,10 @@ export interface LaneDeps {
 }
 
 /** `own`: the captain's own account runs the lane, so no account is swapped in. */
-export type LaneAccount = { account: string; own: boolean } | { problem: string };
+export type LaneAccount =
+  | { account: string; own: boolean }
+  /** `noAccount`: the workspace has no account of its own and the owner has named none: Needs you asks which pays. */
+  | { problem: string; noAccount?: true };
 
 export class Lanes {
   constructor(private readonly deps: LaneDeps) {}
@@ -123,11 +133,11 @@ export class Lanes {
     const account = sections.accounts[id];
     if (account === undefined) return { problem: `the account ${id} is not in majhi.yaml` };
     if (account.org !== org && (account.org !== PRIVATE || rules?.account === undefined)) {
+      if (account.org === PRIVATE) {
+        return { problem: `${name(org)} has no account for the captain`, noAccount: true };
+      }
       return {
-        problem:
-          account.org === PRIVATE
-            ? `${name(org)} has no account of its own for the captain, and ${id} is a Private account. Pick the account that pays in Captain, Permissions, ${name(org)}, Hours, freezes and more`
-            : `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} in Captain, Permissions, ${name(org)}, Hours, freezes and more`,
+        problem: `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} in Captain, Permissions, ${name(org)}, Hours, freezes and more`,
       };
     }
     if (!providerAllowed(rules, account.tool)) {
@@ -164,10 +174,16 @@ export class Lanes {
     text: string,
     settled: string,
     job: Job = "backlog",
-  ): Promise<{ sent: true; chat: string } | { sent: false; why: string }> {
+  ): Promise<{ sent: true; chat: string } | { sent: false; why: string; decision?: string }> {
     if (this.deps.halted?.() === true) return { sent: false, why: STOPPED_WHY };
     const picked = await this.account(org);
-    if ("problem" in picked) return { sent: false, why: picked.problem };
+    if ("problem" in picked) {
+      return {
+        sent: false,
+        why: picked.problem,
+        ...(picked.noAccount === true ? { decision: captainPayDecisionId(org) } : {}),
+      };
+    }
     const rest = await this.deps.rest?.(org, picked.account, job);
     if (rest !== undefined) return { sent: false, why: rest };
     try {
@@ -179,5 +195,30 @@ export class Lanes {
     } catch (err) {
       return { sent: false, why: errorMessage(err) };
     }
+  }
+
+  /**
+   * Workspaces whose captain has work (a lane or a client chat it holds) and no account it may use, with the
+   * Private accounts the owner could allow to pay. Derived from `account` on each call: nothing is stored.
+   */
+  async unpaid(): Promise<{ org: string; name: string; choices: string[] }[]> {
+    const orgs = new Set(this.all().map((l) => l.org));
+    for (const room of this.deps.store.client.rooms()) {
+      if (room.org !== undefined && room.chat.holder === "captain" && room.chat.archived !== true)
+        orgs.add(room.org);
+    }
+    const sections = await this.deps.config.sections();
+    const autonomy = (await this.deps.config.settings()).autonomy;
+    const out: { org: string; name: string; choices: string[] }[] = [];
+    for (const org of [...orgs].toSorted()) {
+      const picked = org === PRIVATE ? undefined : await this.account(org);
+      if (picked === undefined || !("problem" in picked) || picked.noAccount !== true) continue;
+      const choices = Object.entries(sections.accounts)
+        .filter(([, a]) => a.org === PRIVATE && providerAllowed(autonomy.orgs[org], a.tool))
+        .map(([id]) => id)
+        .toSorted();
+      out.push({ org, name: sections.orgs[org]?.name ?? org, choices });
+    }
+    return out;
   }
 }

@@ -52,6 +52,7 @@ export interface DecisionActions {
   /** An incident task asks something of the owner: start it, which project, close it, a failed deploy. */
   answerIncidentAsk?(what: string, ref: string, option: string): Promise<unknown>;
   /** Something in a client chat waits for the owner: a claim, a who-is, a message left for a person. */
+  answerCaptainPay?(org: string, account: string): Promise<unknown>;
   answerChatWait?(room: string, ref: string, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
@@ -447,6 +448,7 @@ export class InboxService {
     else if (parsed.kind === "mrci") await actions.fixMrChecks?.(parsed.task);
     else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
+    else if (parsed.kind === "cpay") await actions.answerCaptainPay?.(parsed.org, input.option);
     else if (parsed.kind === "cwait") await actions.answerChatWait?.(parsed.room, parsed.ref, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
