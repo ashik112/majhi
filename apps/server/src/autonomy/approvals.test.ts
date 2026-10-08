@@ -79,9 +79,8 @@ describe("autonomous mode deciding the cards that would wait", () => {
     expect(turnedOn.body.settings.orgs.acme).toEqual({ authority: { ...RUNS, push: "decide" } });
     await t.call("majhi_tasks_push", { id });
     const pushes = (await t.cards()).filter((c) => c.command === "tasks.push");
-    expect(pushes.map((c) => c.autonomy?.decision)).toEqual(["left", "approved"]);
-    // It ran: a task never started has nothing to push, so the call itself failed.
-    expect(pushes[1]?.state).toMatch(/applied|failed/);
+    // The call it ran needed no click: it is a History entry, not a card in the thread.
+    expect(pushes.map((c) => c.autonomy?.decision)).toEqual(["left"]);
     // The setting is a config commit, like every change of the owner's.
     expect((await t.h.log())[0]).toContain("autonomy.configure");
   });

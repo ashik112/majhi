@@ -1756,37 +1756,43 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const hears = new CaptainHears({ lanes, room });
   notifier.useCaptainLog((e) => {
-    void config.settings().then((s) => {
-      const at = new Date();
-      captainRepo.addAction({
-        key: `told:${e.key}`,
-        org: e.org,
-        chore: "cards",
-        day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
-        at: at.toISOString(),
-        text: e.text,
-        reason: "Told the owner without asking",
-        outcome: "done",
-        undoNote: "Nothing to undo",
-      });
-    });
+    void config
+      .settings()
+      .then((s) => {
+        const at = new Date();
+        captainRepo.addAction({
+          key: `told:${e.key}`,
+          org: e.org,
+          chore: "cards",
+          day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
+          at: at.toISOString(),
+          text: e.text,
+          reason: "Told the owner without asking",
+          outcome: "done",
+          undoNote: "Nothing to undo",
+        });
+      })
+      .catch(() => undefined); // The database closed under a shutdown.
   });
   admin.useCaptainLog((e) => {
-    void config.settings().then((s) => {
-      const at = new Date();
-      captainRepo.addAction({
-        key: `applied:${e.id}`,
-        org: e.org,
-        chore: "cards",
-        day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
-        at: at.toISOString(),
-        text: e.text,
-        reason: e.reason,
-        ...(e.task === undefined ? {} : { task: e.task }),
-        outcome: e.ok ? "done" : "failed",
-        undoNote: "Done through a tool call; see the task or the Permissions log",
-      });
-    });
+    void config
+      .settings()
+      .then((s) => {
+        const at = new Date();
+        captainRepo.addAction({
+          key: `applied:${e.id}`,
+          org: e.org,
+          chore: "cards",
+          day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
+          at: at.toISOString(),
+          text: e.text,
+          reason: e.reason,
+          ...(e.task === undefined ? {} : { task: e.task }),
+          outcome: e.ok ? "done" : "failed",
+          undoNote: "Done through a tool call; see the task or the Permissions log",
+        });
+      })
+      .catch(() => undefined); // The database closed under a shutdown.
   });
   const pointers = new Pointers({ store, room, lanes });
   pointersRef.current = pointers;
