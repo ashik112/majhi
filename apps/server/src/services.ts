@@ -3285,6 +3285,28 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       }
     }
   });
+  const homeChecks = new HomeChecks({
+    ids: () => store.tasks.idsWithStatus("review"),
+    mergeChecks: (id) => tasks.mergeChecks(id),
+    empty: async (id) => {
+      const check = await shipReadiness({ store, room, runs, mrs }, id);
+      return !check.ready && check.unmergeable === "empty";
+    },
+    state: (id) => handoff.state(id),
+    lastMessage: (id) => {
+      room.flush(id);
+      for (const item of store.room.page(id, 60).items) {
+        if (item.type === "agent" && item.text.trim() !== "") return item.text;
+      }
+      return undefined;
+    },
+  });
+  events.subscribe((event) => {
+    if (event.type !== "changed") return;
+    if (event.topics.includes("config") || event.topics.includes("projects")) homeChecks.invalidate();
+    else if (event.topics.includes("tasks") && !event.rows) homeChecks.invalidate(event.tasks);
+  });
+
   return {
     config,
     applyRunMemory,
@@ -3360,22 +3382,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           .filter(([, p]) => p.org === org)
           .map(([id]) => id),
     }),
-    homeChecks: new HomeChecks({
-      ids: () => store.tasks.idsWithStatus("review"),
-      mergeChecks: (id) => tasks.mergeChecks(id),
-      empty: async (id) => {
-        const check = await shipReadiness({ store, room, runs, mrs }, id);
-        return !check.ready && check.unmergeable === "empty";
-      },
-      state: (id) => handoff.state(id),
-      lastMessage: (id) => {
-        room.flush(id);
-        for (const item of store.room.page(id, 60).items) {
-          if (item.type === "agent" && item.text.trim() !== "") return item.text;
-        }
-        return undefined;
-      },
-    }),
+    homeChecks,
     agenda,
     codeGraph,
     graphRunner,

@@ -13,7 +13,7 @@ export interface HomeChecksDeps {
   now?: () => number;
 }
 
-/** A verdict reads git (the diff scan): reuse it this long while the hand-off state has not changed. */
+/** Events invalidate local changes; this also bounds staleness for edits made outside majhi. */
 const REUSE_MS = 20_000;
 
 /** The first sentence of a message, on one line and short: what the agent says it did. */
@@ -30,15 +30,47 @@ export function firstSentence(text: string | undefined): string | undefined {
  * hand-off is doing, in one batch instead of a read per row.
  */
 export class HomeChecks {
-  private readonly kept = new Map<string, { key: string; at: number; checks: MergeChecks; empty: boolean }>();
+  private readonly kept = new Map<string, { at: number; row: HomeCheck }>();
+  private pending: Promise<{ checks: HomeCheck[]; background: HomeBackground[] }> | undefined;
+  // Replacing this token prevents a read started before a change from populating the cache.
+  private revision = {};
+
+  invalidate(ids?: readonly string[]): void {
+    this.revision = {};
+    if (ids === undefined) this.kept.clear();
+    else for (const id of ids) this.kept.delete(id);
+  }
 
   constructor(private readonly deps: HomeChecksDeps) {}
 
   async facts(): Promise<{ checks: HomeCheck[]; background: HomeBackground[] }> {
+    if (this.pending !== undefined) return this.pending;
+    const pending = this.read();
+    this.pending = pending;
+    try {
+      return await pending;
+    } finally {
+      this.pending = undefined;
+    }
+  }
+
+  private async read(): Promise<{ checks: HomeCheck[]; background: HomeBackground[] }> {
     const now = this.deps.now?.() ?? Date.now();
     const ids = this.deps.ids();
-    for (const id of this.kept.keys()) if (!ids.includes(id)) this.kept.delete(id);
-    const rows = await Promise.all(ids.map((id) => this.one(id, now)));
+    const present = new Set(ids);
+    for (const id of this.kept.keys()) if (!present.has(id)) this.kept.delete(id);
+    const rows: (HomeCheck | undefined)[] = new Array(ids.length);
+    let next = 0;
+    // Bound Git subprocesses even when many tasks enter review together.
+    await Promise.all(
+      Array.from({ length: Math.min(4, ids.length) }, async () => {
+        while (next < ids.length) {
+          const index = next++;
+          const id = ids[index];
+          if (id !== undefined) rows[index] = await this.one(id, now);
+        }
+      }),
+    );
     const checks: HomeCheck[] = [];
     const background: HomeBackground[] = [];
     for (const check of rows) {
@@ -62,23 +94,15 @@ export class HomeChecks {
   }
 
   private async one(id: string, now: number): Promise<HomeCheck | undefined> {
+    const kept = this.kept.get(id);
+    if (kept !== undefined && now - kept.at < REUSE_MS) return kept.row;
+    const revision = this.revision;
     const state = await this.deps.state(id).catch(() => undefined);
     if (state === undefined) return undefined;
-    const key = [state.running, state.queued, state.stale, state.current?.at, state.current?.head].join("|");
-    const kept = this.kept.get(id);
+    const checks = await this.deps.mergeChecks(id).catch(() => undefined);
+    if (checks === undefined) return undefined;
+    const empty = (await this.deps.empty?.(id).catch(() => false)) === true;
     const outcome = firstSentence(this.deps.lastMessage(id));
-    let checks: MergeChecks;
-    let empty: boolean;
-    if (kept !== undefined && kept.key === key && now - kept.at < REUSE_MS) {
-      checks = kept.checks;
-      empty = kept.empty;
-    } else {
-      const fresh = await this.deps.mergeChecks(id).catch(() => undefined);
-      if (fresh === undefined) return undefined;
-      checks = fresh;
-      empty = (await this.deps.empty?.(id).catch(() => false)) === true;
-      this.kept.set(id, { key, at: now, checks, empty });
-    }
     const verdict = checks.verdict;
     const stepId =
       verdict.kind === "failed" ? (verdict.check === "test" ? "tests" : verdict.check) : undefined;
@@ -86,7 +110,7 @@ export class HomeChecks {
       stepId === undefined || stepId === "secret"
         ? undefined
         : state.current?.steps.find((s) => s.id === stepId);
-    return {
+    const row: HomeCheck = {
       task: id,
       checks,
       ...(empty ? { empty: true as const } : {}),
@@ -102,5 +126,7 @@ export class HomeChecks {
             },
           }),
     };
+    if (this.revision === revision) this.kept.set(id, { at: now, row });
+    return row;
   }
 }

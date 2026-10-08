@@ -17,7 +17,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { chromium, type Page } from "@playwright/test";
+import { type Browser, chromium, type Page } from "@playwright/test";
 
 process.env.MAJHI_E2E_PORT ??= "7090";
 const { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, SECRETS_KEY_FILE } = await import("../e2e/paths.ts");
@@ -104,6 +104,7 @@ async function startServer(): Promise<{ pid: number; stop: () => void }> {
       MALLOC_ARENA_MAX: "2",
       MAJHI_HOST: "127.0.0.1",
       MAJHI_PORT: String(E2E_PORT),
+      MAJHI_BROWSER_ORIGIN: `http://127.0.0.1:${E2E_PORT}`,
       HOST_HOME,
       MAJHI_HOME,
       MAJHI_VERSION: "perf",
@@ -152,14 +153,18 @@ const fmt = (xs: number[]) =>
 /** Time from a click on the board card to the room's last message on screen. */
 async function switchTo(page: Page, id: string): Promise<number> {
   await page.goto("/");
-  await page.locator(`#card-${id} a[data-card-link]`).waitFor();
+  const card = page.getByRole("button", {
+    name: `Perf room of ${SIZES.find((size) => size.id === id)?.items} items`,
+    exact: true,
+  });
+  await card.waitFor();
   await page.evaluate((rowId) => {
     const w = window as unknown as { __perf: { start: number; end?: number } };
     w.__perf = { start: 0 };
     document.addEventListener(
       "click",
       (e) => {
-        if ((e.target as Element).closest("a[data-card-link]")) w.__perf.start = performance.now();
+        if ((e.target as Element).closest("[data-home-row]")) w.__perf.start = performance.now();
       },
       { capture: true, once: true },
     );
@@ -168,12 +173,14 @@ async function switchTo(page: Page, id: string): Promise<number> {
       if (w.__perf.start && w.__perf.end === undefined && document.getElementById(rowId)) {
         requestAnimationFrame(() => {
           w.__perf.end ??= performance.now();
+          observer.disconnect();
         });
       }
     };
-    new MutationObserver(done).observe(document.body, { subtree: true, childList: true });
+    const observer = new MutationObserver(done);
+    observer.observe(document.body, { subtree: true, childList: true });
   }, `room-row-${id}-last`);
-  await page.locator(`#card-${id} a[data-card-link]`).click();
+  await card.click();
   await page.waitForFunction(
     () => (window as unknown as { __perf: { end?: number } }).__perf.end !== undefined,
   );
@@ -264,12 +271,13 @@ async function loadHistory(page: Page, want: number): Promise<number> {
 
 seed();
 const server = await startServer();
+let browser: Browser | undefined;
 try {
   await sleep(5000);
   const idle = rssMb(server.pid);
   console.log(`server RSS after start, idle 5 s: ${idle.toFixed(0)} MB (target under 200)`);
 
-  const browser = await chromium.launch();
+  browser = await chromium.launch();
   const page = await (
     await browser.newContext({
       viewport: { width: 1440, height: 900 },
@@ -335,7 +343,10 @@ try {
     `scroll to a match 5,990 messages back: ${Date.now() - started} ms, ${inView ? "in view" : "NOT in view"}, address cleared: ${!page.url().includes("item=")}`,
   );
   console.log(`server RSS at the end: ${rssMb(server.pid).toFixed(0)} MB`);
-  await browser.close();
 } finally {
-  server.stop();
+  try {
+    await browser?.close();
+  } finally {
+    server.stop();
+  }
 }

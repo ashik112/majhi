@@ -1,5 +1,17 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
-import { NewTaskDialog } from "./new-task-dialog";
+import {
+  createContext,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+
+const NewTaskDialog = lazy(() =>
+  import("./new-task-dialog").then((module) => ({ default: module.NewTaskDialog })),
+);
 
 interface NewTaskApi {
   open: () => void;
@@ -28,11 +40,19 @@ export function NewTaskProvider({ children }: { children: ReactNode }) {
     <NewTaskContext.Provider value={api}>
       {children}
       {dialog !== undefined && (
-        <NewTaskDialog
-          {...(dialog.project === undefined ? {} : { project: dialog.project })}
-          {...(dialog.title === undefined ? {} : { title: dialog.title })}
-          onClose={() => setDialog(undefined)}
-        />
+        <Suspense
+          fallback={
+            <span role="status" className="sr-only">
+              Loading new task
+            </span>
+          }
+        >
+          <NewTaskDialog
+            {...(dialog.project === undefined ? {} : { project: dialog.project })}
+            {...(dialog.title === undefined ? {} : { title: dialog.title })}
+            onClose={() => setDialog(undefined)}
+          />
+        </Suspense>
       )}
     </NewTaskContext.Provider>
   );
