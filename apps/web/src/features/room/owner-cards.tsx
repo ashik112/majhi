@@ -2,6 +2,7 @@ import {
   type AccountView,
   type CardOutcome,
   type HandoffState,
+  isCaptainThread,
   plainAuthorityText,
   type RoomItem,
   type Task,
@@ -423,8 +424,13 @@ function PauseFixes({
   const [signIn, setSignIn] = useState<AccountView>();
 
   // A pause names the account its run was on (a lane runs on its workspace's); else the team's own.
+  // An older lane card without one names nothing: its agents' own account is not the one the lane ran on.
   const used = new Set(
-    account === undefined ? task.team.flatMap((id) => index.get(id)?.account ?? []) : [account],
+    account !== undefined
+      ? [account]
+      : isCaptainThread(task)
+        ? []
+        : task.team.flatMap((id) => index.get(id)?.account ?? []),
   );
   const team = accounts.filter((a) => used.has(a.id));
   // Only a signed-out pause offers a sign-in: an error pause is not fixed by one.
