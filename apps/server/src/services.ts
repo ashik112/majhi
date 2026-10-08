@@ -1967,7 +1967,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (f.source === "incident") return;
       // A client's words are data. They are never put in front of the captain as news: its triage reads them without tools.
       if (f.source === "client") return;
-      if (f.severity !== "info") autonomy.routine(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
+      if (f.severity !== "info") autonomy.finding(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
