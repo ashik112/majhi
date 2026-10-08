@@ -184,7 +184,7 @@ export function createOps(w: OpsWiring): Ops {
       const f = w.findings.get(finding);
       const lines: string[] = [];
       if (f.task !== undefined) {
-        lines.push(`${f.status === "proposed" ? "Fix task proposed" : "Fix task started"}: ${f.task}`);
+        lines.push(`${f.status === "proposed" ? "Fix task opened" : "Fix task started"}: ${f.task}`);
       }
       for (const d of w.drafts(f.org)) {
         if (d.finding === finding) lines.push(`Status update drafted for ${d.channel}`);

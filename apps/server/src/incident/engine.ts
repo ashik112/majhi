@@ -490,6 +490,21 @@ export class IncidentEngine {
         });
         continue;
       }
+      if (this.recovered.has(task.id)) {
+        out.push({
+          ...base,
+          id: incidentAskDecisionId("recovered", task.id),
+          title: oneLine(`${task.title}: recovered on its own, still watching`, 280),
+          sentence:
+            "The watch is green again and nothing was shipped. Close it, or let the lead keep working.",
+          options: [
+            { id: "close", label: "Close: it recovered", primary: true },
+            { id: "continue", label: "Let the lead continue" },
+          ],
+          at: task.updatedAt,
+        });
+        continue;
+      }
       const failed = this.unseenFailedDeploy(task, since);
       const failure = failed === undefined ? "" : ` ${this.deployLine(failed)}`;
       if (task.status === "inbox" && this.startsBy.get(org) === "owner") {
@@ -504,14 +519,13 @@ export class IncidentEngine {
         continue;
       }
       if (failed !== undefined) {
-        const rolled = failed.state === "rolled-back";
         const canRollBack =
           failed.state === "failed" && failed.rollback?.ok !== true && failed.previous !== undefined;
         out.push({
           ...base,
           id: incidentAskDecisionId("deploy", String(failed.id)),
           title: oneLine(
-            `${capital(failed.env)} deploy of ${failed.project} ${rolled ? "failed and was rolled back" : "failed"}`,
+            `${capital(failed.env)} deploy failed${failed.reason === undefined ? "" : `: ${oneLine(failed.reason, 160)}`}`,
             280,
           ),
           sentence: `${this.deployLine(failed)} ${task.status === "inbox" ? `${task.id} has not started.` : `${task.id} is on it.`}`,
@@ -524,20 +538,6 @@ export class IncidentEngine {
           at: failed.updatedAt,
         });
         continue;
-      }
-      if (this.recovered.has(task.id)) {
-        out.push({
-          ...base,
-          id: incidentAskDecisionId("recovered", task.id),
-          title: oneLine(`${task.title}: recovered on its own, still watching`, 280),
-          sentence:
-            "The watch is green again and nothing was shipped. Close it, or let the lead keep working.",
-          options: [
-            { id: "close", label: "Close: it recovered", primary: true },
-            { id: "continue", label: "Let the lead continue" },
-          ],
-          at: task.updatedAt,
-        });
       }
     }
     return out;
