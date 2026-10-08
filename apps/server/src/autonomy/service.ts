@@ -2500,7 +2500,6 @@ export class AutonomyService {
     const shown = firsts.slice(-3).join("; ") || "a check";
     const text = `Woke the captain: ${shown}${firsts.length > 3 ? ` (and ${firsts.length - 3} more)` : ""}`;
     this.event({ kind: "tick", text, ...(org === undefined || org === PRIVATE ? {} : { org }) });
-    if (chat !== undefined) this.sayIn(chat, text);
   }
 
   // ---------------------------------------------------------------------------

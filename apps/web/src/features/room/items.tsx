@@ -331,7 +331,12 @@ function ClientMessage({ item }: { item: Of<"client"> }) {
           <span className="text-base font-semibold text-fg">{name}</span>
           <Stamp at={item.at} />
         </div>
-        <div className={cn(MEASURE, "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg")}>
+        <div
+          className={cn(
+            MEASURE,
+            "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
+          )}
+        >
           {item.text}
         </div>
       </div>
