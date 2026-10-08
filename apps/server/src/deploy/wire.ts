@@ -324,6 +324,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       project: info.id,
       environments: info.deploy,
       history: service.history(info.id),
+      rollingBack: service.rollingBackIds(),
       ...(rule === undefined ? {} : { rule: shipRuleSubject(rule.when) }),
     };
   };

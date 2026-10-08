@@ -474,6 +474,8 @@ export const ProjectDeployViewSchema = z.object({
   environments: z.array(DeployEnvironmentSchema),
   /** Newest first. */
   history: z.array(DeployRecordSchema),
+  /** The deploys whose rollback is running now. */
+  rollingBack: z.array(z.number().int().positive()).default([]),
   /** The ship rule that covers the project's deploys, in words, when the owner set one. */
   rule: z.string().optional(),
 });

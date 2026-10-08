@@ -187,17 +187,21 @@ export class DeployService {
     if (commit === undefined) {
       return { ok: false, kind: "unreadable", why: "majhi could not read the project's base branch." };
     }
-    // The steps of the task's plan before this one go first, each live (at this commit, for the same project).
+    // The steps of the current plan before this one go first, each live. A step of an older plan does not count:
+    // one that went out at another commit of this project, or that a later step of the same environment replaced.
     const before =
       req.record === undefined || req.record.task === undefined
         ? []
-        : this.deps.repo
-            .ofTask(req.record.task)
-            .filter((r) => r.seq < (req.record?.seq ?? 0))
-            .map((r) => ({
-              env: `${r.project} ${r.env}`,
-              live: r.state === "live" && (r.project !== project.id || r.commit === commit),
-            }));
+        : (() => {
+            const all = this.deps.repo.ofTask(req.record.task);
+            return all
+              .filter((r) => r.seq < (req.record?.seq ?? 0))
+              .filter((r) => !(r.project === project.id && deployHasCommit(r) && r.commit !== commit))
+              .filter(
+                (r) => !all.some((o) => o.seq > r.seq && o.project === r.project && o.env === r.env),
+              )
+              .map((r) => ({ env: `${r.project} ${r.env}`, live: r.state === "live" }));
+          })();
     const facts = {
       actor,
       commit,
@@ -363,6 +367,17 @@ export class DeployService {
       // Another record already has this environment and commit (another task shipped the same head): that one is
       // the answer, and the step that was only planned is moot.
       if (!deployHasCommit(rec)) this.deps.repo.dropUnstarted(rec.id);
+      // The same head already failed here and the owner asks again: that is a retry of the failed record.
+      const again =
+        retry && actor === "owner" && (existing.state === "failed" || existing.state === "rolled-back")
+          ? this.deps.repo.move(existing.id, existing.state, "queued", at, { ...carried, runs: req.runs })
+          : undefined;
+      if (again !== undefined) {
+        this.audit(again, true, `Started by ${actor}`);
+        this.changed();
+        this.kick(again.id);
+        return { record: again, repeat: false };
+      }
       this.changed();
       return { record: existing, repeat: true };
     }
@@ -469,6 +484,7 @@ export class DeployService {
     }
     if (this.rollingBack.has(id)) return { record, repeat: true };
     this.rollingBack.add(id);
+    this.changed();
     try {
       const done = await this.goBack(record);
       this.audit(record, done.ok, `Rolled back by ${actor}: ${done.detail}`);
@@ -483,6 +499,11 @@ export class DeployService {
     } finally {
       this.rollingBack.delete(id);
     }
+  }
+
+  /** The deploys whose rollback is running now. */
+  rollingBackIds(): number[] {
+    return [...this.rollingBack];
   }
 
   /** Calls `listener` whenever a deploy record changes. */
@@ -712,11 +733,15 @@ export class DeployService {
     this.changed();
     let current = failed;
     if (opts.rollback) {
-      const done = await this.goBack(failed).catch((err: unknown) => ({
-        ok: false,
-        detail: reasonOf(err),
-        at: this.deps.now().toISOString(),
-      }));
+      this.rollingBack.add(failed.id);
+      this.changed();
+      const done = await this.goBack(failed)
+        .catch((err: unknown) => ({
+          ok: false,
+          detail: reasonOf(err),
+          at: this.deps.now().toISOString(),
+        }))
+        .finally(() => this.rollingBack.delete(failed.id));
       const when = this.deps.now().toISOString();
       current =
         (done.ok

@@ -85,6 +85,8 @@ export function reachedLook(r: DeployRecord, now: number): ReachedLook {
 export interface PlanStep {
   view: DeployStepView;
   canRollBack: boolean;
+  /** The rollback of this step is running now. */
+  rollingBack: boolean;
 }
 
 /**
@@ -97,6 +99,8 @@ function rollbackRecordIds(history: readonly DeployRecord[]): Set<number> {
   for (const r of history) {
     if (seen.has(r.env) || r.state === "planned" || r.state === "held") continue;
     seen.add(r.env);
+    // Nothing to go back to for the first deploy of an environment.
+    if (r.previous === undefined) continue;
     if (r.state === "live" || (r.state === "failed" && r.rollback?.ok === false)) ids.add(r.id);
   }
   return ids;
@@ -117,7 +121,7 @@ export function planStepsOf(task: string, views: readonly (ProjectDeployView | u
         if (seen.has(r.env)) return [];
         seen.add(r.env);
         const tier = view.environments.find((e) => e.env === r.env)?.tier;
-        return [{ view: deployStepOfRecord(r, tier), canRollBack: rollable.has(r.id) }];
+        return [{ view: deployStepOfRecord(r, tier), canRollBack: rollable.has(r.id) && !view.rollingBack.includes(r.id), rollingBack: view.rollingBack.includes(r.id) }];
       });
   });
   return steps.sort((a, b) => (a.view.seq ?? 0) - (b.view.seq ?? 0));
