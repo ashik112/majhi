@@ -46,7 +46,15 @@ export const NoticeSchema = z.object({
   read: z.boolean(),
   link: NoticeLinkSchema,
   /** The decision's main answer, wired to the same action as Needs you. */
-  answer: z.object({ decision: z.string().min(1).max(300), option: z.string().min(1), label: z.string().min(1) }).optional(),
+  answer: z
+    .object({
+      decision: z.string().min(1).max(300),
+      option: z.string().min(1),
+      label: z.string().min(1),
+      /** Who suggests which answer, in a few words: "Captain says merge." */
+      says: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 export type Notice = z.infer<typeof NoticeSchema>;
 

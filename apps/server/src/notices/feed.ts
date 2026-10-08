@@ -71,6 +71,12 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
   }
   // The same button as on the Needs you page: the primary answer, unless it needs typed words.
   const main = d.options.find((o) => o.primary === true && o.text !== true);
+  const hint = d.suggestion;
+  const hinted = hint === undefined ? undefined : (d.options.find((o) => o.id === hint.option)?.label ?? hint.option);
+  const says =
+    hint === undefined || hinted === undefined
+      ? undefined
+      : `${hint.by === "captain" ? "Captain says" : "The agent suggests"} ${hinted.toLowerCase()}.`;
   return {
     id: `decision:${d.id}`,
     kind: "decision",
@@ -80,7 +86,7 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
     ...(detail === undefined ? {} : { detail: oneLine(detail) }),
     needsYou: true,
     link: d.link,
-    ...(main === undefined ? {} : { answer: { decision: d.id, option: main.id, label: main.label } }),
+    ...(main === undefined ? {} : { answer: { decision: d.id, option: main.id, label: main.label, ...(says === undefined ? {} : { says }) } }),
   };
 }
 
