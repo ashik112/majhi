@@ -98,12 +98,14 @@ import {
   ChatKeepCountInputSchema,
   ChatKeepCountSchema,
   ChatLinkInputSchema,
+  ChatMakeTaskInputSchema,
   ChatMarkUsInputSchema,
   ChatOpenIncidentInputSchema,
   ChatOpenIncidentResultSchema,
   ChatPersonInputSchema,
   ChatReplyInputSchema,
   ChatReplyResultSchema,
+  ChatRetryReplyInputSchema,
   ChatSendAsInputSchema,
   ChatSendInputSchema,
   ChatSettingsInputSchema,
@@ -414,7 +416,7 @@ import {
   SkillUpdateInputSchema,
 } from "./skills.ts";
 import { TaskAreasSchema, TaskDetailSchema } from "./task-trail.ts";
-import { TaskTypeSchema } from "./task-type.ts";
+import { TaskFieldsInputSchema, TaskTypeSchema } from "./task-type.ts";
 import {
   AttachmentSchema,
   CardActionSchema,
@@ -1621,6 +1623,20 @@ export const commands = {
     input: ChatStartTaskInputSchema,
     output: ChatStartTaskResultSchema,
   },
+  "chat.makeTask": {
+    risk: "change",
+    summary:
+      "Open a task from one message of a client chat (a client's message, or a captain reply, which stands for the message it answers). The task is made in the chat's own workspace with the message as its origin, started as the owner's Start row allows, and the message says which task it became. A message that is not in that chat is refused. Owner only",
+    input: ChatMakeTaskInputSchema,
+    output: ChatStartTaskResultSchema,
+  },
+  "chat.retryReply": {
+    risk: "outbound",
+    summary:
+      "Send a reply to a client chat that failed to go, again. It goes through the same rails as the first send: a case the owner holds waits as a draft, and a secret is refused. Owner only",
+    input: ChatRetryReplyInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
+  },
   "contacts.list": {
     risk: "read",
     summary: "The clients' contacts of a workspace with the chat identities each has. Owner only",
@@ -2207,8 +2223,15 @@ export const commands = {
   "tasks.setType": {
     risk: "change",
     summary:
-      "Set a task's type (bug, incident, feature, request, research, design, test or chore). The owner may set any task's; the captain only a task of its own workspace, and never over a type the owner set",
+      "Set a task's type (bug, incident, feature, request, research, design, test, chore, support or post). The owner may set any task's; the captain only a task of its own workspace, and never over a type the owner set",
     input: z.object({ id: TaskIdSchema, type: TaskTypeSchema }),
+    output: TaskSchema,
+  },
+  "tasks.setFields": {
+    risk: "change",
+    summary:
+      "Set what a kind of task holds beyond the common fields: a post's draft, channel and schedule. The fields must be of the task's own type (a post's fields on a bug are refused), so set the type first. Setting a post's draft again asks the owner to approve it to publish. The owner may set any task's; the captain only a task of its own workspace",
+    input: z.object({ id: TaskIdSchema, fields: TaskFieldsInputSchema }),
     output: TaskSchema,
   },
   "tasks.create": {

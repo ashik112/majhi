@@ -40,6 +40,8 @@ export const tasks = sqliteTable("tasks", {
   /** The task type and who set it (migration 176). Both set or both NULL. */
   type: text("type"),
   typeBy: text("type_by"),
+  /** JSON TaskFields: what the kind holds beyond the common fields (migration 187). NULL for none. */
+  fields: text("fields"),
   /** JSON StoredOrigin: where the task came from. NULL for tasks made before origins and for chats (migration 176). */
   origin: text("origin"),
   /** The owner marked it Not for autonomous mode (migration 114). */

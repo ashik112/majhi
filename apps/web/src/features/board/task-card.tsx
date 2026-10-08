@@ -8,7 +8,7 @@ import { AreaChips } from "../tasks-ui/area-chips";
 import { OriginMark } from "../tasks-ui/origin-mark";
 import { ProjectNames } from "../tasks-ui/project-names";
 import { TrailStrip } from "../tasks-ui/trail-strip";
-import { TypeTile } from "../tasks-ui/type-chip";
+import { TypeTag } from "../tasks-ui/type-chip";
 import { type EntryContext, rowDomId, taskOfEntry, useEntryActions } from "./entry-context";
 import { lineOf, queuedMarks } from "./entry-text";
 import type { RowEntry } from "./home-model";
@@ -90,7 +90,7 @@ export const TaskCard = memo(function TaskCard({ entry, focused, selected, ctx, 
         {place !== undefined && (
           <span className="w-3 shrink-0 text-right font-mono text-xs font-medium text-fg-faint">{place}</span>
         )}
-        {task !== undefined && task.chat !== true && <TypeTile typing={task.typing} />}
+        {task !== undefined && task.chat !== true && <TypeTag typing={task.typing} />}
         <span className="shrink-0 font-mono text-xs text-fg-muted">{line.id ?? ""}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <OriginMark origin={task?.origin} named={task?.origin?.kind === "finding"} />

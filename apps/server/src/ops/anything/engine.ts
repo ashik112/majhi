@@ -181,6 +181,21 @@ function breachLine(c: WatchCondition, r: Reading): string {
   }
 }
 
+/**
+ * A text condition alerts on the words of the look. A look that read no words (a status code, a count) is read as
+ * the number it found, else as the line it shows, so "401" matches a look that found 401 and a missing text is
+ * never taken for a look that had none.
+ */
+export function textBreach(
+  type: "contains" | "notContains",
+  text: string,
+  look: { text?: string | undefined; number?: number | undefined; display?: string | undefined },
+): boolean {
+  const read = look.text ?? (look.number !== undefined ? String(look.number) : (look.display ?? ""));
+  const found = read.toLowerCase().includes(text.toLowerCase());
+  return type === "contains" ? found : !found;
+}
+
 function sampled(list: WatchSample[]): WatchSample[] {
   if (list.length <= SAMPLE_POINTS) return list;
   const out: WatchSample[] = [];
@@ -788,10 +803,8 @@ export class WatchEngine {
         }
         break;
       case "contains":
-        breach = (r.text ?? "").toLowerCase().includes(c.text.toLowerCase());
-        break;
       case "notContains":
-        breach = !(r.text ?? "").toLowerCase().includes(c.text.toLowerCase());
+        breach = textBreach(c.type, c.text, r);
         break;
       case "down":
         breach = !r.healthy;

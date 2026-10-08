@@ -29,6 +29,8 @@ type ChatCommand =
   | "chat.history"
   | "chat.openIncident"
   | "chat.startTask"
+  | "chat.makeTask"
+  | "chat.retryReply"
   | "contacts.list"
   | "contacts.merge"
   | "contacts.undoMerge";
@@ -160,6 +162,14 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     "chat.history": async (input, ctx) => chat.history(input, captainCaller(ctx)),
     "chat.openIncident": async (input, ctx) => chat.openIncident(input, captainCaller(ctx)),
     "chat.startTask": async (input, ctx) => chat.startTask(input, captainCaller(ctx)),
+    "chat.makeTask": async (input, ctx) => {
+      ownerOnly(ctx);
+      return chat.makeTask(input);
+    },
+    "chat.retryReply": async (input, ctx) => {
+      ownerOnly(ctx);
+      return chat.retryReply(input);
+    },
     "contacts.list": async (input, ctx) => {
       ownerOnly(ctx);
       return chat.contacts(input.org);

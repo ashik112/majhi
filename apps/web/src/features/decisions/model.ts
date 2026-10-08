@@ -41,6 +41,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   incident: "incident",
   trust: "trust",
   notifications: "access",
+  publish: "ship",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {

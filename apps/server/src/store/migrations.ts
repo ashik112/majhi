@@ -2007,6 +2007,13 @@ ALTER TABLE captain_lanes_by_job RENAME TO captain_lanes;
 `,
   },
   {
+    // What a kind of task holds beyond the common fields (a post's draft, channel, schedule): one JSON object
+    // (TaskFields) discriminated by the task's type. NULL for every task made before, and for kinds with none.
+    id: 187,
+    name: "task kind fields",
+    sql: `ALTER TABLE tasks ADD COLUMN fields TEXT;`,
+  },
+  {
     // A line of a captain's workspace thread can be about a task (`about` in the payload): the task page reads those
     // lines from the thread's room, and the thread leaves them out. A client message that became or joined a task
     // names it in its outcome (`outcome_task`), and the task shows it. Virtual columns and indexes make each read

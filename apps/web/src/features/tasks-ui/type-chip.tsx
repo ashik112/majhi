@@ -40,6 +40,21 @@ export function TypeTile({
   );
 }
 
+/** The kind as a tag with its icon and word, for a board card (Incident, Bug, Post). Not a button: the task page changes it. */
+export function TypeTag({ typing }: { typing: TaskTyping | undefined }) {
+  const Icon = typing === undefined ? UNTYPED_ICON : TYPE_ICON[typing.type];
+  return (
+    <span
+      title={`${typeLabel(typing)}, ${typedBy(typing)}`}
+      style={colorOf(typing)}
+      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_srgb,var(--tc)_34%,transparent)] bg-[color-mix(in_srgb,var(--tc)_10%,transparent)] pr-1.5 pl-1 text-xs font-medium whitespace-nowrap text-fg"
+    >
+      <Icon aria-hidden="true" className="size-3 text-(--tc)" strokeWidth={1.8} />
+      {typeLabel(typing)}
+    </span>
+  );
+}
+
 /**
  * The type as an icon and its word, and one click to change it. The menu lists the eight types; the
  * owner's pick is stored at once and is never overwritten by inference.

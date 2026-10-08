@@ -4,7 +4,9 @@ import {
   CircleDashed,
   FlaskConical,
   Inbox,
+  LifeBuoy,
   type LucideIcon,
+  Megaphone,
   PenTool,
   Search,
   Sparkles,
@@ -22,6 +24,8 @@ export const TYPE_ICON: Record<TaskType, LucideIcon> = {
   design: PenTool,
   test: FlaskConical,
   chore: Wrench,
+  support: LifeBuoy,
+  post: Megaphone,
 };
 
 /** The color of a type: a custom property set in styles.css for both themes. An untyped task is grey. */

@@ -142,7 +142,7 @@ export class ChatDesk {
         room.id,
         sent.decision === undefined
           ? { state: "waits", why: `${NOT_READING}: ${sent.why}` }
-          : { state: "waits", why: `${sent.why}.`, decision: sent.decision },
+          : { state: "waits", why: "Captain blocked: no account", decision: sent.decision },
       );
       this.deps.changed();
       return;

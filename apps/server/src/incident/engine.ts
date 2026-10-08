@@ -224,8 +224,10 @@ export class IncidentEngine {
           );
         });
         // Another watch's incident on the same project is its own incident: one task is never the fix of two
-        // watches unless the owner or the captain links them.
-        return same;
+        // watches unless the owner or the captain links them. A client's report of the same project is not a
+        // watch: the watch confirms it, so it joins that task instead of opening a second incident.
+        if (same !== undefined || project === undefined) return same;
+        return open.find((t) => t.origin?.kind === "client" && t.repos.some((r) => r.project === project));
       }
       case "deploy": {
         const same = open.find(
@@ -440,7 +442,9 @@ export class IncidentEngine {
       level: "info",
       text:
         source.kind === "watch"
-          ? `The same watch fired again: ${source.incident.title}.`
+          ? task.origin?.kind === "watch"
+            ? `The same watch fired again: ${source.incident.title}.`
+            : `A watch fired on the same project: ${source.incident.title}.`
           : source.kind === "client"
             ? "A client reported the same problem."
             : `Another deploy failed on the same project: ${source.title}`,

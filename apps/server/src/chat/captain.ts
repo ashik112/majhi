@@ -147,6 +147,46 @@ export class CaptainChat {
     return made;
   }
 
+  /**
+   * The owner opens a task from one message of the room. A captain reply stands for the client message it answers.
+   * The message must be in this room: an id of another room's message is not found here. The task goes through
+   * the same start path as the captain's own (`startTask`), so its origin, workspace and outcome line are the same.
+   */
+  async makeTask(room: RoomRow, itemId: string): Promise<{ task: string; started: boolean }> {
+    if (room.org === undefined) throw new UserError("Link the chat to a workspace first.", 409);
+    const found = this.deps.store.room.get(room.id, itemId);
+    let message: ClientItem | undefined;
+    if (found?.type === "client") message = found;
+    else if (found?.type === "client-reply") message = this.answered(room, found);
+    if (message === undefined)
+      throw new UserError(`There is no message ${itemId} in this chat to make a task from.`, 404);
+    if (message.us === true) throw new UserError("That message is from your team, not a client.", 409);
+    const said = readable(room, message).trim();
+    return this.startTask(room, {
+      room: room.id,
+      item: message.id,
+      text: said === "" ? `${message.sender.name} sent a file` : said.slice(0, 3000),
+    });
+  }
+
+  /** The client message a reply answers: the one it names, else the newest client message before it. */
+  private answered(
+    room: RoomRow,
+    reply: { replyTo?: string | undefined; at: string },
+  ): ClientItem | undefined {
+    const clients = this.deps.store.room
+      .page(room.id, 200)
+      .items.filter((i): i is ClientItem => i.type === "client" && i.us !== true);
+    const named =
+      reply.replyTo === undefined ? undefined : clients.find((c) => c.external.message === reply.replyTo);
+    // An outcome written on a message stores it again with a new seq, so the order is the time it was sent.
+    const sent = (c: ClientItem) => c.sentAt ?? c.at;
+    return (
+      named ??
+      clients.filter((c) => sent(c) <= reply.at).toSorted((a, b) => sent(b).localeCompare(sent(a)))[0]
+    );
+  }
+
   /** The captain's reply went through the rails: it is what became of the messages it answered. */
   replied(room: RoomRow, sent: ReplyResult): void {
     const outcome: ClientOutcome = {

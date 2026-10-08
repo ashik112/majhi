@@ -20,7 +20,7 @@ import { SkillNameSchema } from "./skills.ts";
 import { HoldViewSchema } from "./task-hold.ts";
 import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
 import { TrailSchema } from "./task-trail.ts";
-import { TaskTypingSchema } from "./task-type.ts";
+import { TaskFieldsSchema, TaskTypingSchema } from "./task-type.ts";
 import { DaySchema } from "./usage.ts";
 
 /**
@@ -356,6 +356,8 @@ export const TaskSchema = z.object({
    * `by` only exists with `type`.
    */
   typing: TaskTypingSchema.optional(),
+  /** What the kind holds beyond the common fields (a post's draft, channel, schedule). Checked against `typing.type` on every write. */
+  fields: TaskFieldsSchema.optional(),
   /** Where it came from, as its creator set it. Absent for tasks made before origins. A parent is not stored here: it is the `parent` link. */
   origin: StoredOriginSchema.optional(),
   /** An org id, or absent for LOCAL tasks. */

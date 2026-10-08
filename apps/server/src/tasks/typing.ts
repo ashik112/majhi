@@ -39,13 +39,16 @@ export function guessType(task: {
 
 const TYPE_MEANING: Record<TaskType, string> = {
   bug: "something that worked is broken or wrong, with no outage happening now",
-  incident: "an outage or errors in production that customers feel right now, even when the text only says it is down",
+  incident:
+    "an outage or errors in production that customers feel right now, even when the text only says it is down",
   feature: "new behavior or a new capability",
   request: "someone asks for a change, an answer or a piece of work",
   research: "find out, compare or investigate, with nothing to ship",
   design: "design, copy or visual work",
   test: "add or fix tests",
   chore: "upkeep with no change in behavior: dependencies, config, cleanup",
+  support: "a customer or colleague needs help or an answer that takes work, with no code change expected",
+  post: "a piece of content to publish on a channel: a social post, an announcement",
 };
 
 /** The question for the decision provider, asked only when the rules were unsure. */
