@@ -185,7 +185,7 @@ export class DeployService {
     const tip = await this.deps.git.tip(project.path, base);
     const commit = req.commit ?? tip;
     if (commit === undefined) {
-      return { ok: false, kind: "unreadable", why: "majhi could not read the project's base branch." };
+      return { ok: false, kind: "unreadable", why: await this.deps.git.whyNoTip(project.path, base) };
     }
     // The steps of the current plan before this one go first, each live. A step of an older plan does not count:
     // one that went out at another commit of this project, or that a later step of the same environment replaced.
@@ -197,15 +197,14 @@ export class DeployService {
             return all
               .filter((r) => r.seq < (req.record?.seq ?? 0))
               .filter((r) => !(r.project === project.id && deployHasCommit(r) && r.commit !== commit))
-              .filter(
-                (r) => !all.some((o) => o.seq > r.seq && o.project === r.project && o.env === r.env),
-              )
+              .filter((r) => !all.some((o) => o.seq > r.seq && o.project === r.project && o.env === r.env))
               .map((r) => ({ env: `${r.project} ${r.env}`, live: r.state === "live" }));
           })();
     const facts = {
       actor,
       commit,
       tip,
+      tipWhy: tip === undefined ? await this.deps.git.whyNoTip(project.path, base) : undefined,
       landed: this.deps.tasks.landedCommits(project.id).has(commit),
       checksConfigured: this.deps.checksConfigured(project.id),
       confirmUnchecked: req.confirmUnchecked === true,
