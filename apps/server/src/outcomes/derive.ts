@@ -33,6 +33,7 @@ export const CHORE_ROW: Record<CaptainChore, string> = {
   health: "upkeep",
   checklist: "upkeep",
   wiki: "upkeep",
+  watches: "upkeep",
 };
 
 export interface DeriveOptions {

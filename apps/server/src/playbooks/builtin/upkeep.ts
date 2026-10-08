@@ -208,6 +208,24 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     runner: { kind: "chore", chore: "discover" },
   }),
   upkeep({
+    id: "upkeep-watches",
+    name: "Watch coverage",
+    purpose:
+      "Once a day, looks at each project's environments, connections and past incidents, and has the captain fill the gaps in a baseline of watches.",
+    trigger: { cadence: DAILY, events: [] },
+    inputs: ["Deploy environments", "Watches", "Connections", "Incident history"],
+    steps:
+      "Read where each project runs and how it can be checked, the watches that exist, what is connected and what broke before. When any of that changed since the last review, wake the captain with the facts and the full catalogue of watch kinds. The captain extends a watch that exists, adds only watches that alert, and writes one line for each. A signal nothing connected can measure becomes one question for the owner.",
+    outputs: ["log"],
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
+    turnOn:
+      "Reviews watch coverage once a day where Upkeep is Captain. A watch with a fix, an action or a phone page stays yours.",
+    outcomes: [
+      { id: "watch-review", text: "Facts changed: ask the captain to review the baseline of watches" },
+    ],
+    runner: { kind: "chore", chore: "watches" },
+  }),
+  upkeep({
     id: "upkeep-tidy",
     name: "Tidy up",
     purpose:

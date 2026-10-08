@@ -261,8 +261,15 @@ async function recovers(w: World, id: string): Promise<string> {
     },
     300_000,
   );
-  const task = await cmd("tasks.get", { id });
-  if (task.status !== "done") throw new Error(`task is ${task.status}, not done`);
+  // The incident sweep closes the task a moment after the status flips.
+  const task = await until(
+    "the task to be done",
+    async () => {
+      const t = await cmd("tasks.get", { id });
+      return t.status === "done" ? t : false;
+    },
+    90_000,
+  );
   // The client hears of it on the next incident sweep (every 20 s), not at the instant the status flips.
   await until(
     "the client to be told Resolved",

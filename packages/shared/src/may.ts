@@ -165,6 +165,7 @@ export const CHORE_JOB: Readonly<Record<CaptainChore, Job>> = {
   health: "backlog",
   checklist: "backlog",
   wiki: "backlog",
+  watches: "backlog",
 };
 
 /** Chores that only look and file findings, proposals or drafts: working hours never hold them. */
@@ -173,6 +174,7 @@ export const READ_ONLY_CHORES: ReadonlySet<CaptainChore> = new Set([
   "followups",
   "checklist",
   "discover",
+  "watches",
 ]);
 
 /** Why a chore may not run now for the switches alone, or undefined. */
