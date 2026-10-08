@@ -272,7 +272,7 @@ export function signInDecisionId(account: string): string {
   return `signin:${account}`;
 }
 /** What an incident task asks of the owner: start it, say which project, close it after it recovered, see a failed deploy. */
-export const INCIDENT_ASKS = ["start", "project", "recovered", "deploy"] as const;
+export const INCIDENT_ASKS = ["start", "recovered", "deploy"] as const;
 export type IncidentAsk = (typeof INCIDENT_ASKS)[number];
 /** `ref` is a task id, or a deploy id for `deploy`. */
 export function incidentAskDecisionId(what: IncidentAsk, ref: string): string {

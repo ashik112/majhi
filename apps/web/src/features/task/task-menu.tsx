@@ -62,7 +62,7 @@ export function TaskMenu({ task }: { task: Task }) {
 }
 
 /** Work not shipped turns the dialog into the one confirmation to close without shipping. */
-function CloseDialog({ task, onDone }: { task: Task; onDone: () => void }) {
+export function CloseDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   const close = useCloseTask();
   const toast = useToast();
   const options = useShipOptions(task, true);

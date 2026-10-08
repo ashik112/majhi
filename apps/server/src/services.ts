@@ -2559,18 +2559,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       start: (id, by) => tasks.start(id, by),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
-      attachProject: (id, project) => tasks.attachProject(id, project),
+      setType: (id, type, by) => tasks.setType(id, type, by),
     },
     deploys: { rollback: (id, actor) => deployWorld.service.rollback(id, actor) },
     projects: async (org) =>
       (await projects.infos())
         .filter((p) => p.org === org && p.exists)
         .map((p) => ({ id: p.id, name: p.id, envs: p.deploy.length })),
-    starts: async (org) =>
-      effectiveAuthority(authorityOf((await config.settings()).autonomy, org), autonomy.mode()).start ===
-      "decide"
-        ? "captain"
-        : "owner",
     title: async (org, facts) => {
       try {
         const out = await housekeeper.ask(

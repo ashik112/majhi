@@ -5,6 +5,7 @@ import {
   REPORT_SECTION_LABEL,
   REPORT_SECTIONS,
   type ReportText,
+  type Task,
 } from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useAnswerIncident, useAskCaptain, useEditReport, useSendReport } from "@/lib/incident-queries";
+import { CloseDialog } from "../task/task-menu";
 import { DockBar } from "./dock-bar";
 
 const LAMP: Record<ClientStatus, LampState> = {
@@ -36,16 +38,26 @@ export function incidentCardOpen(view: IncidentView | null | undefined): view is
  * time each began, and, once the incident is resolved, the report with an Internal and Client version. Sending it is
  * the owner's click; the text freezes once it went.
  */
-export function IncidentCard({ view }: { view: IncidentView }) {
+export function IncidentCard({ view, task }: { view: IncidentView; task?: Task | undefined }) {
+  const [closing, setClosing] = useState(false);
   const ask = useAskCaptain();
   const answer = useAnswerIncident();
   const toast = useToast();
   const fail = (what: string) => (error: unknown) =>
     toast(what, { detail: describeError(error), tone: "error" });
-  const showStatus = view.rooms.length === 0 || view.quiet !== undefined || view.recovered !== undefined;
+  const showStatus =
+    (view.rooms.length === 0 || view.quiet !== undefined || view.recovered !== undefined) &&
+    view.status !== "resolved";
+  const closeButton =
+    task === undefined || task.status === "done" ? undefined : (
+      <Button size="sm" onClick={() => setClosing(true)}>
+        Close incident
+      </Button>
+    );
   return (
     <>
-      {showStatus && view.status !== "resolved" && (
+      {closing && task !== undefined && <CloseDialog task={task} onDone={() => setClosing(false)} />}
+      {showStatus && (
         <li className="list-none">
           <DockBar
             label="Incident"
@@ -56,6 +68,7 @@ export function IncidentCard({ view }: { view: IncidentView }) {
               .join(" · ")}
             actions={
               <>
+                {closeButton}
                 {view.quiet !== undefined && (
                   <Button
                     size="sm"
@@ -114,6 +127,7 @@ export function IncidentCard({ view }: { view: IncidentView }) {
                 ? "This chat follows a newer incident and hears about that one"
                 : lineOf(view, room)
             }
+            actions={i === 0 && !showStatus ? closeButton : undefined}
             below={
               i === 0 && room.joined !== true && view.status !== "resolved" ? (
                 <Steps view={view} />
