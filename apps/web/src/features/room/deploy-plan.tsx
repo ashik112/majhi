@@ -60,6 +60,10 @@ export function DeployPlanCard({
   const moving = views.some((v) => MOVING.includes(v.state));
   const held = steps.filter((s) => s.view.state === "held");
   const planned = steps.filter((s) => s.view.state === "planned" && s.view.record !== undefined);
+  const retryable = steps.filter(
+    (s) => (s.view.state === "failed" || s.view.state === "rolled-back") && s.view.record !== undefined,
+  );
+  const toRun = planned.length > 0 ? planned : retryable;
   const notes = [
     ...new Set(
       steps.flatMap((s) => (s.view.state !== "held" && s.view.note !== undefined ? [s.view.note] : [])),
@@ -71,9 +75,9 @@ export function DeployPlanCard({
   const run = async () => {
     setStarting(true);
     try {
-      for (const step of planned) {
+      for (const step of toRun) {
         if (step.view.record === undefined) continue;
-        await deploy.mutateAsync({ record: step.view.record });
+        await deploy.mutateAsync({ record: step.view.record, retry: true });
       }
     } catch (error) {
       fail("Could not deploy")(error);
@@ -104,7 +108,7 @@ export function DeployPlanCard({
       actions={
         moving ? undefined : (
           <>
-            {planned.length > 0 && (
+            {toRun.length > 0 && (
               <Button
                 size="sm"
                 variant="primary"
@@ -112,7 +116,7 @@ export function DeployPlanCard({
                 disabled={busy}
                 onClick={() => void run()}
               >
-                Run
+                {planned.length > 0 ? "Run" : "Retry"}
               </Button>
             )}
             <Button size="sm" onClick={change}>
@@ -124,7 +128,7 @@ export function DeployPlanCard({
       below={
         <>
           <ol className="m-0 mt-1 flex list-none flex-col p-0 pl-4">
-            {steps.map(({ view, canRollBack }, i) => {
+            {steps.map(({ view, canRollBack, rollingBack }, i) => {
               const inputs = inputsOf(view.runs ?? []).join(" · ");
               const started = !NOT_STARTED.includes(view.state);
               const bad = view.state === "failed" || view.state === "rolled-back";
@@ -174,8 +178,8 @@ export function DeployPlanCard({
                             Roll back
                           </Button>
                         )}
-                        <Lamp state={deployTone(view.state)} />
-                        {progressWord(view)}
+                        <Lamp state={rollingBack ? "working" : deployTone(view.state)} />
+                        {rollingBack ? "rolling back" : progressWord(view)}
                       </>
                     ) : view.who === "owner" ? (
                       "You"

@@ -263,7 +263,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
         <p className="text-sm text-fg-faint text-pretty">
           {autoRemount
             ? "When you save, majhi restarts for a few seconds to mount new folders."
-            : "majhi mounts each folder into its container when it starts, so a new folder needs a restart. You get the command after you save."}
+            : "majhi cannot restart itself from here. After you save a new folder, it shows the one command to run."}
         </p>
       )}
     </>

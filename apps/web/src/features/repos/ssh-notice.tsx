@@ -16,9 +16,9 @@ export function sshNeedsAttention(ssh: SshStatus | undefined): ssh is SshStatus 
 
 /**
  * One calm notice on the Projects and Hub setup pages. It shows nothing while SSH works, or while the host
- * helper has not reported yet.
+ * helper has not reported yet. `bare` leaves out its Check again, for a page that has its own.
  */
-export function SshNotice({ className }: { className?: string }) {
+export function SshNotice({ className, bare = false }: { className?: string; bare?: boolean }) {
   const status = useHostStatus().data;
   const ssh = status?.info?.ssh;
   const failing = (status?.sshHosts ?? []).filter((h) => h.state === "auth-failed");
@@ -48,9 +48,11 @@ export function SshNotice({ className }: { className?: string }) {
         <h2 id="ssh-notice-title" className="min-w-0 flex-1 text-base font-medium text-fg">
           majhi cannot reach your git hosts over SSH yet.
         </h2>
-        <Button variant="secondary" size="sm" onClick={checkAgain} disabled={reload.isPending}>
-          {reload.isPending ? "Checking" : "Check again"}
-        </Button>
+        {!bare && (
+          <Button variant="secondary" size="sm" onClick={checkAgain} disabled={reload.isPending}>
+            {reload.isPending ? "Checking" : "Check again"}
+          </Button>
+        )}
       </div>
 
       {keys === undefined ? (

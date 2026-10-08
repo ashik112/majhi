@@ -1,7 +1,8 @@
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeFastExecutable } from "../../testing/fastBin.ts";
 import { localSpawner, type SpawnRequest } from "../spawn.ts";
 import {
   dockerRunArgs,
@@ -323,15 +324,15 @@ describe("dockerSpawner", () => {
     const log = join(root, "docker.log");
     const fake = join(root, "docker");
     // A stand-in docker CLI: records its argv and the key's value it can see, then echoes stdin.
-    await writeFile(
+    await writeFastExecutable(
       fake,
       `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), key: process.env.ANTHROPIC_API_KEY ?? null }) + "\\n");
+const here = require("node:path").dirname(process.argv[1]);
+fs.appendFileSync(here + "/docker.log", JSON.stringify({ argv: process.argv.slice(2), key: process.env.ANTHROPIC_API_KEY ?? null }) + "\\n");
 if (process.argv[2] === "run") process.stdin.pipe(process.stdout);
 `,
     );
-    await chmod(fake, 0o755);
     let ready = 0;
     const spawner = dockerSpawner({ ...cfg, docker: fake, ready: async () => void ready++ });
     const run = await spawner(request());
@@ -378,11 +379,11 @@ async function statefulDocker(): Promise<{
   const state = join(root, "containers.json");
   const cli = join(root, "docker");
   await writeFile(state, "{}");
-  await writeFile(
+  await writeFastExecutable(
     cli,
     `#!/usr/bin/env node
 const fs = require("node:fs");
-const file = ${JSON.stringify(state)};
+const file = require("node:path").dirname(process.argv[1]) + "/containers.json";
 const args = process.argv.slice(2);
 const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
 // Atomic, so a test reading the file while a docker CLI writes never sees half of it.
@@ -408,7 +409,6 @@ if (args[0] === "run") {
 }
 `,
   );
-  await chmod(cli, 0o755);
   const containers = async () =>
     JSON.parse(await readFile(state, "utf8")) as Record<string, Record<string, string>>;
   return {
@@ -474,12 +474,10 @@ describe("runner containers converge to one per live run", () => {
     await docker.add("majhi-run-a", { "majhi.runner": "1" });
     // A docker that fails its first `ps`, as a daemon still coming back does.
     const flaky = join(root, "flaky");
-    const marker = join(root, "failed-once");
-    await writeFile(
+    await writeFastExecutable(
       flaky,
-      `#!/bin/sh\nif [ "$1" = ps ] && [ ! -e ${marker} ]; then touch ${marker}; exit 1; fi\nexec ${docker.cli} "$@"\n`,
+      `#!/bin/sh\nD=$(dirname "$0")\nif [ "$1" = ps ] && [ ! -e "$D/failed-once" ]; then touch "$D/failed-once"; exit 1; fi\nexec "$D/docker" "$@"\n`,
     );
-    await chmod(flaky, 0o755);
     await removeStaleRunners({ docker: flaky, cliEnv: cfg.cliEnv }, { waitMs: 1 });
     expect(await docker.containers()).toEqual({});
   });
@@ -557,11 +555,10 @@ describe("a task terminal in a runner", () => {
   it("runs the docker CLI in the pty, and removes the container on stop, once", async () => {
     const log = join(root, "docker.log");
     const fake = join(root, "docker");
-    await writeFile(
+    await writeFastExecutable(
       fake,
-      `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`,
+      `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(require("node:path").dirname(process.argv[1]) + "/docker.log", JSON.stringify(process.argv.slice(2)) + "\\n");\n`,
     );
-    await chmod(fake, 0o755);
     const launch = await dockerTty({ ...cfg, docker: fake, ready: async () => undefined })(terminalRequest());
     expect(launch.command).toBe(fake);
     expect(launch.args.slice(0, 2)).toEqual(["run", "-it"]);

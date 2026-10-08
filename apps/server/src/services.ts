@@ -116,6 +116,7 @@ import { checkGitToken } from "./gitConnect/check.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { effectiveCommands } from "./handoff/commands.ts";
 import { HomeChecks } from "./handoff/home-checks.ts";
 import { defaultHandoffCpus, defaultHandoffMemory, maxHandoffMemory } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
@@ -146,6 +147,7 @@ import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
 import { landedNow } from "./memory/task-git.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
+import { FIX_MR_CHECKS_TEXT, failingMrDecisions } from "./mrs/decisions.ts";
 import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
@@ -1021,6 +1023,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     options: sessionOptions,
     majhiHome: env.majhiHome,
     usage: usageRecorder,
+    markSignedOut: async (account, detail) => {
+      await accounts.markSignedOut(account, detail);
+    },
   });
   // The wiki folder: each project's source export, facts and code graph, read in a runner container with no
   // network. In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
@@ -1118,13 +1123,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let handoffService: HandoffService | undefined;
   // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
   let loopGuard: LoopGuard | undefined;
+  // The checks a project has, as the hand-off resolves them: the card's commands with the project's own on top.
+  const checksConfigured = async (project: string): Promise<boolean> => {
+    const commands = effectiveCommands(
+      cards.get(project)?.commands,
+      (await config.sections()).projects[project]?.handoff,
+    );
+    return [commands.test, commands.build, commands.lint, commands.typecheck].some(
+      (c) => c !== undefined && c.trim() !== "",
+    );
+  };
   // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
   const mergeGate = new MergeGate({
     handoff: () => handoffService,
-    configured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    configured: (project) => checksConfigured(project),
   });
   const wikiLines = wikiNotes({
     repo: store.wiki,
@@ -1351,7 +1363,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     events,
     tasks,
-    working: (id) => runs.working(id).length > 0,
+    // A turn that only waits in the queue counts: its agent has not committed yet.
+    working: (id) =>
+      runs.working(id).length > 0 || (store.tasks.get(id)?.team ?? []).some((a) => runs.hasWork(id, a)),
     captainMerges: (task) => captainMerges(task.id),
     landed: (id) => {
       const merged = store.tasks.get(id);
@@ -1536,10 +1550,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
-    incidentDetail: (id) => {
+    incidentDetail: async (id) => {
       const inc = opsWatch?.incident(id);
       if (inc === undefined) return undefined;
-      const found = inc.timeline.findLast((e) => e.kind === "action" && e.text.startsWith("Captain: "));
+      // What the captain found counts only since the incident last fired: an older line is about the last time.
+      const fired = inc.timeline.findLastIndex((e) => e.kind === "opened" || e.kind === "reopened");
+      const found = inc.timeline.findLast(
+        (e, i) => i > fired && e.kind === "action" && e.text.startsWith("Captain: "),
+      );
+      const quiet = inc.status === "open" ? await autonomy.quietWhy(inc.org) : undefined;
       let task: string | undefined;
       try {
         task = inc.finding === undefined ? undefined : findingsStore?.get(inc.finding).task;
@@ -1550,6 +1569,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         ...(inc.finding === undefined ? {} : { finding: inc.finding }),
         ...(found === undefined ? {} : { found: found.text.slice("Captain: ".length).slice(0, 600) }),
         ...(task === undefined ? {} : { task }),
+        ...(quiet === undefined ? {} : { quiet }),
       };
     },
     items: () => store.room.waitingDecisions(),
@@ -1620,18 +1640,43 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);
       },
+      answerChatWait: (room, ref, option) =>
+        clientChat?.waits.answer(room, ref, option) ?? Promise.resolve(),
       answerIncidentAsk: (what, ref, option) =>
         incidentEngine?.answer(what, ref, option) ?? Promise.resolve(),
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
       answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
+      fixMrChecks: (task) =>
+        tasks.send({
+          task,
+          text: FIX_MR_CHECKS_TEXT,
+          attachments: [],
+          mode: "queue",
+        }),
+      runDeployStep: async (task, project, env) => {
+        const found = store.tasks.get(task);
+        if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
+        const step = (await deployWorld.planner.stepsOf(found)).find(
+          (s) => s.project === project && s.env === env,
+        );
+        if (step?.record === undefined) throw new UserError("That deploy step is gone.", 409);
+        await deployWorld.service.deploy({ record: step.record, retry: true }, "owner");
+      },
     },
     extras: async () => [
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
+      ...(clientChat?.waits.decisions() ?? []),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
+      ...failingMrDecisions(
+        [...store.tasks.unmergedMrs()].flatMap((id) => {
+          const found = store.tasks.get(id);
+          return found === undefined ? [] : [found];
+        }),
+      ),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
@@ -1748,8 +1793,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         : `The wiki cannot be written here: ${errorMessage(err)}`;
     }
   };
+  const wikiSignedOut = async (org: string) => {
+    try {
+      const { fm } = await housekeeper.resolve(org);
+      return (await accounts.needsLogin(fm.account)) ? fm.account : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const wiki = new WikiService({
     repo: store.wiki,
+    signedOut: wikiSignedOut,
     enabled: wikiOn,
     projects: async () =>
       (await projects.infos()).map((p) => ({
@@ -2054,10 +2108,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    checksConfigured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text) => notifier.captain(key, text),
     incident: async (input) =>
       (
@@ -2488,6 +2539,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     watch: {
       openIncidents: () => opsWatch?.openIncidents() ?? [],
       incident: (id) => opsWatch?.incident(id),
+      note: (id, text, at) => opsWatch?.note(id, "note", text, at),
+    },
+    announce: {
+      wake: (org, text) => autonomy.news(text, org),
+      notice: (_org, incident, text) =>
+        void notifier
+          .incident({ id: -incident, text, severity: "medium", repeat: false })
+          .catch(() => undefined),
     },
     watchProject: (inc) =>
       inc.watch !== undefined
@@ -2579,6 +2638,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await tasks.reopen(task);
     },
     askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
+    history: ({ text, org, task }) =>
+      void autonomy.event({ kind: "decision", text, org, ...(task === undefined ? {} : { task: task as TaskId }) }),
     decisions,
     lane: async (task) => {
       const org = lanes.orgOf(task);
@@ -2625,6 +2686,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       background.run(async () => {
         await incidentEngineNow.sweep();
         await chatParts.incidents.tick();
+        chatParts.waits.settle();
       }),
     INCIDENT_SWEEP_MS,
   );
@@ -2878,6 +2940,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     host: watchHost,
+    fixLive: (inc) => incidentEngine?.fixLive(inc) ?? Promise.resolve(false),
+    incidentResolved: (inc, told) => void incidentEngine?.fixRecovered(inc, told),
     incidentMeta: async (inc) => {
       const quiet = await autonomy.quietWhy(inc.org);
       const task =
@@ -3100,6 +3164,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),
       mergeChecks: (id) => tasks.mergeChecks(id),
+      empty: async (id) => {
+        const check = await shipReadiness({ store, room, runs, mrs }, id);
+        return !check.ready && check.unmergeable === "empty";
+      },
       state: (id) => handoff.state(id),
       lastMessage: (id) => {
         room.flush(id);

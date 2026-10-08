@@ -1,6 +1,6 @@
 import type { TaskRepo } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { localBranchExists, uncommitted } from "../git/git.ts";
+import { gitOk, localBranchExists, uncommitted } from "../git/git.ts";
 import { checkedOutAt } from "../git/merge.ts";
 import { commitsSinceStart } from "../git/since-start.ts";
 
@@ -39,7 +39,17 @@ export async function repoChanged(repo: TaskRepo): Promise<boolean> {
   const exists = await localBranchExists(repo.source, repo.branch).catch(() => true);
   if (!exists) return false;
   const commits = await commitsSinceStart(repo.source, repo).catch(() => undefined);
-  if (commits === undefined || commits > 0) return true;
+  if (commits === undefined) return true;
+  // Commits since the start that the base already holds (a reopened task that shipped before) are not new work.
+  const landed =
+    commits > 0 &&
+    (await gitOk(repo.source, [
+      "merge-base",
+      "--is-ancestor",
+      `refs/heads/${repo.branch}`,
+      `refs/heads/${repo.base}`,
+    ]));
+  if (commits > 0 && !landed) return true;
   if (repo.worktree === undefined) return false;
   const dirty = await uncommitted(repo.worktree).catch(() => []);
   return dirty.some((l) => !l.startsWith("??"));

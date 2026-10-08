@@ -51,8 +51,14 @@ export interface DecisionActions {
   answerTrust?(id: number, option: string): Promise<unknown>;
   /** An incident task asks something of the owner: start it, which project, close it, a failed deploy. */
   answerIncidentAsk?(what: string, ref: string, option: string): Promise<unknown>;
+  /** Something in a client chat waits for the owner: a claim, a who-is, a message left for a person. */
+  answerChatWait?(room: string, ref: string, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
+  /** The owner runs a deploy step that waits for them. */
+  runDeployStep?(task: string, project: string, env: string): Promise<unknown>;
+  /** The owner's words to the lead of a task whose merge request fails its checks. */
+  fixMrChecks?(task: string): Promise<unknown>;
   /** The Mac has notifications off for majhi: `settings` opens the pane, `check` sends a test. */
   answerNotifyAccess?(option: string): Promise<unknown>;
 }
@@ -96,7 +102,7 @@ export interface InboxDeps {
   /** Whether a captain's proposal no longer matches the setting it was measured against. */
   proposalStale?: (item: Extract<RoomItem, { type: "approval" }>) => Promise<boolean>;
   /** What is known of an incident: its finding, the captain's found text, the fix task. */
-  incidentDetail?: (id: number) => NonNullable<DecisionDetail["incident"]> | undefined;
+  incidentDetail?: (id: number) => Promise<NonNullable<DecisionDetail["incident"]> | undefined>;
   /** Says in a task's room that something the owner did could not be carried out. */
   warn?: (task: string, text: string) => void;
   /** Rebuilds or closes the pending proposals whose setting changed since. */
@@ -438,7 +444,10 @@ export class InboxService {
     } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
+    else if (parsed.kind === "mrci") await actions.fixMrChecks?.(parsed.task);
+    else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
+    else if (parsed.kind === "cwait") await actions.answerChatWait?.(parsed.room, parsed.ref, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
     } else if (parsed.kind === "batch") {
@@ -515,7 +524,7 @@ export class InboxService {
     const out: DecisionDetail = { id };
     const parsed = parseDecisionId(id);
     if (parsed?.kind === "incident") {
-      const incident = deps.incidentDetail?.(parsed.id);
+      const incident = await deps.incidentDetail?.(parsed.id);
       if (incident !== undefined) out.incident = incident;
       return out;
     }

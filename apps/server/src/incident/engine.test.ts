@@ -305,6 +305,26 @@ describe("resolution", () => {
   });
 });
 
+describe("a paused watch", () => {
+  it("is never a recovery: the incident stays open and no recovered card appears", async () => {
+    const t = setup();
+    const inc = t.watchIncident();
+    await t.engine.open(watchSource(inc));
+    t.incidents.set(7, {
+      ...inc,
+      status: "resolved",
+      resolvedAt: new Date(t.clock.now.getTime() + 5 * MIN).toISOString(),
+      timeline: [
+        { at: t.clock.now.toISOString(), kind: "resolved", closedBy: "stopped", text: "You paused the watch." },
+      ],
+    });
+    t.clock.now = new Date(t.clock.now.getTime() + 600 * MIN);
+    await t.engine.sweep();
+    expect(t.closed).toEqual([]);
+    expect(t.engine.decisions(() => undefined).some((c) => c.id.startsWith("iask:recovered"))).toBe(false);
+  });
+});
+
 describe("a failed deploy", () => {
   it("shows in Needs you with its reason until the owner has seen it", async () => {
     const t = setup({ starts: "captain" });

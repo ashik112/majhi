@@ -146,6 +146,8 @@ export const DecisionDetailSchema = z.object({
       finding: z.number().int().positive().optional(),
       found: z.string().max(600).optional(),
       task: TaskIdSchema.optional(),
+      /** Why nobody looks into it now: "Auto-pilot is off". Absent when the captain is listening. */
+      quiet: z.string().max(200).optional(),
     })
     .optional(),
 });
@@ -276,6 +278,21 @@ export type IncidentAsk = (typeof INCIDENT_ASKS)[number];
 export function incidentAskDecisionId(what: IncidentAsk, ref: string): string {
   return `iask:${what}:${ref}`;
 }
+/** A task whose merge request fails its checks. */
+export function mrCiDecisionId(task: string): string {
+  return `mrci:${task}`;
+}
+/** A deploy step that waits for the owner. */
+export function deployWaitDecisionId(task: string, project: string, env: string): string {
+  return `deploy:${task}:${project}:${env}`;
+}
+/**
+ * What waits for the owner in a client chat: an unread claim, a message the captain left for a person, a "who is
+ * this?". `ref` is a message id of the chat, or `who:<sender>` for the who-is card.
+ */
+export function chatWaitDecisionId(room: string, ref: string): string {
+  return `cwait:${room}:${ref}`;
+}
 /** The one decision that says the Mac has notifications off for majhi. */
 export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
@@ -289,7 +306,10 @@ export type ParsedDecisionId =
   | { kind: "trust"; id: number }
   | { kind: "ceiling"; month: string }
   | { kind: "iask"; what: IncidentAsk; ref: string }
-  | { kind: "notify" };
+  | { kind: "notify" }
+  | { kind: "mrci"; task: string }
+  | { kind: "dwait"; task: string; project: string; env: string }
+  | { kind: "cwait"; room: string; ref: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -316,6 +336,14 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
     return { kind: "trust", id: Number(rest[0]) };
   }
   if (id === NOTIFY_ACCESS_DECISION_ID) return { kind: "notify" };
+  if (head === "mrci" && rest.length === 1 && rest[0] !== "")
+    return { kind: "mrci", task: rest[0] as string };
+  if (head === "deploy" && rest.length === 3 && rest.every((p) => p !== "")) {
+    return { kind: "dwait", task: rest[0] as string, project: rest[1] as string, env: rest[2] as string };
+  }
+  if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
+    return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };
+  }
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);
     if (what !== undefined) return { kind: "iask", what, ref: rest[1] as string };

@@ -182,11 +182,17 @@ export function ChatBox({
           A standing instruction holds at most {INSTRUCTION_MAX} characters.
         </p>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <Switch label="Keep as standing instruction" checked={keep} onChange={setKeep} />
         <div className="ml-auto flex min-w-0 items-center gap-1">
           {task && status.boss && <ModelPicker task={task} agent={status.boss.id} />}
-          <Button variant="primary" disabled={blocked} title="Send (Enter)" onClick={send}>
+          <Button
+            variant="primary"
+            className="shrink-0"
+            disabled={blocked}
+            title="Send (Enter)"
+            onClick={send}
+          >
             Send
           </Button>
         </div>

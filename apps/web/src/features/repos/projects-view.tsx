@@ -352,7 +352,7 @@ function Loaded({ home }: { home: string }) {
       {removing && (
         <ConfirmDialog
           title={`Remove project ${removing.id}`}
-          body="majhi forgets this project and its aliases. The repo on disk is not touched. Existing tasks keep their worktrees."
+          body="majhi forgets this project, its wiki and its memory brief. The repo on disk is not touched. Existing tasks keep their worktrees."
           confirmLabel="Remove project"
           busy={removeProject.isPending}
           error={removeError}

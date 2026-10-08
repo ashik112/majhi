@@ -541,8 +541,8 @@ export class TaskService {
     if (agent === undefined && input.start) {
       throw new UserError(
         org === undefined
-          ? "No agent can run a task without an org. Create the captain in Studio."
-          : `No agent can work in "${org}". Create one in Studio.`,
+          ? "No agent can run a task without an org. Create the captain on the Agents page."
+          : `No agent can work in "${org}". Create one on the Agents page.`,
         409,
       );
     }
@@ -1227,7 +1227,7 @@ export class TaskService {
     }
     if (task.team.length === 0)
       throw new UserError(
-        `Task ${id} has no agent. Create one for its org in Studio, then create the task again.`,
+        `Task ${id} has no agent. Create one for its workspace on the Agents page, then create the task again.`,
         409,
       );
   }
@@ -1806,7 +1806,7 @@ export class TaskService {
     if (fm === undefined) throw new UserError(`Agent "${agent}" does not exist or is invalid.`, 404);
     if (!canWorkIn(fm, task.org)) {
       throw new UserError(
-        `@${agent} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}. Change where it can work in Studio first.`,
+        `@${agent} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}. Change where it can work on the Agents page first.`,
         409,
       );
     }
@@ -1973,7 +1973,7 @@ export class TaskService {
           rewritten = true;
           this.note(
             id,
-            `${repo.project}: ${result.how === "collapsed" ? "the checkpoints were folded into one commit" : "the task trailers were removed from the commits"} before they leave majhi.`,
+            `${repo.project}: ${result.how === "collapsed" ? "the checkpoints were folded into one commit" : "the commits were tidied"} before they leave majhi.`,
           );
         }
       } catch (err) {

@@ -745,6 +745,7 @@ export function createHandlers({
       await services.cards.refreshMoved();
       return services.cards.listLive(input.project);
     },
+    "projects.checkLine": (input) => services.cards.checkLine(input.project, input.command),
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
@@ -805,8 +806,12 @@ export function createHandlers({
       return services.deploy.service.hold(input);
     },
     "projects.remove": async (input, ctx) => {
+      const org = (await services.projects.infos()).find((p) => p.id === input.id)?.org;
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       services.cards.forget(input.id);
+      // Its wiki pages and memory brief go with it: nothing is left that the owner cannot see or clear.
+      services.memory.project.forgetBrief(input.id);
+      if (org !== undefined) await services.wiki.forgetProject(org, input.id);
       return { removed: input.id };
     },
 

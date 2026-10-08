@@ -8,6 +8,7 @@ import {
   CHORE_LABEL,
   FULL_ACCESS_KEEPS,
   FULL_ACCESS_NEVER,
+  PRIVATE,
   TASKS_AT_ONCE,
   type TaskSizeLimit,
 } from "@majhi/shared";
@@ -345,6 +346,12 @@ function Grid({
                 : `Cleaning up finished tasks in ${org.name}...`}
             </p>
           )),
+      )}
+      {orgs.some((o) => o.org === PRIVATE) && (
+        <p className="mt-2 text-xs text-fg-faint text-pretty">
+          Private is your own workspace, so Answer questions and Approvals start as Captain there. Other
+          workspaces start as You.
+        </p>
       )}
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">

@@ -56,21 +56,19 @@ export function ConnectionsView() {
   const working = all.filter((c) => c.health?.state === "connected").length;
   const attention = needsOwner(all);
 
-  const runCheck = (view: ConnectionView) => {
+  const runCheck = async (view: ConnectionView) => {
     setChecking((prev) => new Set(prev).add(view.id));
-    check.mutate(
-      { id: view.id },
-      {
-        onError: (error) =>
-          toast(`Could not check ${view.name}`, { detail: describeError(error), tone: "error" }),
-        onSettled: () =>
-          setChecking((prev) => {
-            const next = new Set(prev);
-            next.delete(view.id);
-            return next;
-          }),
-      },
-    );
+    try {
+      await check.mutateAsync({ id: view.id });
+    } catch (error) {
+      toast(`Could not check ${view.name}`, { detail: describeError(error), tone: "error" });
+    } finally {
+      setChecking((prev) => {
+        const next = new Set(prev);
+        next.delete(view.id);
+        return next;
+      });
+    }
   };
 
   return (
@@ -85,7 +83,11 @@ export function ConnectionsView() {
         className="flex-wrap gap-y-3"
       >
         {all.length > 0 && (
-          <Button variant="ghost" disabled={checking.size > 0} onClick={() => visible.forEach(runCheck)}>
+          <Button
+            variant="ghost"
+            disabled={checking.size > 0}
+            onClick={() => visible.forEach((view) => void runCheck(view))}
+          >
             Check all
           </Button>
         )}
@@ -152,7 +154,7 @@ export function ConnectionsView() {
                         now={now}
                         checking={checking.has(view.id)}
                         onOpen={() => setLinked(view.id)}
-                        onCheck={() => runCheck(view)}
+                        onCheck={() => void runCheck(view)}
                       />
                     ))}
                   </Group>
@@ -169,7 +171,7 @@ export function ConnectionsView() {
           orgs={orgList}
           checking={checking.has(selected.id)}
           now={now}
-          onCheck={() => runCheck(selected)}
+          onCheck={() => void runCheck(selected)}
           onClose={() => setLinked(undefined)}
           onRemoved={() => setLinked(undefined)}
         />

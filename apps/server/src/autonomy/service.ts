@@ -155,7 +155,7 @@ export interface AutonomyDeps {
   upkeepBetween?: (
     from: string,
     to: string,
-  ) => { chore: string; task?: string | undefined; outcome: string }[];
+  ) => { chore: string; task?: string | undefined; outcome: string; at: string; org: string }[];
   /** What waits in the owner's Decisions inbox, in its order, for the daily summary. */
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
@@ -2379,10 +2379,18 @@ export class AutonomyService {
   ticked(reasons: readonly string[], org?: string, chat?: string): void {
     this.wakes.sent += 1;
     this.repo.setLastTick(this.now().toISOString());
-    // A wake reason can be a whole prompt (a watch's instructions): the log shows its first line only.
-    const first = (reasons.at(-1) ?? "a check").trim().split("\n", 1)[0] ?? "a check";
-    const last = first.length > 120 ? `${first.slice(0, 117)}...` : first;
-    const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
+    // A wake reason can be a whole prompt (a watch's instructions): the log shows each one's first line only, so a
+    // batch that holds a watch's news and a task's names both.
+    const firsts = [
+      ...new Set(
+        reasons.map((r) => {
+          const line = r.trim().split("\n", 1)[0] ?? "";
+          return line.length > 90 ? `${line.slice(0, 87)}...` : line;
+        }),
+      ),
+    ].filter((l) => l !== "");
+    const shown = firsts.slice(-3).join("; ") || "a check";
+    const text = `Woke the captain: ${shown}${firsts.length > 3 ? ` (and ${firsts.length - 3} more)` : ""}`;
     this.event({ kind: "tick", text, ...(org === undefined || org === PRIVATE ? {} : { org }) });
     if (chat !== undefined) this.sayIn(chat, text);
   }
@@ -2867,7 +2875,26 @@ export class AutonomyService {
         window.start,
         now,
       ),
-      days: finishedByDay(events, window.day, days, tz),
+      // The ship chore's own merges leave no feed line: its log counts them, or a captain-shipped task reads as 0.
+      days: finishedByDay(
+        [
+          ...events,
+          ...(this.deps.upkeepBetween?.(first, window.end) ?? [])
+            .filter((a) => a.chore === "ship" && a.outcome === "done" && a.task !== undefined)
+            .map((a, i) => ({
+              seq: events.length + i + 1,
+              at: a.at,
+              kind: "task" as const,
+              text: "Shipped",
+              status: "done" as const,
+              ...(a.task === undefined ? {} : { task: a.task as TaskId }),
+              org: a.org,
+            })),
+        ],
+        window.day,
+        days,
+        tz,
+      ),
       spend: spendByDay(
         this.repo.spendTurnsByOrg(first, window.end, this.spendChats()),
         window.day,

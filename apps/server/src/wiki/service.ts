@@ -77,6 +77,7 @@ export interface WikiProject {
 export interface PageIndex {
   put(page: WikiPage): Promise<void>;
   drop(org: string, project: string | undefined, id: WikiPageId): void;
+  dropProject(org: string, project: string): void;
 }
 
 export interface WikiServiceDeps {
@@ -95,6 +96,8 @@ export interface WikiServiceDeps {
   /** What the writer's model costs per million tokens. Absent: the estimate has no dollars and only the token cap holds. */
   price: (org: string) => Promise<Price | undefined>;
   index?: PageIndex | undefined;
+  /** The account the workspace's writer runs on, when it is signed out; undefined when it is fine or unknown. */
+  signedOut?: ((org: string) => Promise<string | undefined>) | undefined;
   /** The wiki changed (progress, pages, state): the UI refetches. */
   changed: () => void;
   now?: () => Date;
@@ -149,9 +152,22 @@ export class WikiService {
     return this.workspace.system(org);
   }
 
+  /** The workspace writer's account, when it is signed out. */
+  async signedOut(org: string): Promise<string | undefined> {
+    return (await this.deps.signedOut?.(org)) ?? undefined;
+  }
+
   /** Draws again what depends on the links (every Gaps page, the workspace overview's picture) after an answer or a role choice. */
   redraw(org: string): Promise<void> {
     return this.workspace.redraw(org);
+  }
+
+  /** A project was removed: its pages and search pieces go, and the workspace pages that drew on it are redrawn. */
+  async forgetProject(org: string, project: string): Promise<void> {
+    this.deps.repo.removeProject(org, project);
+    this.deps.index?.dropProject(org, project);
+    this.deps.changed();
+    await this.workspace.redraw(org).catch(() => undefined);
   }
 
   /** Resolves when every run and graph refresh has ended: shutdown waits for it. */

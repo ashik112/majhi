@@ -11,6 +11,7 @@ import { gitLsRemote } from "./gitClone.ts";
 import { gitPush } from "./gitPush.ts";
 import { commitSubjects, readRepo } from "./repoInfo.ts";
 import { runCommand } from "./runCommand.ts";
+import { writeFastExecutable } from "./testing/fastBin.ts";
 
 const exec = promisify(execFile);
 const PATH = process.env.PATH ?? "/usr/bin:/bin";
@@ -31,15 +32,19 @@ async function setup() {
   const env = { PATH, HOME: dir, GIT_CONFIG_NOSYSTEM: "1" };
   const plain = (cwd: string, ...args: string[]) =>
     exec("git", ["-C", cwd, ...args], { env }).then((r) => r.stdout.trim());
+  // A planted program names the marker by where it sits, not by its path, so every test writes the same
+  // bytes and starts as a link to one scanned file (fastBin.ts): a fresh script costs 200 ms on macOS.
+  const planted = (body: string, up = "") => body.replaceAll(`'${marker}'`, `"$(dirname "$0")${up}/ran"`);
   const script = async (name: string, body: string) => {
     const file = join(dir, name);
-    await writeFile(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    await writeFastExecutable(file, `#!/bin/sh\n${planted(body)}\n`);
     return file;
   };
   return {
     dir,
     plain,
     script,
+    planted,
     say: (what: string) => `echo ${what} >> '${marker}'`,
     ran: () => readFile(marker, "utf8").catch(() => ""),
   };
@@ -53,7 +58,19 @@ async function httpsGit(root: string, dir: string) {
   const key = join(dir, "key.pem");
   const cert = join(dir, "cert.pem");
   await exec("openssl", [
-    ...["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1"],
+    ...[
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:prime256v1",
+      "-nodes",
+      "-days",
+      "1",
+      "-subj",
+      "/CN=127.0.0.1",
+    ],
     ...["-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert],
   ]);
   const server = createServer({ key: await readFile(key), cert: await readFile(cert) }, (req, res) => {
@@ -142,7 +159,7 @@ describe("the helper's git in a repo whose config names commands", () => {
   });
 
   it("a push runs no hook, credential helper or signing program of the checkout's, and no rewrite", async () => {
-    const { dir, plain, script, say, ran } = await setup();
+    const { dir, plain, script, planted, say, ran } = await setup();
     const root = join(dir, "served");
     await mkdir(root);
     for (const name of ["up.git", "other.git"]) {
@@ -168,7 +185,7 @@ describe("the helper's git in a repo whose config names commands", () => {
       const hooks = join(dir, "hooks");
       await mkdir(hooks);
       for (const name of ["pre-push", "reference-transaction"]) {
-        await writeFile(join(hooks, name), `#!/bin/sh\n${say(name)}\n`, { mode: 0o755 });
+        await writeFastExecutable(join(hooks, name), `#!/bin/sh\n${planted(say(name), "/..")}\n`);
       }
       const gpg = await script(
         "gpg.sh",

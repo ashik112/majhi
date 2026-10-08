@@ -47,7 +47,9 @@ const STATUS_TEXT: Record<HandoffStep["status"], string> = {
 function lampOf(state: HandoffState, result: HandoffResult | undefined): LampState {
   if (state.running || state.queued) return "working";
   if (result === undefined) return "idle";
-  return result.verdict === "green" ? "done" : "needs";
+  if (result.verdict !== "green") return "needs";
+  // Green with nothing that ran is no evidence: no tick.
+  return result.steps.some((step) => step.status === "pass") ? "done" : "idle";
 }
 
 const COMMAND_STEPS: readonly string[] = HANDOFF_COMMAND_STEPS;

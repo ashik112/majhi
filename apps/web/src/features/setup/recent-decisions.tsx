@@ -95,9 +95,9 @@ function DecisionRow({ d }: { d: DecisionRecord }) {
     <li className="flex flex-col gap-1 border-t border-line py-2 text-sm first:border-t-0">
       {/* Line 1: what was decided, by whom, and the actions. Line 2: the answer, full width. */}
       <div className="flex items-center gap-2">
-        <span className="min-w-0 truncate text-fg-muted">{USE[d.use]}</span>
+        <span className="min-w-0 text-fg-muted [overflow-wrap:anywhere]">{USE[d.use]}</span>
         <span className="shrink-0 text-xs text-fg-faint">{NAME[d.provider]}</span>
-        {!counted && <Badge tone="amber">Fell back</Badge>}
+        {!counted && <Badge tone="amber">Used a rule instead</Badge>}
         {d.correction !== undefined && <Badge tone="blue">Corrected</Badge>}
         <span className="flex-1" />
         <button
@@ -116,15 +116,11 @@ function DecisionRow({ d }: { d: DecisionRecord }) {
           Wrong pick
         </button>
       </div>
-      <span className="font-mono text-xs [overflow-wrap:anywhere] text-fg">
-        {answers
-          .map(
-            ([k, a]) =>
-              `${k}=${String(a.value)} ${(a.probabilities?.[String(a.value)] ?? a.confidence).toFixed(2)}`,
-          )
-          .join(" · ")}
-      </span>
-      {d.outcome !== undefined && <p className="m-0 text-fg-muted">{d.outcome.text}</p>}
+      <p className="m-0 text-fg [overflow-wrap:anywhere]">
+        {d.outcome !== undefined
+          ? d.outcome.text
+          : `Picked ${answers.map(([, a]) => String(a.value)).join(", ")}`}
+      </p>
       {d.correction !== undefined && (
         <p className="m-0 text-fg-muted">
           Right answer: <strong className="text-fg">{d.correction.right}</strong>
@@ -204,7 +200,9 @@ function Details({ d }: { d: DecisionRecord }) {
       {Object.entries(d.answers).map(([k, a]) => (
         <div key={k}>
           <p className="m-0">
-            <span className="font-mono text-fg">{k}</span>: {d.request?.questions[k]?.instructions ?? ""}
+            <span className="font-mono text-fg">{k}</span>={String(a.value)}{" "}
+            {(a.probabilities?.[String(a.value)] ?? a.confidence).toFixed(2)}.{" "}
+            {d.request?.questions[k]?.instructions ?? ""}
             {a.gate === undefined
               ? ""
               : ` ${a.gate.accepted ? "Counted" : "Did not count"}: ${a.gate.reason}.`}

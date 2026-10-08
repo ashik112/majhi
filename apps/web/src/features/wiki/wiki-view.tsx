@@ -17,11 +17,13 @@ import { COPY } from "./copy";
 import { gapCount } from "./model";
 import { type ListEntry, PageList } from "./page-list";
 import { type LoadedPage, PageView } from "./page-view";
+import { SignInButton } from "./sign-in-button";
 import { SourceViewer } from "./source-viewer";
 import { UpdateDialog } from "./update-dialog";
 import { useWikiWorkspaces } from "./use-wiki-switch";
 import { PHASE_WORDS, WHOLE, WikiHeader } from "./wiki-header";
 import { WikiOff } from "./wiki-off";
+import { stubSub, WorkspaceStub } from "./workspace-stub";
 
 /** The URL value of `scope` that shows the workspace's own pages. */
 const WORKSPACE_SCOPE = "workspace";
@@ -61,20 +63,27 @@ export function WikiView() {
 }
 
 /** The status of a whole workspace as one line: the commits its projects are behind in all, and the most behind one's build. */
-function workspaceStatus(org: string, statuses: readonly WikiStatus[]): WikiStatus | undefined {
+function workspaceStatus(
+  org: string,
+  statuses: readonly WikiStatus[],
+  own: { failed: readonly WikiPageId[]; flowsNotChosen: boolean; lastError?: string | undefined } | undefined,
+): WikiStatus | undefined {
   if (statuses.length === 0) return undefined;
   const worst = [...statuses].sort((a, b) => (b.behind ?? 0) - (a.behind ?? 0))[0];
   if (worst === undefined) return undefined;
   const behind = statuses.reduce((n, s) => n + (s.behind ?? 0), 0);
   const running = statuses.find((s) => s.running);
-  const lastError = statuses.find((s) => s.lastError !== undefined)?.lastError;
+  const lastError = own?.lastError ?? statuses.find((s) => s.lastError !== undefined)?.lastError;
+  const signedOut = statuses.find((s) => s.signedOut !== undefined)?.signedOut;
   const base = {
     org,
     project: worst.project,
     changed: statuses.flatMap((s) => s.changed),
     oldRules: statuses.some((s) => s.oldRules),
-    failed: [...new Set(statuses.flatMap((s) => s.failed))],
-    flowsNotChosen: statuses.some((s) => s.flowsNotChosen),
+    // The workspace's own pages: a project's failed pages and flows are shown in that project's wiki.
+    failed: [...(own?.failed ?? [])],
+    ...(signedOut === undefined ? {} : { signedOut }),
+    flowsNotChosen: own?.flowsNotChosen === true,
     ...(lastError === undefined ? {} : { lastError }),
     ...(worst.builtCommit === undefined ? {} : { builtCommit: worst.builtCommit }),
     ...(worst.behind === undefined ? {} : { behind }),
@@ -123,11 +132,14 @@ function Scope({
     [statuses],
   );
   const status = whole
-    ? workspaceStatus(org, statuses)
+    ? workspaceStatus(org, statuses, everything.data?.workspace)
     : (own.data?.status.find((s) => s.project === project) ?? statuses.find((s) => s.project === project));
   const changed = useMemo(() => new Set(status?.changed ?? []), [status]);
-  // A page that failed belongs to one project, so the workspace's own list marks none.
-  const failed = useMemo(() => new Set(whole ? [] : (status?.failed ?? [])), [status, whole]);
+  // A page that failed belongs to one project, so the workspace's own list marks only its own failures.
+  const failed = useMemo(
+    () => new Set(whole ? (everything.data?.workspace?.failed ?? []) : (status?.failed ?? [])),
+    [status, whole, everything.data],
+  );
   const loaded = useMemo<LoadedPage[]>(
     () =>
       summaries.flatMap((summary, i) => {
@@ -137,7 +149,7 @@ function Scope({
     [summaries, reads],
   );
   const [open, setOpen] = useState<WikiSource>();
-  const [updating, setUpdating] = useState<{ page?: WikiPageId } | undefined>();
+  const [updating, setUpdating] = useState<{ page?: WikiPageId; project?: string } | undefined>();
 
   /** Go to a project (or the whole workspace) and, when given, one of its pages. */
   const go = (to: { project: string | undefined; id?: WikiPageId }) =>
@@ -155,8 +167,12 @@ function Scope({
     });
 
   const wanted = WikiPageIdSchema.safeParse(search.id).data;
+  // The workspace's own Overview needs pages for two projects: until it is written, its row opens the list of projects.
+  const stubbed = whole && summaries.length > 0 && !summaries.some((s) => s.kind === "overview");
   const selected =
-    summaries.find((s) => s.id === wanted) ?? summaries.find((s) => s.kind === "overview") ?? summaries[0];
+    summaries.find((s) => s.id === wanted) ??
+    summaries.find((s) => s.kind === "overview") ??
+    (stubbed ? undefined : summaries[0]);
   const entries = useMemo<ListEntry[]>(
     () =>
       summaries.map((summary, i) => {
@@ -199,7 +215,7 @@ function Scope({
     body = <RowsSkeleton rows={8} height={44} />;
   } else if (wiki.isError) {
     body = <Problem icon={<BookText />} title="Could not load the wiki" body={describeError(wiki.error)} />;
-  } else if (summaries.length === 0 || current === undefined) {
+  } else if (summaries.length === 0 || (current === undefined && !stubbed)) {
     body = (
       <ListDetail>
         <DetailPane label="Wiki page">
@@ -222,26 +238,41 @@ function Scope({
           notWritten={[...failed].filter((id) => !summaries.some((s) => s.id === id))}
           flowsNotChosen={status?.flowsNotChosen === true}
           workspace={whole}
+          stub={
+            stubbed
+              ? {
+                  selected: current === undefined,
+                  sub: stubSub(statuses),
+                  onSelect: () => go({ project: undefined }),
+                }
+              : undefined
+          }
           onSelect={(id) => go({ project, id })}
         />
-        <PageView
-          page={current.page}
-          scope={{ org, project }}
-          changed={changed}
-          behind={status?.behind}
-          all={loaded}
-          projects={projects}
-          system={system.data}
-          onOpen={setOpen}
-          onGo={(id) => go({ project, id })}
-          onGoPage={(to, id) => go({ project: to, id })}
-          onGoProject={(p) => go({ project: p })}
-          onUpdatePage={(id) => setUpdating({ page: id })}
-          notes={current.notes}
-          failed={failed}
-          flowsNotChosen={status?.flowsNotChosen === true}
-          onRetry={() => setUpdating({})}
-        />
+        {current === undefined ? (
+          <DetailPane label="Overview">
+            <WorkspaceStub statuses={statuses} onBuild={(p) => setUpdating({ project: p })} />
+          </DetailPane>
+        ) : (
+          <PageView
+            page={current.page}
+            scope={{ org, project }}
+            changed={changed}
+            behind={status?.behind}
+            all={loaded}
+            projects={projects}
+            system={system.data}
+            onOpen={setOpen}
+            onGo={(id) => go({ project, id })}
+            onGoPage={(to, id) => go({ project: to, id })}
+            onGoProject={(p) => go({ project: p })}
+            onUpdatePage={(id) => setUpdating({ page: id })}
+            notes={current.notes}
+            failed={failed}
+            flowsNotChosen={status?.flowsNotChosen === true}
+            onRetry={() => setUpdating({})}
+          />
+        )}
       </ListDetail>
     );
   }
@@ -274,11 +305,20 @@ function Scope({
       {updating !== undefined && (
         <UpdateDialog
           org={org}
-          {...(project === undefined ? {} : { project })}
+          {...(updating.project !== undefined
+            ? { project: updating.project }
+            : project === undefined
+              ? {}
+              : { project })}
           {...(updating.page === undefined ? {} : { page: updating.page })}
-          first={(whole ? statuses : status === undefined ? [] : [status]).every(
-            (s) => s.builtCommit === undefined,
-          )}
+          first={(updating.project !== undefined
+            ? statuses.filter((s) => s.project === updating.project)
+            : whole
+              ? statuses
+              : status === undefined
+                ? []
+                : [status]
+          ).every((s) => s.builtCommit === undefined)}
           onClose={() => setUpdating(undefined)}
         />
       )}
@@ -313,6 +353,7 @@ function NoPages({
     );
   }
   const failed = status?.lastError;
+  const signedOut = status?.signedOut;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
       <h2 className="text-md font-semibold">
@@ -324,10 +365,15 @@ function NoPages({
       </h2>
       {!building && (
         <>
-          <p className="max-w-[520px] text-base text-fg-muted text-pretty">{failed ?? COPY.build.body}</p>
-          <Button variant="primary" className="mt-2" onClick={onBuild}>
-            {failed !== undefined ? COPY.build.again : COPY.build.button}
-          </Button>
+          <p className="max-w-[520px] text-base text-fg-muted text-pretty">
+            {signedOut !== undefined ? COPY.build.signedOut(signedOut) : (failed ?? COPY.build.body)}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            {signedOut !== undefined && <SignInButton account={signedOut} primary />}
+            <Button variant={signedOut === undefined ? "primary" : "secondary"} onClick={onBuild}>
+              {failed !== undefined ? COPY.build.again : COPY.build.button}
+            </Button>
+          </div>
         </>
       )}
     </div>

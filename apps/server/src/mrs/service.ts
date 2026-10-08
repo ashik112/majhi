@@ -1146,7 +1146,7 @@ export class MrService {
     throw new UserError(
       isSshAuthFailure(failed)
         ? `majhi could not sign in to ${target.remote} to push. Open Git accounts and check this project's key, then ship again.`
-        : `majhi could not reach ${target.remote} to push. Check the connection and the remote address, then ship again.`,
+        : `majhi could not reach ${target.remote} to push. Open Projects, pick this project and check its remote address and your connection, then ship again.`,
       409,
     );
   }
@@ -1364,6 +1364,12 @@ export class MrService {
         ) {
           this.deps.store.tasks.setMr(task.id, repo.project, next);
           if (next.state === "merged") this.note(task.id, `${repo.project}: the merge request was merged.`);
+          if (next.state === "open" && next.ci === "failing" && repo.mr.ci !== "failing")
+            this.note(
+              task.id,
+              `${repo.project}: the checks of the merge request failed. Fix with agent is waiting in Needs you.`,
+              "error",
+            );
           if (next.state === "closed")
             this.note(task.id, `${repo.project}: the merge request was closed without merging.`, "error");
           this.publish(task.id);

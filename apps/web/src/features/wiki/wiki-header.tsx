@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pick, type PickOption } from "@/components/ui/pick";
 import { badgeLetters, plural } from "@/lib/format";
 import { COPY } from "./copy";
+import { SignInButton } from "./sign-in-button";
 import type { WikiWorkspace } from "./use-wiki-switch";
 
 /** What the project picker says about one project's wiki: not built, built, or how many commits behind. */
@@ -51,6 +52,8 @@ export function WikiHeader({
     label: w.org.name,
     lead: <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />,
   }));
+  // The whole workspace is not up to date while one of its projects has no pages.
+  const unbuilt = scope === WHOLE ? projects.filter((p) => p.status?.builtCommit === undefined).length : 0;
   const projectOptions: PickOption[] = [
     { value: WHOLE, label: COPY.workspace.option, detail: COPY.workspace.repoCount(projects.length) },
     ...projects.map((p) => ({
@@ -85,11 +88,11 @@ export function WikiHeader({
         </span>
       }
     >
-      <StatusLine status={status} commits={commits} />
+      <StatusLine status={status} commits={commits} unbuilt={unbuilt} />
       {onUpdate !== undefined && (
         <>
           <Button
-            variant={needsUpdate(status) ? "primary" : "secondary"}
+            variant={needsUpdate(status) || unbuilt > 0 ? "primary" : "secondary"}
             onClick={onUpdate}
             disabled={status?.running === true}
           >
@@ -126,9 +129,12 @@ function needsUpdate(status: WikiStatus | undefined): boolean {
 function StatusLine({
   status,
   commits,
+  unbuilt,
 }: {
   status: WikiStatus | undefined;
   commits: readonly { project: string; commit: string }[] | undefined;
+  /** Projects of the whole workspace with no pages. */
+  unbuilt: number;
 }) {
   if (status === undefined) return null;
   if (status.running) {
@@ -140,12 +146,17 @@ function StatusLine({
       </span>
     );
   }
+  // A page the last update did not write is not "up to date", whatever the commits say.
+  const notWritten = status.failed.length + (status.flowsNotChosen ? 1 : 0);
   return (
     <span className="flex min-w-0 items-center gap-3 text-sm text-fg-muted" role="status">
       {status.lastError !== undefined && (
         <span className="flex items-center gap-1.5 text-red" title={status.lastError}>
           <span aria-hidden="true" className="size-1.5 rounded-full bg-red" />
-          {COPY.failed.updateFailed}
+          {status.signedOut === undefined
+            ? COPY.failed.updateFailed
+            : COPY.failed.signedOut(status.signedOut)}
+          {status.signedOut !== undefined && <SignInButton account={status.signedOut} />}
         </span>
       )}
       {status.builtCommit === undefined ? (
@@ -173,10 +184,18 @@ function StatusLine({
           <span
             aria-hidden="true"
             className={
-              status.behind > 0 ? "size-1.5 rounded-full bg-amber" : "size-1.5 rounded-full bg-green"
+              status.behind > 0 || notWritten > 0 || unbuilt > 0
+                ? "size-1.5 rounded-full bg-amber"
+                : "size-1.5 rounded-full bg-green"
             }
           />
-          {status.behind > 0 ? `${plural(status.behind, "commit")} behind` : "Up to date"}
+          {status.behind > 0
+            ? `${plural(status.behind, "commit")} behind`
+            : notWritten > 0
+              ? `${plural(notWritten, "page")} not written`
+              : unbuilt > 0
+                ? `${unbuilt} not built`
+                : "Up to date"}
         </span>
       )}
       {status.oldRules && <span className="whitespace-nowrap text-amber">Older rules</span>}

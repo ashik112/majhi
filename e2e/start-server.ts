@@ -127,6 +127,8 @@ Object.assign(process.env, gitEnv, {
   // Tests cannot cut the network: majhi counts as offline while this file exists, checked twice a second.
   MAJHI_NET_PROBE: `file:${OFFLINE_FILE}`,
   MAJHI_NET_PROBE_MS: "500",
+  // The server's own ssh probe and the helper's git-login probe greet github.com and the other hosts: never from a test.
+  MAJHI_HOST_SSH: "/usr/bin/false",
 });
 
 // Dynamic on purpose: main.ts reads process.env as it loads, and a static import would run
@@ -142,8 +144,6 @@ const helperEnv: NodeJS.ProcessEnv = {
   MAJHI_HOST_VERSION: "e2e",
   // Its notifications are about test tasks (ACM-1): never on the owner's desktop.
   MAJHI_HOST_NOTIFY: "off",
-  // Its git-login probe greets github.com and the other hosts over ssh: never from a test.
-  MAJHI_HOST_SSH: "/usr/bin/false",
 };
 delete helperEnv.MAJHI_REPO;
 const helper = spawn(

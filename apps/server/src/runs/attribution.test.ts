@@ -6,6 +6,7 @@ import { buildEnv } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfigService } from "../config/service.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
+import { seedHooks } from "../testing/hooks.ts";
 import { ensureHooks, gitAttribution } from "./attribution.ts";
 
 const run = promisify(execFile);
@@ -20,6 +21,7 @@ beforeEach(async () => {
   await writeFile(quietConfig, "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n");
   vi.stubEnv("GIT_CONFIG_GLOBAL", quietConfig);
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  await seedHooks(join(dir, "home"));
 });
 afterEach(async () => {
   vi.unstubAllEnvs();

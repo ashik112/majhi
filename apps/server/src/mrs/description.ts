@@ -32,7 +32,8 @@ export function briefSummary(title: string, brief: string): string {
 export function renderMrDescription(input: DescriptionInput): string {
   const out: string[] = [input.title];
   const summary = briefSummary(input.title, input.brief);
-  if (summary !== "") out.push("", summary);
+  // A summary that only repeats the title says nothing new.
+  if (summary !== "" && summary.toLowerCase() !== input.title.trim().toLowerCase()) out.push("", summary);
   if (input.siblings.length > 1) {
     out.push("", "This task changes several repos. Merge requests, in the order they merge:", "");
     input.siblings.forEach((s, i) => {

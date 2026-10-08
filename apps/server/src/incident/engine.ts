@@ -77,7 +77,17 @@ export interface EngineDeps {
   facts: IncidentFacts;
   room: Pick<RoomService, "post">;
   findings: Pick<FindingsService, "adopt" | "ofTask" | "get">;
-  watch: { openIncidents(): OpsIncident[]; incident(id: number): OpsIncident | undefined };
+  watch: {
+    openIncidents(): OpsIncident[];
+    incident(id: number): OpsIncident | undefined;
+    /** Adds a line to the watch incident's "What happened", once per text. */
+    note?(id: number, text: string, at?: string): void;
+  };
+  /** The captain hears of news for a workspace, and the owner gets one notice. */
+  announce?: {
+    wake(org: string, text: string): void;
+    notice(org: string, incident: number, text: string): void;
+  };
   /** The project a watch incident is about, when it has one. */
   watchProject: (incident: OpsIncident) => string | undefined;
   tasks: {
@@ -131,6 +141,16 @@ const oneLine = (text: string, max: number): string => {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 };
 
+/** A model's answer is used as a title only when it is one: a short single line that is not several sentences. */
+export function asTitle(answer: string | undefined): string | undefined {
+  const text = answer?.trim();
+  if (text === undefined || text === "" || text.includes("\n") || text.length > 80) return undefined;
+  if (text.endsWith(".") || text.includes(". ")) return undefined;
+  return text;
+}
+
+const FIX_LIVE = "Fix live";
+
 export class IncidentEngine {
   /** Tasks whose watch went green with nothing shipped and whose owner has not answered yet, as of the last sweep. */
   private recovered = new Set<string>();
@@ -176,10 +196,9 @@ export class IncidentEngine {
             this.deps.findings.ofTask(t.id).some((f) => f.id === source.incident.finding)
           );
         });
-        return (
-          same ??
-          (project === undefined ? undefined : open.find((t) => t.repos.some((r) => r.project === project)))
-        );
+        // Another watch's incident on the same project is its own incident: one task is never the fix of two
+        // watches unless the owner or the captain links them.
+        return same;
       }
       case "deploy": {
         const same = open.find(
@@ -287,8 +306,12 @@ export class IncidentEngine {
       return { task: existing.id, joined: true, started: existing.status !== "inbox", projectUnknown: false };
     }
     const made = this.factsOf(source);
-    const written = await this.deps.title?.(source.org, made.facts).catch(() => undefined);
-    const title = (written ?? made.title).trim() === "" ? made.title : oneLine(written ?? made.title, 100);
+    // A deploy already has a title that says what failed; the model only helps where the facts are loose.
+    const written =
+      source.kind === "deploy"
+        ? undefined
+        : await this.deps.title?.(source.org, made.facts).catch(() => undefined);
+    const title = asTitle(written) ?? oneLine(made.title, 100);
     const input = {
       title,
       text: made.text,
@@ -309,6 +332,19 @@ export class IncidentEngine {
         // A protected project cannot join a task: the incident reads it instead of changing it.
         task = await this.deps.tasks.create({ ...input, kind: "ops", repos: [{ project }], readOnly: true });
       }
+    }
+    const sameProject =
+      project === undefined
+        ? undefined
+        : this.openTasks(source.org).find(
+            (t) => t.id !== task.id && t.repos.some((r) => r.project === project),
+          );
+    if (sameProject !== undefined) {
+      this.deps.room.post(task.id as TaskId, `own:${task.id}`, {
+        type: "system",
+        level: "info",
+        text: `Opened as its own incident. ${sameProject.id} is open on the same project for another report. Link them if they are one problem.`,
+      });
     }
     this.record(
       task.id,
@@ -378,10 +414,10 @@ export class IncidentEngine {
       level: "info",
       text:
         source.kind === "watch"
-          ? `The watch fired again: ${source.incident.title}.`
+          ? `The same watch fired again: ${source.incident.title}.`
           : source.kind === "client"
             ? "A client reported the same problem."
-            : `Another deploy failed: ${source.title}`,
+            : `Another deploy failed on the same project: ${source.title}`,
     });
     this.deps.changed();
   }
@@ -416,17 +452,28 @@ export class IncidentEngine {
   // ---------------------------------------------------------------------------
   // The owner's cards
 
-  /** What waits for the owner in incidents, as Needs-you decisions. Derived: nothing here is stored twice. */
+  /**
+   * What waits for the owner in incidents, as Needs-you decisions. Derived: nothing here is stored twice. One card per
+   * incident: asking the project comes first, then starting it, then the newest failed deploy, then a recovery.
+   */
   decisions(orgName: (org: string) => string | undefined): OwnerDecision[] {
     const out: OwnerDecision[] = [];
     const tasks = this.deps.store.tasks
       .list(false)
       .filter((t) => t.typing?.type === "incident")
       .flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
+    const since = new Date(this.now().getTime() - DAY_MS).toISOString();
     for (const task of tasks) {
       const org = task.org;
       if (org === undefined) continue;
       const opened = this.deps.facts.events(task.id).find((e) => e.detail.event === "opened")?.detail;
+      const base = {
+        kind: "incident" as const,
+        org,
+        task: task.id as TaskId,
+        taskTitle: task.title,
+        link: { kind: "task" as const, id: task.id as TaskId },
+      };
       const asksProject =
         task.status === "inbox" &&
         opened?.event === "opened" &&
@@ -434,40 +481,19 @@ export class IncidentEngine {
         task.repos.length === 0;
       if (asksProject) {
         out.push({
+          ...base,
           id: incidentAskDecisionId("project", task.id),
-          kind: "incident",
-          org,
-          task: task.id as TaskId,
-          taskTitle: task.title,
           title: oneLine(`Which project is this about? ${task.title}`, 280),
           sentence: `${task.id} is an incident and the evidence does not say which project it is in. Pick the project and majhi starts it the way ${orgName(org) ?? "the workspace"}'s Start row says.`,
           options: this.projectOptions.get(org) ?? [],
           at: task.createdAt,
-          link: { kind: "task", id: task.id as TaskId },
         });
         continue;
       }
-      if (task.status === "inbox" && this.startsBy.get(org) === "owner") {
-        out.push({
-          id: incidentAskDecisionId("start", task.id),
-          kind: "incident",
-          org,
-          task: task.id as TaskId,
-          taskTitle: task.title,
-          title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
-          sentence: `${task.id} is an incident. Start decides who starts work in ${orgName(org) ?? "this workspace"}, and it is You.`,
-          options: [{ id: "start", label: "Start", primary: true }],
-          at: task.createdAt,
-          link: { kind: "task", id: task.id as TaskId },
-        });
-      }
       if (this.recovered.has(task.id)) {
         out.push({
+          ...base,
           id: incidentAskDecisionId("recovered", task.id),
-          kind: "incident",
-          org,
-          task: task.id as TaskId,
-          taskTitle: task.title,
           title: oneLine(`${task.title}: recovered on its own, still watching`, 280),
           sentence:
             "The watch is green again and nothing was shipped. Close it, or let the lead keep working.",
@@ -476,45 +502,62 @@ export class IncidentEngine {
             { id: "continue", label: "Let the lead continue" },
           ],
           at: task.updatedAt,
-          link: { kind: "task", id: task.id as TaskId },
         });
+        continue;
       }
-    }
-    // A failed deploy shows until the owner has seen it or its incident is done.
-    const since = new Date(this.now().getTime() - DAY_MS).toISOString();
-    for (const org of new Set(tasks.flatMap((t) => (t.org === undefined ? [] : [t.org])))) {
-      for (const d of this.deps.store.deploys.failedSince(org, since)) {
-        if (d.incident === undefined) continue;
-        const task = this.deps.store.tasks.get(d.incident);
-        if (task === undefined || task.status === "done") continue;
-        const seen = this.deps.facts
-          .events(task.id)
-          .some((e) => e.detail.event === "seen" && e.detail.what === `deploy:${d.id}`);
-        if (seen) continue;
-        const rolled = d.state === "rolled-back";
-        const why = d.reason === undefined ? "" : `: ${oneLine(d.reason, 160)}`;
-        const canRollBack = d.state === "failed" && d.rollback?.ok !== true && d.previous !== undefined;
-        const options: OwnerDecision["options"] = canRollBack
-          ? [
-              { id: "rollback", label: "Roll back", primary: true },
-              { id: "ack", label: "Got it" },
-            ]
-          : [{ id: "ack", label: "Got it", primary: true }];
+      const failed = this.unseenFailedDeploy(task, since);
+      const failure = failed === undefined ? "" : ` ${this.deployLine(failed)}`;
+      if (task.status === "inbox" && this.startsBy.get(org) === "owner") {
         out.push({
-          id: incidentAskDecisionId("deploy", String(d.id)),
-          kind: "incident",
-          org,
-          task: task.id as TaskId,
-          taskTitle: task.title,
-          title: oneLine(`${capital(d.env)} deploy failed${why}`, 280),
-          sentence: `${d.project} ${d.env} at ${d.commit.slice(0, 7)} ${rolled ? "failed and was rolled back" : "failed"}${why}. Incident ${task.id} is on it.`,
-          options,
-          at: d.updatedAt,
-          link: { kind: "task", id: task.id as TaskId },
+          ...base,
+          id: incidentAskDecisionId("start", task.id),
+          title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
+          sentence: `${task.id} waits for you to start it.${failure}`,
+          options: [{ id: "start", label: "Start", primary: true }],
+          at: task.createdAt,
         });
+        continue;
+      }
+      if (failed !== undefined) {
+        const canRollBack =
+          failed.state === "failed" && failed.rollback?.ok !== true && failed.previous !== undefined;
+        out.push({
+          ...base,
+          id: incidentAskDecisionId("deploy", String(failed.id)),
+          title: oneLine(
+            `${capital(failed.env)} deploy failed${failed.reason === undefined ? "" : `: ${oneLine(failed.reason, 160)}`}`,
+            280,
+          ),
+          sentence: `${this.deployLine(failed)} ${task.status === "inbox" ? `${task.id} has not started.` : `${task.id} is on it.`}`,
+          options: canRollBack
+            ? [
+                { id: "rollback", label: "Roll back", primary: true },
+                { id: "ack", label: "Got it" },
+              ]
+            : [{ id: "ack", label: "Got it", primary: true }],
+          at: failed.updatedAt,
+        });
+        continue;
       }
     }
     return out;
+  }
+
+  /** The newest failed deploy of an open incident that the owner has not seen yet. */
+  private unseenFailedDeploy(task: Task, since: string): DeployRecord | undefined {
+    if (task.org === undefined || task.status === "done") return undefined;
+    const seen = new Set(
+      this.deps.facts.events(task.id).flatMap((e) => (e.detail.event === "seen" ? [e.detail.what] : [])),
+    );
+    return this.deps.store.deploys
+      .failedSince(task.org, since)
+      .filter((d) => d.incident === task.id && !seen.has(`deploy:${d.id}`))
+      .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  }
+
+  private deployLine(d: DeployRecord): string {
+    const why = d.reason === undefined ? "" : `: ${oneLine(d.reason, 160)}`;
+    return `${d.project} ${d.env} at ${d.commit.slice(0, 7)} ${d.state === "rolled-back" ? "failed and was rolled back" : "failed"}${why}.`;
   }
 
   /** Who starts work and which projects a workspace has, as of the last sweep: cards are built without waiting. */
@@ -558,11 +601,72 @@ export class IncidentEngine {
       const task = this.deps.store.deploys.get(deploy)?.incident;
       if (task === undefined) throw new UserError("That deploy has no incident any more.", 409);
       if (option === "rollback") await this.deps.deploys.rollback(deploy, "owner");
-      this.record(task, { event: "seen", what: `deploy:${deploy}`, at }, `seen:deploy:${deploy}`);
+      // One card per incident: answering it settles every failed deploy it showed.
+      const org = this.deps.store.tasks.get(task)?.org;
+      const since = new Date(this.now().getTime() - DAY_MS).toISOString();
+      const all = org === undefined ? [] : this.deps.store.deploys.failedSince(org, since);
+      for (const id of new Set([deploy, ...all.filter((d) => d.incident === task).map((d) => d.id)])) {
+        this.record(task, { event: "seen", what: `deploy:${id}`, at }, `seen:deploy:${id}`);
+      }
     } else {
       throw new UserError("That is not something an incident asks.", 400);
     }
     this.deps.changed();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recovery
+
+  /** The incident task of a watch incident, through its finding. */
+  private taskOfWatch(inc: OpsIncident): Task | undefined {
+    if (inc.finding === undefined) return undefined;
+    try {
+      const id = this.deps.findings.get(inc.finding).task;
+      const task = id === undefined ? undefined : this.deps.store.tasks.get(id);
+      return task?.typing?.type === "incident" ? task : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The fix of a watch's incident went live: it is mending, so nobody is nagged about it. */
+  async fixLive(inc: OpsIncident): Promise<boolean> {
+    const task = this.taskOfWatch(inc);
+    if (task === undefined) return false;
+    return clientStatus((await this.deps.facts.read(task)).facts).at.monitoring !== undefined;
+  }
+
+  /**
+   * A watch closed because its checks went green. When a fix had shipped, the timeline says so, the captain is woken
+   * once to confirm and close out (the client update and the report are written from the recorded facts), and the owner
+   * gets one notice, unless the watch already told them. A pause or a removal is not a recovery. Never throws.
+   */
+  async fixRecovered(inc: OpsIncident, told: boolean): Promise<void> {
+    try {
+      if (inc.timeline.findLast((t) => t.kind === "resolved")?.closedBy === "stopped") return;
+      const task = this.taskOfWatch(inc);
+      if (task === undefined) return;
+      const result = clientStatus((await this.deps.facts.read(task)).facts);
+      if (result.at.monitoring === undefined) return;
+      this.deps.watch.note?.(inc.id, FIX_LIVE, result.at.monitoring);
+      this.deps.watch.note?.(inc.id, "Recovered: the checks are green with the fix live");
+      this.deps.announce?.wake(
+        task.org ?? inc.org,
+        [
+          `Incident ${inc.id} (${inc.title}) recovered: the fix in ${task.id} is live and its checks are green.`,
+          `Confirm it and close out ${task.id}: record the cause with majhi_incident_cause if you have not, because the client update and the report are written from it, and leave the report for the owner to approve. Close ${task.id} when nothing is left.`,
+        ].join("\n"),
+      );
+      if (!told) {
+        this.deps.announce?.notice(
+          task.org ?? inc.org,
+          inc.id,
+          `${inc.title} is back to normal. The fix in ${task.id} is live.`,
+        );
+      }
+    } catch {
+      // The next sweep still closes the task from the same facts.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -585,6 +689,9 @@ export class IncidentEngine {
         for (const task of this.openTasks(org)) {
           const read = await this.deps.facts.read(task);
           const result = clientStatus(read.facts);
+          if (result.at.monitoring !== undefined && read.watch?.status === "open") {
+            this.deps.watch.note?.(read.watch.id, FIX_LIVE, result.at.monitoring);
+          }
           const answered = read.events.some(
             (e) => e.detail.event === "recovered" && e.detail.at > (result.recoveredAt ?? ""),
           );

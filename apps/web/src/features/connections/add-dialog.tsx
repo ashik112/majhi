@@ -276,7 +276,7 @@ function Setup({
               : groupOfEntry(entry) === "one-click"
                 ? "One click"
                 : groupOfEntry(entry) === "on-this-mac"
-                  ? "On this Mac"
+                  ? "Command line"
                   : groupOfEntry(entry) === "token"
                     ? "Token"
                     : "Your own app"}

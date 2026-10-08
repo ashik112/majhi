@@ -3,6 +3,7 @@ import {
   type AgentFrontmatter,
   canWorkIn,
   type DecideRequestInput,
+  isCaptainLane,
   OWNER_HANDLE,
   parseMentions,
   type RoomItem,
@@ -96,6 +97,13 @@ export class RoomCoordinator {
     const handedByTool = this.toolHandoffs.get(`${turn.task}\u0000${turn.agent}`) ?? new Set<string>();
     this.toolHandoffs.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
+    if (task !== undefined && isCaptainLane(task) && task.team.includes(turn.agent)) {
+      // The captain's question in its lane reaches Needs you from the end of its turn, as an owner's chat does not.
+      const text = turn.text.trim();
+      if (!asked && text !== "" && asksOwner(text)) this.postQuestion(task.id, turn.agent, text);
+      else this.movedOn(task.id, turn.agent);
+      return;
+    }
     if (task === undefined || isBossChat(task)) return;
     if (task.status !== "running") {
       // In review or paused nothing is handed on, but a question the agent did not ask again no

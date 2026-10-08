@@ -108,3 +108,4 @@ export {
   type ScriptRule,
   type ScriptStep,
 } from "./captain-script.ts";
+export { linkExecutable, sharedExecutable, writeFastExecutable } from "./fastBin.ts";

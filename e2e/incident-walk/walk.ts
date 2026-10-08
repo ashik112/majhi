@@ -97,6 +97,11 @@ export async function boot(): Promise<World> {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addInitScript(() => {
+    try {
+      localStorage.setItem("majhi.appearance", JSON.stringify({ theme: "light", accent: "blue" }));
+    } catch {
+      // No storage: the default theme.
+    }
     const style = document.createElement("style");
     style.textContent = "*,*::before,*::after{backdrop-filter:none!important}";
     document.documentElement.append(style);

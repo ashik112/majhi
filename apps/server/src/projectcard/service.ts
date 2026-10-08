@@ -154,6 +154,16 @@ export class ProjectCards {
     );
   }
 
+  /** What a check command of the project runs: its read-only form, or why it is skipped. Reads package.json, runs nothing. */
+  async checkLine(project: string, command: string): Promise<{ runs?: string; notRun?: string }> {
+    const path = (await this.deps.projects()).find((p) => p.id === project)?.path;
+    const files = path === undefined ? undefined : (this.deps.files ?? fsRepoFiles)(path);
+    const safe = await safeLine(command, (name) =>
+      files === undefined ? Promise.resolve(undefined) : scriptOf(files, undefined, name),
+    );
+    return safe.ok ? { runs: safe.command } : { notRun: safe.why };
+  }
+
   list(project?: string): ProjectCard[] {
     const all = this.deps.repo.all().map((r) => r.card);
     return project === undefined ? all : all.filter((c) => c.project === project);

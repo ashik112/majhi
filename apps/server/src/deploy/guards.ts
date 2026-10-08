@@ -9,6 +9,8 @@ export interface DeployFacts {
   commit: string;
   /** The tip of the project's base branch now. Undefined: git could not say. */
   tip: string | undefined;
+  /** Why there is no tip, when git can say (the copies of the base branch differ). */
+  tipWhy?: string | undefined;
   /** The commit is exactly one a task's merge landed in. */
   landed: boolean;
   /** The project has test, build or lint checks, so a commit nothing merged has not been verified. */
@@ -30,7 +32,7 @@ export interface DeployRefusal {
 /** The refusal of the first guard that stops this deploy, or undefined when it may start. */
 export function deployRefusal(f: DeployFacts): DeployRefusal | undefined {
   if (f.tip === undefined)
-    return { kind: "unreadable", why: "majhi could not read the project's base branch." };
+    return { kind: "unreadable", why: f.tipWhy ?? "majhi could not read the project's base branch." };
   if (f.commit !== f.tip) {
     return {
       kind: "moved",

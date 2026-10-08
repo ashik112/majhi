@@ -1,11 +1,19 @@
 import type { CardCommands, ProjectCard, ReadinessItem } from "@majhi/shared";
-import { Check, RefreshCw, X } from "lucide-react";
+import { Check, MessageSquare, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/list-detail";
 import { SectionLabel } from "@/components/ui/section-label";
+import { useBoss } from "@/features/boss/boss-context";
+import { wsTab } from "@/features/captain/panel-model";
 import { useProjectCards, useRefreshCard } from "@/lib/card-queries";
 import { formatAgo } from "@/lib/format";
+import { useNewTask } from "../new-task/new-task-context";
+
+/** What the captain is asked when a project's card has no description: read the repo and write the line. */
+export function describeProjectAsk(project: string): string {
+  return `Write the README opening line for ${project}: one plain sentence on what it is, from its code and docs. Add it at the top of its README on a branch, and tell me what you wrote.`;
+}
 
 const COMMANDS: [keyof CardCommands, string][] = [
   ["install", "Install"],
@@ -18,7 +26,8 @@ const COMMANDS: [keyof CardCommands, string][] = [
 ];
 
 /** What majhi knows about the repo, read from its files, and how ready it is for agents. */
-export function ProjectCardSection({ project }: { project: string }) {
+export function ProjectCardSection({ project, org }: { project: string; org: string }) {
+  const boss = useBoss();
   const cards = useProjectCards();
   const refresh = useRefreshCard();
   const card = cards.data?.get(project);
@@ -58,24 +67,46 @@ export function ProjectCardSection({ project }: { project: string }) {
             : "No card yet. majhi reads it when the base branch is known, or press Refresh."}
         </p>
       ) : (
-        <CardBody card={card} />
+        <CardBody
+          card={card}
+          project={project}
+          onDescribe={() => boss.show(wsTab(org), describeProjectAsk(project))}
+        />
       )}
     </DetailSection>
   );
 }
 
-function CardBody({ card }: { card: ProjectCard }) {
-  const commands = COMMANDS.flatMap(([key, label]) =>
-    card.commands[key] === undefined ? [] : [{ label, text: card.commands[key] as string }],
-  );
+function CardBody({
+  card,
+  project,
+  onDescribe,
+}: {
+  card: ProjectCard;
+  project: string;
+  onDescribe: () => void;
+}) {
+  // The line a check really runs (the repo's CI, in its read-only form) wins over the project's own script text,
+  // so this list and "Check before ship" say the same command.
+  const commands = COMMANDS.flatMap(([key, label]) => {
+    const ci = card.checks.find((c) => c.kind === key);
+    const text = ci === undefined ? card.commands[key] : (ci.runs ?? ci.command);
+    return text === undefined ? [] : [{ label, text }];
+  });
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {card.whatItIs === "" ? (
-        <p className="text-sm text-fg-faint">Nothing says what it is yet. Add a README opening line.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="m-0 text-sm text-fg-faint">Nothing says what it is yet.</p>
+          <Button size="sm" onClick={onDescribe}>
+            <MessageSquare aria-hidden="true" />
+            Have the captain write it
+          </Button>
+        </div>
       ) : (
         <p className="text-sm text-fg-soft text-pretty">{card.whatItIs}</p>
       )}
-      <Readiness card={card} />
+      <Readiness card={card} project={project} />
       {card.stack.length > 0 && (
         <Block label="Stack">
           <div className="flex flex-wrap gap-1.5">
@@ -127,8 +158,10 @@ function CardBody({ card }: { card: ProjectCard }) {
       <Block label="CI and deploy">
         <p className="m-0 text-sm text-fg-soft text-pretty">
           {card.ci.provider ? `${card.ci.provider}: ${card.ci.workflows.join(", ")}` : "No CI config found."}
-          {card.deploy.length > 0 ? ` Deploy: ${card.deploy.join(", ")}.` : ""}
         </p>
+        {card.deploy.length > 0 && (
+          <p className="m-0 text-sm text-fg-soft text-pretty">Deploy: {card.deploy.join(", ")}</p>
+        )}
       </Block>
       {card.remotes.length > 0 && (
         <Block label="Remotes">
@@ -158,7 +191,7 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
 }
 
 /** The score and the checklist. Each missing item says what would fix it. */
-function Readiness({ card }: { card: ProjectCard }) {
+function Readiness({ card, project }: { card: ProjectCard; project: string }) {
   const { score, max, items } = card.readiness;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -173,14 +206,15 @@ function Readiness({ card }: { card: ProjectCard }) {
         className="m-0 grid list-none gap-x-6 gap-y-1.5 p-0 @[620px]:grid-cols-2"
       >
         {items.map((i) => (
-          <ReadinessRow key={i.id} item={i} />
+          <ReadinessRow key={i.id} item={i} project={project} />
         ))}
       </ul>
     </div>
   );
 }
 
-function ReadinessRow({ item }: { item: ReadinessItem }) {
+function ReadinessRow({ item, project }: { item: ReadinessItem; project: string }) {
+  const newTask = useNewTask();
   return (
     <li className="flex min-w-0 items-start gap-2 text-sm">
       {item.ok ? (
@@ -190,9 +224,17 @@ function ReadinessRow({ item }: { item: ReadinessItem }) {
       )}
       <div className="flex min-w-0 flex-col">
         <span className="text-fg">{item.label}</span>
-        <span className="min-w-0 text-xs text-fg-faint text-pretty">
-          {(item.ok ? item.detail : `${item.detail} ${item.fix ?? ""}`).replaceAll("`", "")}
-        </span>
+        <span className="min-w-0 text-xs text-fg-faint text-pretty">{item.detail.replaceAll("`", "")}</span>
+        {!item.ok && item.id !== "base" && item.fix !== undefined && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-1 w-fit"
+            onClick={() => newTask.openFor(project, item.fix ?? item.label)}
+          >
+            Fix with agent
+          </Button>
+        )}
       </div>
     </li>
   );

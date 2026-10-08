@@ -33,6 +33,10 @@ export interface IncidentRead {
   cadenceMin: number;
 }
 
+/** A watch that was paused or removed did not recover: only a resolution by green checks counts. */
+const recovered = (watch: OpsIncident): boolean =>
+  watch.timeline.findLast((t) => t.kind === "resolved")?.closedBy !== "stopped";
+
 export const earliest = (times: readonly (string | undefined)[]): string | undefined =>
   times.filter((t): t is string => t !== undefined).toSorted()[0];
 export const latest = (times: readonly (string | undefined)[]): string | undefined =>
@@ -130,7 +134,9 @@ export class IncidentFacts {
         ? {}
         : {
             watch: {
-              ...(watch.status === "resolved" ? { greenAt: watch.resolvedAt ?? watch.openedAt } : {}),
+              ...(watch.status === "resolved" && recovered(watch)
+                ? { greenAt: watch.resolvedAt ?? watch.openedAt }
+                : {}),
             },
           }),
       ...(task.status === "done" ? { doneAt: task.updatedAt } : {}),

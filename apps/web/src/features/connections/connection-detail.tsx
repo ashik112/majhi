@@ -2,7 +2,7 @@ import {
   type ConnectionHealth,
   type ConnectionView,
   connectionType,
-  failureLine,
+  failureSentences,
   GLOBAL_CONNECTIONS,
   hostPorts,
   type OrgView,
@@ -10,7 +10,6 @@ import {
   scopesAt,
   serviceById,
   serviceByUrl,
-  withoutPeriod,
 } from "@majhi/shared";
 import { Check, ExternalLink, Wrench } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -190,6 +189,7 @@ function StatusBlock({
   const health = view.health;
   const status = rowStatus(view, checking, now);
   const fix = fixOf(health);
+  const reasons = failureSentences(view);
   const re = useReconnect(view);
   const [other, setOther] = useState(false);
   const failed = health?.state === "failed" || health?.state === "needs-attention";
@@ -202,9 +202,9 @@ function StatusBlock({
       {health?.state === "connected" && <Verified health={health} now={now} />}
       {failed && health !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-sunken p-3">
-          <p className="text-base font-medium text-fg">{failureLine(view)}.</p>
-          {fix !== undefined && withoutPeriod(fix.text) !== failureLine(view) && (
-            <p className="text-base text-fg-muted text-pretty">{fix.text}</p>
+          <p className="text-base font-medium text-fg">{reasons[0]}.</p>
+          {reasons.length > 1 && (
+            <p className="text-base text-fg-muted text-pretty">{reasons.slice(1).join(". ")}.</p>
           )}
           {health.state === "needs-attention" && (
             <p className="text-sm text-fg-faint">
@@ -314,7 +314,7 @@ function GitFix({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[]
           onClick={() => setMode("mac")}
           disabled={host !== undefined || kind === "bitbucket"}
         >
-          Sign in on this Mac
+          Sign in with {kind === "github" ? "gh" : "glab"}
         </Button>
         <Button size="sm" variant={mode === "token" ? "secondary" : "ghost"} onClick={() => setMode("token")}>
           Paste a token

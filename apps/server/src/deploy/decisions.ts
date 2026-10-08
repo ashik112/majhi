@@ -1,8 +1,8 @@
-import type { HomeDeploy, OwnerDecision } from "@majhi/shared";
+import { deployWaitDecisionId, type HomeDeploy, type OwnerDecision } from "@majhi/shared";
 
 /**
  * A deploy that waits for the owner is a decision like any other: it counts in Needs you and the bell and opens
- * the task, where the plan card has Run and Change. One per task, for the first step that waits.
+ * the task, and has Run right on the card. One per task, for the first step that waits.
  */
 export function waitingDeployDecisions(
   board: readonly HomeDeploy[],
@@ -14,14 +14,14 @@ export function waitingDeployDecisions(
     const found = task(deploy.task);
     if (step === undefined || found === undefined) continue;
     out.push({
-      id: `deploy:${deploy.task}:${step.project}:${step.env}`,
+      id: deployWaitDecisionId(deploy.task, step.project, step.env),
       kind: "approval",
       ...(found.org === undefined ? {} : { org: found.org }),
       task: deploy.task,
       taskTitle: found.title,
       title: `Deploy ${step.env}: ${found.title}`.slice(0, 300),
-      sentence: `${step.project} is merged and its ${step.env} deploy waits for you. Open the task to run it or change the plan.`,
-      options: [],
+      sentence: `${step.project} is merged and its ${step.env} deploy waits for you. Run it here, or open the task to change the plan.`,
+      options: [{ id: "run", label: "Run", primary: true }],
       at: found.updatedAt,
       link: { kind: "task", id: deploy.task },
     });

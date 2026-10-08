@@ -20,6 +20,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { Contacts } from "./contacts.ts";
+import type { ChatHistory } from "./history.ts";
 import { type ChatConnectionInfo, ChatHub } from "./hub.ts";
 import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
@@ -28,6 +29,7 @@ import { ClientRooms } from "./rooms.ts";
 import { ClientChat, type ClientChatDeps } from "./service.ts";
 import { ChatSettings, dayBegins } from "./settings.ts";
 import { ClientTriage, type ToolLessModel } from "./triage.ts";
+import { ChatWaits } from "./waits.ts";
 
 /** Where each chat app keeps its tokens among the connection's secret entries. */
 export const TOKEN_VARIABLES: Partial<
@@ -63,6 +65,8 @@ export interface ClientChatWiring {
   reopenIncident: IncidentsDeps["reopen"];
   /** Tells an incident task's lead something, as majhi. */
   askLead: IncidentsDeps["askLead"];
+  /** The captain's History, through the autonomy event log. */
+  history?: ChatHistory | undefined;
   decisions: LayaDecisions | undefined;
   lane: ClientChatDeps["lane"];
   deleteWebhook: ClientChatDeps["deleteWebhook"];
@@ -85,6 +89,7 @@ export interface ClientChatParts {
   triage: ClientTriage;
   incidents: ClientIncidents;
   settings: ChatSettings;
+  waits: ChatWaits;
 }
 
 /** Builds the client chat parts and joins them. The gate is made first and calls `replies` through the closures given to it. */
@@ -187,6 +192,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
       new Map(
         Object.entries((await w.config.sections()).orgs).map(([id, o]) => [id, o.name] as [string, string]),
       ),
+    history: w.history,
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
@@ -211,6 +217,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
         return undefined;
       }
     },
+    history: w.history,
     reopen: w.reopenIncident,
     askLead: w.askLead,
     changed: w.changed,
@@ -226,6 +233,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     rest: w.rest,
     incidents: (org, room) => incidents.candidates(org, room),
     incident: incidents,
+    history: w.history,
     injects: async (text) => (await classifyInjection(w.decisions, text, "social")).flagged,
     read: async (text) => readClientMessage(w.decisions, text),
     taught: (decision, label) => {
@@ -275,5 +283,19 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     deleteWebhook: w.deleteWebhook,
     saveUserToken: w.saveUserToken,
   });
-  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings };
+  const waits = new ChatWaits({
+    store: w.store,
+    room: w.room,
+    findings: w.findings,
+    whoIs: (room, card, answer) => chat.whoIs(room, card, answer),
+    makeIncident: async (room, item, finding) => {
+      const made = await incidents.claim(room, item, finding, { force: true });
+      if (made === undefined) throw new Error("The incident could not be opened.");
+      return made;
+    },
+    history: w.history,
+    changed: w.changed,
+    ...(w.now === undefined ? {} : { now: w.now }),
+  });
+  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings, waits };
 }

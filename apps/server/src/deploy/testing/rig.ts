@@ -115,7 +115,10 @@ export async function rig(
     repo: store.deploys,
     projects: { get: async () => ({ ...project }) },
     tasks: { get: (id) => tasks.get(id), landedCommits: () => landed },
-    git: { tip: async () => tip.value },
+    git: {
+      tip: async () => tip.value,
+      whyNoTip: async () => "majhi could not read the project's base branch.",
+    },
     repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
     checksConfigured: () => checks.configured,
     providers,

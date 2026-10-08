@@ -437,17 +437,23 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
   const incidents = watch.incidents.filter((i) => !onAgenda.has(i.id));
   const asFinding = new Set(watch.incidents.map((i) => i.id));
   // An incident that waits in Needs you is on the agenda: it is not listed here again.
+  const waiting = useDecisions().data?.decisions ?? [];
   const asDecision = new Set(
-    (useDecisions().data?.decisions ?? []).flatMap((d) => {
+    waiting.flatMap((d) => {
       const parsed = parseDecisionId(d.id);
       return parsed?.kind === "incident" ? [parsed.id] : [];
     }),
   );
-  const services = (useWatch().data?.incidents ?? []).filter(
+  const asTask = new Set(
+    waiting.flatMap((d) => (d.kind === "incident" && d.task !== undefined ? [d.task] : [])),
+  );
+  const open = (useWatch().data?.incidents ?? []).filter(
+    (i) => i.status === "open" && (org === undefined || i.org === org),
+  );
+  const services = open.filter(
     (i) =>
-      i.status === "open" &&
-      (org === undefined || i.org === org) &&
       !asDecision.has(i.id) &&
+      (i.task === undefined || !asTask.has(i.task)) &&
       (i.finding === undefined || !asFinding.has(i.finding)),
   );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;
@@ -469,7 +475,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       )}
       {quiet && (
         <p className="m-0 text-sm text-fg-muted">
-          {watch.incidents.length > 0
+          {watch.incidents.length > 0 || open.length > 0
             ? "Nothing is running. Open incidents are on the agenda."
             : "Nothing is running and no incident is open."}
         </p>
