@@ -40,6 +40,7 @@ export function outcomeOfTest(test: ConnectionTestResult): CheckOutcome {
       ok: true,
       checked: test.checked ?? [],
       ...(test.account === undefined ? {} : { account: test.account }),
+      ...(test.attention === undefined ? {} : { attention: test.attention }),
     };
   }
   // A check that failed without saying why is a check majhi does not understand, never a pass.

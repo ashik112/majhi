@@ -10,6 +10,7 @@ import {
   type ChatChannelList,
   type ChatConnection,
   type ChatMessage,
+  type ChatProbe,
   ChatSendError,
   type ChatSink,
   type ChatTarget,
@@ -848,6 +849,34 @@ export class SlackAdapter implements ChatAdapter {
       this.options.log?.(`slack ${conn.id}: the read loop ended: ${errorMessage(err)}`);
     });
     return () => session.stop();
+  }
+
+  async probe(conn: ChatConnection, linked: readonly string[]): Promise<ChatProbe> {
+    const api = new SlackApi({ base: this.options.base, fetch: this.options.fetch });
+    try {
+      const auth = await api.call("auth.test", conn.token, {}, SlackAuth);
+      const notIn: { id: string; name: string }[] = [];
+      for (const id of linked) {
+        try {
+          const { channel } = await api.call(
+            "conversations.info",
+            conn.token,
+            { channel: id },
+            SlackConversation,
+          );
+          if (channel.is_member === false) notIn.push({ id, name: channel.name ?? id });
+        } catch (err) {
+          if (err instanceof SlackError && err.unreachable) notIn.push({ id, name: id });
+          else throw err;
+        }
+      }
+      return { app: "slack", bot: auth.user ?? "majhi", notIn };
+    } catch (err) {
+      if (err instanceof SlackError && err.badToken) {
+        throw new ChatSendError("Slack no longer accepts the bot token.", "needs-token");
+      }
+      throw err;
+    }
   }
 
   channels(conn: ChatConnection): Promise<ChatChannelList> {

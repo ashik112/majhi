@@ -19,6 +19,9 @@ import {
   sshTargetArgs,
   textValue,
 } from "@majhi/shared";
+import { type ChatProbe, ChatSendError } from "../chat/adapter.ts";
+import { SlackError } from "../chat/slack/api.ts";
+import { TelegramError } from "../chat/telegram/api.ts";
 import { errorCode, errorMessage, UserError } from "../errors.ts";
 import type { GitCheck } from "../gitConnect/check.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
@@ -83,6 +86,11 @@ export interface TesterDeps {
    * address its forwarders use), else this machine. A test gives its own probe.
    */
   hostProbe?: ((port: number) => Promise<PortAnswer>) | undefined;
+  /**
+   * Asks a chat app about the connection's bot (who it is, what keeps it from reading the linked chats), with the
+   * permissions the app refused a call for. Throws the app's refusal. Without it a chat Test only checks that a token is saved.
+   */
+  chatProbe?: ((id: string) => Promise<{ probe: ChatProbe; needed: string[] }>) | undefined;
   /** Told how every check ended, so the connection's one state follows it. */
   health?: { observe(id: string, result: ConnectionTestResult): void } | undefined;
   /** The Test of a connection signed in through Connect (5.14). */
@@ -106,6 +114,10 @@ interface Outcome {
   failure?: ConnectionFailure;
   /** What a pass did, one sentence each. */
   checked?: string[];
+  /** A pass that still needs the owner. */
+  attention?: ConnectionFailure;
+  /** Who the service says the credential belongs to. */
+  account?: string;
 }
 
 /** A failure raised in a check, with the typed reason the caller reads. */
@@ -244,7 +256,7 @@ export class ConnectionTester {
       try {
         const values = await this.resolve(id, found.connection);
         secrets = values.secrets;
-        outcome = await this.run(found.connection.type, values);
+        outcome = await this.run(id, found.connection.type, values);
       } catch (err) {
         // The error's type and code decide, never its words. A raw error is shown as its reason's plain line.
         const failure: ConnectionFailure =
@@ -274,6 +286,8 @@ export class ConnectionTester {
       durationMs: Math.max(0, Date.now() - started),
       ...(outcome.ok || outcome.failure === undefined ? {} : { failure: outcome.failure }),
       ...(outcome.ok && outcome.checked !== undefined ? { checked: outcome.checked } : {}),
+      ...(outcome.ok && outcome.attention !== undefined ? { attention: outcome.attention } : {}),
+      ...(outcome.ok && outcome.account !== undefined ? { account: outcome.account } : {}),
     };
     this.deps.connections.recordTest(id, result);
     return result;
@@ -377,7 +391,7 @@ export class ConnectionTester {
     return { org: found.org, type: connection.type, name: connection.name, fields: values.fields, vars };
   }
 
-  private run(type: ConnectionType, values: Values): Promise<Outcome> {
+  private run(id: string, type: ConnectionType, values: Values): Promise<Outcome> {
     switch (type) {
       case "kubectl":
         return this.kubectl(values);
@@ -402,21 +416,95 @@ export class ConnectionTester {
         );
       case "host":
         return this.host(values);
-      case "chat": {
-        // The bot token is majhi's own: the check is that it is saved. Telegram itself was asked when the app was set up.
-        const saved = (values.lists.vars ?? []).filter((e) => e.value !== undefined).length;
-        return Promise.resolve(
-          saved > 0
-            ? {
-                ok: true,
-                detail: "The bot token is saved.",
-                warnings: [],
-                checked: ["Checked that the bot token is set"],
-              }
-            : fail("The bot token is not saved. Set the app up again.", { reason: "no-credential" }),
+      case "chat":
+        return this.chat(id, values);
+    }
+  }
+
+  /**
+   * A chat bot: its token is saved, the app accepts it, and nothing keeps it from reading the linked chats. What the
+   * app answers is read as typed facts. A bot that works but cannot read is needs-attention, with the exact fix.
+   */
+  private async chat(id: string, v: Values): Promise<Outcome> {
+    const saved = (v.lists.vars ?? []).filter((e) => e.value !== undefined).length;
+    if (saved === 0)
+      return fail("The bot token is not saved. Set the app up again.", { reason: "no-credential" });
+    if (this.deps.chatProbe === undefined) {
+      return {
+        ok: true,
+        detail: "The bot token is saved.",
+        warnings: [],
+        checked: ["Checked that the bot token is set"],
+      };
+    }
+    let found: Awaited<ReturnType<NonNullable<TesterDeps["chatProbe"]>>>;
+    try {
+      found = await this.deps.chatProbe(id);
+    } catch (err) {
+      const refused =
+        (err instanceof TelegramError && err.code === 401) ||
+        (err instanceof SlackError && err.badToken) ||
+        (err instanceof ChatSendError && err.kind === "needs-token");
+      if (refused) throw new CheckFailed(`${FAILURE_LINE.rejected}.`, { reason: "rejected", status: 401 });
+      throw err;
+    }
+    const { probe, needed } = found;
+    const bot = `@${probe.bot}`;
+    const base = { ok: true as const, warnings: [], account: bot };
+    if (probe.app === "telegram") {
+      const checked = [
+        `Asked Telegram who ${bot} is`,
+        "Checked the bot's group privacy",
+        "Checked that no webhook is set",
+      ];
+      const attention = (failure: ConnectionFailure, detail: string): Outcome => ({
+        ...base,
+        detail,
+        checked,
+        attention: failure,
+      });
+      if (probe.webhook !== undefined) {
+        return attention(
+          { reason: "webhook-set", fix: "Remove the webhook so majhi can read messages." },
+          `${bot} has a webhook set, so majhi cannot read it.`,
         );
       }
+      if (!probe.readsAllGroupMessages) {
+        return attention(
+          {
+            reason: "privacy-on",
+            fix: `In Telegram, message @BotFather, send /setprivacy, pick ${bot}, choose Disable, then remove the bot from each group and add it back. Until then it only sees messages that mention ${bot}.`,
+          },
+          `${bot} only sees messages that mention it in groups.`,
+        );
+      }
+      return { ...base, detail: `${bot} can read every message in its groups.`, checked };
     }
+    const checked = [`Asked Slack who ${bot} is`, "Checked the bot's membership of each linked channel"];
+    if (needed.length > 0) {
+      return {
+        ...base,
+        detail: `Slack refused ${bot} a permission.`,
+        checked,
+        attention: {
+          reason: "insufficient-scope",
+          fix: `In the Slack app, add ${needed.join(", ")} under OAuth & Permissions, then reinstall it to the workspace.`,
+        },
+      };
+    }
+    if (probe.notIn.length > 0) {
+      const names = probe.notIn.map((c) => `#${c.name}`).join(", ");
+      return {
+        ...base,
+        detail: `${bot} is not in ${names}.`,
+        checked,
+        attention: {
+          reason: "not-in-channel",
+          fix: `Invite ${bot} to ${names}: type /invite ${bot} in ${probe.notIn.length === 1 ? "the channel" : "each channel"}.`,
+        },
+      };
+    }
+    return { ...base, detail: `${bot} is in every linked channel.`, checked };
   }
 
   /** Opens a TCP connection to each listed port of the owner's computer: connected only when every one answers. */

@@ -2695,10 +2695,27 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const base = env.chats?.telegramApi ?? "https://api.telegram.org";
       const res = await fetch(`${base}/bot${token}/deleteWebhook`, { method: "POST", redirect: "error" });
       if (!res.ok) throw new UserError("Telegram would not remove the webhook.", 409);
+      void connectionHealth.check(connection).catch(() => undefined);
     },
     majhiHome: env.majhiHome,
     polling: env.chats?.polling === true,
     changed: () => events.emit(["clients"]),
+    // One health for a connection: a read loop that fails or recovers moves the same state the Test does.
+    troubled: (connection, trouble) => {
+      if (trouble === undefined) {
+        void connectionHealth.check(connection).catch(() => undefined);
+      } else if (trouble === "webhook") {
+        connectionHealth.result(connection, {
+          ok: true,
+          checked: ["Asked Telegram for the bot's updates"],
+          attention: { reason: "webhook-set", fix: "Remove the webhook so majhi can read messages." },
+        });
+      } else {
+        connectionHealth.failed(connection, {
+          reason: trouble === "needs-token" ? "rejected" : "unreachable",
+        });
+      }
+    },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (line) => console.log(line),
   });
@@ -2770,6 +2787,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // From where the forwarders run: Docker's name for this computer when majhi is in Docker, else this machine.
     hostProbe: (port) => probePort(existsSync("/.dockerenv") ? "host.docker.internal" : "127.0.0.1", port),
     oauth: connect,
+    chatProbe: (id) => chatParts.chat.probe(id),
     gitCheck: async (org, provider, host, privateNetwork) => {
       const fetchFn = options.gitFetch ?? fetch;
       if (host !== DEFAULT_GIT_HOST[provider]) {

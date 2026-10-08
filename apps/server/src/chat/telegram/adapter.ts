@@ -5,6 +5,7 @@ import {
   type ChatCapabilities,
   type ChatConnection,
   type ChatMessage,
+  type ChatProbe,
   ChatSendError,
   type ChatSink,
   type ChatTarget,
@@ -18,12 +19,14 @@ import {
   TelegramError,
   TelegramNetworkError,
   TgAdmins,
+  TgBotMe,
   TgCount,
   TgFileInfo,
   type TgMessage,
   TgSent,
   TgUpdate,
   TgUpdates,
+  TgWebhookInfo,
 } from "./api.ts";
 
 /** What Telegram may deliver: messages and their edits, in groups and channels. Set explicitly, never the default. */
@@ -36,6 +39,8 @@ export const MAX_TEXT = 4096;
 const ANONYMOUS_ADMIN = 1087968824;
 
 const LONG_POLL_SECONDS = 25;
+/** After this many failed reads in a row the account shows as unreachable. */
+const TROUBLE_AFTER_FAILURES = 3;
 /** The most tries one send gets when Telegram says to wait. */
 const SEND_TRIES = 5;
 /** People counts are asked once in a while, not on every message. */
@@ -251,6 +256,19 @@ export class TelegramAdapter implements ChatAdapter {
     return new TelegramApi({ token: conn.token, base: this.options.base, fetch: this.options.fetch });
   }
 
+  async probe(conn: ChatConnection): Promise<ChatProbe> {
+    const api = this.api(conn);
+    const me = await api.call("getMe", {}, TgBotMe);
+    const hook = await api.call("getWebhookInfo", {}, TgWebhookInfo);
+    return {
+      app: "telegram",
+      bot: me.username ?? me.first_name,
+      canJoinGroups: me.can_join_groups !== false,
+      readsAllGroupMessages: me.can_read_all_group_messages === true,
+      webhook: hook.url === "" ? undefined : hook.url,
+    };
+  }
+
   start(conn: ChatConnection, sink: ChatSink, cursor: ChatCursor | undefined): () => void {
     const stop = new AbortController();
     void this.loop(conn, sink, cursor, stop.signal).catch((err) => {
@@ -336,6 +354,10 @@ export class TelegramAdapter implements ChatAdapter {
           }
         }
         failures += 1;
+        if (failures >= TROUBLE_AFTER_FAILURES) {
+          healthy = false;
+          sink.trouble("unreachable");
+        }
         this.options.log?.(
           `telegram ${conn.id}: ${err instanceof TelegramNetworkError || err instanceof TelegramError ? err.message : errorMessage(err)}`,
         );

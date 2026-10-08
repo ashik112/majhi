@@ -14,8 +14,15 @@ export function failingConnectionDecisions(views: readonly ConnectionView[]): Ow
       id: `connection:${view.id}`,
       kind: "sign-in",
       org: view.org,
-      title: `Fix ${view.name}: its agents cannot use it until you do`.slice(0, 300),
-      sentence: `${view.name} is failing. ${failureSentence(view)}`.slice(0, 500),
+      title: (health.state === "failed"
+        ? `Fix ${view.name}: its agents cannot use it until you do`
+        : `${view.name} needs one step from you`
+      ).slice(0, 300),
+      sentence:
+        `${view.name} ${health.state === "failed" ? "is failing" : "needs attention"}. ${failureSentence(view)}`.slice(
+          0,
+          500,
+        ),
       options: [],
       at: health.at,
       link: { kind: "connections" },

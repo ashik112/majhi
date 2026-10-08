@@ -30,7 +30,7 @@ import {
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import { type ChatChannelList, ChatSendError } from "./adapter.ts";
+import { type ChatChannelList, type ChatProbe, ChatSendError } from "./adapter.ts";
 import type { CaptainChat } from "./captain.ts";
 import type { Contacts } from "./contacts.ts";
 import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
@@ -45,7 +45,7 @@ export interface ClientChatDeps {
   rooms: ClientRooms;
   contacts: Contacts;
   replies: ClientReplies;
-  ingest: Pick<ChatIngest, "settleWaiting">;
+  ingest: Pick<ChatIngest, "settleWaiting" | "adoptEarly">;
   settings: ChatSettings;
   /** What the captain's tools do for a chat besides replying. */
   captain: CaptainChat;
@@ -53,7 +53,15 @@ export interface ClientChatDeps {
   layaDown?: () => boolean;
   hub: Pick<
     ChatHub,
-    "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou" | "hasUserToken"
+    | "accounts"
+    | "capabilities"
+    | "restart"
+    | "channels"
+    | "join"
+    | "notesOf"
+    | "checkYou"
+    | "hasUserToken"
+    | "probe"
   >;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
@@ -267,8 +275,9 @@ export class ClientChat {
   }
 
   async link(room: string, org: string): Promise<ClientRow> {
-    // Nothing was stored before the link, so there are no contacts to make yet: they appear as people write.
     const linked = await this.deps.rooms.link(room, org);
+    // What the chat said before the link is in its room: the captain reads the newest of it.
+    await this.deps.ingest.adoptEarly(linked.id);
     return this.row(linked.id);
   }
 
@@ -361,6 +370,14 @@ export class ClientChat {
       if (hit) return room.id;
     }
     return undefined;
+  }
+
+  /** What the app says of a connection's bot, with the permissions it refused a call for. The Test of the connection reads it. */
+  async probe(connection: string): Promise<{ probe: ChatProbe; needed: string[] }> {
+    const info = (await this.deps.connections()).find((c) => c.id === connection);
+    if (info === undefined) throw new UserError("That chat connection does not exist.", 404);
+    const probe = await this.deps.hub.probe(connection, this.deps.rooms.linkedChats(info.app, info.account));
+    return { probe, needed: this.deps.hub.notesOf(connection).needed };
   }
 
   async confirmWebhook(connection: string): Promise<void> {

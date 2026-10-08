@@ -367,6 +367,13 @@ export class RoomRepo {
     return row?.n ?? 0;
   }
 
+  /** Keeps only the newest `keep` items of the task's room. */
+  trim(task: string, keep: number): void {
+    this.db.run(sql`
+      DELETE FROM room_items WHERE task = ${task} AND seq <= (
+        SELECT seq FROM room_items WHERE task = ${task} ORDER BY seq DESC LIMIT 1 OFFSET ${keep})`);
+  }
+
   /** Deletes every item of the task's room, and returns how many went. */
   deleteAll(task: string): number {
     const before = this.count(task);

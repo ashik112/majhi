@@ -39,6 +39,8 @@ export interface IngestDeps {
 /** A person writing more often than this is stored but no longer read by the captain until they slow down. */
 const SENDER_LIMIT = 20;
 const SENDER_WINDOW_MS = 10 * 60_000;
+/** An unlinked chat keeps this many of its newest messages, to start the room with when it is linked. */
+const EARLY_KEEP = 20;
 
 type ClientItem = Extract<RoomItem, { type: "client" }>;
 
@@ -107,9 +109,9 @@ export class ChatIngest {
     }
     const found = rooms.find(env.external.app, env.external.account, env.external.chat);
     if (found === undefined) {
-      // A direct message from a stranger is ignored. A group or channel gets one New chat row, and nothing is stored.
+      // A direct message from a stranger is ignored. A group or channel gets one New chat row.
       if (env.chat.kind === "private") return;
-      const base: ClientRoom = {
+      const opened = rooms.open({
         app: env.external.app,
         account: env.external.account,
         chat: env.external.chat,
@@ -118,13 +120,17 @@ export class ChatIngest {
         holder: "captain",
         sendAs: "bot" as const,
         ...(env.chat.people === undefined ? {} : { people: env.chat.people }),
-      };
-      rooms.open(base);
+      });
+      this.keepEarly(opened, env);
       return;
     }
     let room = rooms.refresh(found, info);
     const org = room.org;
-    if (room.chat.ignored === true || org === undefined) return;
+    if (room.chat.ignored === true) return;
+    if (org === undefined) {
+      this.keepEarly(room, env);
+      return;
+    }
     if (room.chat.trouble === "unreachable") room = rooms.patch(room, { trouble: undefined });
     // Mentions become contact tokens before anything else touches the text: their offsets are the app's.
     const tokenized = tokenizeMentions(env.text, env.mentions ?? [], (m) => this.contactOf(org, env, m));
@@ -218,6 +224,72 @@ export class ChatIngest {
       .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`))
       .finally(() => this.pending.delete(work));
     this.pending.add(work);
+  }
+
+  /**
+   * A message of a chat that is not linked yet is kept in the New chat's own room, the newest few, so the New chats row
+   * shows what was said and the room starts with it when the chat is linked. Nothing reads it until then.
+   */
+  private keepEarly(room: RoomRow, env: ChatEnvelope): void {
+    if (env.kind === "delete") return;
+    const key = externalKeyText(env.external);
+    const tokenized = tokenizeMentions(env.text, env.mentions ?? [], () => undefined);
+    const stored = this.deps.room.postExternal(room.id as TaskId, key, itemId(key), (existing) => {
+      if (existing !== undefined && existing.type !== "client") return undefined;
+      return {
+        type: "client",
+        sender: env.sender,
+        text: withoutSecrets(tokenized.text),
+        files: [],
+        external: env.external,
+        ...(env.thread === undefined ? {} : { thread: env.thread }),
+        ...(env.replyTo === undefined ? {} : { replyTo: env.replyTo }),
+        ...(env.forwarded === true ? { forwarded: true as const } : {}),
+        ...(env.addressed === true ? { addressed: true as const } : {}),
+        revisions: existing === undefined ? [] : [...existing.revisions, { text: existing.text, at: env.at }],
+        sentAt: env.at,
+        early: true as const,
+      };
+    });
+    if (stored?.created === true) this.deps.store.room.trim(room.id, EARLY_KEEP);
+  }
+
+  /**
+   * The chat was just linked: what was said before is in its room. The captain reads the newest message nobody
+   * answered, as a client's, and never the older ones, so linking never sends a reply to old news.
+   */
+  async adoptEarly(roomId: string): Promise<void> {
+    const room = this.deps.store.client.room(roomId);
+    if (room === undefined || room.org === undefined || room.chat.holder !== "captain") return;
+    const early = this.deps.store.room
+      .page(roomId, EARLY_KEEP + 5)
+      .items.filter(
+        (i): i is ClientItem => i.type === "client" && i.early === true && i.outcome === undefined,
+      );
+    const newest = early.find((i) => i.sender.verified && i.deleted !== true);
+    for (const item of early) {
+      if (item !== newest) this.skipped(room, item, "From before the chat was linked");
+    }
+    if (newest === undefined) return;
+    const contact = this.deps.contacts.ensure(
+      room.org,
+      {
+        app: room.chat.app,
+        account: room.chat.account,
+        native: newest.sender.id,
+        ...(newest.sender.username === undefined ? {} : { username: newest.sender.username }),
+      },
+      newest.sender.name,
+    );
+    if (contact.contact.us === true) {
+      this.skipped(room, newest, "One of us, not read");
+      return;
+    }
+    if (contact.fresh) this.deps.contacts.propose(room.id, contact.contact);
+    if (this.asksWho(room, newest, contact.contact.name)) return;
+    await this.deps.triage
+      .run(room, newest)
+      .catch((err) => this.deps.log?.(`chat: triage of ${newest.id} failed: ${errorMessage(err)}`));
   }
 
   private skipped(room: RoomRow, item: ClientItem, why: string): void {
@@ -395,6 +467,7 @@ export class ChatIngest {
         continue;
       for (const item of this.deps.store.room.page(room.id, 100).items.toReversed()) {
         if (item.type !== "client" || item.us === true || !item.sender.verified) continue;
+        if (item.early === true && item.outcome !== undefined) continue;
         if (Date.parse(item.at) < since || check(room.org, `client:${externalKeyText(item.external)}`))
           continue;
         n += 1;
