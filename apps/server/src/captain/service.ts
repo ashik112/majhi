@@ -475,7 +475,7 @@ export class CaptainService {
         ...(paid === undefined || "problem" in paid ? {} : { pays: paid.account }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
-        ...blockerOf(paid, asking, [lane, this.deps.lanes.chat(org, "reacting")]),
+        ...blockerOf(paid, asking, [this.deps.lanes.chat(org, "reacting"), lane]),
         chores: choresNow(
           authority,
           { mode, stopped: state.stopped },
@@ -690,8 +690,9 @@ function blockerOf(
   chats: readonly (string | undefined)[],
 ): { blocker: CaptainBlocker } | Record<string, never> {
   if (paid !== undefined && "problem" in paid) return { blocker: { kind: "account", why: paid.problem } };
-  for (const item of asking) {
-    if (item.type !== "permission" || !chats.includes(item.task)) continue;
+  // The on-call lane first: a client's message waits there.
+  for (const item of chats.flatMap((chat) => asking.filter((i) => i.task === chat))) {
+    if (item.type !== "permission") continue;
     const allow = item.options.find((o) => o.kind === "allow_once");
     const deny = item.options.find((o) => o.kind === "reject_once");
     if (allow === undefined || deny === undefined) continue;

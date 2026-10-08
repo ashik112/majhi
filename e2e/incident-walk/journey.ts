@@ -11,6 +11,7 @@ import {
   cmd,
   DB_PORT,
   GITLAB_PORT,
+  PORT,
   results,
   setReplies,
   shot,
@@ -75,63 +76,80 @@ async function scriptCaptain(room: string): Promise<void> {
   // The lane is made on the captain's first turn: the owner asking it about the incident makes it.
   if ((await findLane()) === undefined) await cmd("incident.askCaptain", { task: "ACM-1" });
   const lane = await until("the captain's lane", findLane);
-  const folder = (await cmd("tasks.get", { id: lane.chat })).folder as string;
-  const reply = (text: string) => ({ tool: "majhi_chat_reply", args: { room, text, ...FLAGS } });
-  writeFileSync(
-    join(folder, "CAPTAIN_SCRIPT.json"),
-    JSON.stringify({
-      rules: [
-        {
-          when: "Status now: it is resolved",
-          flags: "",
-          steps: [reply("This is resolved. Tell us here if you see it again.")],
-        },
-        {
-          when: "<message ",
-          flags: "",
-          steps: [
-            { tool: "majhi_chat_history", args: { room } },
-            { tool: "majhi_watch_overview", args: { org: "acme" } },
-            {
-              tool: "majhi_chat_openIncident",
-              args: {
-                room,
-                found:
-                  "The live check answers and no deploy failed lately, but a watch is firing on the database.",
-              },
-            },
-            reply(
-              "I checked our watches and recent deploys and found a database problem. I opened an incident and we are on it.",
-            ),
-            {
-              tool: "majhi_watch_save",
-              args: {
-                reason: "No watch covers the live check address",
-                org: "acme",
-                def: {
-                  name: WATCH_NAME,
-                  spec: { kind: "website", url: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
-                  condition: { type: "down" },
-                  everyMin: 5,
-                  fire: { alert: { on: true, phone: false }, investigate: true },
-                  project: "storefront",
-                },
-              },
-            },
-            {
-              tool: "majhi_autonomy_note",
-              args: { text: `Added a watch: ${WATCH_NAME}`, org: "acme" },
-            },
-          ],
-        },
-        {
-          when: "<event>",
-          flags: "",
-          steps: [reply("Update on the incident: we are working on it and will tell you here as it moves.")],
-        },
-      ],
-    }),
+  // Reacting work runs in the on-call lane, backlog work in the main one: both read the same script.
+  const lanes = [lane.chat as string];
+  const onCall = await until("the on-call lane", async () => {
+    const l = ((await cmd("autonomy.status")).lanes as any[]).find((x) => x.org === "acme");
+    return l?.onCall;
+  });
+  lanes.push(onCall as string);
+  const folders = await Promise.all(
+    lanes.map(async (id) => (await cmd("tasks.get", { id })).folder as string),
   );
+  const reply = (text: string) => ({ tool: "majhi_chat_reply", args: { room, text, ...FLAGS } });
+  const script = JSON.stringify({
+    rules: [
+      {
+        when: "refund",
+        flags: "",
+        steps: [
+          {
+            tool: "majhi_chat_reply",
+            args: { room, text: "We will refund the order within two days.", ...FLAGS, money: true },
+          },
+        ],
+      },
+      {
+        when: "Status now: it is resolved",
+        flags: "",
+        steps: [reply("This is resolved. Tell us here if you see it again.")],
+      },
+      {
+        when: "<message ",
+        flags: "",
+        steps: [
+          { tool: "majhi_chat_history", args: { room } },
+          { tool: "majhi_watch_overview", args: { org: "acme" } },
+          {
+            tool: "majhi_chat_openIncident",
+            args: {
+              room,
+              found:
+                "The live check answers and no deploy failed lately, but a watch is firing on the database.",
+            },
+          },
+          reply(
+            "I checked our watches and recent deploys and found a database problem. I opened an incident and we are on it.",
+          ),
+          {
+            tool: "majhi_watch_save",
+            args: {
+              reason: "No watch covers the live check address",
+              org: "acme",
+              def: {
+                name: WATCH_NAME,
+                spec: { kind: "website", url: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
+                condition: { type: "down" },
+                everyMin: 5,
+                fire: { alert: { on: true, phone: false }, investigate: true },
+                project: "storefront",
+              },
+            },
+          },
+          {
+            tool: "majhi_autonomy_note",
+            args: { text: `Added a watch: ${WATCH_NAME}`, org: "acme" },
+          },
+        ],
+      },
+      {
+        when: "<event>",
+        flags: "",
+        steps: [reply("Update on the incident: we are working on it and will tell you here as it moves.")],
+      },
+    ],
+  });
+  for (const folder of folders) writeFileSync(join(folder, "CAPTAIN_SCRIPT.json"), script);
 }
 
 async function incidentTasks(): Promise<any[]> {
@@ -402,9 +420,108 @@ async function refireAndRecover(w: World): Promise<string> {
   return `re-fire reopened ACM-1 (${reopened.status}) with no new task; recovery card "${card.title}"; closed -> ${done.status}`;
 }
 
+const laneItems = async (task: string): Promise<any[]> =>
+  (await cmd("room.items", { task, limit: 200 })).items;
+const cardFor = async (task: string, fragment: string) =>
+  (await laneItems(task)).find((i) => i.type === "permission" && String(i.title).includes(fragment));
+
+/**
+ * The captain's two lanes: a backlog lane stuck on a card for the owner, and a client who says the site is down.
+ * Read-only commands run without a card; a command that is not read-only (or reaches an unknown host) asks. The
+ * client's message goes to the on-call lane and is answered while the first lane still waits. A second message that
+ * waits behind a card in the on-call lane shows that card in the chat with Allow, and Allow answers it. A held reply
+ * can be discarded.
+ */
+async function unblock(w: World): Promise<string> {
+  await scriptCaptain(room);
+  const main = ((await cmd("autonomy.status")).lanes as any[]).find((l) => l.org === "acme").chat as string;
+  const onCall = ((await cmd("autonomy.status")).lanes as any[]).find((l) => l.org === "acme")
+    .onCall as string;
+  if (main === onCall) throw new Error("the two lanes are one chat");
+  const notes: string[] = [];
+
+  // 1. Read-only commands run without a card; one that is not read-only asks.
+  await cmd("room.send", {
+    task: main,
+    text: `run: curl -s -o /dev/null -w %{http_code} http://127.0.0.1:${GITLAB_PORT}/health/production\nrun: ls -la\nrun: git log --oneline`,
+  });
+  const auto = await until("the read-only commands to run", async () => {
+    const items = (await laneItems(main)).filter((i) => i.type === "permission");
+    return items.length >= 3 ? items : false;
+  });
+  if (auto.some((i) => i.state === "pending"))
+    throw new Error(`a read-only command asked: ${JSON.stringify(auto.map((i) => [i.title, i.state]))}`);
+  notes.push(`${auto.length} read-only commands (curl to a known host, ls, git log) ran with no card`);
+
+  // 2. The lane gets stuck on a command that is not read-only.
+  await cmd("room.send", { task: main, text: "run: git push origin nothing" });
+  const stuck = await until("the card for the push", () => cardFor(main, "push"));
+  if (stuck.state !== "pending") throw new Error(`the push did not ask: ${stuck.state}`);
+  notes.push(
+    "a push (not read-only, the captain has no push of its own here) asked, and the main lane is stuck on it",
+  );
+
+  // 3. The client writes while the main lane waits: the on-call lane answers.
+  const before = w.slack.sent.length;
+  w.slack.post({ channel: "C0CLIENT", user: "U0SARA", text: "nbr is down, the site is down!" });
+  await until("a reply from the on-call lane", async () => w.slack.sent.length > before, 120_000);
+  const still = await cardFor(main, "push");
+  if (still?.state !== "pending") throw new Error("the main lane's card was answered by something else");
+  notes.push(`the client got "${w.slack.sent.at(-1)?.text.slice(0, 60)}" while the main lane still waited`);
+
+  // 4. A message waiting behind a card in the on-call lane shows it, with Allow.
+  await cmd("room.send", { task: onCall, text: "run: gh pr merge 99" });
+  const card = await until("the on-call card", () => cardFor(onCall, "pr merge"));
+  w.slack.post({ channel: "C0CLIENT", user: "U0SARA", text: "still down, please check again" });
+  await w.page.goto(`http://127.0.0.1:${PORT}/chats`);
+  await w.page.getByText("#acme-client").first().click();
+  await w.page
+    .getByText("still down, please check again")
+    .first()
+    .waitFor({ timeout: 60_000 })
+    .catch(() => undefined);
+  const line = w.page.getByText("The captain is waiting for your OK on").first();
+  await line.waitFor({ timeout: 40_000 }).catch(async (err) => {
+    console.log(
+      await shotHere(w, "09-debug"),
+      JSON.stringify((await cmd("captain.status", {})).orgs.map((o: any) => [o.org, o.blocker, o.lane])),
+      JSON.stringify(
+        (await cmd("room.items", { task: room, limit: 5 })).items.map((i: any) => [i.type, i.outcome]),
+      ),
+    );
+    throw err;
+  });
+  console.log(await shotHere(w, "09-waiting-on-card"));
+  await w.page.getByRole("button", { name: "Allow", exact: true }).first().click();
+  await until(
+    "the card to be answered",
+    async () => (await cardFor(onCall, "pr merge"))?.state === "answered",
+  );
+  notes.push("the chat showed the pending card with Allow, and Allow answered it");
+  void card;
+
+  // 5. A held reply can be discarded.
+  w.slack.post({ channel: "C0CLIENT", user: "U0SARA", text: "can I get a refund for my order?" });
+  await w.page.reload();
+  await w.page.getByText("#acme-client").first().click();
+  await w.page.getByText("Reply waits for you").first().waitFor({ timeout: 120_000 });
+  console.log(await shotHere(w, "09-held-reply"));
+  await w.page.getByRole("button", { name: "Discard", exact: true }).first().click();
+  await w.page.getByText("Reply discarded").first().waitFor({ timeout: 30_000 });
+  console.log(await shotHere(w, "09-discarded"));
+  notes.push("a held reply was discarded from the chat");
+  return notes.join("; ");
+}
+
+async function shotHere(w: World, name: string): Promise<string> {
+  const file = join(process.env.WALK_SHOTS ?? ".", `${name}.png`);
+  await w.page.screenshot({ path: file });
+  return file;
+}
+
 const w = await boot();
 const only = process.argv.slice(2);
-const run = (name: string) => only.length === 0 || only.includes(name);
+const run = (name: string) => (only.length === 0 && name !== "9") || only.includes(name);
 try {
   await stage("0 setup", () => setup(w));
   console.log(await shot(w, "00-setup"));
@@ -434,6 +551,7 @@ try {
   }
   if (run("7")) await stage("7 failed deploy journey", () => failedDeploy(w));
   if (run("8")) await stage("8 watch re-fire and recovery without a fix", () => refireAndRecover(w));
+  if (only.includes("9")) await stage("9 two lanes, read-only commands, waiting line", () => unblock(w));
   void [execFileSync, until, sleep, results, REPO, run];
 } finally {
   await w.close();

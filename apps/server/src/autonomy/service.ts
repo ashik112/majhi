@@ -2,12 +2,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import {
   type AccountModels,
   type AccountView,
+  type Actor,
   type Authority,
   type AuthorityRow,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
   type AutonomyBacklogItem,
   type AutonomyEvent,
+  type AutonomyEventKind,
   type AutonomyHold,
   type AutonomyInstruction,
   type AutonomyLane,
@@ -22,8 +24,10 @@ import {
   type AutonomyStatus,
   type AutonomySummary,
   type AutonomyWaiting,
+  actorOfName,
   type Budget,
   type BudgetAsk,
+  CAPTAIN,
   type CaptainPolicy,
   type CapUse,
   type CommandMeta,
@@ -37,9 +41,11 @@ import {
   type Job,
   jobOfStart,
   lifecycle,
+  MAJHI,
   type MachineReading,
   may,
   mayWork,
+  OWNER,
   PRIVATE,
   type QueueItem,
   type RoomItem,
@@ -51,7 +57,6 @@ import {
   type TaskId,
   ToolIdSchema,
 } from "@majhi/shared";
-import { type Actor, type AutonomyEventKind, actorOfName, CAPTAIN, MAJHI, OWNER } from "@majhi/shared";
 import type { z } from "zod";
 import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
@@ -2831,6 +2836,7 @@ export class AutonomyService {
     const out: AutonomyLane[] = [];
     for (const org of await this.runsOrgs()) {
       const chat = this.deps.lanes.chat(org);
+      const onCall = this.deps.lanes.chat(org, "reacting");
       const nowDoing =
         chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
       const used = m.spend.orgs.find((o) => o.org === org);
@@ -2849,7 +2855,8 @@ export class AutonomyService {
         org,
         name: org === PRIVATE ? "Private" : (m.names[org] ?? org),
         ...(chat === undefined ? {} : { chat: chat as TaskId }),
-        working: chat !== undefined && this.deps.runs.working(chat).length > 0,
+        ...(onCall === undefined ? {} : { onCall: onCall as TaskId }),
+        working: [chat, onCall].some((c) => c !== undefined && this.deps.runs.working(c).length > 0),
         ...(nowDoing === undefined ? {} : { nowDoing }),
         spend,
         tasks: now.filter((t) => (t.org ?? PRIVATE) === org).length,

@@ -2,6 +2,7 @@ import {
   CAPTAIN_LANE_BRIEF,
   captainPayDecisionId,
   type Job,
+  ON_CALL_SUFFIX,
   PRIVATE,
   STOPPED_WHY,
   type Task,
@@ -103,7 +104,12 @@ export class Lanes {
     const at = this.deps.now().toISOString();
     // The lane is named for its workspace; the brief stays the marker.
     const name = `Captain: ${sections.orgs[org]?.name ?? "Private"}`;
-    this.deps.store.tasks.setText(made.id, job === "reacting" ? `${name} (on call)` : name, made.brief, at);
+    this.deps.store.tasks.setText(
+      made.id,
+      job === "reacting" ? `${name}${ON_CALL_SUFFIX}` : name,
+      made.brief,
+      at,
+    );
     this.deps.repo.setLane(org, made.id, at, job);
     return this.deps.store.tasks.get(made.id) ?? made;
   }
