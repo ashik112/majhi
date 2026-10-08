@@ -4,7 +4,7 @@ Plan: branch from main; make chat creation explicit, treat Private as a complete
 
 Implemented on `fix/user-flow-clarity`: task creation states when it will start a chat without a repository. The existing project confirmation stays. Private completes workspace setup, with Continue with Private and no skipped warning at Arrive. Setup recovery names Settings > Overview. Git fetch warnings offer Check Git access, which opens Connections inside Settings. A failed first website check is unknown while it is confirmed, not Fine. Watch details explain confirmation and recovery with their deadlines; incident and alert timing are unchanged.
 
-Verified: all workspace typechecks, web production build, 54 targeted tests across onboarding, worktrees and watches, plus the new first-failure state test. Browser checks used fake agents and temporary homes: project confirmation, Git recovery link, Private setup through Arrive, and both watch waits at desktop sizes. No full CI or full e2e suite ran. No migration, push or merge.
+Verified: all workspace typechecks, web production build, 54 targeted tests across onboarding, worktrees and watches, plus the new first-failure state test. Browser checks used fake agents and temporary homes: project confirmation, Git recovery link, Private setup through Arrive, and both watch waits at desktop sizes. No full CI or full e2e suite ran. No migration or push. The owner approved the local merge on 2026-10-09.
 
 How to try: create a task naming an unselected project, continue onboarding with Private, or open a watch after its first failure or first healthy recovery check.
 
