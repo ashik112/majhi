@@ -121,7 +121,14 @@ export type BannerAction =
   | {
       kind: "page";
       to: PagePath;
-      search?: { account?: string; signin?: "start"; id?: string; tab?: string; section?: string };
+      search?: {
+        account?: string;
+        signin?: "start";
+        id?: string;
+        tab?: string;
+        section?: string;
+        create?: string;
+      };
     }
   | { kind: "element"; id: string };
 

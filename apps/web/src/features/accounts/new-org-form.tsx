@@ -3,6 +3,8 @@ import { type KeyboardEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { useCaptainRules } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useCreateOrg } from "@/lib/studio-queries";
@@ -15,16 +17,21 @@ import { ORG_COLORS, orgColorName, orgIdFromName, suggestOrgColor } from "./mode
  */
 export function NewOrgForm({
   orgCount,
+  privateAccounts,
   onCreated,
   onCancel,
   className,
 }: {
   orgCount: number;
+  /** Private accounts the owner could let pay for the new workspace's captain. Given: the form asks. */
+  privateAccounts?: readonly string[];
   onCreated: (orgId: string) => void;
   onCancel: () => void;
   className?: string;
 }) {
   const create = useCreateOrg();
+  const rules = useCaptainRules();
+  const [pays, setPays] = useState("");
   const [name, setName] = useState("");
   const [id, setId] = useState("");
   const [idEdited, setIdEdited] = useState(false);
@@ -40,7 +47,19 @@ export function NewOrgForm({
     setProblem(undefined);
     create.mutate(
       { id: parsed.data, name: name.trim(), color },
-      { onSuccess: (org) => onCreated(org.id), onError: (e) => setProblem(describeError(e)) },
+      {
+        onSuccess: (org) => {
+          if (pays === "") return onCreated(org.id);
+          rules.mutate(
+            {
+              input: { orgs: { [org.id]: { account: pays } } },
+              reason: `Owner chose who pays for ${org.name}`,
+            },
+            { onSettled: () => onCreated(org.id) },
+          );
+        },
+        onError: (e) => setProblem(describeError(e)),
+      },
     );
   }
 
@@ -103,6 +122,20 @@ export function NewOrgForm({
           ))}
         </div>
       </fieldset>
+      {privateAccounts !== undefined && privateAccounts.length > 0 && (
+        <Field label="Pays for the captain here">
+          {(p) => (
+            <Select {...p} value={pays} onChange={(e) => setPays(e.target.value)} className="h-8 text-sm">
+              <option value="">Add one later</option>
+              {privateAccounts.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
       {problem && (
         <p role="alert" className="text-sm text-red">
           {problem}

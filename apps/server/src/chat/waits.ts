@@ -98,6 +98,8 @@ export class ChatWaits {
         } else plain.push(item);
       }
       for (const item of plain) {
+        // A message held for a decision of its own (who pays for the captain) is that decision's, not a second card.
+        if (item.outcome?.decision !== undefined) continue;
         out.push({
           id: chatWaitDecisionId(room.id, item.id),
           kind: "reply",
