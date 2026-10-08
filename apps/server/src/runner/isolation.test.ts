@@ -39,7 +39,11 @@ async function containerMajhi(): Promise<{ majhi: Majhi; dir: string }> {
 function from(majhi: Majhi, address: string, path: string, method = "POST"): Promise<Response> {
   return Promise.resolve(
     majhi.app.fetch(
-      new Request(`http://majhi.test${path}`, { method, body: method === "POST" ? "{}" : null }),
+      new Request(`http://majhi.test${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: method === "POST" ? "{}" : null,
+      }),
       {
         incoming: { socket: { remoteAddress: address } },
       },
@@ -161,6 +165,7 @@ describe("the runner isolation check", () => {
     await mkdir(join(env.majhiHome, "accounts", "codex-globex"), { recursive: true });
     const runner = checkRunner(env);
     let seen: string[] = [];
+    let probe = "";
     const verdict = await checkRunnerIsolation({
       runner,
       majhiHome: env.majhiHome,
@@ -168,12 +173,17 @@ describe("the runner isolation check", () => {
       secretsKeyFile: env.secretsKeyFile,
       docker: async (args) => {
         seen = args;
-        expect(existsSync(join(env.majhiHome, "accounts", "_runner-check", ".runner-check"))).toBe(true);
+        probe =
+          args
+            .find((a) => a.startsWith("type=bind,source="))
+            ?.split(",")[1]
+            ?.slice("source=".length) ?? "";
+        expect(existsSync(join(probe, ".runner-check"))).toBe(true);
         return { stdout: "isolated\n" };
       },
     });
     expect(verdict.ok).toBe(true);
-    const probe = join(env.majhiHome, "accounts", "_runner-check");
+    expect(probe).toContain("_runner-check-");
     const mounts = seen.flatMap((a, i) => (seen[i - 1] === "--mount" ? [a] : []));
     expect(mounts).toEqual([`type=bind,source=${probe},target=${probe}`]);
     // Everything that must stay hidden is asked about.
@@ -188,6 +198,58 @@ describe("the runner isolation check", () => {
       expect(seen).toContain(hidden);
     }
     expect(existsSync(probe)).toBe(false);
+  });
+
+  it("keeps concurrent probe homes separate until each check finishes", async () => {
+    const { dir, cleanup } = await tempDir();
+    cleanups.push(cleanup);
+    const env = testEnv(dir);
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const firstWait = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondWait = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    let entered!: () => void;
+    const both = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const homes: string[] = [];
+    const names: string[] = [];
+    const input = {
+      runner: checkRunner(env),
+      majhiHome: env.majhiHome,
+      hostHome: env.hostHome,
+      secretsKeyFile: env.secretsKeyFile,
+    };
+    const docker = async (args: string[]) => {
+      homes.push(
+        args
+          .find((a) => a.startsWith("type=bind,source="))
+          ?.split(",")[1]
+          ?.slice(7) ?? "",
+      );
+      names.push(args[args.indexOf("--name") + 1] ?? "");
+      const n = homes.length;
+      if (n === 2) entered();
+      await (n === 1 ? firstWait : secondWait);
+      return { stdout: "isolated" };
+    };
+    const one = checkRunnerIsolation({ ...input, docker });
+    const two = checkRunnerIsolation({ ...input, docker });
+    await both;
+    expect(new Set(homes).size).toBe(2);
+    expect(new Set(names).size).toBe(2);
+    releaseFirst();
+    // Which request entered the fake CLI first is deliberately unspecified.
+    await Promise.race([one, two]);
+    expect(existsSync(homes[0] ?? "")).toBe(false);
+    expect(existsSync(join(homes[1] ?? "", ".runner-check"))).toBe(true);
+    releaseSecond();
+    expect((await Promise.all([one, two])).every((v) => v.ok)).toBe(true);
+    expect(homes.every((home) => !existsSync(home))).toBe(true);
   });
 
   it("fails with what the runner could see, or why it could not start", async () => {

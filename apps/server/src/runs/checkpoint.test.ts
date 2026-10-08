@@ -53,6 +53,36 @@ describe("checkpoints", () => {
     expect(await git(b.worktree, "log", "-1", "--format=%s")).toBe("init");
   });
 
+  it("leaves an unfinished merge and its index intact", async () => {
+    const a = await repo("api");
+    await git(a.worktree, "checkout", "--quiet", "-b", "incoming", "main");
+    await writeFile(join(a.worktree, "incoming.txt"), "incoming");
+    await git(a.worktree, "add", ".");
+    await git(a.worktree, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "incoming");
+    await git(a.worktree, "checkout", "--quiet", a.branch);
+    await git(
+      a.worktree,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "merge",
+      "--no-commit",
+      "--no-ff",
+      "incoming",
+    );
+    await writeFile(join(a.worktree, "unstaged.txt"), "still working");
+    const before = await git(a.worktree, "status", "--porcelain");
+    const head = await git(a.worktree, "rev-parse", "HEAD");
+    const merge = await readFile(join(a.worktree, ".git", "MERGE_HEAD"), "utf8");
+    const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
+    expect(result.committed).toEqual([]);
+    expect(result.skipped[0]).toContain("git operation is in progress");
+    expect(await git(a.worktree, "rev-parse", "HEAD")).toBe(head);
+    expect(await git(a.worktree, "status", "--porcelain")).toBe(before);
+    expect(await readFile(join(a.worktree, ".git", "MERGE_HEAD"), "utf8")).toBe(merge);
+  });
+
   it("does not commit a worktree that left the task branch", async () => {
     const a = await repo("api");
     await git(a.worktree, "checkout", "--quiet", "main");

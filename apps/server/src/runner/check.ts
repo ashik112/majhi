@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { dockerRunArgs, type RunnerConfig } from "@majhi/acp";
 import { errorMessage, exitCode } from "../errors.ts";
@@ -45,7 +46,10 @@ export interface RunnerVerdict {
 }
 
 /** Paths a run must never see. */
-export async function hiddenPaths(input: Omit<RunnerCheckInput, "runner" | "docker">): Promise<string[]> {
+export async function hiddenPaths(
+  input: Omit<RunnerCheckInput, "runner" | "docker">,
+  ownAccount = PROBE_ACCOUNT,
+): Promise<string[]> {
   const { majhiHome } = input;
   const accounts = await readdir(join(majhiHome, "accounts")).catch(() => [] as string[]);
   return [
@@ -56,7 +60,7 @@ export async function hiddenPaths(input: Omit<RunnerCheckInput, "runner" | "dock
     join(majhiHome, ".git"),
     // The SSH agent sockets on Linux and WSL2: the helper's forwarder and majhi's own agent.
     join(majhiHome, "run"),
-    ...accounts.filter((a) => a !== PROBE_ACCOUNT).map((a) => join(majhiHome, "accounts", a)),
+    ...accounts.filter((a) => a !== ownAccount).map((a) => join(majhiHome, "accounts", a)),
     input.secretsKeyFile,
     "/run/secrets/majhi_key",
     join(input.hostHome, ".ssh"),
@@ -92,12 +96,14 @@ async function isolationOnce(input: RunnerCheckInput): Promise<RunnerVerdict & {
     input.docker ??
     ((args: string[], env: Record<string, string>) =>
       run(cfg.docker ?? "docker", args, { env, timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 }));
-  const probeHome = join(input.majhiHome, "accounts", PROBE_ACCOUNT);
+  let probeHome: string | undefined;
   try {
     await cfg.ready?.();
-    await mkdir(probeHome, { recursive: true, mode: 0o700 });
+    const accounts = join(input.majhiHome, "accounts");
+    await mkdir(accounts, { recursive: true, mode: 0o700 });
+    probeHome = await mkdtemp(join(accounts, `${PROBE_ACCOUNT}-`));
     await writeFile(join(probeHome, MARKER), "ok\n");
-    const hidden = await hiddenPaths(input);
+    const hidden = await hiddenPaths(input, basename(probeHome));
     const args = dockerRunArgs(
       {
         command: { command: "sh", args: ["-c", SCRIPT, "sh", join(probeHome, MARKER), ...hidden] },
@@ -107,7 +113,7 @@ async function isolationOnce(input: RunnerCheckInput): Promise<RunnerVerdict & {
         account: { tool: "claude", home: probeHome },
       },
       cfg,
-      `majhi-run-check-${Date.now().toString(36)}`,
+      `majhi-run-check-${randomUUID()}`,
     );
     const { stdout } = await docker(args, { ...cfg.cliEnv, DOCKER_CONFIG: "/tmp/majhi-docker" });
     const out = stdout.trim().split("\n").pop() ?? "";
@@ -130,7 +136,7 @@ async function isolationOnce(input: RunnerCheckInput): Promise<RunnerVerdict & {
       retry: !said.rebuild && !timedOut && !said.detail.startsWith("a run can see"),
     };
   } finally {
-    await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
+    if (probeHome) await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -147,10 +153,12 @@ export async function checkSerena(
     input.docker ??
     ((args: string[], env: Record<string, string>) =>
       run(cfg.docker ?? "docker", args, { env, timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 }));
-  const probeHome = join(input.majhiHome, "accounts", SERENA_PROBE_ACCOUNT);
+  let probeHome: string | undefined;
   try {
     await cfg.ready?.();
-    await mkdir(probeHome, { recursive: true, mode: 0o700 });
+    const accounts = join(input.majhiHome, "accounts");
+    await mkdir(accounts, { recursive: true, mode: 0o700 });
+    probeHome = await mkdtemp(join(accounts, `${SERENA_PROBE_ACCOUNT}-`));
     const args = dockerRunArgs(
       {
         command: {
@@ -168,7 +176,7 @@ export async function checkSerena(
         account: { tool: "claude", home: probeHome },
       },
       cfg,
-      `majhi-run-serena-${Date.now().toString(36)}`,
+      `majhi-run-serena-${randomUUID()}`,
     );
     const { stdout } = await docker(args, { ...cfg.cliEnv, DOCKER_CONFIG: "/tmp/majhi-docker" });
     const out = stdout.trim().split("\n").pop() ?? "";
@@ -186,7 +194,7 @@ export async function checkSerena(
     }
     return { ok: false, ...said };
   } finally {
-    await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
+    if (probeHome) await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
