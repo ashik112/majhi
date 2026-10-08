@@ -121,7 +121,13 @@ export function planStepsOf(task: string, views: readonly (ProjectDeployView | u
         if (seen.has(r.env)) return [];
         seen.add(r.env);
         const tier = view.environments.find((e) => e.env === r.env)?.tier;
-        return [{ view: deployStepOfRecord(r, tier), canRollBack: rollable.has(r.id) && !view.rollingBack.includes(r.id), rollingBack: view.rollingBack.includes(r.id) }];
+        return [
+          {
+            view: deployStepOfRecord(r, tier),
+            canRollBack: rollable.has(r.id) && !view.rollingBack.includes(r.id),
+            rollingBack: view.rollingBack.includes(r.id),
+          },
+        ];
       });
   });
   return steps.sort((a, b) => (a.view.seq ?? 0) - (b.view.seq ?? 0));

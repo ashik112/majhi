@@ -6,6 +6,7 @@ import { DetailSection } from "@/components/ui/list-detail";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useProjectCards, useRefreshCard } from "@/lib/card-queries";
 import { formatAgo } from "@/lib/format";
+import { useNewTask } from "../new-task/new-task-context";
 
 const COMMANDS: [keyof CardCommands, string][] = [
   ["install", "Install"],
@@ -58,24 +59,36 @@ export function ProjectCardSection({ project }: { project: string }) {
             : "No card yet. majhi reads it when the base branch is known, or press Refresh."}
         </p>
       ) : (
-        <CardBody card={card} />
+        <CardBody card={card} project={project} />
       )}
     </DetailSection>
   );
 }
 
-function CardBody({ card }: { card: ProjectCard }) {
+function CardBody({ card, project }: { card: ProjectCard; project: string }) {
+  const newTask = useNewTask();
   const commands = COMMANDS.flatMap(([key, label]) =>
     card.commands[key] === undefined ? [] : [{ label, text: card.commands[key] as string }],
   );
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {card.whatItIs === "" ? (
-        <p className="text-sm text-fg-faint">Nothing says what it is yet. Add a README opening line.</p>
+        <p className="flex flex-wrap items-center gap-2 text-sm text-fg-faint">
+          Nothing says what it is yet.
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              newTask.openFor(project, "Write a README opening line that says what this project is")
+            }
+          >
+            Write it
+          </Button>
+        </p>
       ) : (
         <p className="text-sm text-fg-soft text-pretty">{card.whatItIs}</p>
       )}
-      <Readiness card={card} />
+      <Readiness card={card} project={project} />
       {card.stack.length > 0 && (
         <Block label="Stack">
           <div className="flex flex-wrap gap-1.5">
@@ -158,7 +171,7 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
 }
 
 /** The score and the checklist. Each missing item says what would fix it. */
-function Readiness({ card }: { card: ProjectCard }) {
+function Readiness({ card, project }: { card: ProjectCard; project: string }) {
   const { score, max, items } = card.readiness;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -173,14 +186,15 @@ function Readiness({ card }: { card: ProjectCard }) {
         className="m-0 grid list-none gap-x-6 gap-y-1.5 p-0 @[620px]:grid-cols-2"
       >
         {items.map((i) => (
-          <ReadinessRow key={i.id} item={i} />
+          <ReadinessRow key={i.id} item={i} project={project} />
         ))}
       </ul>
     </div>
   );
 }
 
-function ReadinessRow({ item }: { item: ReadinessItem }) {
+function ReadinessRow({ item, project }: { item: ReadinessItem; project: string }) {
+  const newTask = useNewTask();
   return (
     <li className="flex min-w-0 items-start gap-2 text-sm">
       {item.ok ? (
@@ -190,9 +204,17 @@ function ReadinessRow({ item }: { item: ReadinessItem }) {
       )}
       <div className="flex min-w-0 flex-col">
         <span className="text-fg">{item.label}</span>
-        <span className="min-w-0 text-xs text-fg-faint text-pretty">
-          {(item.ok ? item.detail : `${item.detail} ${item.fix ?? ""}`).replaceAll("`", "")}
-        </span>
+        <span className="min-w-0 text-xs text-fg-faint text-pretty">{item.detail.replaceAll("`", "")}</span>
+        {!item.ok && item.id !== "base" && item.fix !== undefined && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-1 w-fit"
+            onClick={() => newTask.openFor(project, item.fix ?? item.label)}
+          >
+            Fix with agent
+          </Button>
+        )}
       </div>
     </li>
   );

@@ -80,7 +80,15 @@ function kindFits(kind: TaskKind, projects: number): boolean {
 const FIELD =
   "w-full rounded-[10px] border border-line-control bg-field text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none";
 
-export function NewTaskDialog({ onClose, project }: { onClose: () => void; project?: string }) {
+export function NewTaskDialog({
+  onClose,
+  project,
+  title: startTitle,
+}: {
+  onClose: () => void;
+  project?: string;
+  title?: string;
+}) {
   const { org: filterOrg } = useOrgFilter();
   const orgs = useOrgs().data ?? [];
   const projects = useProjects();
@@ -95,7 +103,7 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
   const { dragging, dropProps } = useFileDrop(attachments.add);
   const titleField = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(startTitle ?? "");
   const [details, setDetails] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   // Protected projects the owner lets agents write in for this task. Off: read-only.

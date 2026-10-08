@@ -4,7 +4,7 @@ import { NewTaskDialog } from "./new-task-dialog";
 interface NewTaskApi {
   open: () => void;
   /** Opens the dialog with this project already picked. */
-  openFor: (project: string) => void;
+  openFor: (project: string, title?: string) => void;
 }
 
 const NewTaskContext = createContext<NewTaskApi | null>(null);
@@ -17,9 +17,12 @@ export function useNewTask(): NewTaskApi {
 }
 
 export function NewTaskProvider({ children }: { children: ReactNode }) {
-  const [dialog, setDialog] = useState<{ project?: string } | undefined>();
+  const [dialog, setDialog] = useState<{ project?: string; title?: string } | undefined>();
   const open = useCallback(() => setDialog({}), []);
-  const openFor = useCallback((project: string) => setDialog({ project }), []);
+  const openFor = useCallback(
+    (project: string, title?: string) => setDialog({ project, ...(title === undefined ? {} : { title }) }),
+    [],
+  );
   const api = useMemo(() => ({ open, openFor }), [open, openFor]);
   return (
     <NewTaskContext.Provider value={api}>
@@ -27,6 +30,7 @@ export function NewTaskProvider({ children }: { children: ReactNode }) {
       {dialog !== undefined && (
         <NewTaskDialog
           {...(dialog.project === undefined ? {} : { project: dialog.project })}
+          {...(dialog.title === undefined ? {} : { title: dialog.title })}
           onClose={() => setDialog(undefined)}
         />
       )}
