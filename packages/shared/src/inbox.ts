@@ -63,6 +63,8 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("decision"), id: z.string().min(1).max(300) }),
   /** A section of Hub setup, like `notifications`. */
   z.object({ kind: z.literal("setup"), section: z.string().min(1).max(40) }),
+  /** Accounts' add flow with this workspace preselected. */
+  z.object({ kind: z.literal("add-account"), org: z.string().min(1) }),
 ]);
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
@@ -293,6 +295,10 @@ export function deployWaitDecisionId(task: string, project: string, env: string)
 export function chatWaitDecisionId(room: string, ref: string): string {
   return `cwait:${room}:${ref}`;
 }
+/** A workspace whose captain lane has no account it may use: the owner picks the one that pays. */
+export function captainPayDecisionId(org: string): string {
+  return `cpay:${org}`;
+}
 /** The one decision that says the Mac has notifications off for majhi. */
 export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
@@ -309,7 +315,8 @@ export type ParsedDecisionId =
   | { kind: "notify" }
   | { kind: "mrci"; task: string }
   | { kind: "dwait"; task: string; project: string; env: string }
-  | { kind: "cwait"; room: string; ref: string };
+  | { kind: "cwait"; room: string; ref: string }
+  | { kind: "cpay"; org: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -344,6 +351,7 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };
   }
+  if (head === "cpay" && rest.length >= 1 && rest[0] !== "") return { kind: "cpay", org: rest.join(":") };
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);
     if (what !== undefined) return { kind: "iask", what, ref: rest[1] as string };

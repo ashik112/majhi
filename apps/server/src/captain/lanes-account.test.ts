@@ -43,8 +43,8 @@ describe("the account of a client workspace's lane", () => {
   it("refuses the Private account when the owner has not named it for the workspace", async () => {
     const out = await lanes({ acmeAccounts: false }).account("acme");
     expect(out).toEqual({
-      problem:
-        "Acme has no account of its own for the captain, and claude-personal is a Private account. Pick the account that pays in Captain, Permissions, Acme, Hours, freezes and more",
+      problem: "Acme has no account for the captain",
+      noAccount: true,
     });
   });
 

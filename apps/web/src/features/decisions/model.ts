@@ -153,6 +153,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/connections" };
     case "decision":
       return { kind: "page", to: "/decisions", search: { id: link.id } };
+    case "add-account":
+      return { kind: "page", to: "/accounts", search: { create: link.org } };
     case "setup":
       return { kind: "page", to: "/setup", search: { section: link.section } };
   }
@@ -178,6 +180,8 @@ export function openLabel(link: DecisionLink): string {
       return "Open Connections";
     case "decision":
       return "Review";
+    case "add-account":
+      return "Add an account";
     case "setup":
       return "Open settings";
   }
