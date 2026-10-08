@@ -648,6 +648,17 @@ export function needsActions(
     .toSorted((a, b) => Number(b.id === lead?.id) - Number(a.id === lead?.id));
   const openLabel = ship ? "Review" : decision.kind === "question" ? "Answer" : "Open";
   const open: ActionSpec = { kind: "go", action: linkAction(decision), label: openLabel };
+  // A sign-in leads with the sign-in itself; Open is the account's page.
+  if (decision.kind === "sign-in" && decision.link.kind === "account") {
+    return [
+      { kind: "go", action: linkAction(decision), label: "Sign in" },
+      {
+        kind: "go",
+        action: { kind: "page", to: "/accounts", search: { account: decision.link.id } },
+        label: "Open",
+      },
+    ];
+  }
   const answers: ActionSpec[] = options.map((o) => ({ kind: "answer", option: o.id, label: o.label }));
   // A question with typed answers only: the first action opens it, where the reply box is.
   return [...answers, open].slice(0, MAX_ACTIONS);
@@ -685,7 +696,9 @@ function linkAction(decision: OwnerDecision): BannerAction {
     case "chat":
       return { kind: "chat", id: link.id };
     case "captain":
-      return { kind: "page", to: "/captain" };
+      return link.org === undefined
+        ? { kind: "page", to: "/captain" }
+        : { kind: "page", to: "/captain", search: { thread: link.org } };
     case "limits":
       return { kind: "page", to: "/limits" };
     case "account":

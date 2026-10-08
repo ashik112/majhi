@@ -230,6 +230,7 @@ import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
 import { QueuedMerges } from "./tasks/queued-merge.ts";
+import { resumeSignedIn } from "./tasks/resume-signed-in.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
@@ -657,6 +658,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         limited: async (task, agent) => (await limitedRun(task, agent)) ?? autonomy.holdFor(task)?.why,
         pausedTasks: () =>
           store.tasks.getMany(store.tasks.idsWithStatus("paused")).filter((t) => t.pausedReason === "limit"),
+        start: (id) => tasks.start(id, "majhi"),
+      });
+      // A task paused for a signed-out account resumes once that account is signed in again.
+      await resumeSignedIn({
+        paused: () =>
+          store.tasks
+            .getMany(store.tasks.idsWithStatus("paused"))
+            .filter((t) => t.pausedReason === "signed-out"),
+        accountOf: (task, agent) => accountOfRun(task, agent),
+        needsLogin: (account) => accounts.needsLogin(account),
         start: (id) => tasks.start(id, "majhi"),
       });
     },
@@ -1615,6 +1626,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     subjects: openSubjectsOf,
     budgets: () => autonomy.budgetAsks(),
+    pausedAccount: async (task) => {
+      const lead = store.tasks.get(task)?.team[0];
+      if (lead === undefined) return undefined;
+      const account = await accountOfRun(task, lead);
+      return account !== undefined && (await accounts.needsLogin(account)) ? account : undefined;
+    },
     signedOut: async () =>
       (await accounts.list())
         .filter((a) => a.status === "needs-login" || a.status === "unreachable")
