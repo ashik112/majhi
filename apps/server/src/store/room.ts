@@ -263,7 +263,16 @@ export class RoomRepo {
   ): { items: RoomItem[]; older: boolean; newer: boolean } | undefined {
     const row = this.q.get.get({ task, id });
     const target = row === undefined ? undefined : toItem(row);
-    if (target === undefined) return undefined;
+    if (target === undefined) {
+      // A captain line tagged to this task lives in its workspace thread's room: show it alone.
+      const tagged = this.db
+        .select()
+        .from(roomItems)
+        .where(and(eq(roomItems.id, id), eq(roomItems.about, task)))
+        .get();
+      const found = tagged === undefined ? undefined : toItem(tagged);
+      return found === undefined ? undefined : { items: [found], older: false, newer: false };
+    }
     const before = this.page(task, half, target.seq);
     const after = this.pageAfter(task, half, target.seq);
     return { items: [...after.items, target, ...before.items], older: before.more, newer: after.more };
@@ -476,12 +485,12 @@ export class RoomRepo {
     const match = matchQuery(query);
     if (match === undefined) return [];
     const rows = this.db.all<SearchRow>(sql`
-      SELECT r.task AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
+      SELECT coalesce(r.about, r.task) AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
         coalesce(json_extract(r.payload, '$.agent'), json_extract(r.payload, '$.from')) AS agent,
         snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet
       FROM room_search
       JOIN room_items r ON r.rowid = room_search.rowid
-      JOIN tasks t ON t.id = r.task
+      JOIN tasks t ON t.id = coalesce(r.about, r.task)
       WHERE room_search MATCH ${match} ${org === undefined ? sql`` : sql`AND t.org = ${org}`}
       ORDER BY room_search.rank, r.at DESC
       LIMIT ${limit}`);

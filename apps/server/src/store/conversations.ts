@@ -79,8 +79,9 @@ export class ConversationsRepo {
   /** The listed conversations with a message that holds the words (case ignored). Not only the newest line. */
   matching(query: string): string[] {
     const like = `%${query.toLowerCase().split("\\").join("\\\\").split("%").join("\\%").split("_").join("\\_")}%`;
+    // A captain line tagged to a task belongs to that task, so it finds the task, not the thread.
     const rows = this.db.all<{ task: string }>(sql`
-      SELECT DISTINCT r.task AS task FROM room_items r JOIN tasks t ON t.id = r.task
+      SELECT DISTINCT coalesce(r.about, r.task) AS task FROM room_items r JOIN tasks t ON t.id = r.task
        WHERE r.type IN ('agent', 'owner', 'client', 'client-reply') AND ${LISTED}
          AND lower(json_extract(r.payload, '$.text')) LIKE ${like} ESCAPE '\\'
        LIMIT ${LIST_LIMIT}`);
@@ -109,7 +110,8 @@ export class ConversationsRepo {
     this.db.run(sql`
       INSERT INTO read_marks (id, read_at, updated_at)
       SELECT ${id}, min(${upTo}, newest), ${new Date().toISOString()}
-        FROM (SELECT max(at) AS newest FROM room_items WHERE task = ${id} AND type IN ('agent', 'client'))
+        FROM (SELECT max(at) AS newest FROM room_items
+               WHERE (task = ${id} AND about IS NULL OR about = ${id}) AND type IN ('agent', 'client'))
        WHERE newest IS NOT NULL
       ON CONFLICT (id) DO UPDATE
          SET read_at = excluded.read_at, updated_at = excluded.updated_at
@@ -136,12 +138,14 @@ export class ConversationsRepo {
         json_extract(t.client, '$.archived') AS unlinked, t.created_at AS created_at,
         (a.archived_at IS NOT NULL) AS archived, (${PROMOTED}) AS promoted,
         (SELECT count(*) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
-            AND (r.type = 'agent' OR ${NOTIFIES})) AS unread,
-        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('agent', 'client')) AS agent_at,
+          WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
+            AND (r.type = 'agent' OR ${NOTIFIES}))
+          + (SELECT count(*) FROM room_items a
+              WHERE a.about = t.id AND a.type = 'agent' AND a.at > coalesce(m.read_at, '')) AS unread,
+        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client')) AS agent_at,
         (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
             || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
+          WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
         (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
             AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent')) AS owner_at,
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r

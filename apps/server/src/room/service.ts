@@ -72,6 +72,8 @@ export class RoomService {
 
   /** The task a lane's turn is about now: its lines are tagged with it (`about`) until the turn ends. */
   private readonly subjects = new Map<string, TaskId>();
+  /** Lanes whose turn has acted on two different tasks: nothing after that is about either, so it stays in the thread. */
+  private readonly mixed = new Set<string>();
 
   /** The last slash commands each agent advertised, so `/` works before a session starts. */
   private readonly commands = new Map<string, AgentLive["commands"]>();
@@ -98,12 +100,20 @@ export class RoomService {
   setSubject(lane: string, task: TaskId | undefined): void {
     if (task === undefined) {
       this.subjects.delete(lane);
+      this.mixed.delete(lane);
       return;
     }
     const org = this.captain?.orgOfLane(lane);
-    if (org === undefined) return;
+    if (org === undefined || this.mixed.has(lane)) return;
     const found = this.store.tasks.get(task);
     if (found === undefined || found.kind === "chat" || (found.org ?? PRIVATE) !== org) return;
+    const before = this.subjects.get(lane);
+    if (before !== undefined && before !== task) {
+      // A second task in one turn: what follows may be about either, so it is about neither.
+      this.subjects.delete(lane);
+      this.mixed.add(lane);
+      return;
+    }
     this.subjects.set(lane, task);
   }
 
@@ -120,8 +130,11 @@ export class RoomService {
     if (payload.type === "owner") {
       // The owner starts a new turn: it is about whatever they say, not the last task.
       this.subjects.delete(task);
+      this.mixed.delete(task);
       return payload;
     }
+    // A message that was written across a second task is about neither: it goes back to the thread whole.
+    if (payload.type === "agent" && this.mixed.has(task)) return payload;
     const kept = this.store.room.get(task, id)?.about;
     const about = kept ?? this.subjects.get(task);
     return about === undefined ? payload : { ...payload, about };

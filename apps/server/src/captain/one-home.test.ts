@@ -68,6 +68,17 @@ describe("one home: the captain's lines about a task stay in their workspace", (
     expect(texts(get("GLX-2"))).toEqual([]);
     expect(texts(get("ACM-1"))).toEqual(["Plain thread talk in acme"]);
     expect(texts(get("GLX-1"))).toEqual(["Plain thread talk in globex"]);
+
+    // A turn that acts on two tasks tags only what follows the first call; what follows the second is about neither.
+    store.tasks.insert(task("ACM-3", "acme"));
+    room.setSubject("ACM-1", "ACM-2" as TaskId);
+    say("ACM-1", "m1", "Told the lead of ACM-2");
+    room.setSubject("ACM-1", "ACM-3" as TaskId);
+    say("ACM-1", "m2", "Summary of both");
+    room.setSubject("ACM-1", undefined);
+    expect(texts(get("ACM-2"))).toEqual(["Added the connection to ACM-2", "Told the lead of ACM-2"]);
+    expect(texts(get("ACM-3"))).toEqual([]);
+    expect(texts(get("ACM-1"))).toContain("Summary of both");
   });
 });
 
