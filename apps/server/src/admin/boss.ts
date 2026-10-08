@@ -57,6 +57,8 @@ export interface BossChatDeps {
   store: Store;
   tasks: TaskService;
   agents: AgentStore;
+  /** Tells every open tab that a conversation's row changed. */
+  conversationChanged?: (id: string) => void;
 }
 
 /** A new chat with an agent. An untitled one that was never written in is reused, so New chat does not pile up empty chats. */
@@ -105,8 +107,12 @@ export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<T
   if (boss === undefined) {
     throw new UserError("There is no captain yet. Create a root agent and make it the captain first.", 409);
   }
+  const before = findBossChat(deps, boss)?.id;
   const current = await currentBossChat(deps, boss, fresh);
-  await retireOlder(deps, boss, current.id);
+  const retired = await retireOlder(deps, boss, current.id);
+  // The rows that changed: the new current chat, the one it replaced and each one archived.
+  for (const id of new Set([current.id, ...(before === undefined ? [] : [before]), ...retired]))
+    deps.conversationChanged?.(id);
   return current;
 }
 
@@ -129,7 +135,8 @@ async function currentBossChat(deps: BossChatDeps, boss: string, fresh: boolean)
 }
 
 /** Only one root captain chat stays open: the others are closed and archived, still listed with their history. */
-async function retireOlder(deps: BossChatDeps, boss: string, keep: string): Promise<void> {
+async function retireOlder(deps: BossChatDeps, boss: string, keep: string): Promise<string[]> {
+  const retired: string[] = [];
   for (const summary of deps.store.tasks.list(false)) {
     if (summary.id === keep || summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss)
       continue;
@@ -137,7 +144,9 @@ async function retireOlder(deps: BossChatDeps, boss: string, keep: string): Prom
     if (isAutonomyChat(task)) continue;
     await deps.tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
     deps.store.conversations.archive(task.id, true);
+    retired.push(task.id);
   }
+  return retired;
 }
 
 /** The captain chat is called "Captain" whatever was first said in it. */

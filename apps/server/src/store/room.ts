@@ -1,4 +1,4 @@
-import { mentionNames, type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
+import { mentionedContacts, mentionNames, type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
 import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
@@ -493,7 +493,7 @@ export class RoomRepo {
       SELECT coalesce(r.about, r.task) AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
         coalesce(json_extract(r.payload, '$.agent'), json_extract(r.payload, '$.from')) AS agent,
         snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet,
-        json_extract(r.payload, '$.mentions') AS mentions
+        json_extract(r.payload, '$.mentions') AS mentions, json_extract(r.payload, '$.text') AS text
       FROM room_search
       JOIN room_items r ON r.rowid = room_search.rowid
       JOIN tasks t ON t.id = coalesce(r.about, r.task)
@@ -508,8 +508,19 @@ export class RoomRepo {
       type: row.type,
       ...(row.agent === null ? {} : { agent: row.agent }),
       at: row.at,
-      snippet: snippetParts(mentionNames(row.snippet, storedMentions(row.mentions), this.contactName)),
+      snippet: snippetParts(this.snippetOf(row, query)),
     }));
+  }
+
+  /**
+   * The snippet's marked text. A message with mention tokens is rendered to `@Name` first and cut after, so a cut
+   * never shows half a token; any other message keeps the index's own snippet.
+   */
+  private snippetOf(row: SearchRow, query: string): string {
+    const text = row.text ?? "";
+    if (mentionedContacts(text).length === 0) return row.snippet;
+    const rendered = mentionNames(text, storedMentions(row.mentions), this.contactName);
+    return markedWindow(rendered, queryWords(query));
   }
 
   private nextAt(task: string): string {
@@ -565,19 +576,48 @@ interface SearchRow {
   agent: string | null;
   snippet: string;
   mentions: string | null;
+  text: string | null;
 }
 
 /** Bracket the matched words in a snippet. They are control characters, which no message holds. */
 const MARK_START = "\u0002";
 const MARK_END = "\u0003";
 
-/** An FTS5 query from typed words: each word quoted, all required, the last one a prefix. Undefined when there are none. */
-export function matchQuery(text: string): string | undefined {
-  const words =
+export function queryWords(text: string): string[] {
+  return (
     text
       .toLowerCase()
       .match(/[\p{L}\p{N}]+/gu)
-      ?.slice(0, 12) ?? [];
+      ?.slice(0, 12) ?? []
+  );
+}
+
+/** A window of the text around its first matched word, with matched words bracketed like the index's own snippet. */
+export function markedWindow(text: string, words: readonly string[]): string {
+  const lower = text.toLowerCase();
+  const firsts = words.map((w) => lower.indexOf(w)).filter((i) => i >= 0);
+  const first = firsts.length === 0 ? 0 : Math.min(...firsts);
+  const start = Math.max(0, first - 60);
+  const end = Math.min(text.length, first + 100);
+  const spans: [number, number][] = [];
+  for (const w of words) {
+    for (let at = lower.indexOf(w, start); at >= 0 && at + w.length <= end; at = lower.indexOf(w, at + w.length))
+      spans.push([at, at + w.length]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = start > 0 ? "…" : "";
+  let pos = start;
+  for (const [from, to] of spans) {
+    if (from < pos) continue;
+    out += `${text.slice(pos, from)}${MARK_START}${text.slice(from, to)}${MARK_END}`;
+    pos = to;
+  }
+  return `${out}${text.slice(pos, end)}${end < text.length ? "…" : ""}`;
+}
+
+/** An FTS5 query from typed words: each word quoted, all required, the last one a prefix. Undefined when there are none. */
+export function matchQuery(text: string): string | undefined {
+  const words = queryWords(text);
   if (words.length === 0) return undefined;
   return words.map((w, i) => (i === words.length - 1 ? `"${w}"*` : `"${w}"`)).join(" ");
 }

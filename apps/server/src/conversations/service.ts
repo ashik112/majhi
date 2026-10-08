@@ -74,6 +74,11 @@ export class ConversationsService {
     this.pending.clear();
   }
 
+  /** Sends a conversation's row as it is now to every tab. */
+  changed(id: string): void {
+    this.announce(id);
+  }
+
   private announce(id: string): void {
     const conversation = this.deps.store.conversations.one(id);
     this.deps.events.send({
