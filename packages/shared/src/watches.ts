@@ -267,6 +267,12 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
 ]);
 export type WatchCheck = z.infer<typeof WatchCheckSchema>;
 
+/** The text a condition looks for. A number (a status code) is the text of its digits. */
+const WatchTextSchema = z
+  .union([z.string(), z.number().finite()])
+  .transform(String)
+  .pipe(z.string().trim().min(1).max(200));
+
 export const WatchConditionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("above"),
@@ -283,8 +289,8 @@ export const WatchConditionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("atLimit") }),
   /** A window or budget that was at its limit has reset. Fires once per reset. */
   z.object({ type: z.literal("resets") }),
-  z.object({ type: z.literal("contains"), text: z.string().trim().min(1).max(200) }),
-  z.object({ type: z.literal("notContains"), text: z.string().trim().min(1).max(200) }),
+  z.object({ type: z.literal("contains"), text: WatchTextSchema }),
+  z.object({ type: z.literal("notContains"), text: WatchTextSchema }),
   z.object({ type: z.literal("down") }),
 ]);
 export type WatchCondition = z.infer<typeof WatchConditionSchema>;

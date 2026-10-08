@@ -350,6 +350,17 @@ export class ClientReplies {
     }
   }
 
+  /**
+   * The app's own id of the message a reply answers. The captain may name the room's item (`m:...`) instead of the
+   * app's id; that maps to the message it holds. An id that names nothing is dropped, so the reply is sent unlinked.
+   */
+  private appMessage(room: RoomRow, named: string | undefined): string | undefined {
+    if (named === undefined) return undefined;
+    const item = this.deps.room.get(room.id, named);
+    if (item !== undefined) return item.type === "client" ? item.external.message : undefined;
+    return named;
+  }
+
   private post(
     room: RoomRow,
     draft: Draft,
@@ -361,6 +372,7 @@ export class ClientReplies {
       hold?: ReplyHold;
     },
   ): void {
+    const replyTo = this.appMessage(room, more.replyTo);
     this.deps.room.post(room.id as TaskId, `reply:${draft.id}`, {
       type: "client-reply",
       by: more.by,
@@ -368,7 +380,7 @@ export class ClientReplies {
       ...this.mentionField(room, draft.body),
       ...(more.to === undefined ? {} : { to: more.to }),
       ...(more.thread === undefined ? {} : { thread: more.thread }),
-      ...(more.replyTo === undefined ? {} : { replyTo: more.replyTo }),
+      ...(replyTo === undefined ? {} : { replyTo }),
       draft: draft.id,
       state: this.stateOf(draft),
       ...(more.hold === undefined ? {} : { hold: more.hold }),

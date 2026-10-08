@@ -444,11 +444,13 @@ export class TelegramAdapter implements ChatAdapter {
     text: { html: string; plain: string },
     first: boolean,
   ): Promise<string> {
+    // Telegram wants a whole number; anything else sends without the reply link rather than failing.
+    const replyId = target.replyTo === undefined ? undefined : Number(target.replyTo);
     const base: Record<string, unknown> = {
       chat_id: target.chat,
       ...(target.thread === undefined ? {} : { message_thread_id: Number(target.thread) }),
-      ...(first && target.replyTo !== undefined
-        ? { reply_parameters: { message_id: Number(target.replyTo), allow_sending_without_reply: true } }
+      ...(first && replyId !== undefined && Number.isSafeInteger(replyId)
+        ? { reply_parameters: { message_id: replyId, allow_sending_without_reply: true } }
         : {}),
     };
     let html = true;
