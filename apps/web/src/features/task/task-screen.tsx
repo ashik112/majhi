@@ -1,4 +1,4 @@
-import type { TrailKind } from "@majhi/shared";
+import { isClientRoom, type TrailKind } from "@majhi/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
@@ -39,6 +39,12 @@ export function TaskScreen() {
 function TaskView({ taskId }: { taskId: string }) {
   const task = useTask(taskId);
   useLaneRedirect(task.data);
+  // A client chat has no task page: its messages are in Chats.
+  const clientRoom = task.data !== undefined && isClientRoom(task.data);
+  const navigateToChat = useNavigate();
+  useEffect(() => {
+    if (clientRoom) void navigateToChat({ to: "/chats/$taskId", params: { taskId }, replace: true });
+  }, [clientRoom, taskId, navigateToChat]);
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
   const { file, fileTask, fileLine, item } = useSearch({ from: "/t/$taskId" });
