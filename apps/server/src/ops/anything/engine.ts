@@ -675,7 +675,12 @@ export class WatchEngine {
       } else if (now - last >= w.def.everyMin * MIN - 1000) {
         await this.look(w.id, false).catch(() => undefined);
       }
-      await this.checkDeadline(this.mustGet(w.id));
+      const current = this.mustGet(w.id);
+      // Recovery time can expire before the next scheduled reading.
+      if (!this.quiet(current.state) && !(current.def.fire.run !== undefined && !current.def.fire.alert.on)) {
+        await this.deps.ops.evaluate(this.subjectOf(current));
+      }
+      await this.checkDeadline(current);
     }
     this.deps.repo.prune(this.deps.now());
   }
