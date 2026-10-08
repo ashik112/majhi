@@ -17,7 +17,14 @@ const engine = {
   },
   show: async () => ({ def: def({ fix: { mode: "auto", allowed: [] } }) }),
 };
-const handlers = opsHandlers({ engine, watch: {}, phone: {}, playbooks: {} } as never);
+const handlers = opsHandlers({
+  engine,
+  watch: {},
+  phone: {},
+  playbooks: {},
+  lanes: { boss: async () => "majhi-captain", orgOf: () => undefined },
+  store: { tasks: { get: () => undefined } },
+} as never);
 const as = (kind: "agent" | "owner"): CommandContext =>
   ({
     command: "watch.save",

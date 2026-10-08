@@ -1,12 +1,10 @@
-import type { RoomItem, TaskId } from "@majhi/shared";
+import type { TaskId } from "@majhi/shared";
 import type { FindingsService } from "../findings/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { ChatDesk } from "./desk.ts";
 import type { ChatHistory } from "./history.ts";
 import { type ClientItem, clip } from "./read.ts";
-
-type TaskRoomItem = RoomItem;
 
 export interface WorkDeps {
   store: Store;
@@ -93,7 +91,7 @@ export class ChatWork {
   private notes(task: string): string | undefined {
     const said = this.deps.store.room
       .page(task, 80)
-      .items.filter((i: TaskRoomItem) => i.type === "agent" && i.text.trim() !== "");
+      .items.filter((i) => i.type === "agent" && i.text.trim() !== "");
     const last = said.at(-1);
     return last?.type === "agent" ? last.text.trim().slice(0, 3000) : undefined;
   }
