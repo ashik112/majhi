@@ -5,7 +5,8 @@ import { type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
-import { createUpdater } from "./update.ts";
+import { createUpdater, recoverUpdate } from "./update.ts";
+import { readUpdateJournal, writeUpdateJournal } from "./updateJournal.ts";
 
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const NEWER = "89abcdef0123456789abcdef0123456789abcdef";
@@ -67,7 +68,14 @@ describe("update", () => {
       }
       if (line.startsWith("image inspect")) {
         if (options.noImage) throw Object.assign(new Error("Command failed"), { stderr: "No such image" });
-        return { stdout: line.endsWith("majhi-laya:dev") ? "sha256:oldlaya\n" : "sha256:old\n", stderr: "" };
+        return {
+          stdout: line.endsWith("majhi-laya:dev")
+            ? "sha256:oldlaya\n"
+            : line.endsWith("majhi-runner:dev")
+              ? "sha256:oldrunner\n"
+              : "sha256:old\n",
+          stderr: "",
+        };
       }
       if (line.startsWith("container inspect")) {
         if (!options.layaContainer)
@@ -114,44 +122,44 @@ describe("update", () => {
         await mkdir(join(dir, "secrets"));
         await writeFile(key, "existing");
       }
-      const start = createUpdater({
-        remount: {
-          repo: join(dir, "repo"),
-          docker: "/usr/bin/docker",
-          env: { HOME: "/h", ...options.env },
-          exec,
-          log: () => undefined,
-        },
-        git: { git: "/usr/bin/git", repo: join(dir, "repo"), env: {}, exec },
-        majhiHome: join(dir, "home"),
-        bundle,
-        selfPath: options.selfIsBundle ? bundle : "/elsewhere/main.ts",
-        secretsKeyFile: key,
-        keyBackup: {
-          where: "the Keychain",
-          read: async () => options.savedKey,
-          ensure: async () => {
-            ensured.push("ensure");
-            return undefined;
-          },
-        },
-        log: () => undefined,
-        exit: () => exit.push("exit"),
-        sleep: async () => undefined,
-        latest: async (url) => {
-          latestAsked.push(url);
-          if (options.latestFails) throw new Error(`${url} answered 503`);
-          return options.latestTag ?? "v1.0.0";
-        },
-      });
+      const start = createUpdater(makeOptions());
       expect(start()).toBe(true);
-      // Wait for the background run to end.
       for (;;) {
         const status = await readStatus();
         if (status && status.state !== "running") return status;
         await new Promise((r) => setTimeout(r, 10));
       }
     };
+    const makeOptions = () => ({
+      remount: {
+        repo: join(dir, "repo"),
+        docker: "/usr/bin/docker",
+        env: { HOME: "/h", ...options.env },
+        exec,
+        log: () => undefined,
+      },
+      git: { git: "/usr/bin/git", repo: join(dir, "repo"), env: {}, exec },
+      majhiHome: join(dir, "home"),
+      bundle,
+      selfPath: options.selfIsBundle ? bundle : "/elsewhere/main.ts",
+      secretsKeyFile: key,
+      keyBackup: {
+        where: "the Keychain",
+        read: async () => options.savedKey,
+        ensure: async () => {
+          ensured.push("ensure");
+          return undefined;
+        },
+      },
+      log: () => undefined,
+      exit: () => exit.push("exit"),
+      sleep: async () => undefined,
+      latest: async (url: string) => {
+        latestAsked.push(url);
+        if (options.latestFails) throw new Error(`${url} answered 503`);
+        return options.latestTag ?? "v1.0.0";
+      },
+    });
     const readStatus = async (): Promise<UpdateStatus | undefined> => {
       try {
         return UpdateStatusSchema.parse(JSON.parse(await readFile(join(dir, "home", "update.json"), "utf8")));
@@ -159,7 +167,7 @@ describe("update", () => {
         return undefined;
       }
     };
-    return { calls, exit, run, bundle, key, ensured, latestAsked };
+    return { calls, exit, run, bundle, key, ensured, latestAsked, makeOptions };
   }
 
   it("builds with the commit baked in, regenerates the mounts, starts, and replaces the helper last", async () => {
@@ -198,7 +206,7 @@ describe("update", () => {
     const s = setup({ savedKey: "AGE-SECRET-KEY-1SAVED" });
     const status = await s.run();
     expect(status.state).toBe("done");
-    expect(s.calls.some((c) => c.args.startsWith("run --rm"))).toBe(false);
+    expect(s.calls.some((c) => c.args.endsWith("dist/cli.js gen-key"))).toBe(false);
     expect(await readFile(s.key, "utf8")).toBe("AGE-SECRET-KEY-1SAVED\n");
     expect(status.lines).toContain("Putting back the secrets key from the Keychain");
   });
@@ -207,7 +215,7 @@ describe("update", () => {
     const s = setup({ keyExists: true });
     const status = await s.run();
     expect(status.state).toBe("done");
-    expect(s.calls.some((c) => c.args.startsWith("run --rm"))).toBe(false);
+    expect(s.calls.some((c) => c.args.endsWith("dist/cli.js gen-key"))).toBe(false);
     expect(await readFile(s.key, "utf8")).toBe("existing");
     expect(s.exit).toEqual([]);
   });
@@ -240,6 +248,93 @@ describe("update", () => {
     expect(s.exit).toEqual([]);
   });
 
+  it("restores databases and the runner before restarting the old server", async () => {
+    const s = setup({ failOnce: "compose up" });
+    await s.run();
+    const calls = s.calls.map((c) => c.args);
+    const restore = calls.findIndex((c) => c.endsWith("dist/cli.js update-restore"));
+    const runner = calls.indexOf("tag sha256:oldrunner majhi-runner:dev");
+    expect(restore).toBeGreaterThan(calls.findIndex((c) => c.endsWith("dist/cli.js update-snapshot")));
+    expect(runner).toBeGreaterThan(restore);
+    expect(calls.lastIndexOf("compose up -d --wait")).toBeGreaterThan(runner);
+    expect(await readUpdateJournal(join(dir, "home"))).toBeUndefined();
+  });
+
+  it("recovers an interrupted start using the persisted transaction on a new helper", async () => {
+    const s = setup({});
+    await writeUpdateJournal(join(dir, "home"), {
+      version: 1,
+      phase: "starting",
+      mounts: "old mounts",
+      previous: [
+        { image: "majhi-server:dev", id: "sha256:old" },
+        { image: "majhi-runner:dev", id: "sha256:oldrunner" },
+      ],
+    });
+    await recoverUpdate(s.makeOptions());
+    const calls = s.calls.map((c) => c.args);
+    expect(calls[0]).toBe("compose stop server");
+    expect(calls[1]).toContain("dist/cli.js update-restore");
+    expect(calls.indexOf("tag sha256:oldrunner majhi-runner:dev")).toBeLessThan(
+      calls.indexOf("compose up -d --wait"),
+    );
+    expect(await readUpdateJournal(join(dir, "home"))).toBeUndefined();
+  });
+
+  it("keeps recovery state and never starts an old server if database restoration fails", async () => {
+    const s = setup({ failOn: "run --rm --network none" });
+    await writeUpdateJournal(join(dir, "home"), {
+      version: 1,
+      phase: "starting",
+      previous: [{ image: "majhi-server:dev", id: "sha256:old" }],
+    });
+    await expect(recoverUpdate(s.makeOptions())).rejects.toThrow("update-restore failed");
+    expect((await readUpdateJournal(join(dir, "home")))?.phase).toBe("starting");
+    expect(s.calls.some((c) => c.args === "compose up -d --wait")).toBe(false);
+  });
+
+  it("restarts the old server without restoring databases if snapshot creation fails", async () => {
+    const s = setup({ failOnce: "run --rm --network none" });
+    expect((await s.run()).state).toBe("failed");
+    const calls = s.calls.map((c) => c.args);
+    expect(calls.some((c) => c.endsWith("dist/cli.js update-restore"))).toBe(false);
+    expect(calls).toContain("tag sha256:oldrunner majhi-runner:dev");
+    expect(calls).toContain("compose up -d --wait");
+    expect(await readUpdateJournal(join(dir, "home"))).toBeUndefined();
+  });
+
+  it("only cleans recovery files after an update has committed", async () => {
+    const s = setup({});
+    await writeUpdateJournal(join(dir, "home"), { version: 1, phase: "committed", previous: [] });
+    await recoverUpdate(s.makeOptions());
+    expect(
+      s.calls.some(
+        (c) =>
+          c.args.startsWith("compose stop") || c.args.startsWith("compose up") || c.args.startsWith("tag "),
+      ),
+    ).toBe(false);
+    expect(await readUpdateJournal(join(dir, "home"))).toBeUndefined();
+  });
+
+  it("reports a recovered interrupted update rather than leaving it running forever", async () => {
+    const s = setup({});
+    await writeFile(
+      join(dir, "home", "update.json"),
+      JSON.stringify({ state: "running", commit: NEWER, startedAt: "2026-10-01T00:00:00Z", lines: [] }),
+    );
+    await writeUpdateJournal(join(dir, "home"), {
+      version: 1,
+      phase: "starting",
+      previous: [{ image: "majhi-server:dev", id: "sha256:old" }],
+    });
+    await recoverUpdate(s.makeOptions());
+    const status = UpdateStatusSchema.parse(
+      JSON.parse(await readFile(join(dir, "home", "update.json"), "utf8")),
+    );
+    expect(status.state).toBe("failed");
+    expect(status.error).toContain("interrupted update was recovered");
+  });
+
   it("keeps the previous image tagged so a prune cannot remove it", async () => {
     const s = setup({});
     await s.run();
@@ -254,7 +349,7 @@ describe("update", () => {
     const status = await s.run();
     expect(status.state).toBe("failed");
     expect(status.lines.join("\n")).toContain("No previous version to go back to");
-    expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
+    expect(s.calls.some((c) => c.args.startsWith("tag sha256:"))).toBe(false);
   });
 
   describe("on a release install", () => {

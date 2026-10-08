@@ -1,8 +1,15 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { writeDurableText } from "./durableFile.ts";
 import { UPLOAD_PACK } from "./gitGuard.ts";
-import { readPackage, readPublishedPackage, replacePackage, writeRuntime } from "./releasePackage.ts";
+import {
+  readPackage,
+  readPublishedPackage,
+  recoverPackage,
+  replacePackage,
+  writeRuntime,
+} from "./releasePackage.ts";
 import { type GitContext, guardedGit, type RepoState, readRepo } from "./repoInfo.ts";
 
 /**
@@ -90,10 +97,7 @@ async function readDotenv(repo: string): Promise<string> {
 }
 
 async function writeDotenv(repo: string, text: string): Promise<void> {
-  const file = join(repo, ENV_FILE);
-  const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, text);
-  await rename(temp, file);
+  await writeDurableText(join(repo, ENV_FILE), text);
 }
 
 /** The commit tag `tag` names in the checkout. Undefined when the checkout has no such tag. */
@@ -154,7 +158,7 @@ export interface Moved {
   to: string;
   head: string;
   dotenv: string;
-  files?: Record<string, string>;
+  files?: Record<string, string> | undefined;
 }
 
 /**
@@ -190,7 +194,7 @@ export async function moveToLatest(
   try {
     await writeDotenv(ctx.repo, withVersion(dotenv, target.tag));
   } catch (err) {
-    if (files) await writeRuntime(ctx.repo, files);
+    if (files) await recoverPackage(ctx.repo);
     else await checkout(ctx, head);
     throw err;
   }
@@ -199,8 +203,9 @@ export async function moveToLatest(
 
 /** Restores the runtime files or legacy checkout and `.env`. */
 export async function moveBack(ctx: GitContext, moved: Moved): Promise<void> {
-  if (moved.files) await writeRuntime(ctx.repo, moved.files);
-  else await checkout(ctx, moved.head);
+  if (moved.files) {
+    if (!(await recoverPackage(ctx.repo))) await writeRuntime(ctx.repo, moved.files);
+  } else await checkout(ctx, moved.head);
   await writeDotenv(ctx.repo, moved.dotenv);
 }
 

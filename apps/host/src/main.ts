@@ -47,7 +47,7 @@ import { createSsh, discoverPublicKeys } from "./ssh.ts";
 import { type StartupDeps, startAtLogin } from "./startup.ts";
 import { suggestRoots } from "./suggestRoots.ts";
 import { ensureToken } from "./token.ts";
-import { createUpdater } from "./update.ts";
+import { createUpdater, recoverUpdate } from "./update.ts";
 
 const exec: ExecFn = promisify(execFile);
 
@@ -130,6 +130,7 @@ async function main(): Promise<void> {
   let update: ReturnType<typeof createUpdater> | undefined;
   let dockerTimer: NodeJS.Timeout | undefined;
   let started = false;
+  let recoveringUpdate = false;
   /**
    * Looks for docker until it is there, then turns on remount, update and the Docker facts. On WSL2,
    * Docker Desktop puts the CLI into the distro only while it runs, so at login `docker` can be
@@ -137,16 +138,15 @@ async function main(): Promise<void> {
    * every minute.
    */
   const findDocker = async (): Promise<RemountOptions | undefined> => {
-    if (remountOptions !== undefined || compose === undefined) return remountOptions;
+    if (remountOptions !== undefined || compose === undefined || recoveringUpdate) return remountOptions;
     const docker = await deps.find("docker");
-    if (docker === undefined || remountOptions !== undefined) return remountOptions;
-    remountOptions = { ...compose, docker };
-    remount = createRemounter(remountOptions);
-    update =
+    if (docker === undefined || remountOptions !== undefined || recoveringUpdate) return remountOptions;
+    const found = { ...compose, docker };
+    const updateOptions =
       gitContext === undefined
         ? undefined
-        : createUpdater({
-            remount: remountOptions,
+        : {
+            remount: found,
             git: gitContext,
             majhiHome: config.majhiHome,
             bundle,
@@ -155,7 +155,19 @@ async function main(): Promise<void> {
             keyBackup,
             log,
             exit: () => process.exit(0),
-          });
+          };
+    recoveringUpdate = true;
+    try {
+      if (updateOptions) await recoverUpdate(updateOptions);
+    } catch (err) {
+      log(`update recovery: ${errorMessage(err)}`);
+      return undefined;
+    } finally {
+      recoveringUpdate = false;
+    }
+    remountOptions = found;
+    remount = createRemounter(found);
+    update = updateOptions === undefined ? undefined : createUpdater(updateOptions);
     clearInterval(dockerTimer);
     if (started) log(`remounts on: found ${docker}`);
     return remountOptions;

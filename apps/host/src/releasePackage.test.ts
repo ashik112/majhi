@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTargetReader, moveBack, moveToLatest } from "./release.ts";
-import { RUNTIME_FILES, readPackage } from "./releasePackage.ts";
+import { RUNTIME_FILES, readPackage, recoverPackage, replacePackage } from "./releasePackage.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
 import { createUpdater } from "./update.ts";
 
@@ -173,6 +173,36 @@ esac
     expect((await readPackage(app))?.commit).toBe(OLD);
   });
 
+  it("recovers originals from disk after a helper dies with mixed runtime files", async () => {
+    await install();
+    const dotenv = await readFile(join(app, ".env"), "utf8");
+    await replacePackage(ctx(), { version: "v1.1.0", commit: NEW }, base);
+    await writeFile(join(app, "Dockerfile"), "interrupted replacement");
+    await writeFile(join(app, ".env"), "MAJHI_VERSION=v1.1.0\n");
+    expect(await recoverPackage(app)).toBe(true);
+    expect((await readPackage(app))?.commit).toBe(OLD);
+    expect(await readFile(join(app, ".env"), "utf8")).toBe(dotenv);
+    expect(await recoverPackage(app)).toBe(false);
+    expect(await readFile(join(app, "Dockerfile"), "utf8")).not.toContain("interrupted replacement");
+  });
+
+  it("rejects a tampered rollback record before writing outside the runtime", async () => {
+    await install();
+    const outside = join(dir, "outside");
+    await writeFile(outside, "keep");
+    const files = Object.fromEntries(
+      await Promise.all(
+        [...RUNTIME_FILES, ".env"].map(async (file) => [file, await readFile(join(app, file), "utf8")]),
+      ),
+    );
+    await writeFile(
+      join(app, ".majhi-runtime-rollback.json"),
+      JSON.stringify({ version: 1, files: { ...files, "../outside": "overwrite" } }),
+    );
+    await expect(recoverPackage(app)).rejects.toThrow();
+    expect(await readFile(outside, "utf8")).toBe("keep");
+  });
+
   it("rejects additional archive files even with a matching checksum", async () => {
     await install();
     await corruptArchive(
@@ -263,7 +293,10 @@ esac
       expect(status?.state).toBe("failed");
       expect(await readPackage(app)).toEqual({ version: "v1.0.0", commit: OLD });
       expect(await readFile(join(app, ".env"), "utf8")).toBe(original);
-      if (failure === "start") expect(calls.at(-1)).toBe("compose up -d --wait");
+      if (failure === "start") {
+        expect(calls).toContain("compose up -d --wait");
+        expect(calls.at(-1)).toBe("image rm majhi-server:update-recovery");
+      }
     },
   );
 });
