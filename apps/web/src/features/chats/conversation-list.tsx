@@ -1,4 +1,4 @@
-import { CHAT_APP_LABEL, type Conversation } from "@majhi/shared";
+import { CHAT_APP_LABEL, type ClientRow, type Conversation } from "@majhi/shared";
 import { Anchor, MoreHorizontal, Search, SquareCheck } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -50,12 +50,15 @@ const KINDS: readonly { value: KindFilter; label: string }[] = [
  * The one list of conversations, newest first: client chats, task rooms, captain threads and agent chats.
  * The Chats page and the chat bubble both draw it, with the same workspace tab and kind filter.
  */
+const NO_ROWS: readonly never[] = [];
+
 export function ConversationList({
   selected,
   onOpen,
   onNewChat,
   onDeleted,
   top,
+  newChats = NO_ROWS,
   className,
 }: {
   selected?: string | undefined;
@@ -64,7 +67,9 @@ export function ConversationList({
   onNewChat: (id: string) => void;
   onDeleted?: (id: string) => void;
   /** Rows above the list, like links for chats nobody linked yet. */
-  top?: ReactNode;
+  top?: ReactNode | ((query: string) => ReactNode);
+  /** Chats nobody linked yet: an unlinked row of the same chat is not listed twice beside them. */
+  newChats?: readonly Pick<ClientRow, "app" | "title">[];
   className?: string;
 }) {
   const list = useConversations();
@@ -76,8 +81,15 @@ export function ConversationList({
   const tab = filter.tab === "all" || all.some((w) => w.id === filter.tab) ? filter.tab : "all";
   const history = useConversationSearch(query).data;
   const rows = useMemo(
-    () => visibleConversations(list.data ?? [], { ...filter, tab }, query, all, new Set(history)),
-    [list.data, filter, tab, query, all, history],
+    () =>
+      visibleConversations(list.data ?? [], { ...filter, tab }, query, all, new Set(history)).filter(
+        (row) =>
+          !(
+            row.unlinked === true &&
+            newChats.some((n) => n.app === row.app && n.title === row.title)
+          ),
+      ),
+    [list.data, filter, tab, query, all, history, newChats],
   );
   const archivedCount = useMemo(
     () => (list.data ?? []).filter((c) => c.archived === true).length,
@@ -113,7 +125,7 @@ export function ConversationList({
         />
       </div>
       <div className="scroll-fade flex min-h-0 flex-1 flex-col gap-px overflow-y-auto overscroll-contain px-1.5 py-1.5">
-        {top}
+        {typeof top === "function" ? top(query) : top}
         {list.isPending ? (
           <RowsSkeleton rows={5} height={52} />
         ) : rows.length === 0 ? (

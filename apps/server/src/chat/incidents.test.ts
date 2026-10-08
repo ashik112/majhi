@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { IncidentFacts } from "../incident/facts.ts";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
+import { writeOutcome } from "./outcome.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
 import { ClientTriage, type TriageDeps } from "./triage.ts";
 
@@ -346,13 +347,78 @@ describe('"any update?" from a client', () => {
     expect(after?.text).toContain("resolved");
   });
 
-  it("in a chat with no linked incident is told there is no open issue, under the Tell rules", async () => {
+  it("in a chat linked to no incident is answered from the open incident of its workspace", async () => {
     const { t } = await ask("-300");
     expect(t.w.sent.map((m) => m.text)).toEqual([
-      "No open issue on our side right now. What are you seeing?",
+      "We are looking into the problem. We will tell you here when we know more.",
     ]);
     const room = t.w.rooms.find("telegram", CONN.account, "-300");
     const message = t.w.store.room.page(room?.id ?? "", 20).items.find((i) => i.type === "client");
     expect(message).toMatchObject({ outcome: { state: "replied" } });
+  });
+});
+
+describe("what each client room reads", () => {
+  it("the report to one room never holds another room's events", async () => {
+    const { w, incidents, rooms } = await setup("done");
+    await incidents.tick();
+    // Only the first room says it is back, after it was told Resolved.
+    await incidents.attach(w.rooms.room(rooms[0] as string), "ACM-9", "i1");
+    const [first, second] = rooms as [string, string];
+    const sent = async (room: string): Promise<string> => {
+      const before = w.sent.length;
+      await incidents.sendReport("ACM-9", room);
+      return w.sent.slice(before).map((m) => m.text).join("\n");
+    };
+    expect(await sent(second)).not.toContain("you told us it was back");
+    expect(await sent(first)).toContain("you told us it was back");
+  });
+
+  it("a claim made before the watch fired joins the incident when it opens, and the room is told", async () => {
+    const { w, incidents } = await setup();
+    const room = await w.linked("-300");
+    await w.ingest.deliver(CONN, envelope({ chatId: "-300", message: "7", text: "Login gives 500s" }));
+    const message = w.store.room.page(room, 10).items.find((i) => i.type === "client");
+    if (message?.type !== "client") throw new Error("no message");
+    writeOutcome(w, room, message, { state: "waits", claim: true, finding: 5 });
+    await incidents.tick();
+    expect(w.store.tasks.linksTo(room).map((l) => l.task)).toEqual(["ACM-9"]);
+    expect(w.store.room.get(room, message.id)).toMatchObject({
+      outcome: { state: "handled", task: "ACM-9" },
+    });
+    expect(w.sent.filter((m) => m.chat === "-300")).toHaveLength(1);
+  });
+});
+
+describe("a vague report", () => {
+  it("never gets the same question twice in a row", async () => {
+    const w = world({ tell: "decide", holds: { firstContact: false } });
+    const room = await w.linked("-100");
+    const model = async (_o: string, key: string, _p: string, parse: (x: string) => never) => {
+      const reply = key.endsWith(":reply")
+        ? '{"text":"What exactly is failing?","promisedTime":false,"money":false,"security":false,"severalClients":false}'
+        : '{"action":"clarify","reason":"too vague"}';
+      return (parse(reply) as { value?: never }).value;
+    };
+    const triage = new ClientTriage({
+      store: w.store,
+      room: w.room,
+      model,
+      findings: { report: async () => ({ finding: { id: 1 } }), dismiss: () => undefined, toTask: async () => ({}) },
+      replies: w.replies,
+      wiki: async () => ({ answer: "", found: false }),
+      rest: async () => undefined,
+      incidents: () => [],
+      incident: { claim: async () => undefined, linked: () => false, answer: async () => undefined },
+    } as unknown as TriageDeps);
+    for (const message of ["50", "51"]) {
+      await w.ingest.deliver(CONN, envelope({ message, text: "Something is wrong" }));
+      const item = w.store.room
+        .page(room, 10)
+        .items.find((i) => i.type === "client" && i.external.message === message);
+      if (item?.type !== "client") throw new Error("no message");
+      await triage.run(w.rooms.room(room), item);
+    }
+    expect(w.sent.map((m) => m.text)).toEqual(["What exactly is failing?"]);
   });
 });

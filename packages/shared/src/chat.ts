@@ -114,6 +114,12 @@ export const ClientOutcomeSchema = z.strictObject({
   urgent: z.boolean().optional(),
   /** The task or incident it became or joined: the line links to it. */
   task: z.string().max(100).optional(),
+  /** The finding this message was filed as: closed when the message is dealt with. */
+  finding: z.number().int().positive().optional(),
+  /** It says something is down and nothing backs it yet (no watch, no failed deploy): the owner is told once. */
+  claim: z.literal(true).optional(),
+  /** A question went out asking the client for what is missing. */
+  asked: z.literal(true).optional(),
 });
 export type ClientOutcome = z.infer<typeof ClientOutcomeSchema>;
 

@@ -1634,6 +1634,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);
       },
+      answerChatWait: (room, ref, option) =>
+        clientChat?.waits.answer(room, ref, option) ?? Promise.resolve(),
       answerIncidentAsk: (what, ref, option) =>
         incidentEngine?.answer(what, ref, option) ?? Promise.resolve(),
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
@@ -1660,6 +1662,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
+      ...(clientChat?.waits.decisions() ?? []),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
       ...failingMrDecisions(
@@ -2621,6 +2624,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await tasks.reopen(task);
     },
     askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
+    history: ({ text, org, task }) =>
+      void autonomy.event({ kind: "decision", text, org, ...(task === undefined ? {} : { task: task as TaskId }) }),
     decisions,
     lane: async (task) => {
       const org = lanes.orgOf(task);
@@ -2667,6 +2672,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       background.run(async () => {
         await incidentEngineNow.sweep();
         await chatParts.incidents.tick();
+        chatParts.waits.settle();
       }),
     INCIDENT_SWEEP_MS,
   );

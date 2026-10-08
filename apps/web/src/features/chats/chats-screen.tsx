@@ -72,13 +72,21 @@ export function ChatsScreen() {
               if (taskId === id) void navigate({ to: "/chats" });
             }}
             top={
-              showNew ? (
-                <>
-                  <NewChats rows={clients.data?.newChats ?? []} orgs={orgs.data ?? []} />
-                  <AccountNotices accounts={clients.data?.accounts ?? []} />
-                </>
-              ) : undefined
+              showNew
+                ? (query: string) => (
+                    <>
+                      <NewChats
+                        rows={(clients.data?.newChats ?? []).filter((r) =>
+                          r.title.toLowerCase().includes(query.trim().toLowerCase()),
+                        )}
+                        orgs={orgs.data ?? []}
+                      />
+                      <AccountNotices accounts={clients.data?.accounts ?? []} />
+                    </>
+                  )
+                : undefined
             }
+            newChats={clients.data?.newChats ?? []}
           />
         </nav>
         <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col pr-1">

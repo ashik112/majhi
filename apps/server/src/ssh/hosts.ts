@@ -11,11 +11,11 @@ export type SshRunFn = (args: readonly string[]) => Promise<SshRun>;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
-/** Runs the container's `ssh` with stdin closed. Never rejects. */
+/** Runs `ssh` (the binary in MAJHI_HOST_SSH, the same variable the host helper reads) with stdin closed. Never rejects. */
 export const runSsh: SshRunFn = (args) =>
   new Promise((resolve) => {
     const child = execFile(
-      "ssh",
+      process.env.MAJHI_HOST_SSH ?? "ssh",
       [...args],
       { timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: process.env },
       (err, stdout, stderr) => {
