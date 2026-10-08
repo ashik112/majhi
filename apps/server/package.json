@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "MAJHI_ORIGIN=${MAJHI_ORIGIN:-http://127.0.0.1:5173} MAJHI_RUNNER=${MAJHI_RUNNER:-local} tsx watch src/main.ts",
+    "dev": "MAJHI_BROWSER_ORIGIN=${MAJHI_BROWSER_ORIGIN:-http://127.0.0.1:5173} MAJHI_RUNNER=${MAJHI_RUNNER:-local} tsx watch src/main.ts",
     "build": "esbuild src/main.ts src/cli.ts src/export/worker.ts --bundle --platform=node --format=esm --target=node22 --external:node-pty --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --outdir=dist --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
     "start": "MALLOC_ARENA_MAX=2 node --max-semi-space-size=2 dist/main.js",
     "test": "vitest run --root ../.. apps/server/",

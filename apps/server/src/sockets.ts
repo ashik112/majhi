@@ -40,6 +40,7 @@ export function attachSockets(
   server: UpgradeSource,
   deps: {
     origin?: string;
+    isRunner?: (address: string | undefined) => boolean;
     events: EventHub;
     build?: string | undefined;
     terminals: TerminalManager;
@@ -49,6 +50,7 @@ export function attachSockets(
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
+    if (deps.isRunner?.(req.socket.remoteAddress)) return reject(socket, 403, "Forbidden");
     const origin = req.headers.origin;
     if (origin !== undefined && !isOwnerOrigin(origin, deps.origin)) return reject(socket, 403, "Forbidden");
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

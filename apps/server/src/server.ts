@@ -94,7 +94,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   services.bindCaptain(dispatch);
   const build = readBuildId(env.webDist);
   const app = createApp({
-    origin: env.origin,
+    origin: env.browserOrigin ?? env.origin,
     version: env.version,
     commit: env.commit,
     webDist: env.webDist,
@@ -246,7 +246,8 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.startConnectionChecks();
       stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);
       sockets = attachSockets(server, {
-        origin: env.origin,
+        origin: env.browserOrigin ?? env.origin,
+        isRunner: (address) => services.runner?.network.isRunner(address) ?? false,
         events: services.events,
         build,
         terminals: services.terminals,
