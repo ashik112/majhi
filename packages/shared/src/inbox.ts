@@ -276,6 +276,13 @@ export type IncidentAsk = (typeof INCIDENT_ASKS)[number];
 export function incidentAskDecisionId(what: IncidentAsk, ref: string): string {
   return `iask:${what}:${ref}`;
 }
+/**
+ * What waits for the owner in a client chat: an unread claim, a message the captain left for a person, a "who is
+ * this?". `ref` is a message id of the chat, or `who:<sender>` for the who-is card.
+ */
+export function chatWaitDecisionId(room: string, ref: string): string {
+  return `cwait:${room}:${ref}`;
+}
 /** The one decision that says the Mac has notifications off for majhi. */
 export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
@@ -289,6 +296,7 @@ export type ParsedDecisionId =
   | { kind: "trust"; id: number }
   | { kind: "ceiling"; month: string }
   | { kind: "iask"; what: IncidentAsk; ref: string }
+  | { kind: "cwait"; room: string; ref: string }
   | { kind: "notify" };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
@@ -316,6 +324,9 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
     return { kind: "trust", id: Number(rest[0]) };
   }
   if (id === NOTIFY_ACCESS_DECISION_ID) return { kind: "notify" };
+  if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
+    return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };
+  }
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);
     if (what !== undefined) return { kind: "iask", what, ref: rest[1] as string };

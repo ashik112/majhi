@@ -20,6 +20,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import { ChatSendError } from "./adapter.ts";
+import type { ChatHistory } from "./history.ts";
 import { type People, parseBody, renderPlain } from "./format.ts";
 import type { ChatHub } from "./hub.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
@@ -40,6 +41,8 @@ export interface RepliesDeps {
   orgNames: () => Promise<ReadonlyMap<string, string>>;
   /** When today began in the workspace's time zone (ISO): the daily reply limit counts from it. Default: UTC midnight. */
   dayBegins?: (org: string) => Promise<string>;
+  /** The captain's History: one line for every message it sends or holds for a client. */
+  history?: ChatHistory | undefined;
   changed: () => void;
   now?: () => Date;
 }
@@ -55,6 +58,10 @@ export interface ReplyInput {
   thread?: string | undefined;
   /** A report, like an RCA. It always waits. */
   report?: boolean;
+  /** What the History says it did, like "Sent an update to Acme Support". Absent: "Replied to <name> in <chat>". */
+  note?: string | undefined;
+  /** The incident it is about. */
+  about?: string | undefined;
 }
 
 /** What a reply that waits answers: shown in Needs you so the owner can decide without opening the chat. */
@@ -199,7 +206,30 @@ export class ClientReplies {
           }),
       },
     );
-    return this.resultOf(draft, verdict.send ? undefined : verdict.why);
+    const result = this.resultOf(draft, verdict.send ? undefined : verdict.why);
+    this.noteHistory(room, input, result);
+    return result;
+  }
+
+  /** The History line of what the captain did: sent, held for the owner, or could not send. */
+  private noteHistory(room: RoomRow, input: ReplyInput, result: ReplyResult): void {
+    const org = room.org as string;
+    const who = input.to === undefined ? undefined : this.nameOf(room.id, input.to);
+    const did = input.note ?? `Replied to ${who ?? "a client"} in ${room.chat.title}`;
+    const text =
+      result.state === "sent"
+        ? did
+        : result.state === "held"
+          ? `Held for you: ${lowerFirst(did)} (${REPLY_HOLD_LABEL[result.why]})`
+          : `Could not send: ${lowerFirst(did)}`;
+    this.deps.history?.({ text, org, task: input.about });
+  }
+
+  private nameOf(room: string, sender: string): string | undefined {
+    const found = this.deps.store.room
+      .page(room, 200)
+      .items.find((i) => i.type === "client" && i.sender.id === sender);
+    return found?.type === "client" ? found.sender.name : undefined;
   }
 
   /** Whether the captain sent as many replies in this chat today as the chat's limit allows. */
@@ -259,6 +289,7 @@ export class ClientReplies {
       { kind: "owner" },
       { release: "now", prepared: (made) => this.post(room, made, { by: "you" }) },
     );
+    this.deps.history?.({ text: `Sent the incident report to ${room.chat.title}`, org });
     return this.resultOf(draft, undefined);
   }
 
@@ -417,4 +448,8 @@ export class ClientReplies {
       }
     },
   };
+}
+
+function lowerFirst(text: string): string {
+  return `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
 }

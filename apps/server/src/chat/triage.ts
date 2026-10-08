@@ -20,6 +20,7 @@ import type { Parsed } from "../memory/housekeeper.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
+import type { ChatHistory } from "./history.ts";
 import type { IncidentChoice } from "./incidents.ts";
 import { writeOutcome } from "./outcome.ts";
 import type { ClientReplies, ReplyResult } from "./replies.ts";
@@ -65,6 +66,8 @@ export interface TriageDeps {
     /** The answer to "any update?" from the incident's derived status, or nothing when no open incident is linked. */
     answer(room: string): Promise<{ text: string; flags: ReplyFlags } | undefined>;
   };
+  /** The captain's History: one line for each thing it does for a client. */
+  history?: ChatHistory | undefined;
   /** True when the text tries to instruct an agent. Such a message is only read by the owner. */
   injects?: ((text: string) => Promise<boolean>) | undefined;
   /**
@@ -87,9 +90,12 @@ const DecisionSchema = z.object({
   outage: z.boolean().optional(),
 });
 
-/** What a client is asked when a report says too little to act on. Plain words, no promise. */
-const CLARIFY_TEXT =
-  "Thanks for telling us. To look into it we need a few details: what exactly is failing, since when, and the error or page you see.";
+/**
+ * What the writer is told when a report says too little to act on. The question itself is composed from what the
+ * client already said, so it asks only for what is missing.
+ */
+const CLARIFY_FACTS =
+  "A client reported a problem and the team cannot act on it yet. Ask one short question for what is still missing among: what exactly is failing, since when, and the error or page they see. Ask only for what the chat does not already say. Promise no time, no price and no result.";
 
 const WriterSchema = ReplyFlagsSchema.extend({ text: z.string().trim().min(1).max(3000) });
 
@@ -287,7 +293,9 @@ export class ClientTriage {
       return undefined;
     }
     const tag = gate.urgent ? { urgent: true as const } : {};
-    const mark = (outcome: ClientOutcome): void => this.outcome(room, item, { ...outcome, ...tag });
+    let filed: number | undefined;
+    const mark = (outcome: ClientOutcome): void =>
+      this.outcome(room, item, { ...outcome, ...tag, ...(filed === undefined ? {} : { finding: filed }) });
     const input: FindingReportInput = {
       org,
       source: "client",
@@ -303,6 +311,7 @@ export class ClientTriage {
     mark({ state: "working" });
     try {
       const { finding } = await this.deps.findings.report(input, { kind: "captain", org });
+      filed = finding.id;
       try {
         const decision = await this.decide(room, item, gate);
         if (gate.readId !== undefined)
@@ -411,14 +420,37 @@ export class ClientTriage {
       const sent = await this.deps.replies.captain({ ...target, text: written.text, flags: written.flags });
       return { ...replyOutcome(sent), why, ...(task === undefined ? {} : { task }) };
     };
-    /** The report is too vague, or nothing shows it: the client is asked what exactly is failing. */
-    const clarify = async (why: string): Promise<ClientOutcome> => {
+    /**
+     * The report is too vague, or nothing shows it: the client is asked for what is missing. The writer composes
+     * the question from what the client already said, and the same question is never sent twice in a row. A claim
+     * of an outage that nothing backs also waits for the owner, once, in Needs you.
+     */
+    const clarify = async (why: string, claim: boolean): Promise<ClientOutcome> => {
+      const flag = { asked: true as const, ...(claim ? { claim: true as const } : {}) };
+      const before = this.lastQuestion(room, item);
+      const facts =
+        before === undefined
+          ? CLARIFY_FACTS
+          : `${CLARIFY_FACTS} You already asked: "${before}". Do not ask it again: ask only what is still missing.`;
+      const written = await this.write(org, room, item, facts);
+      if (before !== undefined && words(before) === words(written.text)) {
+        return { state: "waits", why: "It still lacks details and the client was asked already", ...flag };
+      }
       const sent = await this.deps.replies.captain({
         ...target,
-        text: CLARIFY_TEXT,
-        flags: { promisedTime: false, money: false, security: false, severalClients: false },
+        text: written.text,
+        flags: written.flags,
+        note: `Asked ${item.sender.name} in ${room.chat.title} for details`,
       });
-      return { ...replyOutcome(sent), why };
+      // A vague report is dealt with once the question is out. A claim stays open until it becomes an incident.
+      if (!claim) {
+        try {
+          this.deps.findings.dismiss(finding, "Asked the client for details", CAPTAIN);
+        } catch {
+          // Already closed.
+        }
+      }
+      return { ...replyOutcome(sent), why, ...flag };
     };
     /** A person follows up: the owner reads the finding. */
     const waits = (why: string): Promise<ClientOutcome> | ClientOutcome =>
@@ -428,7 +460,7 @@ export class ClientTriage {
       addressed ? acknowledge(why, task) : { state: "handled", why, ...(task === undefined ? {} : { task }) };
     switch (decision.action) {
       case "clarify":
-        return clarify(decision.reason);
+        return clarify(decision.reason, false);
       case "ignore":
         this.deps.findings.dismiss(finding, `Nothing to do: ${decision.reason}`, CAPTAIN);
         return { state: "ignored", why: decision.reason };
@@ -439,6 +471,11 @@ export class ClientTriage {
         if (incident === undefined) return waits("It may belong to an incident, but none matches");
         const done = await this.deps.incident.attach(room, incident.id, item.id);
         this.deps.findings.dismiss(finding, `Attached to incident ${done.task}`, CAPTAIN);
+        this.deps.history?.({
+          text: `${done.reopened ? "Reopened" : "Linked"} incident ${done.task} for ${room.chat.title}`,
+          org,
+          task: done.task,
+        });
         return handled(
           done.reopened
             ? `Incident ${done.task} reopened: the client says it is back`
@@ -450,6 +487,7 @@ export class ClientTriage {
         // A chat linked to an open incident is answered from its status. With none, the client is told so and asked what they see.
         const status = await this.deps.incident.answer(room.id);
         const sent = await this.deps.replies.captain({
+          note: `Answered ${item.sender.name} in ${room.chat.title}: ${status === undefined ? "no open issue" : "status of the open incident"}`,
           room: room.id,
           text: status?.text ?? NO_INCIDENT_REPLY,
           flags: status?.flags ?? NO_FLAGS,
@@ -469,9 +507,14 @@ export class ClientTriage {
       case "task": {
         if (decision.outage === true) {
           const found = await this.deps.incident.claim(room, item, finding);
-          // No watch, no failed deploy: nothing backs the claim yet. The client is asked for specifics.
-          if (found === undefined)
-            return clarify("No watch or deploy shows a problem: asked the client for details");
+          // No watch, no failed deploy: nothing backs the claim yet. The client is asked for what is missing, and
+          // the claim waits in Needs you.
+          if (found === undefined) return clarify("No watch or deploy shows a problem", true);
+          this.deps.history?.({
+            text: `${found.joined ? "Joined" : "Opened"} incident ${found.task} from ${item.sender.name} in ${room.chat.title}`,
+            org,
+            task: found.task,
+          });
           return handled(
             found.joined ? `Joined incident ${found.task}` : `Opened incident ${found.task}`,
             found.task,
@@ -496,6 +539,18 @@ export class ClientTriage {
         return replyOutcome(sent);
       }
     }
+  }
+
+  /** The question the captain last asked this client for details, when the newest of their earlier messages got one. */
+  private lastQuestion(room: RoomRow, item: Extract<RoomItem, { type: "client" }>): string | undefined {
+    const earlier = this.deps.store.room
+      .page(room.id, 40)
+      .items.filter((i) => i.type === "client" && i.us !== true && i.seq < item.seq);
+    const last = earlier.find((i) => i.type === "client" && i.sender.id === item.sender.id);
+    if (last?.type !== "client" || last.outcome?.asked !== true || last.outcome.draft === undefined)
+      return undefined;
+    const reply = this.deps.store.room.get(room.id, `reply:${last.outcome.draft}`);
+    return reply?.type === "client-reply" ? reply.text : undefined;
   }
 
   /** The reply, written from the wiki's answer alone, with what it says of itself. */

@@ -1,5 +1,4 @@
 import {
-  CLIENT_STATUS_LABEL,
   CLIENT_STATUSES,
   type ClientStatus,
   clientStatus,
@@ -25,6 +24,8 @@ import type { OutboundGate } from "../playbooks/outbound.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
+import type { ChatHistory } from "./history.ts";
+import { writeOutcome } from "./outcome.ts";
 import type { ClientReplies } from "./replies.ts";
 
 /**
@@ -55,6 +56,8 @@ export interface IncidentsDeps {
   reopen: (task: string) => Promise<void>;
   /** Tells the incident task's lead something, as majhi. Refused when the task has no agent or is done. */
   askLead: (task: string, text: string) => Promise<void>;
+  /** The captain's History: one line for each thing it does for a client. */
+  history?: ChatHistory | undefined;
   /** A model with no tools, for the report's words. Absent: the report is written in code from the facts. */
   write?: ((org: string, key: string, prompt: string) => Promise<string | undefined>) | undefined;
   /** Why nobody has looked at this workspace's incidents (Auto-pilot off, outside hours), or undefined. */
@@ -83,16 +86,20 @@ const SectionsSchema = z.object({
 const RewriteSchema = z.object({ internal: SectionsSchema, client: SectionsSchema });
 
 /** What each update says. Plain words from the status alone: nothing a client says or a log holds goes into it. */
-const UPDATE_TEXT: Record<ClientStatus, string> = {
+const UPDATE_TEXT: Record<Exclude<ClientStatus, "resolved">, string> = {
   investigating: "We are looking into the problem. We will tell you here when we know more.",
   identified: "We found what is causing it and are working on a fix.",
   monitoring: "The fix is live. We are watching it to make sure the problem stays gone.",
-  resolved: "This is resolved and has been stable since the fix. Tell us here if you see it again.",
 };
 
-/** The same words, with the status for a reminder at the workspace's cadence. */
-const REMINDER_TEXT = (status: ClientStatus): string =>
-  `Update: we are still working on it. Status: ${CLIENT_STATUS_LABEL[status]}.`;
+/** Resolved says whether a fix shipped: the words must match what happened. */
+const RESOLVED_FIXED = "This is resolved and has been stable since the fix. Tell us here if you see it again.";
+const RESOLVED_SELF =
+  "This is resolved. It cleared up without a change from us. Tell us here if you see it again.";
+/** The watch went green and nothing shipped: said once, and the updates stop. */
+const RECOVERED_TEXT = "It looks recovered on our side. We are watching it to be sure.";
+/** The incident came back after the client was told it was resolved. A short message, not the sequence again. */
+const BACK_TEXT = "It is back and we are on it.";
 
 /** An update says nothing a rail would hold: no time, no money, no security claim. */
 const UPDATE_FLAGS: ReplyFlags = {
@@ -100,6 +107,13 @@ const UPDATE_FLAGS: ReplyFlags = {
   money: false,
   security: false,
   severalClients: false,
+};
+
+const CLIENT_STATUS_WORD: Record<ClientStatus, string> = {
+  investigating: "we are looking into it",
+  identified: "we found the cause",
+  monitoring: "the fix is live",
+  resolved: "it is resolved",
 };
 
 type ReportItem = Extract<RoomItem, { type: "report" }>;
@@ -206,7 +220,12 @@ export class ClientIncidents {
     if (result.recoveredAt !== undefined) return "Recovered on its own, still watching";
     if (watch !== undefined) {
       if (watch.status === "open") parts.push(`Watch ${clip(watch.title, 40)} is firing`);
-      else if (result.status === "resolved") parts.push(`Green for ${read.facts.soakMin} min after the fix`);
+      else if (result.status === "resolved")
+        parts.push(
+          result.at.monitoring === undefined
+            ? `Green for ${read.facts.soakMin} min`
+            : `Green for ${read.facts.soakMin} min after the fix`,
+        );
       else if (result.soakEndsAt !== undefined)
         parts.push(`Watch is green, soak ends ${this.clock(result.soakEndsAt, tz)}`);
     } else if (result.status === "resolved") parts.push("Task done and its deploys are live");
@@ -404,16 +423,49 @@ export class ClientIncidents {
       const read = await this.read(task);
       reads.push({ read, result: clientStatus(read.facts) });
     }
-    const chosen = reads.find((r) => r.result.status !== "resolved") ?? reads[0];
+    let chosen = reads.find((r) => r.result.status !== "resolved");
+    // Not linked to an open incident: the open incidents of the chat's workspace answer. A client asking for news
+    // about something we are already on hears it, and is not told there is nothing.
+    if (chosen === undefined) {
+      const org = this.deps.store.client.room(room)?.org;
+      const open = org === undefined ? [] : await this.openOf(org);
+      chosen = open.toSorted((x, y) => y.read.task.createdAt.localeCompare(x.read.task.createdAt))[0];
+    }
+    chosen ??= reads[0];
     if (chosen === undefined) return undefined;
     const { read, result } = chosen;
     const tz = await this.deps.tz(read.org);
-    return { text: this.statusText(read, result, tz), flags: UPDATE_FLAGS };
+    return { text: this.statusText(read, result, tz, this.toldOf(read, room)), flags: UPDATE_FLAGS };
   }
 
-  /** What a client is told of a status: the plain words, then the facts a client may read. Nothing guessed. */
-  private statusText(read: Read, result: ReturnType<typeof clientStatus>, tz: string): string {
-    const parts = [UPDATE_TEXT[result.status]];
+  /** The incidents of a workspace that are not Resolved, with their facts. */
+  private async openOf(org: string): Promise<{ read: Read; result: ReturnType<typeof clientStatus> }[]> {
+    const out: { read: Read; result: ReturnType<typeof clientStatus> }[] = [];
+    for (const id of this.incidentTasks()) {
+      const task = this.deps.store.tasks.get(id);
+      if (task === undefined || task.org !== org || task.typing?.type !== "incident") continue;
+      const read = await this.read(task);
+      const result = clientStatus(read.facts);
+      if (result.status !== "resolved") out.push({ read, result });
+    }
+    return out;
+  }
+
+  /**
+   * What a client is told of a status: the plain words, then the facts a client may read. Nothing guessed. The words
+   * follow what happened: a fix that shipped, a problem that went away on its own, one that came back after Resolved.
+   */
+  private statusText(
+    read: Read,
+    result: ReturnType<typeof clientStatus>,
+    tz: string,
+    told?: { status: ClientStatus } | undefined,
+  ): string {
+    if (result.status === "resolved")
+      return result.at.monitoring === undefined ? RESOLVED_SELF : RESOLVED_FIXED;
+    if (told?.status === "resolved") return BACK_TEXT;
+    if (result.recoveredAt !== undefined) return RECOVERED_TEXT;
+    const parts: string[] = [UPDATE_TEXT[result.status]];
     // What our own monitoring sees is a fact a client may read: the problem is confirmed on our side too.
     if (result.status === "investigating" && read.watch?.status === "open")
       parts.push("Our monitoring shows the problem too.");
@@ -422,13 +474,15 @@ export class ClientIncidents {
       parts.push(`Cause: ${clip(cause.client, 200)}.`);
     if (result.status === "monitoring" && result.at.monitoring !== undefined)
       parts.push(`The fix went live at ${this.clock(result.at.monitoring, tz)}.`);
-    if (
-      result.status === "resolved" &&
-      result.recoveredAt === undefined &&
-      result.at.monitoring === undefined
-    )
-      parts.push("It cleared up without a change from us, and we are still looking into why.");
     return parts.join(" ");
+  }
+
+  /** A reminder says what changed since the last update, from the recorded facts, or that nothing did. */
+  private reminderText(read: Read, since: string): string {
+    const written = [read.task, ...read.fixes].some((t) =>
+      t.repos.some((r) => r.pushedAt !== undefined && r.pushedAt > since),
+    );
+    return `Still working on it. ${written ? "A fix is written and is being checked." : "Nothing new since the last update."}`;
   }
 
   private toldResolved(task: string, room: string): boolean {
@@ -447,10 +501,12 @@ export class ClientIncidents {
     room: RoomRow,
     item: Extract<RoomItem, { type: "client" }>,
     finding: number,
+    opts?: { force?: boolean },
   ): Promise<{ task: string; joined: boolean } | undefined> {
     const org = room.org as string;
     const evidence = this.deps.engine.evidence(org);
-    if (evidence.length === 0) return undefined;
+    // The owner's "Make incident" opens it on the client's word alone.
+    if (evidence.length === 0 && opts?.force !== true) return undefined;
     const project = evidence.find((e) => e.project !== undefined)?.project;
     const made = await this.deps.engine.open({
       kind: "client",
@@ -495,6 +551,11 @@ export class ClientIncidents {
    */
   async tick(): Promise<void> {
     let changed = false;
+    try {
+      if (await this.joinClaims()) changed = true;
+    } catch {
+      // The next pass tries again.
+    }
     for (const id of this.incidentTasks()) {
       try {
         const task = this.deps.store.tasks.get(id);
@@ -504,7 +565,7 @@ export class ClientIncidents {
         if (this.settled(id, result)) continue;
         for (const room of this.rooms(id)) {
           if ((await this.followed(room.id)) === id) {
-            if (await this.tell(read, result.status, room)) changed = true;
+            if (await this.tell(read, result, room)) changed = true;
           } else if (await this.discardHeld(read, room.id)) changed = true;
         }
         if (result.status === "monitoring" && (await this.askCause(read))) changed = true;
@@ -516,6 +577,60 @@ export class ClientIncidents {
       }
     }
     if (changed) this.deps.changed();
+  }
+
+  /**
+   * A client reported an outage nothing backed, and an incident has opened since: the claim joins it, and the room is
+   * told like any other (the pass that follows). A workspace with two open incidents is ambiguous: the claim stays
+   * in Needs you for the owner. Chats are not tied to a project, so the workspace is what the claim and the incident
+   * share.
+   */
+  private async joinClaims(): Promise<boolean> {
+    const lately = this.now().getTime() - DAY_MS;
+    let joined = false;
+    const orgs = new Set(this.deps.store.client.rooms().flatMap((r) => (r.org === undefined ? [] : [r.org])));
+    for (const org of orgs) {
+      const open = await this.openOf(org);
+      const only = open.length === 1 ? open[0] : undefined;
+      if (only === undefined) continue;
+      const task = only.read.task;
+      for (const room of this.deps.store.client.rooms()) {
+        if (room.org !== org || room.chat.archived === true || room.chat.ignored === true) continue;
+        if (room.chat.holder !== "captain" || this.incidentsOf(room.id).some((t) => t.id === task.id)) continue;
+        const claim = this.deps.store.room
+          .page(room.id, 40)
+          .items.find(
+            (i) =>
+              i.type === "client" &&
+              i.outcome?.claim === true &&
+              Date.parse(i.sentAt ?? i.at) > lately,
+          );
+        if (claim?.type !== "client") continue;
+        await this.attach(room, task.id, claim.id);
+        writeOutcome(this.deps, room.id, claim, {
+          state: "handled",
+          why: `Joined incident ${task.id}: it opened after the client wrote`,
+          task: task.id,
+          ...(claim.outcome?.finding === undefined ? {} : { finding: claim.outcome.finding }),
+        });
+        if (claim.outcome?.finding !== undefined) this.closeFinding(claim.outcome.finding, task.id, org);
+        this.deps.history?.({
+          text: `Joined ${room.chat.title} to incident ${task.id}: ${claim.sender.name} had reported it`,
+          org,
+          task: task.id,
+        });
+        joined = true;
+      }
+    }
+    return joined;
+  }
+
+  private closeFinding(finding: number, task: string, org: string): void {
+    try {
+      this.deps.findings.dismiss(finding, `Joined incident ${task}`, { kind: "captain", org });
+    } catch {
+      // Closed already, or taken up by the incident.
+    }
   }
 
   /** Resolved more than a day ago and no client has written since: nothing more to say, so the pass skips it. */
@@ -556,18 +671,25 @@ export class ClientIncidents {
     return true;
   }
 
-  private async tell(read: Read, status: ClientStatus, room: RoomRow): Promise<boolean> {
+  private async tell(read: Read, result: ReturnType<typeof clientStatus>, room: RoomRow): Promise<boolean> {
     // The owner holds the chat: the captain does not write in it.
     if (room.chat.holder !== "captain") return false;
+    const { status } = result;
     const told = this.toldOf(read, room.id);
     const now = this.now().getTime();
-    const changed = told?.status !== status;
+    // The watch went green with nothing shipped since the last update: said once, and the reminders stop.
+    const recovered = result.recoveredAt !== undefined && status !== "resolved";
+    const recoveredNew = recovered && (told === undefined || told.at < (result.recoveredAt as string));
+    const changed = told?.status !== status || recoveredNew;
     const due =
-      told !== undefined && status !== "resolved" && now - Date.parse(told.at) >= read.cadenceMin * 60_000;
+      told !== undefined &&
+      status !== "resolved" &&
+      !recovered &&
+      now - Date.parse(told.at) >= read.cadenceMin * 60_000;
     if (!changed && !due) return false;
     const text = changed
-      ? this.statusText(read, clientStatus(read.facts), await this.deps.tz(read.org))
-      : REMINDER_TEXT(status);
+      ? this.statusText(read, result, await this.deps.tz(read.org), told)
+      : this.reminderText(read, told?.at ?? "");
     const to = this.reporter(room.id);
     // A held update that was not sent yet says the newest thing instead of stacking up behind it.
     if (told !== undefined && this.updateState(told.draft) === "held") {
@@ -583,6 +705,8 @@ export class ClientIncidents {
       room: room.id,
       text,
       flags: UPDATE_FLAGS,
+      note: `Sent ${room.chat.title} an update on ${read.task.id}: ${clip(text, 80)}`,
+      about: read.task.id,
       ...(to === undefined ? {} : { to: to.sender }),
       ...(to?.thread === undefined ? {} : { thread: to.thread }),
     });
@@ -634,26 +758,24 @@ export class ClientIncidents {
     const tz = await this.deps.tz(read.org);
     const at = (iso: string): string => this.clock(iso, tz);
     const rooms = this.rooms(task.id);
-    const origin =
-      task.origin?.kind === "client" ? this.deps.room.get(task.origin.room, task.origin.item) : undefined;
-    const reportedAt =
-      origin?.type === "client"
-        ? (origin.sentAt ?? origin.at)
-        : earliest(
-            rooms.flatMap((r) =>
-              this.deps.store.room
-                .ofType(r.id, "client")
-                .flatMap((i) =>
-                  i.type === "client" && i.us !== true && i.at >= task.createdAt ? [i.sentAt ?? i.at] : [],
-                ),
-            ),
-          );
     const cause = read.events.flatMap((e) => (e.detail.event === "cause" ? [e.detail] : []))[0];
     const liveAt = clientStatus(read.facts).at.monitoring;
     const reopens = read.events.flatMap((e) => (e.detail.event === "reopened" ? [e.detail.at] : []));
+    // Each room reported at its own time: the first message that became or joined this incident.
+    const reported = rooms.flatMap((r) => {
+      const when = this.reportedAt(task, r);
+      return when === undefined ? [] : [{ room: r, at: when }];
+    });
+    const reportedAt = earliest(reported.map((r) => r.at));
     const began = earliest([watch?.openedAt, reportedAt, task.createdAt]) ?? task.createdAt;
-    const minutes = Math.max(1, Math.round((Date.parse(resolvedAt) - Date.parse(began)) / 60_000));
-    const reporters = rooms.map((r) => r.chat.title).join(", ");
+    // Time while it was failing: a stretch when the watch was green does not count.
+    const failing = this.failingMinutes(began, resolvedAt, watch?.timeline ?? []);
+    const minutes = Math.max(1, failing.minutes);
+    const span = `It was failing for ${minutes} min${failing.paused ? " in total, with a stretch when it was fine" : ""}, from ${at(began)} to ${at(resolvedAt)}.`;
+    const reporters =
+      reported.length === 0
+        ? ""
+        : reported.map((r) => `${r.room.chat.title} at ${at(r.at)}`).join(", ");
 
     const line = (entries: { at: string; internal: string; client?: string }[], who: "internal" | "client") =>
       entries
@@ -668,8 +790,8 @@ export class ClientIncidents {
         internal: `watch: ${clip(watch.title, 60)}`,
         client: "our monitoring flagged it",
       });
-    if (reportedAt !== undefined)
-      entries.push({ at: reportedAt, internal: `reported in ${reporters}`, client: "you reported it" });
+    // What a client reported and was told is a room's own story: it is added when the report goes to that room.
+    for (const r of reported) entries.push({ at: r.at, internal: `reported in ${r.room.chat.title}` });
     if (cause !== undefined) entries.push({ at: cause.at, internal: "cause found", client: "cause found" });
     if (liveAt !== undefined) entries.push({ at: liveAt, internal: "fix live", client: "fix live" });
     for (const d of read.deploys) {
@@ -691,8 +813,7 @@ export class ClientIncidents {
       if (t.kind === "resolved" || t.kind === "reopened")
         entries.push({ at: t.at, internal: `watch ${t.kind}: ${clip(t.text, 80)}` });
     }
-    for (const r of reopens)
-      entries.push({ at: r, internal: "reported again", client: "you told us it was back" });
+    for (const r of reopens) entries.push({ at: r, internal: "reported again" });
     entries.push({ at: resolvedAt, internal: "resolved", client: "resolved" });
 
     const fixLines = read.fixes.filter((t) => t.status === "done").map((t) => `${t.id} ${clip(t.title, 80)}`);
@@ -703,9 +824,9 @@ export class ClientIncidents {
     const fixRecorded = liveAt !== undefined;
     const internal: ReportText = {
       summary: fixRecorded
-        ? `${clip(task.title, 120)}. Resolved ${minutes} min after it began.`
-        : `${clip(task.title, 120)}. It cleared up ${minutes} min after it began with no fix shipped.`,
-      impact: `Reported in ${reporters === "" ? "no client room" : reporters}${reportedAt === undefined ? "" : ` at ${at(reportedAt)}`}. It ran from ${at(began)} to ${at(resolvedAt)} (${minutes} min).`,
+        ? `${clip(task.title, 120)}. Resolved after ${minutes} min of failing.`
+        : `${clip(task.title, 120)}. It cleared up after ${minutes} min of failing with no fix shipped.`,
+      impact: `Reported in ${reporters === "" ? "no client room" : reporters}. ${span}`,
       timeline: line(entries, "internal"),
       cause: cause === undefined ? "Not recorded." : cause.text,
       fix: fixRecorded
@@ -718,11 +839,11 @@ export class ClientIncidents {
       summary: fixRecorded
         ? "A problem you reported was found and fixed. This is what happened."
         : "A problem you reported has cleared up. This is what we know.",
-      impact: `${reportedAt === undefined ? "It began" : `You reported it at ${at(reportedAt)}.`} It was resolved at ${at(resolvedAt)}, ${minutes} min after it began.`,
+      impact: `${span}`,
       timeline: line(entries, "client"),
       cause: cause?.client ?? "The cause is being confirmed.",
       fix: !fixRecorded
-        ? "The problem went away without a change from us. We are still looking into why."
+        ? "The problem went away without a change from us."
         : `A fix went live at ${at(liveAt)}.`,
       followUps: open.length === 0 ? "None." : "We are following up so it does not happen again.",
     };
@@ -772,6 +893,63 @@ export class ClientIncidents {
     }
   }
 
+  /** When a room first reported this incident: its own first message that became or joined it. */
+  private reportedAt(task: Task, room: RoomRow): string | undefined {
+    const mine = this.deps.store.room
+      .page(room.id, 200)
+      .items.flatMap((i) => (i.type === "client" && i.us !== true ? [i] : []));
+    const joined = mine.filter((i) => i.outcome?.task === task.id);
+    const pool = joined.length > 0 ? joined : mine.filter((i) => (i.sentAt ?? i.at) >= task.createdAt);
+    return earliest(pool.map((i) => i.sentAt ?? i.at));
+  }
+
+  /** Minutes spent failing: a stretch between the watch going green and firing again does not count. */
+  private failingMinutes(
+    began: string,
+    end: string,
+    timeline: readonly { kind: string; at: string }[],
+  ): { minutes: number; paused: boolean } {
+    let total = 0;
+    let from: string | undefined = began;
+    let paused = false;
+    for (const t of timeline.toSorted((a, b) => a.at.localeCompare(b.at))) {
+      if (t.at <= began || t.at >= end) continue;
+      if (t.kind === "resolved" && from !== undefined) {
+        total += Date.parse(t.at) - Date.parse(from);
+        from = undefined;
+        paused = true;
+      } else if (t.kind === "reopened" && from === undefined) from = t.at;
+    }
+    if (from !== undefined) total += Date.parse(end) - Date.parse(from);
+    return { minutes: Math.round(total / 60_000), paused };
+  }
+
+  /**
+   * What this room alone lived through: when it reported and what it was told. Built from this room's own messages
+   * and updates, so one client never reads another's story.
+   */
+  private async roomStory(read: Read, roomId: string): Promise<string> {
+    const room = this.deps.store.client.room(roomId);
+    if (room === undefined) return "";
+    const tz = await this.deps.tz(read.org);
+    const lines: { at: string; text: string }[] = [];
+    const reported = this.reportedAt(read.task, room);
+    if (reported !== undefined) lines.push({ at: reported, text: "you reported it" });
+    for (const e of read.events) {
+      const d = e.detail;
+      if (d.event === "reopened" && d.room === roomId)
+        lines.push({ at: d.at, text: "you told us it was back" });
+      if (d.event === "told" && d.room === roomId && this.updateState(d.draft) === "sent")
+        lines.push({ at: d.at, text: `we told you: ${CLIENT_STATUS_WORD[d.status]}` });
+    }
+    if (lines.length === 0) return "";
+    const body = lines
+      .toSorted((a, b) => a.at.localeCompare(b.at))
+      .map((l) => `- ${this.clock(l.at, tz)} ${l.text}`)
+      .join("\n");
+    return `\n\n**In this chat**\n${body}`;
+  }
+
   private latestReport(task: string): ReportItem {
     const report = this.reports(task).at(-1);
     if (report === undefined)
@@ -810,7 +988,8 @@ export class ClientIncidents {
     }
     if (report.sent.some((s) => s.room === room))
       throw new UserError("The report went to that chat already.", 409);
-    const text = reportMessage(report.client);
+    const read = await this.read(this.deps.store.tasks.get(task) as Task);
+    const text = `${reportMessage(report.client)}${await this.roomStory(read, room)}`;
     const problem = await this.deps.replies.reportProblem(room, text);
     if (problem !== undefined) {
       throw new UserError(
@@ -821,7 +1000,6 @@ export class ClientIncidents {
       );
     }
     // The report says what the updates said: a still-held update would reach the client after it, out of order.
-    const read = await this.read(this.deps.store.tasks.get(task) as Task);
     await this.discardHeld(read, room);
     const out = await this.deps.replies.report({ room, text });
     if (out.state === "failed") throw new UserError(`It did not go: ${out.why}`, 409);
