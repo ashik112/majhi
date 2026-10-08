@@ -1104,7 +1104,7 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     failed: HandoffFailedSchema.optional(),
     /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
     action: z.enum(["memory-retry", "runner-memory"]).optional(),
-    /** A pointer line in a workspace thread: the task this line is about ("Opened PYZ-19: nbr is down"). Linked, never copied. */
+    /** A pointer line in a workspace thread: the task this line is about ("Opened ACM-3: api is down"). Linked, never copied. */
     pointer: TaskIdSchema.optional(),
   }),
 ]);

@@ -47,7 +47,7 @@ describe("parents and children", () => {
 
   it("closes a task that still has open follow-ups", async () => {
     w = await taskWorld();
-    await create("fix the nbr outage on api", { repos: [{ project: "acme-api" }] });
+    await create("fix the api outage", { repos: [{ project: "acme-api" }] });
     await create("tighten the alert on api", { followUpOf: "ACM-1", repos: [{ project: "acme-api" }] });
     const closed = await w.h.cmd("tasks.close", { id: "ACM-1" });
     expect(closed.status).toBe(200);
