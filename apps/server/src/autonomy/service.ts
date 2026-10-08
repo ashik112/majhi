@@ -378,13 +378,13 @@ export class AutonomyService {
       if (policy.authority.start !== "decide" && policy.authority.upkeep !== "decide") return undefined;
       if (restOf(policy, this.now()) !== undefined) return undefined;
     }
-    const before = this.deps.lanes.chat(org);
+    const before = this.deps.lanes.chat(org, job);
     const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
     const boss = await this.bossId();
     if (boss === undefined) return undefined;
     if (found !== undefined && found.status !== "done" && found.team[0] === boss) return found.id;
     try {
-      const chat = await this.deps.lanes.ensure(org);
+      const chat = await this.deps.lanes.ensure(org, job);
       const name = await this.orgName(org);
       this.event({
         kind: "mode",

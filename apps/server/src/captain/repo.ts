@@ -7,6 +7,7 @@ import {
   type CaptainRunStatus,
   type CaptainUndo,
   CaptainUndoSchema,
+  type Job,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 
@@ -176,15 +177,17 @@ export class CaptainRepo {
   // ---------------------------------------------------------------------------
   // Lanes
 
-  lanes(): { org: string; chat: string }[] {
-    return this.db.prepare("SELECT org, chat FROM captain_lanes ORDER BY org").all() as {
+  lanes(): { org: string; chat: string; job: Job }[] {
+    return this.db.prepare("SELECT org, chat, job FROM captain_lanes ORDER BY org, job").all() as {
       org: string;
       chat: string;
+      job: Job;
     }[];
   }
 
-  lane(org: string): string | undefined {
-    const row = this.db.prepare("SELECT chat FROM captain_lanes WHERE org = ?").get(org) as
+  /** The workspace's lane chat for this job: `backlog` is the main lane, `reacting` the on-call one. */
+  lane(org: string, job: Job = "backlog"): string | undefined {
+    const row = this.db.prepare("SELECT chat FROM captain_lanes WHERE org = ? AND job = ?").get(org, job) as
       | { chat: string }
       | undefined;
     return row?.chat;
@@ -197,12 +200,12 @@ export class CaptainRepo {
     return row?.org;
   }
 
-  setLane(org: string, chat: string, at: string): void {
+  setLane(org: string, chat: string, at: string, job: Job = "backlog"): void {
     this.db
       .prepare(
-        "INSERT INTO captain_lanes (org, chat, created_at) VALUES (?, ?, ?) ON CONFLICT (org) DO UPDATE SET chat = excluded.chat, created_at = excluded.created_at",
+        "INSERT INTO captain_lanes (org, job, chat, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (org, job) DO UPDATE SET chat = excluded.chat, created_at = excluded.created_at",
       )
-      .run(org, chat, at);
+      .run(org, job, chat, at);
   }
 
   // ---------------------------------------------------------------------------

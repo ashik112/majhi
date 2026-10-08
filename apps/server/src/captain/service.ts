@@ -134,8 +134,10 @@ export class CaptainService {
       stopped: () => this.stopped(),
       tellOwner: (org, text) => this.deps.tell(`captain:${org}:${this.now().toISOString()}`, text),
       laneTokens: (org, since) => {
-        const chat = this.repo.lane(org);
-        return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
+        return this.repo
+          .lanes()
+          .filter((l) => l.org === org)
+          .reduce((sum, l) => sum + this.repo.laneSpend(l.chat, since).tokens, 0);
       },
       chores: createChores(deps.ports, () => this.now()),
       enabled: (org, chore) => this.plays.enabled(org, chore),
