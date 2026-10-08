@@ -549,7 +549,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       store,
       now: () => new Date(),
       machineBusy: deps.machineBusy,
-      wake: (org, line) => deps.autonomy.news(line, org),
+      wake: (org, line) => deps.autonomy.routine(line, org),
     }),
     followUps: {
       openThreads: (org) =>

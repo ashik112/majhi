@@ -126,7 +126,7 @@ function TaskChat({ id }: { id: string }) {
 /** A workspace's captain thread: the same log and box as on the Captain page. */
 function CaptainChat({ id }: { id: string }) {
   const orgs = useCaptainStatus().data?.orgs;
-  const org = orgs?.find((o) => o.lane === id);
+  const org = orgs?.find((o) => o.lane === id || o.onCall === id);
   if (org === undefined) return <RowsSkeleton rows={3} height={48} />;
-  return <Thread key={id} org={org} />;
+  return <Thread key={id} org={org} urgent={org.onCall === id} />;
 }

@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { pressMatches, shortcut } from "@/features/shell/shortcuts";
 
 /** The Captain panel's tabs: the owner's own chat, every thread merged, or one workspace's thread. */
-export type PanelTab = "talk" | "all" | `ws:${string}`;
+export type PanelTab = "talk" | "all" | `ws:${string}` | `urgent:${string}`;
 
 interface BossControls {
   open: boolean;

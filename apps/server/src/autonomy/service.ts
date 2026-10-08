@@ -478,6 +478,14 @@ export class AutonomyService {
   }
 
   /**
+   * Routine news (an update, a finding from upkeep, a chore's note): it goes to the workspace's main lane only, while
+   * Auto-pilot is on. The Urgent lane hears only reactions: client chats, incidents and watch fires (`news`).
+   */
+  routine(line: string, org: string): boolean {
+    return this.wake(line, org, "news", "backlog");
+  }
+
+  /**
    * Why a running task with no agent working needs no wake: a cap or the owner holds it, a card
    * waits for the owner, or it waits for an account. Undefined when nothing explains it.
    */
@@ -2220,7 +2228,13 @@ export class AutonomyService {
    * `keep` it is also a standing instruction for that workspace's lane, as a config commit.
    */
   async guide(
-    input: { text: string; keep: boolean; attachments?: string[] | undefined; org?: string | undefined },
+    input: {
+      text: string;
+      keep: boolean;
+      attachments?: string[] | undefined;
+      org?: string | undefined;
+      urgent?: boolean | undefined;
+    },
     change: { command: string; meta: CommandMeta },
   ): Promise<{ chat: TaskId; instruction?: AutonomyInstruction }> {
     if (detectSecrets(input.text).length > 0) {
@@ -2239,7 +2253,7 @@ export class AutonomyService {
     if ((await this.bossId()) === undefined) {
       throw new UserError("There is no captain yet. Make a root agent the captain first.", 409);
     }
-    const chat = await this.deps.lanes.ensure(org);
+    const chat = await this.deps.lanes.ensure(org, input.urgent === true ? "reacting" : "backlog");
     let instruction: AutonomyInstruction | undefined;
     if (input.keep) {
       const { instructions } = (await this.deps.config.settings()).autonomy;

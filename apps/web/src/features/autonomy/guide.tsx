@@ -66,11 +66,14 @@ export function ChatBox({
   status,
   lane,
   chat,
+  urgent,
 }: {
   status: AutonomyStatus;
   lane: string | undefined;
   /** The lane's chat, when it exists: the model picker changes that chat's captain. */
   chat?: string | undefined;
+  /** Send to the workspace's Urgent thread instead of its main one. */
+  urgent?: boolean | undefined;
 }) {
   const toast = useToast();
   const guide = useGuideAutonomy();
@@ -109,6 +112,7 @@ export function ChatBox({
         keep,
         attachments: attachmentIds(sentFiles),
         ...(lane === undefined ? {} : { org: lane }),
+        ...(urgent === true ? { urgent } : {}),
       },
       {
         onSuccess: () => {

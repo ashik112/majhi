@@ -475,6 +475,8 @@ export const AutonomyGuideInputSchema = z
     keep: z.boolean().default(false),
     /** The workspace whose lane hears it. Default: the first workspace where the captain starts work. */
     org: z.string().min(1).max(63).optional(),
+    /** The message goes to that workspace's on-call (Urgent) thread instead of its main one. */
+    urgent: z.boolean().optional(),
   })
   .refine((v) => v.text !== "" || v.attachments.length > 0, { message: "Write a message or attach a file" })
   .refine((v) => !v.keep || v.text !== "", { message: "A standing instruction needs text" });

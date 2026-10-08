@@ -1967,7 +1967,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (f.source === "incident") return;
       // A client's words are data. They are never put in front of the captain as news: its triage reads them without tools.
       if (f.source === "client") return;
-      if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
+      if (f.severity !== "info") autonomy.routine(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
@@ -3147,7 +3147,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captain.afterUpdate(orgs);
       // Each lane retries what a majhi problem stopped: a fixed tool only helps if someone tries again.
       for (const org of orgs) {
-        autonomy.news(
+        autonomy.routine(
           `majhi was updated (${env.commit.slice(0, 8)}). Retry anything that failed because of a majhi problem, and go through what waits for the owner in this workspace: settle what a connection or a tool can settle, and say in one line why each of the rest needs the owner.`,
           org,
         );

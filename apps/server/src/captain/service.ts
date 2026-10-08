@@ -9,6 +9,7 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
+  type Job,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -460,6 +461,7 @@ export class CaptainService {
       const line = summaryOf(this.repo.dayActions(org, ws.day), forYou);
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
+      const onCall = this.deps.lanes.chat(org, "reacting");
       const cap = settings.autonomy.orgs[org]?.cap;
       const paid = await this.deps.lanes.account(org).catch(() => undefined);
       orgs.push({
@@ -475,7 +477,9 @@ export class CaptainService {
         ...(paid === undefined || "problem" in paid ? {} : { pays: paid.account }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
-        ...blockerOf(paid, asking, [this.deps.lanes.chat(org, "reacting"), lane]),
+        ...(onCall === undefined ? {} : { onCall }),
+        urgent: onCall === undefined ? "idle" : (threadOf?.(onCall, org) ?? "idle"),
+        ...blockerOf(paid, asking, [onCall, lane]),
         chores: choresNow(
           authority,
           { mode, stopped: state.stopped },
@@ -548,8 +552,8 @@ export class CaptainService {
    * summary majhi's fresh-session handoff writes (the agent's own note, else one built from the
    * saved state). The thread's messages stay, and the room shows the summary as an item.
    */
-  async startFresh(org: string): Promise<{ item: RoomItem }> {
-    const chat = this.deps.lanes.chat(org);
+  async startFresh(org: string, job: Job = "backlog"): Promise<{ item: RoomItem }> {
+    const chat = this.deps.lanes.chat(org, job);
     const agent = chat === undefined ? undefined : this.deps.store.tasks.get(chat)?.team[0];
     if (chat === undefined || agent === undefined || this.deps.fresh === undefined) {
       throw new UserError("That workspace has no captain thread yet.", 404);

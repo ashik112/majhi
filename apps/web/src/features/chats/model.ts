@@ -1,7 +1,6 @@
 import {
   type Conversation,
   DEFAULT_CHAT_TITLES,
-  ON_CALL_SUFFIX,
   type OrgView,
   PRIVATE,
   PRIVATE_COLOR,
@@ -50,7 +49,7 @@ export function workspaceOf(row: Conversation, all: readonly Workspace[]): Works
 /** A row's name: a captain thread is the workspace's captain, an untitled agent chat is a new chat. */
 export function rowTitle(row: Conversation, workspace: string): string {
   if (row.kind === "captain")
-    return `Captain in ${workspace}${row.title.endsWith(ON_CALL_SUFFIX) ? ON_CALL_SUFFIX : ""}`;
+    return `Captain in ${workspace}`;
   return row.kind === "agent" ? chatTitle(row) : row.title;
 }
 

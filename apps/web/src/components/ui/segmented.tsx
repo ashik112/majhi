@@ -1,3 +1,4 @@
+import { Lamp, type LampState } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 
 export interface Segment<T extends string> {
@@ -5,6 +6,8 @@ export interface Segment<T extends string> {
   label: string;
   /** A count in mono after the label. */
   count?: number;
+  /** A status dot before the label. */
+  lamp?: LampState | undefined;
   /** Cannot be chosen; `title` says why. */
   disabled?: boolean;
   title?: string;
@@ -49,6 +52,7 @@ export function Segmented<T extends string>({
                 : "text-fg-muted hover:bg-raised hover:text-fg",
             )}
           >
+            {segment.lamp !== undefined && <Lamp state={segment.lamp} size={6} className="mr-1.5 inline-block" />}
             {segment.label}
             {segment.count !== undefined && (
               <span className={cn("tnum ml-1.5 font-mono", on ? "text-accent-ink/75" : "text-fg-faint")}>

@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { RowsSkeleton } from "@/components/ui/skeleton";
+import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
 import { ChatBox, ChatLog } from "@/features/autonomy/guide";
 import { useBoss } from "@/features/boss/boss-context";
@@ -20,7 +21,7 @@ import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useChats } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
-import { orgOfTab, threadsOf, validTab, waitingWord, wsTab } from "./panel-model";
+import { isUrgentTab, orgOfTab, threadsOf, urgentTab, validTab, waitingWord, wsTab } from "./panel-model";
 
 /** A chip for the conversation: All, or one workspace. The dot shows only when that thread waits on the owner. */
 function Chip({
@@ -67,6 +68,7 @@ export function Conversation({ className }: { className?: string }) {
   const tab = validTab(asked, threads);
   const org = orgOfTab(tab);
   const current = org === undefined ? undefined : threads.find((t) => t.org === org);
+  const urgent = isUrgentTab(tab);
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
       <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
@@ -84,19 +86,34 @@ export function Conversation({ className }: { className?: string }) {
             <Chip
               key={t.org}
               label={t.name}
-              selected={tab === wsTab(t.org)}
+              selected={t.org === org}
               lamp={t.thread === "idle" ? undefined : THREAD_LAMP[t.thread]}
               hint={t.thread === "waiting" ? waitingWord(t) : `The captain's thread in ${t.name}`}
               onSelect={() => setTab(wsTab(t.org))}
             />
           ))}
         </fieldset>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {current === undefined ? <TalkActions /> : <ThreadActions org={current} />}
+        {current?.onCall !== undefined && (
+          <Segmented
+            label="Thread"
+            value={urgent ? "urgent" : "main"}
+            onChange={(v) => setTab(v === "urgent" ? urgentTab(current.org) : wsTab(current.org))}
+            segments={[
+              { value: "main", label: "Main" },
+              {
+                value: "urgent",
+                label: "Urgent",
+                lamp: current.urgent === "idle" ? undefined : "needs",
+              },
+            ]}
+          />
+        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {current === undefined ? <TalkActions /> : <ThreadActions org={current} urgent={urgent} />}
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
-        {current === undefined ? <BossConversation /> : <Thread key={current.org} org={current} />}
+        {current === undefined ? <BossConversation /> : <Thread key={tab} org={current} urgent={urgent} />}
       </div>
     </div>
   );
@@ -169,11 +186,11 @@ function TalkActions() {
 const THREAD_LAMP = { working: "working", waiting: "needs", idle: "idle" } as const;
 
 /** One workspace's thread: Start fresh, with its confirmation. */
-function ThreadActions({ org }: { org: CaptainOrg }) {
+function ThreadActions({ org, urgent }: { org: CaptainOrg; urgent: boolean }) {
   const toast = useToast();
   const fresh = useStartFresh();
   const [asking, setAsking] = useState(false);
-  if (org.lane === undefined) return null;
+  if ((urgent ? org.onCall : org.lane) === undefined) return null;
   return (
     <>
       <Button
@@ -194,7 +211,7 @@ function ThreadActions({ org }: { org: CaptainOrg }) {
           error={fresh.error ? describeError(fresh.error) : undefined}
           onConfirm={() =>
             fresh.mutate(
-              { org: org.org, name: org.name },
+              { org: org.org, name: org.name, urgent },
               {
                 onSuccess: () => {
                   setAsking(false);
@@ -214,9 +231,9 @@ function ThreadActions({ org }: { org: CaptainOrg }) {
 }
 
 /** One workspace's thread: the conversation and the box. */
-export function Thread({ org }: { org: CaptainOrg }) {
+export function Thread({ org, urgent = false }: { org: CaptainOrg; urgent?: boolean }) {
   const autonomyStatus = useAutonomyStatus().data;
-  const lane = org.lane;
+  const lane = urgent ? org.onCall : org.lane;
   return (
     <>
       {org.resting !== undefined && (
@@ -234,7 +251,7 @@ export function Thread({ org }: { org: CaptainOrg }) {
           <ChatLog chat={lane} />
         )}
         {autonomyStatus ? (
-          <ChatBox status={autonomyStatus} lane={org.org} chat={lane} />
+          <ChatBox status={autonomyStatus} lane={org.org} chat={lane} urgent={urgent} />
         ) : (
           <div className="p-3">
             <RowsSkeleton rows={1} height={72} />
