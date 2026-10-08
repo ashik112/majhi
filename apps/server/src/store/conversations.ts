@@ -6,10 +6,12 @@ import {
   CLIENT_CHAT_BRIEF,
   type Conversation,
   ConversationSchema,
+  mentionName,
 } from "@majhi/shared";
 import { sql } from "drizzle-orm";
 import { parseBody, renderPlain } from "../chat/format.ts";
 import type { Db } from "./db.ts";
+import { storedMentions } from "./mentions.ts";
 
 /** A last line is cut to this many characters, on the way out of the database. */
 const LINE_CHARS = 160;
@@ -45,8 +47,10 @@ interface Row {
   unread: number;
   agent_at: string | null;
   agent_text: string | null;
+  agent_mentions: string | null;
   owner_at: string | null;
   owner_text: string | null;
+  owner_mentions: string | null;
   /** Who wrote the newest owner-side message: `captain`, `majhi` or `you`. */
   owner_by: string | null;
   app: string | null;
@@ -65,6 +69,10 @@ interface Row {
  */
 export class ConversationsRepo {
   constructor(private readonly db: Db) {}
+
+  /** A contact's stored name, for a mention a message carries no name for. */
+  private readonly contactName = (id: string): string | undefined =>
+    this.db.get<{ name: string }>(sql`SELECT name FROM contacts WHERE id = ${id}`)?.name;
 
   /** Every listed conversation, newest message first. One query, however many there are. */
   list(): Conversation[] {
@@ -143,6 +151,8 @@ export class ConversationsRepo {
           + (SELECT count(*) FROM room_items a
               WHERE a.about = t.id AND a.type = 'agent' AND a.at > coalesce(m.read_at, '')) AS unread,
         (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client')) AS agent_at,
+        (SELECT json_extract(r.payload, '$.mentions') FROM room_items r
+          WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_mentions,
         (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
             || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
@@ -151,6 +161,9 @@ export class ConversationsRepo {
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
             AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text,
+        (SELECT json_extract(r.payload, '$.mentions') FROM room_items r
+          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_mentions,
         (SELECT CASE WHEN json_extract(r.payload, '$.by') = 'captain' AND json_extract(r.payload, '$.as') IS NULL THEN 'captain'
                      WHEN json_extract(r.payload, '$.by') = 'majhi' THEN 'majhi' ELSE 'you' END FROM room_items r
           WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
@@ -165,7 +178,7 @@ export class ConversationsRepo {
     for (const row of rows) {
       // A chat linked and not written in yet is still listed: the owner linked it and looks for it.
       const last =
-        lastOf(row) ??
+        lastOf(row, this.contactName) ??
         (kindOf(row) === "client" && row.org !== null
           ? { at: row.created_at, line: "No messages yet" }
           : undefined);
@@ -199,31 +212,42 @@ function kindOf(row: Row): Conversation["kind"] {
 }
 
 /** The newer of the newest agent and owner messages, as a one-line preview. */
-function lastOf(row: Row): { at: string; line: string } | undefined {
-  const agent = row.agent_at === null ? undefined : { at: row.agent_at, line: oneLine(row.agent_text) };
+function lastOf(row: Row, name: Lookup): { at: string; line: string } | undefined {
+  const agent =
+    row.agent_at === null
+      ? undefined
+      : { at: row.agent_at, line: oneLine(row.agent_text, storedMentions(row.agent_mentions), name) };
   // The writer is named as recorded: a reply the captain sent reads "Captain:", the owner's own "You:".
   const who = row.owner_by === "captain" ? "Captain" : row.owner_by === "majhi" ? "majhi" : "You";
   const owner =
-    row.owner_at === null ? undefined : { at: row.owner_at, line: `${who}: ${oneLine(row.owner_text)}` };
+    row.owner_at === null ? undefined : { at: row.owner_at, line: `${who}: ${oneLine(row.owner_text, storedMentions(row.owner_mentions), name)}` };
   if (agent === undefined) return owner;
   if (owner === undefined) return agent;
   return owner.at > agent.at ? owner : agent;
 }
 
 /** The first non-empty line of a message as plain words (its Markdown read, not shown), cut to fit a list row. */
-function oneLine(text: string | null): string {
+function oneLine(text: string | null, names: Names, name: Lookup): string {
   const first =
-    plain(text ?? "")
+    plain(text ?? "", names, name)
       .split("\n")
       .map((l) => l.trim())
       .find((l) => l !== "") ?? "";
   return first.length > LINE_CHARS ? `${first.slice(0, LINE_CHARS - 1)}…` : first;
 }
 
-/** A message's words without its markup. A mention the list cannot name reads as "someone". */
-function plain(text: string): string {
+/** The names a message carries for its mention tokens (contact id to name), as stored. */
+type Names = Readonly<Record<string, string>> | undefined;
+type Lookup = (contact: string) => string | undefined;
+
+/** A message's words without its markup. A mention reads `@Name`: the message's own name, else the contact's. */
+function plain(text: string, names: Names, name: Lookup): string {
   try {
-    return renderPlain(parseBody(text), () => ({ name: "someone", native: undefined, username: undefined }));
+    return renderPlain(parseBody(text), (contact) => ({
+      name: mentionName(contact, names, name),
+      native: undefined,
+      username: undefined,
+    }));
   } catch {
     return text;
   }

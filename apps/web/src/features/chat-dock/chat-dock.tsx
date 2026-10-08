@@ -1,6 +1,8 @@
 import { useRouterState } from "@tanstack/react-router";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, X } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useBoss } from "@/features/boss/boss-context";
 import { badgeText } from "@/features/chats/model";
 import { cn } from "@/lib/cn";
@@ -9,6 +11,31 @@ import { GLASS_STRONG } from "@/lib/glass";
 
 const loadPanel = () => import("./dock-panel");
 const DockPanel = lazy(loadPanel);
+
+/** The panel's frame while its code loads, so the first click shows the panel at once. */
+function PanelShell({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-label="Chats"
+      aria-busy="true"
+      className={cn(
+        "fixed right-4 bottom-[72px] z-40 flex h-[min(620px,calc(100dvh-72px-72px))] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl outline-none",
+        GLASS_STRONG,
+      )}
+    >
+      <header className="flex shrink-0 items-center gap-1.5 border-b border-line px-2.5 py-2">
+        <h2 className="min-w-0 flex-1 truncate px-1 text-md font-semibold">Chats</h2>
+        <Button variant="ghost" size="icon-sm" aria-label="Close the chats" onClick={onClose}>
+          <X aria-hidden="true" />
+        </Button>
+      </header>
+      <div className="px-3 py-3">
+        <RowsSkeleton rows={5} height={52} />
+      </div>
+    </div>
+  );
+}
 
 /**
  * The floating chat button, bottom right on every page, with the unread count. It opens the panel with the
@@ -45,7 +72,7 @@ export const ChatDock = memo(function ChatDock() {
   return (
     <div data-chat-dock="">
       {open && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PanelShell onClose={close} />}>
           <DockPanel onClose={close} />
         </Suspense>
       )}
