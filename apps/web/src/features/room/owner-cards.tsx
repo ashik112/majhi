@@ -353,7 +353,9 @@ function PendingPause({
             <RotateCw aria-hidden="true" />
             Resume
           </Button>
-          {item.reason !== "owner" && item.reason !== "offline" && <PauseFixes task={task} />}
+          {item.reason !== "owner" && item.reason !== "offline" && (
+            <PauseFixes task={task} account={item.account} signedOut={item.reason === "signed-out"} />
+          )}
         </>
       }
       details={<p className="text-pretty">{why}</p>}
@@ -403,7 +405,15 @@ function StillWorking({
 }
 
 /** What majhi knows about why agents cannot run: a signed-out account, a usage limit, a missing runner. */
-function PauseFixes({ task }: { task: Task }) {
+function PauseFixes({
+  task,
+  account,
+  signedOut: signedOutPause,
+}: {
+  task: Task;
+  account: string | undefined;
+  signedOut: boolean;
+}) {
   const index = useAgentIndex();
   const accounts = useAccounts().data ?? [];
   const tools = useTools().data;
@@ -412,9 +422,15 @@ function PauseFixes({ task }: { task: Task }) {
   const toast = useToast();
   const [signIn, setSignIn] = useState<AccountView>();
 
-  const used = new Set(task.team.flatMap((id) => index.get(id)?.account ?? []));
+  // A pause names the account its run was on (a lane runs on its workspace's); else the team's own.
+  const used = new Set(
+    account === undefined ? task.team.flatMap((id) => index.get(id)?.account ?? []) : [account],
+  );
   const team = accounts.filter((a) => used.has(a.id));
-  const signedOut = team.filter((a) => a.status === "needs-login" || a.status === "relogin-soon");
+  // Only a signed-out pause offers a sign-in: an error pause is not fixed by one.
+  const signedOut = signedOutPause
+    ? team.filter((a) => a.status === "needs-login" || a.status === "relogin-soon")
+    : [];
   const limited = team.filter((a) => a.status === "at-limit");
   const runner = checks.find((c) => c.id === "runner" && !c.ok && c.fix !== undefined);
 

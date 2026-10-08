@@ -932,7 +932,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
-    onPaused: (task, reason, why) => background.run(() => tasks.pausedByRuns(task, reason, why)),
+    onPaused: (task, reason, why, account) =>
+      background.run(() => tasks.pausedByRuns(task, reason, why, account)),
     checkAccount: async (id) => {
       const { account } = await accounts.health(id, true);
       const full = [account.usage?.window, account.usage?.weekly].find(

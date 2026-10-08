@@ -294,7 +294,7 @@ export class InboxService {
     const folded = new Set<string>();
     for (const item of items) {
       if (item.type !== "paused" || item.state !== "pending" || item.reason !== "signed-out") continue;
-      const account = await deps.pausedAccount?.(item.task);
+      const account = item.account ?? (await deps.pausedAccount?.(item.task));
       const who = subject(item.task);
       if (account === undefined || who === undefined || !signedOut.some((s) => s.id === account)) continue;
       folded.add(item.id);

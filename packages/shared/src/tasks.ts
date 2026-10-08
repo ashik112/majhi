@@ -976,6 +976,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     reason: PausedReasonSchema,
     /** The cause in words, when it is more specific than the reason ("claude-acme is signed out"). */
     why: z.string().optional(),
+    /** The account a signed-out pause waits on. A lane runs on its workspace's account, not its agent's own. */
+    account: z.string().min(1).optional(),
     /** Set when the captain paused it, itself or through autonomous mode (5.18). Older cards lack it. */
     by: CaptainBySchema.optional(),
     state: CardStateSchema,
