@@ -100,6 +100,7 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import { waitingDeployDecisions } from "./deploy/decisions.ts";
+import { effectiveCommands } from "./handoff/commands.ts";
 import { FIX_MR_CHECKS_TEXT, failingMrDecisions } from "./mrs/decisions.ts";
 import { createNothingDeploys } from "./deploy/nothing.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
@@ -1119,13 +1120,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let handoffService: HandoffService | undefined;
   // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
   let loopGuard: LoopGuard | undefined;
+  // The checks a project has, as the hand-off resolves them: the card's commands with the project's own on top.
+  const checksConfigured = async (project: string): Promise<boolean> => {
+    const commands = effectiveCommands(
+      cards.get(project)?.commands,
+      (await config.sections()).projects[project]?.handoff,
+    );
+    return [commands.test, commands.build, commands.lint, commands.typecheck].some(
+      (c) => c !== undefined && c.trim() !== "",
+    );
+  };
   // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
   const mergeGate = new MergeGate({
     handoff: () => handoffService,
-    configured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    configured: (project) => checksConfigured(project),
   });
   const wikiLines = wikiNotes({
     repo: store.wiki,
@@ -2077,10 +2085,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    checksConfigured: (project) => {
-      const commands = cards.get(project)?.commands ?? {};
-      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
-    },
+    checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text) => notifier.captain(key, text),
     incident: async (input) =>
       (
@@ -3123,6 +3128,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),
       mergeChecks: (id) => tasks.mergeChecks(id),
+      empty: async (id) => {
+        const check = await shipReadiness({ store, room, runs, mrs }, id);
+        return !check.ready && check.unmergeable === "empty";
+      },
       state: (id) => handoff.state(id),
       lastMessage: (id) => {
         room.flush(id);

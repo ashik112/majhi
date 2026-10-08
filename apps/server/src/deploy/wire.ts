@@ -59,7 +59,7 @@ export interface DeployWorldDeps {
   /** The captain's answer "nothing deploys", kept in its log. */
   nothing: NothingDeploys;
   credentials: CredentialDeps;
-  checksConfigured: (project: string) => boolean;
+  checksConfigured: (project: string) => boolean | Promise<boolean>;
   tellOwner: (key: string, text: string) => void;
   /** Opens or joins the incident of a failed deploy (the incident engine). Absent: the task is made here. */
   incident?:

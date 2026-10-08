@@ -6,6 +6,8 @@ export interface HomeChecksDeps {
   /** The merge gate's verdict for the task's head now. */
   mergeChecks(id: string): Promise<MergeChecks>;
   state(id: string): Promise<HandoffState>;
+  /** The task changed no code, so there is nothing to merge. */
+  empty?(id: string): Promise<boolean>;
   /** The agent's last message in the task, whole. */
   lastMessage(id: string): string | undefined;
   now?: () => number;
@@ -28,7 +30,7 @@ export function firstSentence(text: string | undefined): string | undefined {
  * hand-off is doing, in one batch instead of a read per row.
  */
 export class HomeChecks {
-  private readonly kept = new Map<string, { key: string; at: number; checks: MergeChecks }>();
+  private readonly kept = new Map<string, { key: string; at: number; checks: MergeChecks; empty: boolean }>();
 
   constructor(private readonly deps: HomeChecksDeps) {}
 
@@ -66,13 +68,16 @@ export class HomeChecks {
     const kept = this.kept.get(id);
     const outcome = firstSentence(this.deps.lastMessage(id));
     let checks: MergeChecks;
+    let empty: boolean;
     if (kept !== undefined && kept.key === key && now - kept.at < REUSE_MS) {
       checks = kept.checks;
+      empty = kept.empty;
     } else {
       const fresh = await this.deps.mergeChecks(id).catch(() => undefined);
       if (fresh === undefined) return undefined;
       checks = fresh;
-      this.kept.set(id, { key, at: now, checks });
+      empty = (await this.deps.empty?.(id).catch(() => false)) === true;
+      this.kept.set(id, { key, at: now, checks, empty });
     }
     const verdict = checks.verdict;
     const stepId =
@@ -84,6 +89,7 @@ export class HomeChecks {
     return {
       task: id,
       checks,
+      ...(empty ? { empty: true as const } : {}),
       ...(outcome === undefined ? {} : { outcome }),
       ...(state.activity === undefined ? {} : { activity: state.activity }),
       ...(step === undefined

@@ -71,7 +71,7 @@ export interface MergeGateDeps {
   /** The hand-off service. Absent until the server finishes starting: nothing merges then. */
   handoff(): { state(id: string): Promise<HandoffState> } | undefined;
   /** Whether the project card sets a test, build or lint command. */
-  configured(project: string): boolean;
+  configured(project: string): boolean | Promise<boolean>;
 }
 
 type Repo = Task["repos"][number];
@@ -90,7 +90,9 @@ export class MergeGate {
       if (scan?.kind === "secret") return { head, verdict: { kind: "failed", check: "secret" } };
     }
     const handoff = this.deps.handoff();
-    const configured = task.repos.some((r) => this.deps.configured(r.project));
+    const configured = (await Promise.all(task.repos.map((r) => this.deps.configured(r.project)))).some(
+      Boolean,
+    );
     const state = handoff === undefined ? undefined : await handoff.state(task.id).catch(() => undefined);
     return { head, verdict: decideMerge({ configured, head, state }) };
   }

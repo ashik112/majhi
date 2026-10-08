@@ -62,7 +62,7 @@ export interface DeployDeps {
   /** The host and repo of one of the project's remotes (default: the one merge requests go to). Undefined when it is not a host a provider reaches. */
   repoRef(project: DeployProject, remote?: string): Promise<RepoRef | undefined>;
   /** The project's card sets a test, build or lint command, so a commit no merge produced is unverified. */
-  checksConfigured(project: string): boolean;
+  checksConfigured(project: string): boolean | Promise<boolean>;
   providers: Providers;
   providerDeps: ProviderDeps;
   /** One look at an environment's check address. */
@@ -206,7 +206,7 @@ export class DeployService {
       tip,
       tipWhy: tip === undefined ? await this.deps.git.whyNoTip(project.path, base) : undefined,
       landed: this.deps.tasks.landedCommits(project.id).has(commit),
-      checksConfigured: this.deps.checksConfigured(project.id),
+      checksConfigured: await this.deps.checksConfigured(project.id),
       confirmUnchecked: req.confirmUnchecked === true,
       before,
       rest,

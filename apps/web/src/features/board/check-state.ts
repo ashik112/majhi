@@ -106,6 +106,7 @@ export function checkLine(fact: HomeCheck, now: number): string {
   const a = fact.activity;
   const since = a === undefined ? undefined : Date.parse(a.since);
   const verdict = fact.checks.verdict;
+  if (fact.empty === true && (s.kind === "ok" || s.kind === "stale")) return "Nothing to merge";
   switch (s.kind) {
     case "queued":
       return a?.position === undefined ? "Queued for checks" : `Queued for checks (${ordinal(a.position)})`;

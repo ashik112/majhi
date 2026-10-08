@@ -13,6 +13,8 @@ export const HomeCheckSchema = z.object({
   checks: MergeChecksSchema,
   /** Set while a check of the task runs or waits for a slot. */
   activity: HandoffActivitySchema.optional(),
+  /** The task changed no code: there is nothing to merge, whatever the checks say. */
+  empty: z.literal(true).optional(),
   /** The first sentence of the agent's last message in the task: what it says it did. */
   outcome: z.string().optional(),
   /** The step the verdict names when it failed, as the hand-off recorded it. */
