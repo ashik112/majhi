@@ -17,6 +17,7 @@ import {
   type Job,
   type MrHost,
   NotificationsSettingsSchema,
+  OWNER,
   PRIVATE,
   type ServiceEntry,
   type TaskId,
@@ -1640,7 +1641,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
       ackIncident: async (id) => {
-        await opsWatch?.ack(id);
+        await opsWatch?.ack(id, OWNER);
       },
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);

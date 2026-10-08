@@ -1,4 +1,5 @@
 import { PRIVATE } from "@majhi/shared";
+import { resolveActor } from "../actor.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import type { Store } from "../store/index.ts";
@@ -37,8 +38,8 @@ export async function findingActor(
   if (actor.kind !== "agent") return { kind: "owner" };
   const task = ctx.meta.task;
   const lane = task === undefined ? undefined : deps.lanes.orgOf(task);
-  const boss = await deps.lanes.boss();
-  if (actor.id === boss) return { kind: "captain", ...(lane === undefined ? {} : { org: lane }) };
+  if ((await resolveActor(deps, ctx.meta)).kind === "captain")
+    return { kind: "captain", ...(lane === undefined ? {} : { org: lane }) };
   const org = task === undefined ? PRIVATE : (deps.store.tasks.get(task)?.org ?? PRIVATE);
   return { kind: "agent", id: actor.id, org: lane ?? org };
 }

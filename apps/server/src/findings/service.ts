@@ -1,4 +1,5 @@
 import {
+  type Actor,
   canMoveFinding,
   FINDING_LIVE,
   FINDING_SOURCE_LABEL,
@@ -12,6 +13,7 @@ import {
   type FindingsListInput,
   type FindingToTaskResult,
   type FindingUpdateInput,
+  MAJHI,
   PRIVATE,
   type TaskStatus,
 } from "@majhi/shared";
@@ -25,6 +27,11 @@ import type { TriageResult } from "./triage.ts";
  * Findings (SPEC 5.18): the one deduplicated store for what playbooks and agents notice. Pure rules
  * over the repo; majhi's tasks come in through `deps`.
  */
+
+/** The recorded actor of a finding caller: the workspace a lane or agent is tied to is not part of it. */
+function actorOfFinding(actor: FindingActor): Actor {
+  return actor.kind === "agent" ? { kind: "agent", id: actor.id } : { kind: actor.kind };
+}
 
 /** Who acts. A captain lane and an agent are tied to one workspace. */
 export type FindingActor =
@@ -260,7 +267,12 @@ export class FindingsService {
       const at = this.at();
       const triaged = this.repo.patch(finding.id, { at, triage: result.triage });
       if (result.dismiss === undefined || triaged.status !== "open") return triaged;
-      return this.repo.patch(finding.id, { at, status: "dismissed", dismissedReason: result.dismiss });
+      return this.repo.patch(finding.id, {
+        at,
+        status: "dismissed",
+        dismissedReason: result.dismiss,
+        dismissedBy: MAJHI,
+      });
     } catch {
       return finding;
     }
@@ -352,7 +364,7 @@ export class FindingsService {
       ...(input.task === undefined ? {} : { task: input.task }),
       ...(input.decision === undefined ? {} : { decision: input.decision }),
       // Back to open: the links and the dismissal reason no longer apply.
-      ...(to === "open" ? { task: null, decision: null, dismissedReason: null } : {}),
+      ...(to === "open" ? { task: null, decision: null, dismissedReason: null, dismissedBy: null } : {}),
       ...(to === "open" && found.triage?.applied === true
         ? { triage: { ...found.triage, applied: false } }
         : {}),
@@ -371,7 +383,12 @@ export class FindingsService {
     if (found.status === "dismissed" || !canMoveFinding(found.status, "dismissed")) {
       throw new UserError(`A ${found.status} finding cannot be dismissed.`, 409);
     }
-    const out = this.repo.patch(id, { at: this.at(), status: "dismissed", dismissedReason: reason });
+    const out = this.repo.patch(id, {
+      at: this.at(),
+      status: "dismissed",
+      dismissedReason: reason,
+      dismissedBy: actorOfFinding(actor),
+    });
     this.labelled(actor, found, "dismiss", `the owner dismissed it: ${reason}`);
     this.deps.changed?.();
     return out;

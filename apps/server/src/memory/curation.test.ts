@@ -1,6 +1,6 @@
 import type {
-  Actor,
   Answer,
+  Caller,
   DecideRequestInput,
   DecisionResult,
   MemorySettings,
@@ -14,7 +14,7 @@ import { HashEmbedder } from "./embedder.ts";
 import { MAX_PROPOSALS_PER_TASK, MemoryService } from "./service.ts";
 import { MemoryStore } from "./store.ts";
 
-const owner: Actor = { kind: "owner" };
+const owner: Caller = { kind: "owner" };
 let clock = 0;
 const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
 

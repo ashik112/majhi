@@ -1,4 +1,4 @@
-import { type CaptainOrg, type Finding, opportunityEffort } from "@majhi/shared";
+import { type CaptainOrg, didWords, type Finding, opportunityEffort } from "@majhi/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -223,7 +223,10 @@ function FindingRow({
         </span>
       </div>
       {finding.status === "dismissed" && finding.dismissedReason && (
-        <p className="pl-[15px] text-xs text-fg-muted text-pretty">Dismissed: {finding.dismissedReason}</p>
+        <p className="pl-[15px] text-xs text-fg-muted text-pretty">
+          {finding.dismissedBy === undefined ? "Dismissed" : didWords(finding.dismissedBy, "dismissed it")}:{" "}
+          {finding.dismissedReason}
+        </p>
       )}
       {finding.triage?.injects !== undefined && (
         <p className="pl-[15px] text-xs text-amber text-pretty">

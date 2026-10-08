@@ -1980,6 +1980,12 @@ UPDATE tasks SET origin = json_object('kind', 'chat', 'room', (
      AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.result') END LIKE '%{"id":"' || tasks.id || '"%');
 `,
   },
+  {
+    // Who dismissed a finding (the Actor as JSON). Dismissals from before have none.
+    id: 185,
+    name: "finding dismissed by",
+    sql: `ALTER TABLE findings ADD COLUMN dismissed_by TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -1,4 +1,5 @@
 import { pageRef, type WatchDef } from "@majhi/shared";
+import { resolveActor } from "../actor.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -106,7 +107,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     },
     "ops.serviceRemove": async (input, ctx) => {
       await scope(ctx, deps.repo.service(input.id)?.org);
-      await watch.removeService(input.id);
+      await watch.removeService(input.id, await resolveActor(deps, ctx.meta));
       return { id: input.id };
     },
     "ops.checkNow": async (input, ctx) => {
@@ -115,7 +116,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     },
     "ops.ack": async (input, ctx) => {
       await scope(ctx, deps.repo.incident(input.id)?.org);
-      return watch.ack(input.id);
+      return watch.ack(input.id, await resolveActor(deps, ctx.meta));
     },
     "ops.settings": async (input, ctx) => {
       owner(ctx);
@@ -151,7 +152,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     },
     "watch.remove": async (input, ctx) => {
       await agentMayChange(ctx, input.id);
-      await engine.remove(input.id);
+      await engine.remove(input.id, await resolveActor(deps, ctx.meta));
       return { id: input.id };
     },
     "watch.checkNow": async (input) => engine.checkNow(input.id),
@@ -161,7 +162,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       if (agent && input.paused && (input.note === undefined || input.note === "")) {
         throw new UserError("Say why in note: a paused watch shows its reason to the owner.", 400);
       }
-      return engine.pause(input.id, input.paused, agent ? "agent" : "owner", input.note);
+      return engine.pause(input.id, input.paused, await resolveActor(deps, ctx.meta), input.note);
     },
     "watch.snooze": async (input, ctx) => {
       await agentMayChange(ctx, input.id);

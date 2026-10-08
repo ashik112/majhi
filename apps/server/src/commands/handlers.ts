@@ -16,6 +16,7 @@ import type {
 } from "@majhi/shared";
 import { CHAT_BRIEF, isSystemFolder, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
 import type { z } from "zod";
+import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
@@ -181,6 +182,8 @@ export function createHandlers({
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
+  const who = async (ctx: CommandContext): Promise<string> =>
+    actorName(await resolveActor(services, ctx.meta));
   const chatDeps = () => ({
     config,
     store: services.store,
@@ -306,7 +309,7 @@ export function createHandlers({
   };
   return {
     ...scheduleHandlers(services.automation.schedules),
-    ...triggerHandlers(new TriggerAlias(services.ops.engine)),
+    ...triggerHandlers(new TriggerAlias(services.ops.engine), services),
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
@@ -964,20 +967,20 @@ export function createHandlers({
     "tasks.slots": async () =>
       services.runs.capacity(Object.keys((await services.config.sections()).accounts)),
     "tasks.stop": async (input, ctx) => {
-      const stopped = await services.tasks.stop(input.id, "owner", undefined, actorName(ctx.meta.actor));
+      const stopped = await services.tasks.stop(input.id, "owner", undefined, await who(ctx));
       // The owner's own stop: autonomous mode does not restart this task on Resume.
       if (ctx.meta.actor.kind === "owner") services.autonomy.forgetHold(input.id);
       return stopped;
     },
     "tasks.update": (input) => services.tasks.update(input),
-    "tasks.close": (input, ctx) =>
+    "tasks.close": async (input, ctx) =>
       services.tasks.close(input.id, {
-        by: actorName(ctx.meta.actor),
+        by: await who(ctx),
         agent: ctx.meta.actor.kind === "agent",
         whenUnshipped: input.unshipped ?? "refuse",
       }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
-    "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
+    "tasks.merge": async ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
       if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
         throw new UserError("Only the owner can ship a protected repo, from Ship in the task.", 409);
       }
@@ -996,17 +999,16 @@ export function createHandlers({
             ...input,
             pushLocalCommits,
             createRemoteBranch,
-            by: actorName(ctx.meta.actor),
+            by: await who(ctx),
           })
-        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) });
+        : services.tasks.merge({ ...input, by: await who(ctx) });
     },
     // A fast-forward only, never forced: an agent asks through the owner's approval policy.
-    "tasks.updateTarget": (input, ctx) =>
-      services.mrs.updateTarget({ ...input, by: actorName(ctx.meta.actor) }),
-    "tasks.syncBase": (input, ctx) =>
+    "tasks.updateTarget": async (input, ctx) => services.mrs.updateTarget({ ...input, by: await who(ctx) }),
+    "tasks.syncBase": async (input, ctx) =>
       services.mrs.syncBase({
         ...input,
-        by: actorName(ctx.meta.actor),
+        by: await who(ctx),
         // The task's own agent asks mid-turn; the clean-worktree check still guards its files.
         fromOwnTask: ctx.meta.actor.kind === "agent" && ctx.meta.task === input.id,
       }),
@@ -1020,7 +1022,7 @@ export function createHandlers({
         throw new UserError("Only the owner can queue a merge for when the checks pass.", 409);
       }
       return {
-        queued: await services.queuedMerges.request({ task: id, ...input, by: actorName(ctx.meta.actor) }),
+        queued: await services.queuedMerges.request({ task: id, ...input, by: await who(ctx) }),
       };
     },
     "tasks.cancelQueuedMerge": async (input, ctx) => {
@@ -1030,11 +1032,11 @@ export function createHandlers({
       services.queuedMerges.cancel(input.id);
       return { ok: true as const };
     },
-    "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
+    "tasks.push": async (input, ctx) => services.mrs.push(input.id, input.deleteAfter, await who(ctx)),
     "tasks.resolveShip": async (input, ctx) => ({
       task: await services.pendingShips.request({
         ...input,
-        by: actorName(ctx.meta.actor),
+        by: await who(ctx),
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
@@ -1063,13 +1065,15 @@ export function createHandlers({
         ...(ctx.meta.actor.kind === "agent" ? { id: ctx.meta.actor.id } : {}),
         task: ctx.meta.task,
       }),
-    "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
+    "tasks.cancelShip": async (input, ctx) => ({
+      task: services.pendingShips.cancel(input.id, await resolveActor(services, ctx.meta)),
+    }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
     "tasks.setMergeOrder": (input) => services.mrs.setOrder(input.id, input.order),
-    "tasks.openMrs": (input, ctx) =>
-      services.mrs.open(input.id, { into: input.into, targets: input.targets }, actorName(ctx.meta.actor)),
+    "tasks.openMrs": async (input, ctx) =>
+      services.mrs.open(input.id, { into: input.into, targets: input.targets }, await who(ctx)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
     "tasks.mergeMrs": (input, ctx) =>
       services.mrs.merge(input.id, ctx.meta.actor.kind === "agent" ? "poll" : "owner"),
@@ -1276,13 +1280,13 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
-    "room.cardAction": (input, ctx) => {
+    "room.cardAction": async (input, ctx) => {
       if (input.confirmChecks !== undefined && ctx.meta.actor.kind !== "owner") {
         throw new UserError("Only the owner can merge past a failed check.", 409);
       }
       return services.cardActions.act({
         ...input,
-        by: actorName(ctx.meta.actor),
+        by: await who(ctx),
         agent: ctx.meta.actor.kind === "agent",
       });
     },
@@ -1425,7 +1429,7 @@ export function createHandlers({
       services.cleanup.run(
         input.tasks,
         input.days ?? (await config.settings()).cleanup.after_days,
-        actorName(ctx.meta.actor),
+        await who(ctx),
         input.cachesOnly,
       ),
     "health.run": () => (health ? health.run() : notBuilt()),

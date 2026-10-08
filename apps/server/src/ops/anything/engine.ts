@@ -1,10 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { isAbsolute, normalize } from "node:path";
 import {
+  type Actor,
   type AutomationAction,
   type AutomationRun,
+  CAPTAIN,
   databaseQueryProblem,
+  didWords,
+  MAJHI,
   type OpsIncident,
+  OWNER,
   PRIVATE,
   readOnlySqlProblem,
   type UsageSource,
@@ -192,14 +197,14 @@ function sampled(list: WatchSample[]): WatchSample[] {
 /** Who paused a watch and why, in a sentence. */
 function pausedWhy(state: WatchState): { by: "owner" | "agent" | "unrecorded"; why: string } {
   if (state.pausedBy === "owner") {
-    return {
-      by: "owner",
-      why: state.pausedNote === undefined ? "You paused it." : `You paused it: ${state.pausedNote}`,
-    };
+    const who = didWords(state.pausedActor ?? OWNER, "paused", "it");
+    return { by: "owner", why: state.pausedNote === undefined ? `${who}.` : `${who}: ${state.pausedNote}` };
   }
   if (state.pausedBy === "agent") {
     const note = state.pausedNote ?? "No reason was given";
-    return { by: "agent", why: `An agent paused it: ${note}. It resumes by itself once it reads fine.` };
+    const who =
+      state.pausedActor === undefined ? "An agent paused it" : didWords(state.pausedActor, "paused", "it");
+    return { by: "agent", why: `${who}: ${note}. It resumes by itself once it reads fine.` };
   }
   return {
     by: "unrecorded",
@@ -400,21 +405,17 @@ export class WatchEngine {
     return this.view(this.mustGet(stored.id), await this.ctx(input.org));
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, by?: Actor): Promise<void> {
     const w = this.mustGet(id);
     this.deps.action?.forget(id);
     forgetCommand(id);
-    await this.deps.ops.closeSubject(id, "No longer watched");
+    await this.deps.ops.closeSubject(id, "No longer watched", by);
     this.deps.repo.remove(w.id);
     this.deps.changed();
   }
 
-  async pause(
-    id: string,
-    paused: boolean,
-    by: "owner" | "agent" = "owner",
-    note?: string,
-  ): Promise<WatchView> {
+  async pause(id: string, paused: boolean, actor: Actor = OWNER, note?: string): Promise<WatchView> {
+    const by = actor.kind === "owner" ? "owner" : "agent";
     const w = this.mustGet(id);
     // An action-only watch looks afresh on resume: what changed while it was paused does not fire it.
     const afresh = w.paused && !paused && w.def.fire.run !== undefined && !w.def.fire.alert.on;
@@ -424,12 +425,19 @@ export class WatchEngine {
       : { ...w.state };
     delete base.pausedBy;
     delete base.pausedNote;
+    delete base.pausedActor;
     const state: WatchState = paused
-      ? { ...base, pausedBy: by, ...(note === undefined || note === "" ? {} : { pausedNote: note }) }
+      ? {
+          ...base,
+          pausedBy: by,
+          pausedActor: actor,
+          ...(note === undefined || note === "" ? {} : { pausedNote: note }),
+        }
       : base;
     this.deps.repo.save({ ...w, state, paused });
     // A watch the owner stopped looks at nothing: its open incident closes, with a line saying why.
-    if (paused && by === "owner") await this.deps.ops.closeSubject(id, "You paused the watch");
+    if (paused && by === "owner")
+      await this.deps.ops.closeSubject(id, didWords(actor, "paused", "the watch"), actor);
     this.deps.changed();
     return this.view(this.mustGet(id), await this.ctx(w.org));
   }
@@ -506,7 +514,13 @@ export class WatchEngine {
     this.deps.repo.save({ ...w, state });
     const open = this.deps.ops.openIncidentOf(w.id);
     if (input.found !== undefined && open !== undefined) {
-      this.deps.ops.note(open.id, "action", `Captain: ${input.found.replace(/\s+/g, " ").slice(0, 270)}`);
+      this.deps.ops.note(
+        open.id,
+        "action",
+        `Captain: ${input.found.replace(/\s+/g, " ").slice(0, 270)}`,
+        undefined,
+        CAPTAIN,
+      );
     }
     if (
       w.def.spec.kind === "custom" &&
@@ -662,7 +676,7 @@ export class WatchEngine {
     await this.look(w.id, true);
     const after = this.deps.repo.get(w.id);
     if (after === undefined || !after.paused || !after.state.readable) return;
-    await this.pause(w.id, false);
+    await this.pause(w.id, false, MAJHI);
   }
 
   private async askCaptain(w: StoredWatch): Promise<void> {
@@ -1040,13 +1054,17 @@ export class WatchEngine {
         this.deps.ops.note(
           incident,
           "action",
-          `${by === "auto" ? "Fixed by majhi" : "You approved"}: ${line}`,
+          `${by === "auto" ? "Fixed by majhi" : didWords(OWNER, "approved")}: ${line}`,
+          undefined,
+          by === "auto" ? MAJHI : OWNER,
         );
       } catch (err) {
         this.deps.ops.note(
           incident,
           "action",
           `A fix did not run: ${err instanceof Unavailable ? err.message : "it failed"}`,
+          undefined,
+          MAJHI,
         );
       }
     }
@@ -1077,6 +1095,8 @@ export class WatchEngine {
         told
           ? `Asked the captain: ${forCaptain.map((id) => FIX_META[id].short).join(", ")}`
           : `The captain could not be asked: Stop everything is on. ${forCaptain.map((id) => FIX_META[id].short).join(", ")} waits.`,
+        undefined,
+        MAJHI,
       );
       if (told) done.push(...forCaptain);
       else unasked = true;

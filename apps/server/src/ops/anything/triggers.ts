@@ -1,5 +1,7 @@
 import {
+  type Actor,
   type AutomationRun,
+  OWNER,
   type TriggerCreateInput,
   type TriggerUpdateInput,
   type TriggerView,
@@ -7,7 +9,9 @@ import {
   type WatchDef,
   type WatchView,
 } from "@majhi/shared";
+import { resolveActor } from "../../actor.ts";
 import { watchIdOf } from "../../automation/migrate.ts";
+import type { Lanes } from "../../captain/lanes.ts";
 import type { CommandHandlers } from "../../commands/handlers.ts";
 import { UserError } from "../../errors.ts";
 import type { WatchEngine } from "./engine.ts";
@@ -96,13 +100,13 @@ export class TriggerAlias {
     return view(await this.engine.save({ id, org: now.org, def }));
   }
 
-  async pause(id: string, paused: boolean, by: "owner" | "agent" = "owner"): Promise<TriggerView> {
+  async pause(id: string, paused: boolean, by: Actor = OWNER): Promise<TriggerView> {
     return view(
       await this.engine.pause(
         idOf(id),
         paused,
         by,
-        by === "agent" ? "paused through triggers.pause" : undefined,
+        by.kind === "owner" ? undefined : "paused through triggers.pause",
       ),
     );
   }
@@ -130,16 +134,20 @@ type TriggerCommand =
   | "triggers.delete";
 
 /** The `triggers.*` commands. The command table spreads these in. */
-export function triggerHandlers(triggers: TriggerAlias): Pick<CommandHandlers, TriggerCommand> {
+export function triggerHandlers(
+  triggers: TriggerAlias,
+  deps: { lanes: Pick<Lanes, "boss"> },
+): Pick<CommandHandlers, TriggerCommand> {
   return {
     "triggers.list": (input) => triggers.list(input.org),
     "triggers.get": (input) => triggers.get(input.id),
     "triggers.runs": async (input) => triggers.runs(input.id, input.limit),
     "triggers.create": (input) => triggers.create(input),
     "triggers.update": (input) => triggers.update(input),
-    "triggers.pause": (input, ctx) =>
-      triggers.pause(input.id, true, ctx.meta.actor.kind === "agent" ? "agent" : "owner"),
-    "triggers.resume": (input) => triggers.pause(input.id, false),
+    "triggers.pause": async (input, ctx) =>
+      triggers.pause(input.id, true, await resolveActor(deps, ctx.meta)),
+    "triggers.resume": async (input, ctx) =>
+      triggers.pause(input.id, false, await resolveActor(deps, ctx.meta)),
     "triggers.runNow": (input) => triggers.runNow(input.id),
     "triggers.delete": (input) => triggers.delete(input.id),
   };
