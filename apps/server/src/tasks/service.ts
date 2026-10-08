@@ -1333,7 +1333,7 @@ export class TaskService {
           });
           this.note(id, `${repo.project}: stacked on ${stack.task}'s branch ${stack.branch}.`);
         }
-        for (const w of result.warnings) this.warn(id, `${repo.project}: ${w}`);
+        for (const w of result.warnings) this.warn(id, `${repo.project}: ${w}`, result.warningAction);
         made = true;
       } catch (err) {
         if (err instanceof WorktreeProblem) throw new UserError(`${repo.project}: ${err.message}`, 409);
@@ -4271,11 +4271,16 @@ export class TaskService {
     return this.files.search(this.get(id), query);
   }
 
-  private warn(task: Task["id"], text: string): void {
+  private warn(
+    task: Task["id"],
+    text: string,
+    action?: Extract<RoomItem, { type: "system" }>["action"],
+  ): void {
     this.deps.room.post(task, `warn:${randomUUID()}`, {
       type: "system",
       level: "warn",
       text,
+      ...(action === undefined ? {} : { action }),
     });
   }
 }

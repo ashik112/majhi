@@ -495,6 +495,19 @@ export class OpsWatch {
     return this.deps.ruleOff?.(org, rule) === true;
   }
 
+  /** The persisted healthy window, only while every check of an open incident is green. */
+  recoveryEndsAt(id: string): string | undefined {
+    if (this.openIncident(id) === undefined) return undefined;
+    const states = this.deps.repo.states(id);
+    if (
+      states.length === 0 ||
+      !states.every((s) => s.lastOk === true && !s.unknown && s.greenSince !== undefined)
+    )
+      return undefined;
+    const since = Math.max(...states.map((s) => Date.parse(s.greenSince ?? this.at())));
+    return new Date(since + this.settings().resolveMin * 60_000).toISOString();
+  }
+
   /** Opens, refreshes or resolves the incident of a subject from the persisted window. Returns the changes made. */
   async evaluate(subject: Subject): Promise<number> {
     const states = this.deps.repo.states(subject.id);

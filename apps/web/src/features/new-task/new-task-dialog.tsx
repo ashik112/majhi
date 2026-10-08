@@ -469,7 +469,7 @@ export function NewTaskDialog({
                     setAskMention(false);
                   }}
                 >
-                  No project
+                  Continue without a project
                 </Button>
               </div>
             )}
@@ -520,6 +520,14 @@ export function NewTaskDialog({
                 </li>
               ))}
             </ul>
+          )}
+
+          {kindShown && chosen.length === 0 && (
+            <p role="status" className="m-0 text-sm text-amber">
+              {kind === "chat"
+                ? "Starts a chat. No project selected; no repository attached."
+                : "No project selected."}
+            </p>
           )}
 
           {failure && (

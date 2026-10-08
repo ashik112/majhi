@@ -18,6 +18,15 @@ const status = (
   });
 const git = (s: ReturnType<typeof status>) => s.steps.find((x) => x.id === "git");
 
+it("Private completes workspace setup without a client workspace", () => {
+  const s = status({ private: { name: "Private" } }, {}, {});
+  expect(s.steps.find((step) => step.id === "workspaces")).toEqual({
+    id: "workspaces",
+    done: true,
+    detail: "1 workspace",
+  });
+});
+
 describe("first run: git accounts step", () => {
   it("is not done with nothing configured", () => {
     expect(git(status({ private: { name: "Private" } }, {}, {}))?.done).toBe(false);

@@ -906,6 +906,10 @@ function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
           <LogLink task={task} log={failed.log} />
         ) : item.action === "memory-retry" && task !== undefined ? (
           <RetryMemory task={task} />
+        ) : item.action === "git-access" ? (
+          <Button asChild size="sm" variant="ghost" className="h-6 px-2">
+            <PageLink page="connections">Check Git access</PageLink>
+          </Button>
         ) : item.action === "runner-memory" ? (
           <Button asChild size="sm" variant="ghost" className="h-6 px-2">
             <PageLink page="setup" search={{ section: "containers" }}>

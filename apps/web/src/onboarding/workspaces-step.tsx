@@ -12,7 +12,7 @@ import { GroupTitle, StepFrame, useStep } from "./step-frame";
 
 /**
  * Workspaces: Private is always there. Add a workspace per client or team by name and color; the
- * id follows from the name. Owners who only work for themselves skip it.
+ * id follows from the name. Private completes the step for owners who only work for themselves.
  */
 export function WorkspacesStep() {
   const step = useStep();
@@ -20,7 +20,16 @@ export function WorkspacesStep() {
   const others = workspaces.filter((w) => w.id !== PRIVATE).length;
 
   return (
-    <StepFrame note={others === 0 ? "Only working for yourself? Private is enough." : undefined}>
+    <StepFrame
+      note={others === 0 ? "Only working for yourself? Private is enough." : undefined}
+      primary={
+        others === 0 ? (
+          <Button variant="primary" size="lg" onClick={step.next}>
+            Continue with Private
+          </Button>
+        ) : undefined
+      }
+    >
       <div className="flex flex-col gap-7">
         <ul aria-label="Workspaces" className="m-0 flex list-none flex-col gap-1.5 p-0">
           {(workspaces.length > 0

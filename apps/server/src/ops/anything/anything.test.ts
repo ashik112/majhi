@@ -413,6 +413,24 @@ function opsWorldWithModel(ask: () => Promise<unknown>): OpsWorld {
 }
 
 describe("watch recovery between readings", () => {
+  it("does not report a failed first website check as healthy", async () => {
+    const w = world();
+    const view = await w.ops.engine.save({
+      org: "acme",
+      def: WatchDefSchema.parse({
+        name: "Acme API",
+        spec: { kind: "website", url: "https://api.acme.example/health" },
+        condition: { type: "down" },
+        everyMin: 5,
+      }),
+    });
+    expect(view.status).toBe("unknown");
+    expect(view.word).toBe("Confirming failure");
+    expect(view.transition?.kind).toBe("confirming");
+    expect(w.ops.watch.openIncidents()).toHaveLength(0);
+    await w.ops.engine.checkNow(view.id);
+    expect((await w.ops.engine.show(view.id)).status).toBe("alerting");
+  });
   it("closes the incident after the green window without waiting for the next reading", async () => {
     const w = world();
     const { id } = await firing(w);
@@ -420,6 +438,12 @@ describe("watch recovery between readings", () => {
     w.backend.sqlAnswer = () => "0.4";
     await w.ops.engine.look(id, true);
     expect(w.ops.watch.openIncidents().some((i) => i.watch === id)).toBe(true);
+    const recovering = await w.ops.engine.show(id);
+    expect(recovering.word).toBe("Recovering");
+    expect(recovering.transition).toEqual({
+      kind: "recovering",
+      until: new Date(Date.parse(recovering.lastAt ?? "") + MIN).toISOString(),
+    });
     w.advance(w.ops.watch.settings().resolveMin * MIN);
     const queries = w.backend.sql.length;
     await w.ops.engine.tick();

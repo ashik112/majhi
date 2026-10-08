@@ -92,7 +92,7 @@ export function deriveStatus(input: DerivedInput): OnboardingStatus {
   const done: Record<OnboardingStepId, boolean> = {
     welcome,
     account,
-    workspaces: workspaces.some((w) => w.id !== PRIVATE),
+    workspaces: workspaces.length > 0,
     git: needGit.length > 0 && needGit.every((w) => w.git.some((g) => g.signedIn)),
     projects: input.projects.length > 0,
     boss,

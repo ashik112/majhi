@@ -1116,7 +1116,7 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The hand-off check step this line reports as failed: the room shows its log and a rerun beside it. */
     failed: HandoffFailedSchema.optional(),
     /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
-    action: z.enum(["memory-retry", "runner-memory"]).optional(),
+    action: z.enum(["memory-retry", "runner-memory", "git-access"]).optional(),
     /** A pointer line in a workspace thread: the task this line is about ("Opened ACM-3: api is down"). Linked, never copied. */
     pointer: TaskIdSchema.optional(),
   }),

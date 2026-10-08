@@ -20,7 +20,7 @@ export function FinishStep() {
   return (
     <StepFrame
       skippable={false}
-      note={left.length > 0 ? "Anything left waits in Hub setup." : undefined}
+      note={left.length > 0 ? "Resume setup in Settings > Overview." : undefined}
       primary={
         <Button variant="primary" size="lg" onClick={step.next}>
           Write the first task
