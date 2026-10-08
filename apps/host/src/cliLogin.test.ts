@@ -5,6 +5,7 @@ import type { HostLoginProgress } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { CliLogins, loginDir } from "./cliLogin.ts";
 import { findExecutable } from "./paths.ts";
+import { writeFastExecutable } from "./testing/fastBin.ts";
 
 const TOKEN = "gho_FakeWorkspaceToken1234567890";
 const GL_TOKEN = "glo_FakeGitLabAccess99887766";
@@ -49,31 +50,43 @@ async function fakeCli(
   const seen = join(dir, `${cli}-seen.txt`);
   const approve = join(dir, `${cli}-approve`);
   const pid = join(dir, `${cli}-pid`);
-  const configDirVar = cli === "gh" ? "GH_CONFIG_DIR" : "GLAB_CONFIG_DIR";
   const config =
     cli === "gh"
       ? `github.com:\n    users:\n        octo-acme:\n            oauth_token: ${TOKEN}\n    git_protocol: https\n    oauth_token: ${TOKEN}\n    user: octo-acme\n`
       : `hosts:\n  gitlab.com:\n    token: ${GL_TOKEN}\n    oauth2_refresh_token: ${GL_REFRESH}\n    oauth2_expiry_date: 2026-10-03T14:00:00+02:00\n    is_oauth2: "true"\n`;
   const file = cli === "gh" ? "hosts.yml" : "config.yml";
-  const print =
-    cli === "gh"
-      ? `echo "! One-time code (AB12-CD34) copied to clipboard" >&2\n"$BROWSER" "https://github.com/login/device"\necho "Open this URL to continue in your web browser: https://github.com/login/device" >&2`
-      : `"$BROWSER" "https://gitlab.com/oauth/authorize?client_id=abc&state=xyz"`;
+  // The same program for every test (fastBin.ts): it finds its files from where it sits and takes
+  // what differs between tests from the files `<cli>-opts` and `<cli>-config`.
   const script = `#!/bin/sh
-echo $$ > "${pid}"
+D=$(dirname "$0")/..
+CLI=$(basename "$0")
+EXIT=0; NOTOKEN=; NOISE=
+. "$D/$CLI-opts"
+echo $$ > "$D/$CLI-pid"
 {
-  echo "CONFIG=$${configDirVar}"
+  echo "CONFIG=$GH_CONFIG_DIR$GLAB_CONFIG_DIR"
   echo "HOME=$HOME"
   echo "GH_TOKEN=$GH_TOKEN"
   echo "ARGS=$*"
-} > "${seen}"
-${print}
-${options.noise === undefined ? "" : `echo "${options.noise}" >&2`}
-while [ ! -f "${approve}" ]; do sleep 0.05; done
-${options.noToken === true ? "" : `printf '%s' '${config}' > "$${configDirVar}/${file}"`}
-exit ${options.exit ?? 0}
+} > "$D/$CLI-seen.txt"
+if [ "$CLI" = gh ]; then
+  echo "! One-time code (AB12-CD34) copied to clipboard" >&2
+  "$BROWSER" "https://github.com/login/device"
+  echo "Open this URL to continue in your web browser: https://github.com/login/device" >&2
+else
+  "$BROWSER" "https://gitlab.com/oauth/authorize?client_id=abc&state=xyz"
+fi
+[ -z "$NOISE" ] || echo "$NOISE" >&2
+while [ ! -f "$D/$CLI-approve" ]; do sleep 0.05; done
+[ -n "$NOTOKEN" ] || cp "$D/$CLI-config" "$GH_CONFIG_DIR$GLAB_CONFIG_DIR/${file}"
+exit $EXIT
 `;
-  await writeFile(join(bin, cli), script, { mode: 0o755 });
+  await writeFastExecutable(join(bin, cli), script);
+  await writeFile(join(dir, `${cli}-config`), config);
+  await writeFile(
+    join(dir, `${cli}-opts`),
+    `EXIT=${options.exit ?? 0}\nNOTOKEN=${options.noToken === true ? "1" : ""}\nNOISE='${options.noise ?? ""}'\n`,
+  );
   return {
     path: `${bin}:${PATH}`,
     seen: async () => readFile(seen, "utf8"),

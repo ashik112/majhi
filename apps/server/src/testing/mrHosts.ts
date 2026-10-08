@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { writeFastExecutable } from "./fastBin.ts";
+import { writeFastExecutable } from "@majhi/acp/testing";
 
 const run = promisify(execFile);
 

@@ -1,9 +1,10 @@
-import { access, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI_TOOLS, type CliToolDef, type HostLoginProgress } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { CliToolLogins, profileFolder } from "./cliTools.ts";
+import { writeFastExecutable } from "./testing/fastBin.ts";
 
 const TOKEN = "tok_FakeWorkspaceToken1234567890abcdef";
 const PATH = process.env.PATH ?? "/usr/bin:/bin";
@@ -33,7 +34,7 @@ const exists = (path: string) =>
  */
 async function fakeTool(dir: string): Promise<string> {
   const file = join(dir, "faketool");
-  await writeFile(
+  await writeFastExecutable(
     file,
     `#!/bin/sh
 cmd="$1"; shift
@@ -60,7 +61,6 @@ case "$cmd" in
   logout) rm -rf "$XDG_CONFIG_HOME/fake"; touch "$XDG_CONFIG_HOME/logged-out" ;;
 esac
 `,
-    { mode: 0o755 },
   );
   return file;
 }
