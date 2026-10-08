@@ -9,6 +9,7 @@ import {
   type ConfigState,
   type ConnectionView,
   collapseHome,
+  connectionFailing,
   dockerRuntimeName,
   FAILURE_ACTION_LABEL,
   failureAction,
@@ -143,7 +144,7 @@ export function connectionCheck(view: ConnectionView): Check {
     name: `${view.name} (${view.org})`,
     org: view.org,
   };
-  if (view.problems.length > 0) {
+  if (view.problems.length > 0 && !connectionFailing(view.health)) {
     return {
       ...base,
       status: "warn",
@@ -417,7 +418,7 @@ async function checkSshHosts(
       group: "ssh",
       name: `SSH host ${r.host}`,
       status: r.state === "reachable" ? "pass" : "warn",
-      detail: `${r.state}: ${r.detail}`,
+      detail: r.detail,
     };
     const reload = r.state === "auth-failed" && !agentOff && helperConnected(host);
     if (reload) check.fix = { label: "Reload SSH keys" };

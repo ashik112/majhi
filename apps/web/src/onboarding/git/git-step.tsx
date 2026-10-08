@@ -1,5 +1,5 @@
 import { type GitLogin, type OnboardingWorkspace, PRIVATE } from "@majhi/shared";
-import { ChevronDown, CircleCheck } from "lucide-react";
+import { ChevronDown, CircleAlert, CircleCheck } from "lucide-react";
 import * as m from "motion/react-m";
 import { useMemo, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
@@ -30,11 +30,14 @@ export function GitStep() {
   const [openPick, setOpen] = useState<string | null>();
   const logins = useGitLogins();
   const names = useMemo(() => new Map(workspaces.map((w) => [w.id, w.name])), [workspaces]);
-  const waiting = workspaces.find((w) => needsGit(w) && !w.git.some((g) => g.signedIn));
+  const waiting = workspaces.find(
+    (w) => needsGit(w) && (w.missing.length > 0 || !w.git.some((g) => g.signedIn)),
+  );
+  const stillToSignIn = [...new Set(workspaces.filter(needsGit).flatMap((w) => w.missing))];
   const openId = openPick === undefined ? (waiting?.id ?? null) : openPick;
 
   return (
-    <StepFrame>
+    <StepFrame note={stillToSignIn.length > 0 ? `Still to sign in: ${stillToSignIn.join(", ")}` : undefined}>
       <ul aria-label="Workspaces" className="m-0 flex list-none flex-col gap-2 p-0">
         {workspaces.map((w) => (
           <WorkspaceGit
@@ -99,7 +102,13 @@ function WorkspaceGit({
         />
         <span className="min-w-0 truncate text-body font-semibold text-fg">{workspace.name}</span>
         <span className="ml-auto flex min-w-0 items-center gap-2 text-sm">
-          {first ? (
+          {first && workspace.missing.length > 0 ? (
+            <>
+              <HostGlyph host={first.kind} />
+              <span className="truncate text-fg-soft">Sign in to {workspace.missing.join(", ")}</span>
+              <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-amber" />
+            </>
+          ) : first ? (
             <>
               <HostGlyph host={first.kind} />
               <span className="truncate text-fg-soft">

@@ -201,13 +201,13 @@ esac`,
       expect((await tester().test("acme-keys")).failure).toMatchObject({ reason: "tool-missing" });
     });
 
-    it("ssh: exit 255 is an unreachable host, another exit a refused command, none a timeout", async () => {
+    it("ssh: exit 255 is an unreachable host (or one that refuses every key), another exit a refused command, none a timeout", async () => {
       await service.create(
         { org: "acme", id: "acme-box", type: "ssh", name: "Box", fields: { alias: "acme-prod" } },
         "connections.create",
         OWNER,
       );
-      const withCode = (code: number | null) =>
+      const withCode = (code: number | null, output = "Permission denied (publickey)") =>
         new ConnectionTester({
           connections: service,
           secrets,
@@ -215,9 +215,12 @@ esac`,
           base: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
           scratchRoot: async () => scratchRoot,
           hostHome: dir,
-          ssh: async (): Promise<SshRun> => ({ code, output: "Permission denied (publickey)" }),
+          ssh: async (): Promise<SshRun> => ({ code, output }),
         });
-      expect((await withCode(255).test("acme-box")).failure?.reason).toBe("unreachable");
+      expect((await withCode(255, "Connection refused").test("acme-box")).failure?.reason).toBe(
+        "unreachable",
+      );
+      expect((await withCode(255).test("acme-box")).failure?.reason).toBe("rejected");
       expect((await withCode(1).test("acme-box")).failure?.reason).toBe("unexpected");
       expect((await withCode(null).test("acme-box")).failure?.reason).toBe("timeout");
     });

@@ -61,6 +61,15 @@ export function rowStatus(
     case "failed":
     case "needs-attention": {
       const action = failureAction(view.type, health.reason);
+      if (TRANSIENT_FAILURES.has(health.reason)) {
+        return {
+          lamp: "paused",
+          word: "Retrying",
+          line: failureLine(view),
+          action,
+          actionLabel: FAILURE_ACTION_LABEL[action],
+        };
+      }
       return {
         lamp: "needs",
         word: health.state === "failed" ? "Failed" : "Needs attention",

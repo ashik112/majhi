@@ -170,7 +170,7 @@ export function ProjectDetail({
       )}
       {project.exists && (
         <div className="mt-4">
-          <ProjectCardSection project={project.id} />
+          <ProjectCardSection project={project.id} org={project.org} />
         </div>
       )}
       <DeploysAnchor project={project} />

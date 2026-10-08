@@ -35,6 +35,8 @@ interface Fit {
   scale: number;
   x: number;
   y: number;
+  /** The box width, so a sign cropped by a narrow panel can slide back inside it. */
+  width: number;
 }
 
 function useFit(box: React.RefObject<HTMLElement | null>): Fit | null {
@@ -45,7 +47,7 @@ function useFit(box: React.RefObject<HTMLElement | null>): Fit | null {
     const measure = () => {
       const { width, height } = el.getBoundingClientRect();
       const scale = Math.max(width / VIEW_W, height / VIEW_H);
-      setFit({ scale, x: (width - VIEW_W * scale) / 2, y: height - VIEW_H * scale });
+      setFit({ scale, x: (width - VIEW_W * scale) / 2, y: height - VIEW_H * scale, width });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -146,7 +148,7 @@ export function RiverScene({
                   key={s.id}
                   className="absolute"
                   style={{
-                    left: fit.x + p.sign.x * fit.scale - w / 2,
+                    left: Math.max(6, Math.min(fit.width - w - 6, fit.x + p.sign.x * fit.scale - w / 2)),
                     top: fit.y + p.sign.y * fit.scale - h,
                     width: w,
                     height: h,

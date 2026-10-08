@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { SignIn } from "@/features/git-signin/sign-in";
 import { useConnectCatalog, useConnectCommand, useConnectStatus } from "@/lib/connect-queries";
-import { useConnectionCommand } from "@/lib/connection-queries";
+import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { useGitLogins } from "@/lib/studio-queries";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
@@ -167,6 +167,14 @@ export function GitHostBody({
   const ssh = (logins.data?.hosts ?? [])
     .find((h) => h.host === DEFAULT_GIT_HOST[kind])
     ?.logins.find((l) => l.via === "ssh");
+  const existing = useConnections();
+  const signedIn = (existing.data ?? []).find(
+    (c) =>
+      c.org === org &&
+      c.type === "git" &&
+      (c.fields.provider?.value ?? "gitlab") === kind &&
+      (c.fields.host?.value ?? DEFAULT_GIT_HOST[kind]) === DEFAULT_GIT_HOST[kind],
+  );
   // The Mac sign-in starts a real login on this computer, so it starts only when the owner asks.
   const [mode, setMode] = useState<"choose" | "mac" | "token">(kind === "bitbucket" ? "token" : "choose");
   const name = orgs.find((o) => o.id === org)?.name ?? org;
@@ -176,7 +184,7 @@ export function GitHostBody({
         <fieldset className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0">
           <legend className="sr-only">How to sign in</legend>
           <Button variant={mode === "mac" ? "secondary" : "ghost"} size="sm" onClick={() => setMode("mac")}>
-            Sign in on this Mac
+            Sign in with {kind === "github" ? "gh" : "glab"}
           </Button>
           <Button
             variant={mode === "token" ? "secondary" : "ghost"}
@@ -185,18 +193,26 @@ export function GitHostBody({
           >
             Paste a token
           </Button>
-          <span className="text-sm text-fg-faint">
-            {mode === "token"
-              ? "Works for self-hosted servers too."
-              : `Uses the ${kind === "github" ? "gh" : "glab"} sign-in on this Mac. ${kind === "github" ? "GitHub Enterprise" : "A self-managed GitLab"} takes a token.`}
-          </span>
         </fieldset>
       )}
-      {ssh !== undefined && (
+      {signedIn !== undefined ? (
         <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-sm text-fg-muted text-pretty">
-          git already works over SSH on this Mac as <span className="font-mono text-fg">{ssh.account}</span>.
-          Add {kind === "bitbucket" ? "the API token" : "a sign-in"} for pull requests and the API.
+          {name} is already signed in to {DEFAULT_GIT_HOST[kind]}
+          {signedIn.health?.state === "connected" && signedIn.health.account !== undefined ? (
+            <>
+              {" "}
+              as <span className="font-mono text-fg">{signedIn.health.account}</span>
+            </>
+          ) : null}
+          . Add another sign-in only to replace it.
         </p>
+      ) : (
+        ssh !== undefined && (
+          <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-sm text-fg-muted text-pretty">
+            git already works over SSH as <span className="font-mono text-fg">{ssh.account}</span>. Add{" "}
+            {kind === "bitbucket" ? "the API token" : "a sign-in"} for pull requests and the API.
+          </p>
+        )
       )}
       {mode === "token" ? (
         <TokenForm org={org} git={{ kind }} onDone={onDone} />

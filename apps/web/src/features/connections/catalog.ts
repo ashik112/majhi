@@ -16,8 +16,8 @@ export const GROUPS: readonly { id: MethodGroup; title: string; blurb: string }[
   },
   {
     id: "on-this-mac",
-    title: "Sign in on this Mac",
-    blurb: "A command-line sign-in through majhi's helper. The login stays in this workspace's folder.",
+    title: "Sign in with a command-line tool",
+    blurb: "The tool's own sign-in, run by majhi. The login stays in this workspace's folder.",
   },
   {
     id: "token",
@@ -53,7 +53,7 @@ export const TIME: Record<MethodGroup, string> = {
 /** The word for a group in a row's tooltip and the dialog. */
 export const METHOD_WORD: Record<MethodGroup, string> = {
   "one-click": "One click",
-  "on-this-mac": "On this Mac",
+  "on-this-mac": "Command line",
   token: "Token",
   "own-app": "Your own app",
   chat: "Chat app",

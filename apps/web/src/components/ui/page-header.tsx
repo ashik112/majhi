@@ -32,7 +32,7 @@ export function PageHeader({
     >
       <div className={cn("flex min-w-0 items-baseline gap-3", bottom && "pb-2")}>
         <h1 className="shrink-0 text-[15px] leading-5 font-semibold tracking-[-0.01em] text-fg">{title}</h1>
-        {subtitle && <div className="min-w-0 truncate text-sm text-fg-muted">{subtitle}</div>}
+        {subtitle && <div className="min-w-0 line-clamp-2 text-sm text-fg-muted">{subtitle}</div>}
       </div>
       {children && (
         <div className={cn("ml-auto flex shrink-0 items-center gap-3", bottom && "self-end")}>{children}</div>

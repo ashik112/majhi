@@ -1,11 +1,18 @@
 import type { CardCommands, ProjectCard, ReadinessItem } from "@majhi/shared";
-import { Check, RefreshCw, X } from "lucide-react";
+import { Check, MessageSquare, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/list-detail";
 import { SectionLabel } from "@/components/ui/section-label";
+import { useBoss } from "@/features/boss/boss-context";
+import { wsTab } from "@/features/captain/panel-model";
 import { useProjectCards, useRefreshCard } from "@/lib/card-queries";
 import { formatAgo } from "@/lib/format";
+
+/** What the captain is asked when a project's card has no description: read the repo and write the line. */
+export function describeProjectAsk(project: string): string {
+  return `Write the README opening line for ${project}: one plain sentence on what it is, from its code and docs. Add it at the top of its README on a branch, and tell me what you wrote.`;
+}
 
 const COMMANDS: [keyof CardCommands, string][] = [
   ["install", "Install"],
@@ -18,7 +25,8 @@ const COMMANDS: [keyof CardCommands, string][] = [
 ];
 
 /** What majhi knows about the repo, read from its files, and how ready it is for agents. */
-export function ProjectCardSection({ project }: { project: string }) {
+export function ProjectCardSection({ project, org }: { project: string; org: string }) {
+  const boss = useBoss();
   const cards = useProjectCards();
   const refresh = useRefreshCard();
   const card = cards.data?.get(project);
@@ -58,20 +66,26 @@ export function ProjectCardSection({ project }: { project: string }) {
             : "No card yet. majhi reads it when the base branch is known, or press Refresh."}
         </p>
       ) : (
-        <CardBody card={card} />
+        <CardBody card={card} onDescribe={() => boss.show(wsTab(org), describeProjectAsk(project))} />
       )}
     </DetailSection>
   );
 }
 
-function CardBody({ card }: { card: ProjectCard }) {
+function CardBody({ card, onDescribe }: { card: ProjectCard; onDescribe: () => void }) {
   const commands = COMMANDS.flatMap(([key, label]) =>
     card.commands[key] === undefined ? [] : [{ label, text: card.commands[key] as string }],
   );
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {card.whatItIs === "" ? (
-        <p className="text-sm text-fg-faint">Nothing says what it is yet. Add a README opening line.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="m-0 text-sm text-fg-faint">Nothing says what it is yet.</p>
+          <Button size="sm" onClick={onDescribe}>
+            <MessageSquare aria-hidden="true" />
+            Have the captain write it
+          </Button>
+        </div>
       ) : (
         <p className="text-sm text-fg-soft text-pretty">{card.whatItIs}</p>
       )}
