@@ -1,14 +1,22 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
+import { UPDATE_STATUS_FILE, type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
 import { removeOtherReleases, removeOwnLeftovers } from "./diskHygiene.ts";
+import { isMissing, writeDurableJson } from "./durableFile.ts";
 import { errorMessage } from "./errors.ts";
 import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
 import { type LatestFn, type Moved, moveBack, moveToLatest } from "./release.ts";
-import { readPackage } from "./releasePackage.ts";
+import { commitPackage, readPackage, recoverPackage } from "./releasePackage.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
+
+import {
+  clearUpdateJournal,
+  readUpdateJournal,
+  type UpdateJournal,
+  writeUpdateJournal,
+} from "./updateJournal.ts";
 
 const BUILD_TIMEOUT_MS = 20 * 60_000;
 const KEY_TIMEOUT_MS = 60_000;
@@ -16,6 +24,10 @@ const MAX_LINES = 40;
 /** The image `docker-compose.yml` builds and runs. */
 export const IMAGE = "majhi-server:dev";
 /** The image that ran before the last update, kept so a failed update can go back to it. */
+const RUNNER_IMAGE = "majhi-runner:dev";
+const PREVIOUS_RUNNER_IMAGE = "majhi-runner:previous";
+const RECOVERY_IMAGE = "majhi-server:update-recovery";
+const DATABASE_DIR = "update-databases";
 const PREVIOUS_IMAGE = "majhi-server:previous";
 /** Laya's image and container, built and started with the server's when Laya runs in Docker. */
 const LAYA_IMAGE = "majhi-laya:dev";
@@ -102,6 +114,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
   };
 
   try {
+    await recoverUpdate(options);
     await say("Reading the installed version");
     const before = await readRepo(git);
     if (before === undefined)
@@ -117,7 +130,10 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     const laya = await layaInDocker(dockerStep({ ...remount, env: base }, "update"), base);
     const env = laya ? await layaEnv(remount.repo, base) : base;
     const step = dockerStep({ ...remount, env }, "update");
-    const images: Array<[string, string]> = [[IMAGE, PREVIOUS_IMAGE]];
+    const images: Array<[Kept["image"], string]> = [
+      [IMAGE, PREVIOUS_IMAGE],
+      [RUNNER_IMAGE, PREVIOUS_RUNNER_IMAGE],
+    ];
     if (laya) images.push([LAYA_IMAGE, PREVIOUS_LAYA_IMAGE]);
     const previous: Kept[] = [];
     for (const [image, keep] of images) {
@@ -125,6 +141,14 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       if (id !== undefined) previous.push({ image, id });
     }
     const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
+    const journal: UpdateJournal = {
+      version: 1,
+      phase: "prepared",
+      previous,
+      ...(mounts === undefined ? {} : { mounts }),
+      ...(moved === undefined ? {} : { moved }),
+    };
+    await writeUpdateJournal(majhiHome, journal);
     await say(
       moved !== undefined
         ? `Getting the majhi ${moved.to} images`
@@ -134,19 +158,20 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     );
     // The runner image too: agents run in it (it is never started by compose). Laya's as `make up` does.
     const build = ["compose", "--profile", "runner", ...(laya ? ["--profile", "laya"] : []), "build"];
-    try {
-      await buildWithRetries(() => step("build", build, BUILD_TIMEOUT_MS), {
-        say,
-        sleep: options.sleep ?? defaultSleep,
-      });
-    } catch (err) {
-      // The running majhi was not touched; only the checkout moved.
-      await restorePackage();
-      throw err;
-    }
+    await buildWithRetries(() => step("build", build, BUILD_TIMEOUT_MS), {
+      say,
+      sleep: options.sleep ?? defaultSleep,
+    });
 
     try {
       await ensureSecretsKey(options, env, say);
+      await step("keep the database recovery tool", ["tag", IMAGE, RECOVERY_IMAGE], KEY_TIMEOUT_MS);
+      journal.phase = "snapshotting";
+      await writeUpdateJournal(majhiHome, journal);
+      await step("stop majhi before its database snapshot", ["compose", "stop", "server"], KEY_TIMEOUT_MS);
+      await databaseStep(options, step, "update-snapshot");
+      journal.phase = "starting";
+      await writeUpdateJournal(majhiHome, journal);
       await regenerateAndUp({ ...remount, env }, "update", (text) => void say(text));
     } catch (err) {
       const reason = await crashReason(step);
@@ -157,18 +182,14 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
           ? "The new majhi did not start. Going back to the previous version"
           : "No previous version to go back to",
       );
-      await restorePackage();
-      if (server) {
-        await goBack(step, remount.repo, previous, mounts).then(
-          () => say("Went back to the previous version"),
-          (back: unknown) => say(`Could not go back: ${errorMessage(back).split("\n", 1)[0]}`),
-        );
-      }
       throw new Error(`${errorMessage(err)}${reason === undefined ? "" : `\n${reason}`}`);
     }
 
     // The new server passed its health check. From here the installed release is committed.
+    journal.phase = "committed";
+    await writeUpdateJournal(majhiHome, journal);
     pendingMove = undefined;
+    await finishTransaction(options, step);
     await cleanAfterUpdate(
       step,
       say,
@@ -185,11 +206,123 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       options.exit();
     }
   } catch (err) {
-    await restorePackage();
+    let recoveryError: unknown;
+    try {
+      const transaction = await readUpdateJournal(majhiHome);
+      if (transaction) {
+        await recoverUpdate(options, say);
+        pendingMove = undefined;
+        await say(
+          transaction.phase === "committed"
+            ? "The new version is running"
+            : "Went back to the previous version",
+        );
+      } else await restorePackage();
+    } catch (back) {
+      recoveryError = back;
+      await say(`Recovery is still pending: ${errorMessage(back)}`);
+    }
     status.state = "failed";
-    status.error = errorMessage(err);
+    status.error = `${errorMessage(err)}${recoveryError === undefined ? "" : `\nRecovery is still pending: ${errorMessage(recoveryError)}`}`;
     await say(`Failed: ${errorMessage(err).split("\n", 1)[0]}`);
   }
+}
+
+/** The new image's CLI takes snapshots without starting the server or migrating either database. */
+async function databaseStep(
+  options: UpdateOptions,
+  step: Step,
+  command: "update-snapshot" | "update-restore",
+): Promise<void> {
+  const home = options.majhiHome;
+  const user =
+    options.remount.env.HOST_UID && options.remount.env.HOST_GID
+      ? ["--user", `${options.remount.env.HOST_UID}:${options.remount.env.HOST_GID}`]
+      : [];
+  await step(
+    command,
+    [
+      "run",
+      "--rm",
+      "--network",
+      "none",
+      ...user,
+      "--mount",
+      `type=bind,source=${home},target=${home}`,
+      "--env",
+      `MAJHI_HOME=${home}`,
+      RECOVERY_IMAGE,
+      "node",
+      "dist/cli.js",
+      command,
+    ],
+    BUILD_TIMEOUT_MS,
+  );
+}
+
+async function finishTransaction(options: UpdateOptions, step: Step): Promise<void> {
+  await commitPackage(options.git.repo);
+  await rm(join(options.majhiHome, DATABASE_DIR), { recursive: true, force: true });
+  await clearUpdateJournal(options.majhiHome);
+  await step("remove the database recovery tool", ["image", "rm", RECOVERY_IMAGE], KEY_TIMEOUT_MS).catch(
+    () => undefined,
+  );
+}
+
+async function reportRecoveredUpdate(options: UpdateOptions, committed: boolean): Promise<void> {
+  const file = join(options.majhiHome, UPDATE_STATUS_FILE);
+  let text: string;
+  try {
+    text = await readFile(file, "utf8");
+  } catch (err) {
+    if (isMissing(err)) return;
+    throw err;
+  }
+  const status = UpdateStatusSchema.parse(JSON.parse(text));
+  if (status.state !== "running") return;
+  status.state = committed ? "done" : "failed";
+  if (!committed)
+    status.error = "An interrupted update was recovered. Majhi is back on the previous version.";
+  status.lines = [
+    ...status.lines,
+    committed
+      ? "Update completed; recovery files removed"
+      : "Recovered the previous version after an interrupted update",
+  ].slice(-MAX_LINES);
+  await writeDurableJson(file, status);
+}
+
+/** Run before accepting host jobs. Recovery remains on disk until every rollback step succeeds. */
+export async function recoverUpdate(
+  options: UpdateOptions,
+  say?: (text: string) => Promise<void>,
+): Promise<void> {
+  const journal = await readUpdateJournal(options.majhiHome);
+  if (journal === undefined) {
+    await recoverPackage(options.git.repo);
+    return;
+  }
+  const step = dockerStep(options.remount, "update recovery");
+  if (journal.phase === "committed") {
+    await finishTransaction(options, step);
+    if (!say) await reportRecoveredUpdate(options, true);
+    return;
+  }
+  options.log("update recovery: restoring the interrupted update");
+  // Stop first, including after a helper crash while the new server was already running.
+  if (journal.phase !== "prepared") {
+    await step("stop majhi for recovery", ["compose", "stop", "server"], KEY_TIMEOUT_MS);
+    if (journal.phase === "starting") await databaseStep(options, step, "update-restore");
+  }
+  if (journal.moved) {
+    await moveBack(options.git, journal.moved);
+    await say?.(`Back on majhi ${journal.moved.from}`);
+  } else await recoverPackage(options.git.repo);
+  await goBack(step, options.remount.repo, journal.previous, journal.mounts, journal.phase !== "prepared");
+  journal.phase = "committed";
+  await writeUpdateJournal(options.majhiHome, journal);
+  await finishTransaction(options, step);
+  if (!say) await reportRecoveredUpdate(options, false);
 }
 
 /**
@@ -262,7 +395,7 @@ type Step = ReturnType<typeof dockerStep>;
 
 /** An image that ran before the update: its tag and the id the tag pointed at. */
 interface Kept {
-  image: string;
+  image: UpdateJournal["previous"][number]["image"];
   id: string;
 }
 
@@ -338,7 +471,13 @@ async function putBack(git: GitContext, moved: Moved, say: (text: string) => Pro
 }
 
 /** Puts the previous images and mounts back and starts majhi on them. */
-async function goBack(step: Step, repo: string, previous: Kept[], mounts: string | undefined): Promise<void> {
+async function goBack(
+  step: Step,
+  repo: string,
+  previous: Kept[],
+  mounts: string | undefined,
+  restart = true,
+): Promise<void> {
   for (const { image, id } of previous) {
     await step("go back to the previous image", ["tag", id, image], KEY_TIMEOUT_MS);
   }
@@ -348,6 +487,9 @@ async function goBack(step: Step, repo: string, previous: Kept[], mounts: string
     await writeFile(temp, mounts);
     await rename(temp, target);
   }
+  if (!restart) return;
+  if (!previous.some((kept) => kept.image === IMAGE))
+    throw new Error("No previous server image is available for recovery");
   await step("start the previous majhi", ["compose", "up", "-d", "--wait"], BUILD_TIMEOUT_MS);
 }
 

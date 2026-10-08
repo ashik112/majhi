@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
 import { tempDir, testEnv } from "../testing/fixtures.ts";
-import { isLoopbackOrigin } from "./origin.ts";
+import { isLoopbackOrigin, isOwnerOrigin } from "./origin.ts";
 
 describe("HTTP API", () => {
   let dir: string;
@@ -25,11 +25,50 @@ describe("HTTP API", () => {
       body: body === undefined ? null : JSON.stringify(body),
     });
 
-  it("blocks commands from other websites but not from loopback pages", async () => {
+  it("blocks commands from other websites and unrelated loopback pages", async () => {
     const evil = await cmd("workspaces.set", { workspaces: ["/"] }, { origin: "https://evil.example" });
     expect(evil.status).toBe(403);
-    const local = await cmd("config.get", {}, { origin: "http://localhost:5173" });
+    const unrelated = await cmd("config.get", {}, { origin: "http://127.0.0.1:5173" });
+    expect(unrelated.status).toBe(403);
+    const local = await cmd("config.get", {}, { origin: env.origin });
     expect(local.status).toBe(200);
+  });
+
+  it("rejects simple cross-origin POSTs even without Origin", async () => {
+    const res = await app.request("/api/cmd/config.get", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: "{}",
+    });
+    expect(res.status).toBe(415);
+    expect((await cmd("config.get", {}, { "sec-fetch-site": "cross-site" })).status).toBe(403);
+  });
+
+  it("blocks localhost uploads from another port before reading the body", async () => {
+    expect(
+      (
+        await app.request("/api/uploads", {
+          method: "POST",
+          headers: { origin: "http://127.0.0.1:9999" },
+          body: new FormData(),
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("compares scheme, host and port and refuses malformed origin values", () => {
+    expect(isOwnerOrigin(env.origin, env.origin)).toBe(true);
+    for (const origin of [
+      "null",
+      "http://127.0.0.1:9999",
+      "https://127.0.0.1:7070",
+      "http://localhost:7070",
+      "http://user@127.0.0.1:7070",
+      `${env.origin}/evil`,
+    ]) {
+      expect(isOwnerOrigin(origin, env.origin)).toBe(false);
+    }
+    expect(isOwnerOrigin("http://127.0.0.1:5173", "http://127.0.0.1:5173")).toBe(true);
   });
 
   it("refuses commands, uploads and sockets from an opaque origin, like a sandboxed agent page", async () => {

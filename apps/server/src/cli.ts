@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { restoreUpdateDatabases, snapshotUpdateDatabases } from "./backup/updateDatabases.ts";
 import { formatChecks, runDoctor } from "./cli/doctor.ts";
 import { InvalidConfigError, isPublicKeyPath, renderOverride } from "./cli/genOverride.ts";
 import { loadConfig } from "./config/load.ts";
@@ -54,6 +55,12 @@ async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "update-snapshot":
+      await snapshotUpdateDatabases(env.majhiHome);
+      return 0;
+    case "update-restore":
+      await restoreUpdateDatabases(env.majhiHome);
+      return 0;
     case "gen-override": {
       const { state } = await loadConfig(env);
       try {

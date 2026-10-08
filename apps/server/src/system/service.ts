@@ -19,8 +19,7 @@ export interface SystemDeps {
   /** Agents in the middle of a turn right now. Default: none. */
   working?: () => number;
   /**
-   * Runs just before the helper rebuilds majhi: the safety backup. A failure is logged and the update
-   * goes on, because a stuck backup must not leave the owner on an old version.
+   * Runs just before the helper rebuilds majhi. A failed safety backup blocks the update.
    */
   beforeUpdate?: () => Promise<unknown>;
   /** Ids of tasks that are not done. The helper keeps their preview images after the update. */
@@ -158,11 +157,14 @@ export class SystemService {
     await this.dropWait();
     if (blocked !== undefined) return blocked;
     try {
-      await this.deps.beforeUpdate?.().catch((err: unknown) => {
-        console.error(
-          `The backup before the update failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
+      try {
+        await this.deps.beforeUpdate?.();
+      } catch (err) {
+        return {
+          state: "manual",
+          reason: `Update blocked: the safety backup failed. Check Backups and free disk space, then retry. ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
       if (this.deps.openTasks !== undefined) {
         await writeFile(
           join(this.deps.majhiHome, OPEN_TASKS_FILE),

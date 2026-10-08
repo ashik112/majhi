@@ -8,7 +8,7 @@ import { SecretStore } from "../secrets/store.ts";
 import { MIGRATIONS } from "../store/migrations.ts";
 import { newestMigration } from "./archive.ts";
 import { BackupService, fileSources } from "./service.ts";
-import { applyPendingRestore } from "./swap.ts";
+import { applyPendingRestore, readPending } from "./swap.ts";
 
 /** True when a database file is behind this build, so opening it will migrate it. */
 function behind(file: string, migrations: readonly { id: number }[]): boolean {
@@ -20,14 +20,14 @@ function behind(file: string, migrations: readonly { id: number }[]): boolean {
 /**
  * What happens before majhi opens a single file. A restore staged earlier is swapped in (or undone
  * if it cannot be), and when a database is about to be migrated by this build, a backup is taken
- * first. Neither failure stops majhi from starting: the swap undoes itself, and a missing safety
- * copy is logged.
+ * first. A missing safety copy prevents migration; a failed restore prevents startup.
  */
 export async function prepareStart(env: ServerEnv): Promise<void> {
   try {
     applyPendingRestore(env.majhiHome);
+    if (readPending(env.majhiHome)) throw new Error("Database restore recovery is incomplete");
   } catch (err) {
-    console.error(`majhi could not apply the staged restore: ${errorMessage(err)}`);
+    throw new Error(`majhi could not apply the staged restore: ${errorMessage(err)}`, { cause: err });
   }
   const home = env.majhiHome;
   if (
@@ -48,6 +48,9 @@ export async function prepareStart(env: ServerEnv): Promise<void> {
     const name = await backup.before("before-migration");
     if (name !== undefined) console.log(`majhi backed up its data before updating its database (${name})`);
   } catch (err) {
-    console.error(`majhi could not back up before updating its database: ${errorMessage(err)}`);
+    throw new Error(
+      `Database migration blocked: majhi could not make a safety backup. Check Backups and free disk space, then retry the update. ${errorMessage(err)}`,
+      { cause: err },
+    );
   }
 }

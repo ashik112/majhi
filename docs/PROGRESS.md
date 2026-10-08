@@ -1,6 +1,20 @@
 # Progress
 
-Merge verification, 2026-10-09: owner approved all release packaging, public distribution and landing installer changes. Latest main was merged into the branch without conflicts. All five workspace typechecks and all 34 targeted host tests pass; shell syntax and whitespace checks pass. The technical review made no code changes; its recovery and origin findings remain open. Majhi's merge tool is unavailable in this session, so this approved merge uses Git.
+## Security and update recovery (branch `fix/update-recovery`, merged)
+
+Plan: restrict browser commands, uploads and sockets to the configured origin; persist runtime and whole-update rollback state; snapshot both databases while the server is stopped and restore them before returning to old images; preserve the runner image; block migration and update when safety backups fail. Test foreign localhost origins, interrupted replacement and recovery, database restoration, runner rollback and backup failure. Run targeted tests and workspace typechecks.
+
+What works: browser commands, uploads and sockets reject other localhost ports, schemes and hosts. Commands require JSON, and runner peers cannot open owner sockets even with a forged Origin. The development server explicitly uses the Vite browser origin without changing OAuth callbacks. Runtime replacement saves validated originals on disk before changes. The helper persists its update phase, prior images and mounts, stops the server and snapshots both databases through the new image's offline CLI. Failed startup restores the snapshots before starting the old server, including the old runner. Helper startup retries interrupted recovery; a failed restore retains recovery state and blocks old-server startup. Migration and update require a verified safety backup.
+
+How to try it: use majhi's Update button. During an update the server stops briefly for the database snapshot. Build failure leaves the running server alone. Backup failure appears in the existing update UI with steps to check Backups and disk space.
+
+Verified: 75 targeted tests pass across runtime packages, release handling, updates, browser API origins, room sockets, encrypted backups, database snapshots, restore swaps, system backup gating and host routes. Tests cover destructive migration rollback, absent databases, damaged snapshots, interrupted runtime replacement, startup recovery, runner rollback and all persisted update phases. All five workspace typechecks pass. No full CI or end-to-end suite was run.
+
+Merge approved by the owner on 2026-10-09. Latest main was merged into the fix branch without conflicts. The fixes are merged locally; no source push or release publication was made. Docker commands are exercised with fakes in unit tests; no live installation or release images were changed. Native local API clients remain trusted by the existing single-owner model.
+
+Owner check: use the Update button and check recovery after a helper restart on supported computers with real Docker.
+
+Merge verification, 2026-10-09: owner approved all release packaging, public distribution and landing installer changes. Latest main was merged into the branch without conflicts. All five workspace typechecks and all 34 targeted host tests pass; shell syntax and whitespace checks pass. The technical review made no code changes; its recovery and origin findings are fixed in the security and update recovery work above. Majhi's merge tool is unavailable in this session, so this approved merge uses Git.
 
 ## Landing installation command (branch feat/release-packages, merged)
 

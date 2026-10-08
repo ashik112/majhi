@@ -256,11 +256,25 @@ export class BackupService {
    * Throws when it cannot be taken: the caller decides whether to go on without it.
    */
   async before(kind: "before-update" | "before-migration"): Promise<string | undefined> {
-    const newest = (await this.files())[0];
-    if (newest !== undefined && !newest.legacy && this.clock().getTime() - Date.parse(newest.at) < FRESH_MS) {
-      return undefined;
-    }
-    return this.exclusive("backup", () => this.take(kind));
+    return this.exclusive("backup", async () => {
+      const newest = (await this.files())[0];
+      if (
+        newest !== undefined &&
+        !newest.legacy &&
+        newest.lock === "key" &&
+        this.clock().getTime() - Date.parse(newest.at) < FRESH_MS
+      ) {
+        const checked = await this.check(newest, undefined);
+        if (checked.result.ok) return undefined;
+      }
+      const name = await this.take(kind);
+      const entry = (await this.files()).find((file) => file.name === name);
+      if (entry === undefined) throw new UserError("The safety backup is missing.", 409);
+      const checked = await this.check(entry, undefined);
+      if (!checked.result.ok)
+        throw new UserError(`The safety backup could not be verified: ${checked.result.detail}`, 409);
+      return name;
+    });
   }
 
   /**
