@@ -477,12 +477,11 @@ export class ClientIncidents {
     return parts.join(" ");
   }
 
-  /** A reminder says what changed since the last update, from the recorded facts, or that nothing did. */
-  private reminderText(read: Read, since: string): string {
-    const written = [read.task, ...read.fixes].some((t) =>
+  /** Whether a fix was pushed since the client was last told: the only news between status changes. */
+  private fixWrittenSince(read: Read, since: string): boolean {
+    return [read.task, ...read.fixes].some((t) =>
       t.repos.some((r) => r.pushedAt !== undefined && r.pushedAt > since),
     );
-    return `Still working on it. ${written ? "A fix is written and is being checked." : "Nothing new since the last update."}`;
   }
 
   private toldResolved(task: string, room: string): boolean {
@@ -681,15 +680,18 @@ export class ClientIncidents {
     const recovered = result.recoveredAt !== undefined && status !== "resolved";
     const recoveredNew = recovered && (told === undefined || told.at < (result.recoveredAt as string));
     const changed = told?.status !== status || recoveredNew;
+    // Between status changes the client hears only real news (a fix was written), at most once per cadence.
+    // "Nothing new" is never sent: a message every half hour that says nothing is spam.
     const due =
       told !== undefined &&
       status !== "resolved" &&
       !recovered &&
-      now - Date.parse(told.at) >= read.cadenceMin * 60_000;
+      now - Date.parse(told.at) >= read.cadenceMin * 60_000 &&
+      this.fixWrittenSince(read, told.at);
     if (!changed && !due) return false;
     const text = changed
       ? this.statusText(read, result, await this.deps.tz(read.org), told)
-      : this.reminderText(read, told?.at ?? "");
+      : "Still working on it. A fix is written and is being checked.";
     const to = this.reporter(room.id);
     // A held update that was not sent yet says the newest thing instead of stacking up behind it.
     if (told !== undefined && this.updateState(told.draft) === "held") {
