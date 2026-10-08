@@ -1630,6 +1630,8 @@ function branchesOf(output: unknown): string {
 function lowerFirst(text: string): string {
   const [first, second] = text;
   if (first === undefined || second === undefined || second !== second.toLowerCase()) return text;
+  // "Acme: you decide push" starts with a workspace's name: it keeps its capital.
+  if (text.split(" ")[0]?.endsWith(":") === true) return text;
   return first.toLowerCase() + text.slice(1);
 }
 

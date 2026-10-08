@@ -155,7 +155,7 @@ export interface AutonomyDeps {
   upkeepBetween?: (
     from: string,
     to: string,
-  ) => { chore: string; task?: string | undefined; outcome: string }[];
+  ) => { chore: string; task?: string | undefined; outcome: string; at: string; org: string }[];
   /** What waits in the owner's Decisions inbox, in its order, for the daily summary. */
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
@@ -2875,7 +2875,26 @@ export class AutonomyService {
         window.start,
         now,
       ),
-      days: finishedByDay(events, window.day, days, tz),
+      // The ship chore's own merges leave no feed line: its log counts them, or a captain-shipped task reads as 0.
+      days: finishedByDay(
+        [
+          ...events,
+          ...(this.deps.upkeepBetween?.(first, window.end) ?? [])
+            .filter((a) => a.chore === "ship" && a.outcome === "done" && a.task !== undefined)
+            .map((a, i) => ({
+              seq: events.length + i + 1,
+              at: a.at,
+              kind: "task" as const,
+              text: "Shipped",
+              status: "done" as const,
+              ...(a.task === undefined ? {} : { task: a.task as TaskId }),
+              org: a.org,
+            })),
+        ],
+        window.day,
+        days,
+        tz,
+      ),
       spend: spendByDay(
         this.repo.spendTurnsByOrg(first, window.end, this.spendChats()),
         window.day,
