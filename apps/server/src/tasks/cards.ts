@@ -68,7 +68,7 @@ export class OwnerCards {
    * The task paused. A pending review card settles: the task is not waiting for review any more.
    * `by` is who paused it, for a card the captain caused.
    */
-  paused(task: Task, reason: PausedReason, why?: string, by = "owner"): RoomItem {
+  paused(task: Task, reason: PausedReason, why?: string, by = "owner", account?: string): RoomItem {
     this.settle(task.id, "review", "Paused before a review", "majhi");
     this.replace(task.id, "paused");
     const id = `paused:${randomUUID()}`;
@@ -76,6 +76,7 @@ export class OwnerCards {
       type: "paused",
       reason,
       ...(why === undefined ? {} : { why }),
+      ...(account === undefined ? {} : { account }),
       ...(this.byCaptain(by) ? { by: "captain" as const } : {}),
       state: "pending",
     });
@@ -202,6 +203,7 @@ function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPay
         reason: card.reason,
         ...(card.why === undefined ? {} : { why: card.why }),
         ...(card.by === undefined ? {} : { by: card.by }),
+        ...(card.account === undefined ? {} : { account: card.account }),
         state,
         ...end,
       };

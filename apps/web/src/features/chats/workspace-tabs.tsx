@@ -11,10 +11,13 @@ export function WorkspaceTabs({
   list,
   orgs,
   className,
+  compact = false,
 }: {
   list: readonly Conversation[];
   orgs: readonly OrgView[] | undefined;
   className?: string;
+  /** The bubble: a workspace is its badge and unread count, its name in the label and title. */
+  compact?: boolean;
 }) {
   const { tab } = useChatFilter();
   const all = workspaces(orgs);
@@ -48,16 +51,19 @@ export function WorkspaceTabs({
           key={w.id}
           type="button"
           aria-pressed={current === w.id}
+          aria-label={compact ? w.name : undefined}
+          title={compact ? w.name : undefined}
           onClick={() => setChatFilter({ tab: w.id })}
           className={cn(
             TAB,
+            compact && "px-2.5",
             current === w.id
               ? "bg-accent font-semibold text-accent-ink"
               : "font-medium text-fg-muted hover:bg-raised hover:text-fg",
           )}
         >
           <OrgBadge label={w.letters} color={w.color} size="lg" />
-          {w.name}
+          {!compact && w.name}
           <Count n={unread.get(w.id) ?? 0} onAccent={current === w.id} />
         </button>
       ))}

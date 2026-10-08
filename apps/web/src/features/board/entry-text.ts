@@ -214,7 +214,7 @@ export function lineOf(entry: RowEntry, ctx: LineContext): EntryLine {
         age: shortAgo(d.at, ctx.now),
         elapsed: entry.item.check === undefined ? "" : checkElapsed(entry.item.check, ctx.now),
         title: task === undefined ? d.title : decisionTitle(d),
-        id: task,
+        id: d.chat === true ? undefined : task,
       };
     }
     case "held": {

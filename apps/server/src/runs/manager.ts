@@ -209,7 +209,8 @@ export interface RunDeps {
    * An agent paused (offline, or an error it cannot get past): the task pauses too. `why` is the
    * cause in words when the reason alone does not say it (a start that failed).
    */
-  onPaused?: (task: string, reason: PauseReason, why?: string) => void;
+  /** `account`: the account the run was on, for a signed-out pause (a lane runs on its workspace's account, not its agent's). */
+  onPaused?: (task: string, reason: PauseReason, why?: string, account?: string) => void;
   /**
    * The account `agent` runs on in this task when a limit error holds it now, with the mark. Asked
    * between turns, before a start.
@@ -1799,6 +1800,7 @@ export class RunManager {
       "signed-out",
       `@${run.agent} cannot run: its account ${account} needs a new sign-in.${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
       true,
+      account,
     );
   }
 
@@ -2361,7 +2363,13 @@ export class RunManager {
     // Signed out: a fallback or a teammate takes over, as for a limit.
     if (failure.kind === "signed-out" && (await this.takeOverFor(run, signedOutHandoff(run.agent)))) return;
     // The paused card carries the cause and the fix, so the pause adds no line of its own.
-    this.pause(run, failure.kind === "signed-out" ? "signed-out" : "error", failure.text, true);
+    this.pause(
+      run,
+      failure.kind === "signed-out" ? "signed-out" : "error",
+      failure.text,
+      true,
+      failure.kind === "signed-out" ? run.account : undefined,
+    );
   }
 
   /** Runs paused because their account is signed out, for the sweep that watches it. */
@@ -2776,12 +2784,12 @@ export class RunManager {
   // Pause and resume (5.7)
 
   /** `carded`: the task's paused card says why (given to `onPaused`), so no line is posted here. */
-  private pause(run: AgentRun, reason: PauseReason, text: string, carded = false): void {
+  private pause(run: AgentRun, reason: PauseReason, text: string, carded = false, account?: string): void {
     run.paused = reason;
     run.clearTimers();
     if (!carded) this.live.system(run, reason === "error" ? "error" : "warn", text);
     this.setLive(run, { status: "paused", nowDoing: undefined });
-    this.deps.onPaused?.(run.task, reason, carded ? text : undefined);
+    this.deps.onPaused?.(run.task, reason, carded ? text : undefined, account);
   }
 
   /** Queues "continue from where you stopped" and starts the loop, or restarts it once the current one ends. */

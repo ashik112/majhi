@@ -3,6 +3,7 @@ import {
   batchPick,
   boardCounts,
   type CardAction,
+  captainPayDecisionId,
   type DecisionAnswerInput,
   type DecisionBatchInput,
   type DecisionBatchResult,
@@ -84,6 +85,8 @@ export interface InboxDeps {
   subjects?: (tasks: readonly string[]) => ReadonlyMap<string, Subject>;
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
+  /** The account a paused task waits on, when that account needs a new sign-in. */
+  pausedAccount?: (task: string) => Promise<string | undefined>;
   recommendations: RecommendationStore;
   /** Post tasks whose draft waits for approval to publish. */
   posts?: () => NonNullable<DecisionSources["posts"]>;
@@ -286,12 +289,34 @@ export class InboxService {
     // One batched read names every task a row mentions; a task it did not cover falls back to the single read.
     const known = deps.subjects?.([...new Set(items.map((i) => i.task))]);
     const subject = (task: string) => (known?.has(task) ? known.get(task) : deps.subject(task));
+    const extras = (await deps.extras?.()) ?? [];
+    const waits = new Map<string, string[]>();
+    const folded = new Set<string>();
+    for (const item of items) {
+      if (item.type !== "paused" || item.state !== "pending" || item.reason !== "signed-out") continue;
+      const account = item.account ?? (await deps.pausedAccount?.(item.task));
+      const who = subject(item.task);
+      if (account === undefined || who === undefined || !signedOut.some((s) => s.id === account)) continue;
+      folded.add(item.id);
+      const name =
+        who.lane === true
+          ? who.org === undefined
+            ? "Captain is paused"
+            : `Captain in ${names[who.org] ?? who.org} is paused`
+          : `${who.id} is paused`;
+      waits.set(account, [...(waits.get(account) ?? []), name]);
+    }
+    const unpaid = new Set(
+      extras.flatMap((d) => (d.org !== undefined && d.id === captainPayDecisionId(d.org) ? [d.org] : [])),
+    );
     const all = buildDecisions({
       items,
       shipBlocked: await this.shipBlocks(items, subject),
       subject,
       budgets,
-      signedOut,
+      signedOut: signedOut.map((s) => ({ ...s, ...(waits.has(s.id) ? { waits: waits.get(s.id) } : {}) })),
+      foldedPauses: folded,
+      unpaidOrgs: unpaid,
       recommendations: deps.recommendations.all(),
       drafts: deps.outbound?.pending() ?? [],
       ...(deps.clientDraft === undefined ? {} : { clientDraft: deps.clientDraft }),
@@ -299,7 +324,7 @@ export class InboxService {
       incidents: deps.incidents?.() ?? [],
       posts: deps.posts?.() ?? [],
       orgName: (org) => names[org],
-      extras: (await deps.extras?.()) ?? [],
+      extras,
     });
     await this.markStale(all, items);
     const now = (deps.now?.() ?? new Date()).getTime();

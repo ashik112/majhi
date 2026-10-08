@@ -538,7 +538,7 @@ export function BoardScreen() {
           )}
           <p
             className={cn(
-              "mt-2 hidden h-8 shrink-0 items-center gap-4 rounded-xl px-3 text-xs text-fg-faint min-[900px]:flex",
+              "mt-2 mr-14 hidden h-8 shrink-0 items-center gap-4 rounded-xl px-3 text-xs text-fg-faint min-[900px]:flex",
               GLASS,
             )}
           >

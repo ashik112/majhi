@@ -13,6 +13,8 @@ export interface EffectContext {
   why?: string | undefined;
   /** The paused card's reason, in the old vocabulary the card still speaks. */
   reason?: PausedReason | undefined;
+  /** The account a signed-out pause waits on, for the paused card. */
+  account?: string | undefined;
   /** What the settled card says (a resumed pause, an opened merge request, a closed review card). */
   settle?: string | undefined;
   /** What the closed paused card says, when a task is closed while paused. */

@@ -27,11 +27,14 @@ export interface Subject {
   checks?: "running" | "failed" | undefined;
   /** Subtasks that are not done. A parent that waits on them waits for no decision of the owner's. */
   openSubtasks?: number | undefined;
+  /** A captain lane or the root Captain chat: it reads as the captain, never by its title or id. */
+  lane?: boolean | undefined;
   /** When the newest open subtask was made (ISO): a split approval older than it has been carried out. */
   newestSubtask?: string | undefined;
 }
 
 export function subjectName(task: Subject): string {
+  if (task.lane === true) return "Captain";
   return task.chat ? task.title : task.id;
 }
 

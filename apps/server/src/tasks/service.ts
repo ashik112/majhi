@@ -3743,6 +3743,7 @@ export class TaskService {
     id: string,
     reason: "offline" | "error" | "limit" | "owner" | "signed-out",
     why?: string,
+    account?: string,
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "paused") return;
@@ -3759,7 +3760,7 @@ export class TaskService {
     await this.lifecycle.apply(
       id,
       { type: "runPaused", hold: holdFromRunReason(reason, at, row, why) },
-      { ctx: { by: "majhi", why, reason }, skip: ["dropPendingShip"] },
+      { ctx: { by: "majhi", why, reason, account }, skip: ["dropPendingShip"] },
     );
   }
 
@@ -3869,7 +3870,7 @@ export class TaskService {
       case "paused": {
         if (before.hold !== undefined || after.hold === undefined) return;
         const reason = ctx.reason ?? pausedReasonOf(after.hold);
-        this.cards.paused(this.get(id), reason, ctx.why, ctx.by);
+        this.cards.paused(this.get(id), reason, ctx.why, ctx.by, ctx.account);
         return;
       }
       case "settle":
