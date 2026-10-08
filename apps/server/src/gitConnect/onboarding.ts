@@ -70,7 +70,6 @@ export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
       };
     })
     .sort((a, b) => (a.id === PRIVATE ? -1 : b.id === PRIVATE ? 1 : a.name.localeCompare(b.name)));
-  const others = workspaces.filter((w) => w.id !== PRIVATE);
   const needGit = workspaces.filter((w) => w.id !== PRIVATE || w.projects > 0);
   const signedIn = needGit.filter((w) => w.git.some((g) => g.signedIn));
   const missing = needGit.flatMap((w) => w.missing);
@@ -81,7 +80,7 @@ export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
   const done: Record<OnboardingStepId, boolean> = {
     welcome: input.roots.length > 0,
     account: healthy > 0,
-    workspaces: others.length > 0,
+    workspaces: workspaces.length > 0,
     // Every host the projects use has a sign-in. With no project yet, one sign-in per workspace is the step.
     git:
       needGit.length > 0 && missing.length === 0 && (projectCount > 0 || signedIn.length === needGit.length),
@@ -93,7 +92,7 @@ export function onboardingStatus(input: OnboardingInput): OnboardingStatus {
   const detail: Partial<Record<OnboardingStepId, string>> = {
     ...(input.roots.length > 0 ? { welcome: plural(input.roots.length, "project folder") } : {}),
     ...(healthy > 0 ? { account: plural(healthy, "account") } : {}),
-    ...(others.length > 0 ? { workspaces: plural(others.length + 1, "workspace") } : {}),
+    ...(workspaces.length > 0 ? { workspaces: plural(workspaces.length, "workspace") } : {}),
     ...(needGit.length > 0
       ? {
           git:

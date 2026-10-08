@@ -108,9 +108,10 @@ export function WatchDetail({
   const [orDo, setOrDo] = useState(fire.orDo ?? "");
   const [rerun, setRerun] = useState(String(fire.fix.rerunMin));
 
-  const headWord = alerting
-    ? `${watch.word}${watch.since === undefined ? "" : ` since ${clock(watch.since)}`}`
-    : watch.word;
+  const headWord =
+    alerting && watch.transition === undefined
+      ? `${watch.word}${watch.since === undefined ? "" : ` since ${clock(watch.since)}`}`
+      : watch.word;
   const numberKind = watch.samples24.some((s) => s.v !== null) || watch.samples90.some((s) => s.v !== null);
   const isPrice = def.spec.kind === "price";
   const needsAck = incident !== undefined && incident.status === "open" && incident.ackedAt === undefined;
@@ -150,6 +151,15 @@ export function WatchDetail({
       }
     >
       <div className="flex min-w-0 flex-col gap-3 pt-4 pb-4">
+        {watch.transition !== undefined && (
+          <p role="status" className="m-0 text-sm text-amber">
+            {watch.transition.kind === "confirming"
+              ? "The last check failed. Waiting for a second failed check before alerting."
+              : "Checks are healthy. The incident stays open until the recovery window ends."}
+            {watch.transition.until !== undefined &&
+              ` ${Math.max(0, Math.ceil((Date.parse(watch.transition.until) - Math.max(now, Date.parse(watch.lastAt ?? "1970-01-01"))) / 60_000))} min left${watch.transition.kind === "confirming" ? " until the next scheduled check" : ""}.`}
+          </p>
+        )}
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="tnum min-w-0 truncate font-mono text-xl text-fg">{watch.value}</span>
           {watch.stat !== undefined && <span className="text-sm text-lamp-done">{watch.stat}</span>}

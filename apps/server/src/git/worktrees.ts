@@ -44,6 +44,8 @@ export interface WorktreeResult {
   startRef?: string;
   /** Things the owner should know, like a fetch that failed while offline. */
   warnings: string[];
+  /** A failed fetch can be fixed from the Git connections screen. */
+  warningAction?: "git-access";
 }
 
 /** Something the owner can fix: a busy branch, a missing base, a folder in the way. */
@@ -70,12 +72,14 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   await requireFreePath(path);
 
   const warnings: string[] = [];
+  let warningAction: WorktreeResult["warningAction"];
   const remote = req.localBase === true ? undefined : await remoteOf(source);
   if (remote !== undefined) {
     const failed = await fetchWithKeys(source, remote, base, req.reloadKeys);
     if (failed !== undefined) {
       console.warn(`Could not fetch ${base} from ${remote} for ${source}: ${failed}`);
       warnings.push(fetchFailureNote(base, remote, failed));
+      warningAction = "git-access";
     }
     // A named branch that exists only on the remote needs its own fetch. Missing is fine.
     await tryFetch(source, remote, branch);
@@ -85,13 +89,13 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
     await add(source, ["worktree", "add", path, branch], branch);
     await lockFor(req);
     await excludeCaches(path, warnings);
-    return { createdBranch: false, warnings };
+    return { createdBranch: false, warnings, ...(warningAction === undefined ? {} : { warningAction }) };
   }
   if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
     await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
     await lockFor(req);
     await excludeCaches(path, warnings);
-    return { createdBranch: false, warnings };
+    return { createdBranch: false, warnings, ...(warningAction === undefined ? {} : { warningAction }) };
   }
   const chosen = await resolveBase(source, remote, base);
   await add(source, ["worktree", "add", "--no-track", "-b", branch, path, chosen.ref], branch);
@@ -99,7 +103,13 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
   if (chosen.diverged !== undefined) warnings.push(divergedNote(base, chosen.ref, chosen.diverged));
   await excludeCaches(path, warnings);
-  return { createdBranch: true, startCommit, startRef: chosen.ref, warnings };
+  return {
+    createdBranch: true,
+    startCommit,
+    startRef: chosen.ref,
+    warnings,
+    ...(warningAction === undefined ? {} : { warningAction }),
+  };
 }
 
 /** Not fatal: the checkpoint sets the excludes again, and its file-count limit backs it up. */
@@ -133,7 +143,7 @@ export function fetchFailureNote(base: string, remote: string, raw: string): str
       "access denied",
     ].some((w) => text.includes(w))
   ) {
-    return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Connections and sign in to this project's Git account again, or reload your SSH keys.`;
+    return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Settings > Connections and sign in to this project's Git account again, or reload your keys in Settings > SSH keys.`;
   }
   if (
     ["could not resolve host", "timed out", "unable to access", "connection"].some((w) => text.includes(w))

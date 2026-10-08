@@ -104,7 +104,13 @@ function RowLine({
         )}
       >
         <Lamp state={row.acked === true ? "paused" : STATUS_LAMP[row.status]} size={6} />
-        <span className="truncate">{row.acked === true ? "Acknowledged" : row.word}</span>
+        <span className="truncate" title={row.word}>
+          {row.acked === true
+            ? "Acknowledged"
+            : row.watch?.transition?.kind === "confirming"
+              ? "Confirming"
+              : row.word}
+        </span>
       </span>
     </button>
   );
@@ -167,7 +173,7 @@ export function WatchView() {
     (status === "all" ||
       (status === "alerting" && (r.status === "alerting" || r.status === "changed") && r.acked !== true) ||
       (status === "paused" && r.status === "paused") ||
-      (status === "fine" && (r.status === "ok" || r.status === "new" || r.status === "unknown"))) &&
+      (status === "fine" && r.status === "ok")) &&
     (q === "" || r.name.toLowerCase().includes(q) || nameOf(r.org).toLowerCase().includes(q));
   const bySort = (r: Row) => sort === "all" || r.sort === sort;
   const rows = sortRows(all.filter((r) => matches(r) && bySort(r)));
@@ -177,7 +183,8 @@ export function WatchView() {
   ).length;
   const acknowledged = all.filter((r) => r.acked === true).length;
   const paused = all.filter((r) => r.status === "paused").length;
-  const fine = all.length - alerting - acknowledged - paused;
+  const fine = all.filter((r) => r.status === "ok").length;
+
   const workspaces = [
     ...new Set([...(anything?.watches ?? []).map((w) => w.org), ...(data?.services ?? []).map((s) => s.org)]),
   ];

@@ -1225,6 +1225,7 @@ export class WatchEngine {
     if (w.state.lastAt === undefined) return w.def.spec.kind === "custom" ? "unknown" : "new";
     if (open || w.state.firing) return w.def.condition.type === "changed" ? "changed" : "alerting";
     if (!w.state.readable) return "unknown";
+    if (w.def.condition.type === "down" && w.state.healthy === false) return "unknown";
     return "ok";
   }
 
@@ -1356,6 +1357,21 @@ export class WatchEngine {
     const now = this.deps.now().getTime();
     const open = this.deps.ops.openIncidentOf(w.id);
     const status = this.statusOf(w, open !== undefined);
+    const recoveryAt = status === "alerting" ? this.deps.ops.recoveryEndsAt(w.id) : undefined;
+    const confirming =
+      status === "unknown" &&
+      w.def.condition.type === "down" &&
+      w.state.readable &&
+      w.state.healthy === false;
+    const transition: WatchView["transition"] =
+      recoveryAt !== undefined
+        ? { kind: "recovering", until: recoveryAt }
+        : confirming
+          ? {
+              kind: "confirming",
+              until: new Date(Date.parse(w.state.lastAt ?? this.at()) + w.def.everyMin * MIN).toISOString(),
+            }
+          : undefined;
     const s24 = this.deps.repo.samples(w.id, new Date(now - 86_400_000).toISOString());
     const s90 = this.deps.repo.samples(w.id, new Date(now - 90 * 86_400_000).toISOString());
     const changedPrice =
@@ -1385,7 +1401,13 @@ export class WatchEngine {
       org: w.org,
       def: w.def,
       status,
-      word: this.wordOf(w, status),
+      word:
+        transition?.kind === "recovering"
+          ? "Recovering"
+          : transition?.kind === "confirming"
+            ? "Confirming failure"
+            : this.wordOf(w, status),
+      ...(transition === undefined ? {} : { transition }),
       value:
         changedPrice && w.state.previous !== undefined
           ? `${w.state.previous} → ${w.state.display}`

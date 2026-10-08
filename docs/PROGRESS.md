@@ -1,3 +1,15 @@
+## User flow clarity, 2026-10-09
+
+Plan: branch from main; make chat creation explicit, treat Private as a complete workspace choice, explain watch confirmation and recovery waits, and link setup and Git recovery to Settings. Verify affected state logic with targeted tests, run workspace typechecks, then walk the changed screens with fake agents in a temporary browser workspace.
+
+Implemented on `fix/user-flow-clarity`: task creation states when it will start a chat without a repository. The existing project confirmation stays. Private completes workspace setup, with Continue with Private and no skipped warning at Arrive. Setup recovery names Settings > Overview. Git fetch warnings offer Check Git access, which opens Connections inside Settings. A failed first website check is unknown while it is confirmed, not Fine. Watch details explain confirmation and recovery with their deadlines; incident and alert timing are unchanged.
+
+Verified: all workspace typechecks, web production build, 54 targeted tests across onboarding, worktrees and watches, plus the new first-failure state test. Browser checks used fake agents and temporary homes: project confirmation, Git recovery link, Private setup through Arrive, and both watch waits at desktop sizes. No full CI or full e2e suite ran. No migration, push or merge.
+
+How to try: create a task naming an unselected project, continue onboarding with Private, or open a watch after its first failure or first healthy recovery check.
+
+Owner check: confirm Git sign-in and SSH reload against a real account.
+
 # Progress
 
 ## Security, run recovery and captain regressions (branch `fix/security-runs-captain`, merged)

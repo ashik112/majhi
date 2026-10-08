@@ -419,6 +419,10 @@ export const WatchViewSchema = z.object({
   status: WatchStatusSchema,
   /** The state in one word: Slow, High, Down, Changed, Low. */
   word: z.string(),
+  /** Confirmation or recovery wait, without changing the alert policy. */
+  transition: z
+    .object({ kind: z.enum(["confirming", "recovering"]), until: z.string().datetime().optional() })
+    .optional(),
   /** The current value as the row shows it: "p95 2.4 s", "$1,999 → $1,799". */
   value: z.string(),
   number: z.number().optional(),
