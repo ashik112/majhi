@@ -3,12 +3,10 @@ import {
   type ChatApp,
   type ConnectionConfig,
   effectiveHolds,
-  effectiveIncident,
   type Holds,
   PRIVATE,
   type ServerEvent,
 } from "@majhi/shared";
-import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
 import { CLIENT_MESSAGE_QUESTION, readClientMessage } from "../decisions/uses/client-message.ts";
 import type { LayaDecisions } from "../decisions/uses/common.ts";
@@ -20,7 +18,10 @@ import type { OutboundGate } from "../playbooks/outbound.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
+import { CaptainChat } from "./captain.ts";
 import { Contacts } from "./contacts.ts";
+import { ChatDesk } from "./desk.ts";
+import { ClientGate } from "./gate.ts";
 import type { ChatHistory } from "./history.ts";
 import { type ChatConnectionInfo, ChatHub, type HubDeps } from "./hub.ts";
 import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
@@ -29,7 +30,6 @@ import { ClientReplies } from "./replies.ts";
 import { ClientRooms } from "./rooms.ts";
 import { ClientChat, type ClientChatDeps } from "./service.ts";
 import { ChatSettings, dayBegins } from "./settings.ts";
-import { ClientTriage, type ToolLessModel } from "./triage.ts";
 import { ChatWaits } from "./waits.ts";
 import { ChatWork, type WorkDeps } from "./work.ts";
 
@@ -40,6 +40,8 @@ export const TOKEN_VARIABLES: Partial<
   telegram: { token: "TELEGRAM_BOT_TOKEN" },
   slack: { token: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN", userToken: "SLACK_USER_TOKEN" },
 };
+
+type ClientDeskWake = ConstructorParameters<typeof ChatDesk>[0]["wake"];
 
 export interface ClientChatWiring {
   store: Store;
@@ -53,9 +55,8 @@ export interface ClientChatWiring {
   housekeeper: Pick<Housekeeper, "ask">;
   /** Why a reaction may not act now (Stop everything), or undefined. */
   blocked?: (() => string | undefined) | undefined;
-  wiki: (org: string, question: string) => Promise<{ answer: string; found: boolean }>;
-  /** Why no model can be asked for a workspace at all (none chosen, signed out), or undefined. */
-  rest: (org: string) => Promise<string | undefined>;
+  /** Wakes a workspace's captain lane with one text: a reaction, held only by Stop everything. */
+  wake: ClientDeskWake;
   findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find" | "ofTask" | "adopt" | "get">;
   /** The ops watch, for the watch incident an incident task is linked to. */
   watch: IncidentsDeps["watch"];
@@ -76,8 +77,6 @@ export interface ClientChatWiring {
   events: { subscribe(listener: (event: ServerEvent) => void): () => void };
   /** Starts a task the captain made for a chat, the way the incident engine starts one: whatever Auto-pilot says. */
   startTask: (task: string) => Promise<void>;
-  /** Tells a task's lead something, as majhi. */
-  tellTask: (task: string, text: string) => Promise<void>;
   /** The captain's History, through the autonomy event log. */
   history?: ChatHistory | undefined;
   decisions: LayaDecisions | undefined;
@@ -101,7 +100,9 @@ export interface ClientChatParts {
   rooms: ClientRooms;
   contacts: Contacts;
   replies: ClientReplies;
-  triage: ClientTriage;
+  gate: ClientGate;
+  desk: ChatDesk;
+  captain: CaptainChat;
   incidents: ClientIncidents;
   settings: ChatSettings;
   waits: ChatWaits;
@@ -213,8 +214,13 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
-  const model: ToolLessModel = async (org, key, prompt, parse) =>
-    (await w.housekeeper.ask({ id: key, org }, prompt, parse)).value;
+  const desk = new ChatDesk({
+    store: w.store,
+    room: w.room,
+    wake: w.wake,
+    changed: w.changed,
+    ...(w.log === undefined ? {} : { log: w.log }),
+  });
   const incidents = new ClientIncidents({
     store: w.store,
     room: w.room,
@@ -222,6 +228,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     gate: w.gate,
     findings: w.findings,
     watch: w.watch,
+    desk,
     tz: w.tz,
     facts: w.facts,
     engine: w.engine,
@@ -240,34 +247,21 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
-  let triageNow: ClientTriage | undefined;
   const work = new ChatWork({
     store: w.store,
     room: w.room,
     findings: w.findings,
+    desk,
     create: w.createTask,
     start: w.startTask,
-    tell: w.tellTask,
-    replies,
-    write: (room, item, facts) => {
-      if (triageNow === undefined) throw new Error("Chats are not ready.");
-      return triageNow.write(room.org as string, room, item, facts);
-    },
     history: w.history,
     changed: w.changed,
   });
-  const triage = new ClientTriage({
+  const gate = new ClientGate({
     store: w.store,
     room: w.room,
-    model,
     findings: w.findings,
-    replies,
-    wiki: w.wiki,
-    rest: w.rest,
-    work,
-    incidents: (org, room) => incidents.candidates(org, room),
-    incident: incidents,
-    history: w.history,
+    desk,
     injects: async (text) => (await classifyInjection(w.decisions, text, "social")).flagged,
     read: async (text) => readClientMessage(w.decisions, text),
     taught: (decision, label) => {
@@ -279,9 +273,19 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
       layaDown = !answered;
     },
   });
-  triageNow = triage;
+  const captain = new CaptainChat({
+    store: w.store,
+    room: w.room,
+    incidents,
+    work,
+    findings: w.findings,
+    history: w.history,
+    changed: w.changed,
+  });
   w.events.subscribe((event) => {
-    if (event.type === "changed" && event.tasks !== undefined) void work.changedTasks(event.tasks);
+    if (event.type !== "changed" || event.tasks === undefined) return;
+    work.changedTasks(event.tasks);
+    desk.settle(event.tasks);
   });
   const settings = new ChatSettings({
     store: w.store,
@@ -298,7 +302,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     rooms,
     contacts,
     hub,
-    triage,
+    triage: gate,
     triaged: (org, key) => w.findings.find(org, key) !== undefined,
     majhiHome: w.majhiHome,
     ...(w.now === undefined ? {} : { now: w.now }),
@@ -314,6 +318,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     hub,
     connections: chatConnections,
     settings,
+    captain,
     layaDown: () => layaDown,
     savedHolds: async (org) => (await w.config.settings()).autonomy.orgs[org]?.holds,
     tell,
@@ -326,14 +331,23 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     room: w.room,
     findings: w.findings,
     whoIs: (room, card, answer) => chat.whoIs(room, card, answer),
-    makeIncident: async (room, item, finding) => {
-      const made = await incidents.claim(room, item, finding, { force: true });
-      if (made === undefined) throw new Error("The incident could not be opened.");
-      return made;
-    },
     history: w.history,
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
-  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents, settings, waits, work };
+  return {
+    chat,
+    hub,
+    ingest,
+    rooms,
+    contacts,
+    replies,
+    gate,
+    desk,
+    captain,
+    incidents,
+    settings,
+    waits,
+    work,
+  };
 }

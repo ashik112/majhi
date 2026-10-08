@@ -1,4 +1,4 @@
-import { CAPTAIN_LANE_BRIEF, PRIVATE, STOPPED_WHY, type Task } from "@majhi/shared";
+import { CAPTAIN_LANE_BRIEF, type Job, PRIVATE, STOPPED_WHY, type Task } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -24,7 +24,7 @@ export interface LaneDeps {
   agents: AgentStore;
   now: () => Date;
   /** Why the lane rests now: the day budget, the workspace's budget, its account's window. */
-  rest?: ((org: string, account: string) => Promise<string | undefined>) | undefined;
+  rest?: ((org: string, account: string, job?: Job) => Promise<string | undefined>) | undefined;
   /** Stop everything is on: nothing is told to a lane. */
   halted?: (() => boolean) | undefined;
 }
@@ -164,11 +164,12 @@ export class Lanes {
     org: string,
     text: string,
     settled: string,
+    job: Job = "backlog",
   ): Promise<{ sent: true; chat: string } | { sent: false; why: string }> {
     if (this.deps.halted?.() === true) return { sent: false, why: STOPPED_WHY };
     const picked = await this.account(org);
     if ("problem" in picked) return { sent: false, why: picked.problem };
-    const rest = await this.deps.rest?.(org, picked.account);
+    const rest = await this.deps.rest?.(org, picked.account, job);
     if (rest !== undefined) return { sent: false, why: rest };
     try {
       const chat = await this.ensure(org);

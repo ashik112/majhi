@@ -1692,7 +1692,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     now: () => options.runClock?.() ?? new Date(),
     // Bound below: autonomous mode measures the spend.
-    rest: (org, account) => autonomy.laneRest(org, account),
+    rest: (org, account, job) => autonomy.laneRest(org, account, job),
     halted: () => captainRepo.isStopped(),
   });
   const machineDocker = dockerCli(env.runner.cliEnv);
@@ -2632,16 +2632,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secretOf: connectionSecret,
     housekeeper: reactingHousekeeper,
     blocked: () => autonomy.reactingBlocked(),
-    wiki: async (org, question) => {
-      const out = await wikiAsk.answer(org, undefined, question, "reacting");
-      return { answer: out.answer, found: out.found };
-    },
-    rest: async (org) => (await wikiUnavailable(org)) ?? (await wikiRest(org, "reacting")),
+    wake: (org, text, settled, job) => lanes.tell(org, text, settled, job),
     findings,
     watch: {
       incident: (id) => opsWatch?.incident(id),
       incidentOfFinding: (finding) => opsWatch?.incidentOfFinding(finding),
-      open: (org) => (opsWatch?.openIncidents() ?? []).filter((i) => i.org === org),
     },
     facts: incidentFacts,
     engine: incidentEngineNow,
@@ -2661,7 +2656,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (blocked !== undefined) throw new UserError(`${blocked}.`, 409);
       await tasks.start(task, "majhi");
     },
-    tellTask: (task, text) => tasks.postFromScheduler({ task, text, from: "chat" }),
     history: ({ text, org, task }) =>
       void autonomy.event({
         kind: "decision",
@@ -2732,6 +2726,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       background.run(async () => {
         await incidentEngineNow.sweep();
         await chatParts.incidents.tick();
+        chatParts.desk.retry();
         chatParts.waits.settle();
       }),
     INCIDENT_SWEEP_MS,

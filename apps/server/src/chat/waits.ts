@@ -1,10 +1,4 @@
-import {
-  chatWaitDecisionId,
-  type DecisionOption,
-  type OwnerDecision,
-  type RoomItem,
-  type TaskId,
-} from "@majhi/shared";
+import { chatWaitDecisionId, type OwnerDecision, type RoomItem, type TaskId } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -21,8 +15,6 @@ export interface WaitsDeps {
   findings: Pick<FindingsService, "dismiss">;
   /** The owner's answer to "who is this?". */
   whoIs: (room: string, card: string, answer: "us" | "client") => Promise<void>;
-  /** The owner's "Make incident": opens (or joins) the incident on the client's word. */
-  makeIncident: (room: RoomRow, item: ClientItem, finding: number) => Promise<{ task: string; joined: boolean }>;
   history?: ChatHistory | undefined;
   changed: () => void;
   now?: () => Date;
@@ -33,7 +25,11 @@ const WINDOW_MS = 14 * 86_400_000;
 const SCAN = 80;
 
 function clip(text: string, max: number): string {
-  const line = text.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
+  const line =
+    text
+      .split("\n")
+      .find((l) => l.trim() !== "")
+      ?.trim() ?? "";
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
@@ -80,7 +76,6 @@ export class ChatWaits {
     for (const room of this.rooms()) {
       const org = room.org as string;
       const seenWho = new Set<string>();
-      let claim: ClientItem | undefined;
       const plain: ClientItem[] = [];
       for (const item of this.scan(room).open) {
         const card = this.deps.room.get(room.id, `who:${item.sender.id}`);
@@ -100,28 +95,7 @@ export class ChatWaits {
             at: item.at,
             link: { kind: "chat", id: room.id as TaskId },
           });
-        } else if (item.outcome?.claim === true) claim = item;
-        else plain.push(item);
-      }
-      // One claim per chat: the newest.
-      if (claim !== undefined) {
-        const said = clip(claim.text, 90);
-        const options: DecisionOption[] = [
-          ...(claim.outcome?.finding === undefined
-            ? []
-            : [{ id: "incident", label: "Make incident", primary: true as const }]),
-          { id: "dismiss", label: "Not an outage" },
-        ];
-        out.push({
-          id: chatWaitDecisionId(room.id, claim.id),
-          kind: "reply",
-          org,
-          title: `${claim.sender.name} says ${said}; no watch shows it`,
-          sentence: `${claim.sender.name} in ${room.chat.title} says something is down. No watch or failed deploy backs it. The client was asked for details.`,
-          options: withPrimary(options),
-          at: claim.at,
-          link: { kind: "chat", id: room.id as TaskId },
-        });
+        } else plain.push(item);
       }
       for (const item of plain) {
         out.push({
@@ -171,26 +145,7 @@ export class ChatWaits {
     }
     const found = this.deps.room.get(roomId, ref);
     if (found?.type !== "client") throw new UserError("That message is gone.", 409);
-    if (option === "incident") {
-      const finding = found.outcome?.finding;
-      if (finding === undefined) throw new UserError("That message has no finding to make an incident from.", 409);
-      const made = await this.deps.makeIncident(room, found, finding);
-      writeOutcome(this.deps, roomId, found, {
-        state: "handled",
-        why: `${made.joined ? "Joined" : "Opened"} incident ${made.task} on your word`,
-        task: made.task,
-        finding,
-      });
-      this.deps.history?.({
-        text: `${made.joined ? "Joined" : "Opened"} incident ${made.task} for ${room.chat.title}: you said ${found.sender.name} was right`,
-        org: room.org,
-        task: made.task,
-      });
-    } else this.close(room, found, option === "dismiss" ? "You said it is not an outage" : "You handled it");
+    this.close(room, found, option === "dismiss" ? "You said it is not an outage" : "You handled it");
     this.deps.changed();
   }
-}
-
-function withPrimary(options: DecisionOption[]): DecisionOption[] {
-  return options.map((o, i) => (i === 0 ? { ...o, primary: true as const } : o));
 }

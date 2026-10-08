@@ -43,6 +43,7 @@ export const DAILY_CHORES: readonly CaptainChore[] = [
   "health",
   "checklist",
   "wiki",
+  "watches",
 ];
 
 export { clockIn as clockAt, withinHours } from "@majhi/shared";

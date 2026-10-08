@@ -26,6 +26,9 @@ type ChatCommand =
   | "chat.sendAs"
   | "chat.userToken"
   | "chat.reply"
+  | "chat.history"
+  | "chat.openIncident"
+  | "chat.startTask"
   | "contacts.list"
   | "contacts.merge"
   | "contacts.undoMerge";
@@ -38,6 +41,14 @@ function ownerOnly(ctx: CommandContext): void {
       409,
     );
   }
+}
+
+/** The captain's call from its lane: who it is and which lane chat it comes from. */
+function captainCaller(ctx: CommandContext): { agent: string; task: string } {
+  if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) {
+    throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
+  }
+  return { agent: ctx.meta.actor.id, task: ctx.meta.task };
 }
 
 /** The `chat.*` and `contacts.*` commands (docs/briefs/client-chats.md). */
@@ -144,11 +155,11 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
       return { ok: true as const };
     },
     "chat.reply": async (input, ctx) => {
-      if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) {
-        throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
-      }
-      return chat.reply(input, { agent: ctx.meta.actor.id, task: ctx.meta.task });
+      return chat.reply(input, captainCaller(ctx));
     },
+    "chat.history": async (input, ctx) => chat.history(input, captainCaller(ctx)),
+    "chat.openIncident": async (input, ctx) => chat.openIncident(input, captainCaller(ctx)),
+    "chat.startTask": async (input, ctx) => chat.startTask(input, captainCaller(ctx)),
     "contacts.list": async (input, ctx) => {
       ownerOnly(ctx);
       return chat.contacts(input.org);

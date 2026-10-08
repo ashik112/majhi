@@ -9,6 +9,7 @@ import {
   DecisionListSchema,
   McpSearchResultSchema,
   PRIVATE,
+  ProjectDeployViewSchema,
   ProjectViewSchema,
   SkillInstallResultSchema,
   SkillSearchResultSchema,
@@ -25,6 +26,7 @@ import {
   type StaleSecret,
   skillInstallInput,
   type UpkeepPorts,
+  type WatchCoverage,
 } from "./upkeep-ports.ts";
 
 /**
@@ -126,6 +128,38 @@ export function upkeepWorld(deps: {
       .parse((await deps.run("connections.list", { org }, "Upkeep: connections")).output);
 
   return {
+    async watchCoverage(org) {
+      const projects = z
+        .array(ProjectViewSchema)
+        .parse((await deps.run("projects.list", {}, "Upkeep: projects")).output)
+        .filter((p) => p.org === org && p.exists);
+      const covered: WatchCoverage["projects"] = [];
+      for (const p of projects) {
+        const view = ProjectDeployViewSchema.parse(
+          (await deps.run("projects.deployView", { project: p.id }, "Upkeep: deploy environments")).output,
+        );
+        covered.push({
+          id: p.id,
+          environments: view.environments.map((e) => ({ env: e.env, tier: e.tier, check: e.check })),
+        });
+      }
+      const overview = WatchOverviewSchema.parse(
+        (await deps.run("watch.overview", { org }, "Upkeep: watches")).output,
+      );
+      return {
+        projects: covered,
+        watches: overview.watches.map((w) => ({
+          id: w.id,
+          name: w.def.name,
+          kind: w.def.spec.kind,
+          target: "url" in w.def.spec ? w.def.spec.url : undefined,
+          paused: w.status === "paused",
+        })),
+        connections: (await connections(org)).map((c) => ({ id: c.id, type: c.type, name: c.name })),
+        incidents: overview.incidents.slice(0, 20).map((i) => ({ title: i.title, status: i.status })),
+      };
+    },
+
     async profile(org) {
       const terms: string[] = [];
       const projects = z

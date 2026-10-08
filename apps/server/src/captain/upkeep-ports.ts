@@ -71,7 +71,21 @@ export interface HealthCheckView {
   fix?: { label: string } | undefined;
 }
 
+/**
+ * What the watch-coverage chore reads of a workspace: where each project is deployed and how it can be checked, the
+ * watches that exist, what is connected, and what broke before. Facts only: which watch to add is the captain's call.
+ */
+export interface WatchCoverage {
+  projects: { id: string; environments: { env: string; tier: string; check?: string | undefined }[] }[];
+  watches: { id: string; name: string; kind: string; target?: string | undefined; paused: boolean }[];
+  connections: { id: string; type: string; name: string }[];
+  /** The newest incidents of the workspace's watches and tasks, to see what broke before. */
+  incidents: { title: string; status: string }[];
+}
+
 export interface UpkeepPorts {
+  /** The facts the watch-coverage chore hands the captain. */
+  watchCoverage?(org: string): Promise<WatchCoverage>;
   /** What the workspace's projects and connections use, as search words (languages, frameworks, services). */
   profile(org: string): Promise<string[]>;
   search(kind: Candidate["kind"], term: string): Promise<Candidate[]>;

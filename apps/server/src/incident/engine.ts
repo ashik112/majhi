@@ -39,7 +39,7 @@ export type IncidentSource =
       org: string;
       room: string;
       item: string;
-      finding: number;
+      finding?: number | undefined;
       /** The project the evidence points to. */
       project?: string | undefined;
       /** What a client said, as data. */

@@ -1,11 +1,9 @@
 import type { OpsIncident, Task } from "@majhi/shared";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { IncidentFacts } from "../incident/facts.ts";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
-import { writeOutcome } from "./outcome.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
-import { ClientTriage, type TriageDeps } from "./triage.ts";
 
 /**
  * Tests of the incident flow: what each client room is told, and who may send the report to a client. Real rooms,
@@ -19,6 +17,14 @@ async function setup(
   const w = world({ tell: "decide", holds: { firstContact: false } });
   const watch: { incident?: OpsIncident } = {};
   const reopened: string[] = [];
+  /** What the captain was woken with: one entry per room and status, as the desk delivers it. */
+  const woken: { room: string; key: string; facts: string }[] = [];
+  const desk = {
+    event: (room: { id: string }, key: string, facts: string, onWoken?: () => void) => {
+      woken.push({ room: room.id, key, facts });
+      onWoken?.();
+    },
+  };
   const findings = {
     ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
     adopt: () => ({}) as never,
@@ -41,8 +47,8 @@ async function setup(
     watch: {
       incident: () => watch.incident,
       incidentOfFinding: () => watch.incident,
-      open: () => [],
     },
+    desk,
     tz: async () => "UTC",
     facts,
     ...(write === undefined ? {} : { write }),
@@ -92,33 +98,42 @@ async function setup(
   };
   w.store.tasks.insert(task);
   for (const room of rooms) w.store.tasks.putLink({ task: task.id, type: "client", other: room });
-  return { w, incidents, rooms, task, watch, reopened };
+  return { w, incidents, rooms, task, watch, reopened, woken };
 }
 
 describe("updates to client rooms", () => {
-  it("each room hears of one incident once per status change, and not again on the next pass", async () => {
-    const { w, incidents } = await setup();
+  it("wakes the captain once per room per status change, and not again on the next pass", async () => {
+    const { incidents, rooms, woken } = await setup();
     await incidents.tick();
     await incidents.tick();
-    // Two rooms, one update each: Investigating.
-    expect(w.sent.map((s) => s.chat).toSorted()).toEqual(["-100", "-200"]);
-    expect(w.sent.every((s) => s.text.startsWith("We are looking into"))).toBe(true);
+    // Two rooms, one wake each: Investigating.
+    expect(woken.map((e) => e.room).toSorted()).toEqual([...rooms].toSorted());
+    expect(woken.every((e) => e.facts.includes("Status now: we are looking into it"))).toBe(true);
 
-    // The captain marks the cause: both rooms hear Identified, once.
+    // The captain marks the cause: both rooms are woken for Identified, once, with the client wording of the cause.
     incidents.cause("ACM-9", "A report query held the database busy", "A slow query held things up");
     await incidents.tick();
     await incidents.tick();
-    expect(w.sent).toHaveLength(4);
-    expect(w.sent.slice(2).every((s) => s.text.startsWith("We found what is causing it"))).toBe(true);
-    const view = await incidents.view("ACM-9");
-    expect(view?.rooms.map((r) => r.sees)).toEqual(["identified", "identified"]);
+    expect(woken).toHaveLength(4);
+    expect(woken.slice(2).every((e) => e.facts.includes("A slow query held things up"))).toBe(true);
+    expect(woken.slice(2).some((e) => e.facts.includes("report query held the database"))).toBe(false);
   });
 
-  it("a room the owner holds is not written to", async () => {
+  it("counts a room as told when the captain's reply goes out, not when it is woken", async () => {
     const { w, incidents, rooms } = await setup();
+    await incidents.tick();
+    expect((await incidents.view("ACM-9"))?.rooms.map((r) => r.sees)).toEqual([undefined, undefined]);
+    const room = rooms[0] as string;
+    const out = await w.replies.captain({ room, text: "We are on it.", flags: w.flags(), to: "u1" });
+    incidents.replied(room, out.draft);
+    expect((await incidents.view("ACM-9"))?.rooms.map((r) => r.sees)).toEqual(["investigating", undefined]);
+  });
+
+  it("a room the owner holds is not woken", async () => {
+    const { w, incidents, rooms, woken } = await setup();
     w.rooms.holder(rooms[0] as string, "you");
     await incidents.tick();
-    expect(w.sent.map((s) => s.chat)).toEqual(["-200"]);
+    expect(woken.map((e) => e.room)).toEqual([rooms[1]]);
   });
 });
 
@@ -247,115 +262,15 @@ describe("a client says it is still broken after Resolved", () => {
     expect((await incidents.view("ACM-9"))?.status).toBe("resolved");
 
     const room = w.rooms.room(rooms[0] as string);
-    const first = await incidents.attach(room, "ACM-9", "i1");
+    const first = await incidents.attach(room, "ACM-9");
     expect(first.reopened).toBe(true);
     expect(reopened).toEqual(["ACM-9"]);
     expect(w.store.tasks.get("ACM-9")?.status).toBe("inbox");
     expect((await incidents.view("ACM-9"))?.status).toBe("investigating");
 
-    const second = await incidents.attach(room, "ACM-9", "i2");
+    const second = await incidents.attach(room, "ACM-9");
     expect(second.reopened).toBe(false);
     expect(reopened).toEqual(["ACM-9"]);
-  });
-});
-
-describe('"any update?" from a client', () => {
-  async function ask(chat: string | undefined) {
-    const t = await setup();
-    const roomId = chat ?? (t.rooms[0] as string);
-    // A chat of the workspace that no incident is linked to.
-    const other = chat === undefined ? roomId : await t.w.linked(chat);
-    await t.w.ingest.deliver(CONN, envelope({ chatId: chat ?? "-100", message: "40", text: "Any update?" }));
-    const item = t.w.store.room
-      .page(other, 10)
-      .items.find((i) => i.type === "client" && i.external.message === "40");
-    if (item?.type !== "client") throw new Error("no message");
-    const model = vi.fn(async (_o: string, _k: string, _p: string, parse: (x: string) => never) => {
-      const parsed = parse('{"action":"update","reason":"asks how it is going"}') as {
-        ok: boolean;
-        value?: unknown;
-      };
-      return parsed.value;
-    });
-    const wiki = vi.fn(async () => ({ answer: "Guess", found: true }));
-    const deps = {
-      store: t.w.store,
-      room: t.w.room,
-      model,
-      findings: {
-        report: async () => ({ finding: { id: 1 } }),
-        dismiss: () => undefined,
-        toTask: async () => ({}),
-      },
-      replies: t.w.replies,
-      wiki,
-      rest: async () => undefined,
-      incidents: (org: string, room: string) => t.incidents.candidates(org, room),
-      incident: t.incidents,
-    } as unknown as TriageDeps;
-    const out = await new ClientTriage(deps).run(t.w.rooms.room(other), item);
-    return { t, out, wiki };
-  }
-
-  it("in a chat linked to an open incident is answered from its status, through the reply rails", async () => {
-    const { t, out, wiki } = await ask(undefined);
-    expect(out?.action).toBe("update");
-    expect(t.w.sent.at(-1)?.text).toBe(
-      "We are looking into the problem. We will tell you here when we know more.",
-    );
-    expect(wiki).not.toHaveBeenCalled();
-    // Under Tell Ask me the same answer waits instead of going out.
-    t.w.state.tell = "ask";
-    const before = t.w.sent.length;
-    await new ClientTriage({
-      store: t.w.store,
-      room: t.w.room,
-      model: async (_o: string, _k: string, _p: string, parse: (x: string) => never) =>
-        (parse('{"action":"update","reason":"asks"}') as { value?: never }).value,
-      findings: { report: async () => ({ finding: { id: 2 } }), dismiss: () => undefined },
-      replies: t.w.replies,
-      wiki,
-      rest: async () => undefined,
-      incidents: () => [],
-      incident: t.incidents,
-    } as unknown as TriageDeps).run(
-      t.w.rooms.room(t.rooms[0] as string),
-      t.w.store.room.page(t.rooms[0] as string, 10).items.find((i) => i.type === "client") as never,
-    );
-    expect(t.w.sent).toHaveLength(before);
-  });
-
-  it("counts a done task still in its soak as open, and answers Resolved once the soak has passed", async () => {
-    const t = await setup("done");
-    const now = new Date();
-    t.watch.incident = {
-      id: 1,
-      org: "acme",
-      title: "Orders down",
-      status: "resolved",
-      openedAt: new Date(now.getTime() - 3_600_000).toISOString(),
-      resolvedAt: now.toISOString(),
-      timeline: [{ at: now.toISOString(), kind: "resolved", text: "All checks green" }],
-    } as OpsIncident;
-    const soaking = await t.incidents.answer(t.rooms[0] as string);
-    expect(soaking?.text).not.toContain("resolved");
-    t.watch.incident = { ...t.watch.incident, resolvedAt: new Date(now.getTime() - 3_600_000).toISOString() };
-    // Closed with nothing shipped: the soak runs from the close, so the close was an hour ago too.
-    t.w.store.raw
-      .prepare("UPDATE tasks SET updated_at = ? WHERE id = 'ACM-9'")
-      .run(new Date(now.getTime() - 3_000_000).toISOString());
-    const after = await t.incidents.answer(t.rooms[0] as string);
-    expect(after?.text).toContain("resolved");
-  });
-
-  it("in a chat linked to no incident is answered from the open incident of its workspace", async () => {
-    const { t } = await ask("-300");
-    expect(t.w.sent.map((m) => m.text)).toEqual([
-      "We are looking into the problem. We will tell you here when we know more.",
-    ]);
-    const room = t.w.rooms.find("telegram", CONN.account, "-300");
-    const message = t.w.store.room.page(room?.id ?? "", 20).items.find((i) => i.type === "client");
-    expect(message).toMatchObject({ outcome: { state: "replied" } });
   });
 });
 
@@ -364,62 +279,17 @@ describe("what each client room reads", () => {
     const { w, incidents, rooms } = await setup("done");
     await incidents.tick();
     // Only the first room says it is back, after it was told Resolved.
-    await incidents.attach(w.rooms.room(rooms[0] as string), "ACM-9", "i1");
+    await incidents.attach(w.rooms.room(rooms[0] as string), "ACM-9");
     const [first, second] = rooms as [string, string];
     const sent = async (room: string): Promise<string> => {
       const before = w.sent.length;
       await incidents.sendReport("ACM-9", room);
-      return w.sent.slice(before).map((m) => m.text).join("\n");
+      return w.sent
+        .slice(before)
+        .map((m) => m.text)
+        .join("\n");
     };
     expect(await sent(second)).not.toContain("you told us it was back");
     expect(await sent(first)).toContain("you told us it was back");
-  });
-
-  it("a claim made before the watch fired joins the incident when it opens, and the room is told", async () => {
-    const { w, incidents } = await setup();
-    const room = await w.linked("-300");
-    await w.ingest.deliver(CONN, envelope({ chatId: "-300", message: "7", text: "Login gives 500s" }));
-    const message = w.store.room.page(room, 10).items.find((i) => i.type === "client");
-    if (message?.type !== "client") throw new Error("no message");
-    writeOutcome(w, room, message, { state: "waits", claim: true, finding: 5 });
-    await incidents.tick();
-    expect(w.store.tasks.linksTo(room).map((l) => l.task)).toEqual(["ACM-9"]);
-    expect(w.store.room.get(room, message.id)).toMatchObject({
-      outcome: { state: "handled", task: "ACM-9" },
-    });
-    expect(w.sent.filter((m) => m.chat === "-300")).toHaveLength(1);
-  });
-});
-
-describe("a vague report", () => {
-  it("never gets the same question twice in a row", async () => {
-    const w = world({ tell: "decide", holds: { firstContact: false } });
-    const room = await w.linked("-100");
-    const model = async (_o: string, key: string, _p: string, parse: (x: string) => never) => {
-      const reply = key.endsWith(":reply")
-        ? '{"text":"What exactly is failing?","promisedTime":false,"money":false,"security":false,"severalClients":false}'
-        : '{"action":"clarify","reason":"too vague"}';
-      return (parse(reply) as { value?: never }).value;
-    };
-    const triage = new ClientTriage({
-      store: w.store,
-      room: w.room,
-      model,
-      findings: { report: async () => ({ finding: { id: 1 } }), dismiss: () => undefined, toTask: async () => ({}) },
-      replies: w.replies,
-      wiki: async () => ({ answer: "", found: false }),
-      rest: async () => undefined,
-      incidents: () => [],
-      incident: { claim: async () => undefined, linked: () => false, answer: async () => undefined },
-    } as unknown as TriageDeps);
-    for (const message of ["50", "51"]) {
-      await w.ingest.deliver(CONN, envelope({ message, text: "Something is wrong" }));
-      const item = w.store.room
-        .page(room, 10)
-        .items.find((i) => i.type === "client" && i.external.message === message);
-      if (item?.type !== "client") throw new Error("no message");
-      await triage.run(w.rooms.room(room), item);
-    }
-    expect(w.sent.map((m) => m.text)).toEqual(["What exactly is failing?"]);
   });
 });

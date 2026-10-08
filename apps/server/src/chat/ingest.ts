@@ -16,11 +16,11 @@ import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import { type ChatConnection, FILE_CAP_BYTES } from "./adapter.ts";
 import { type Contacts, wordsOf } from "./contacts.ts";
+import type { ClientGate } from "./gate.ts";
 import type { ChatHub } from "./hub.ts";
 import { writeOutcome } from "./outcome.ts";
 import { withoutSecrets } from "./rails.ts";
 import type { ClientRooms } from "./rooms.ts";
-import type { ClientTriage } from "./triage.ts";
 
 export interface IngestDeps {
   store: Store;
@@ -28,7 +28,7 @@ export interface IngestDeps {
   rooms: ClientRooms;
   contacts: Contacts;
   hub: Pick<ChatHub, "file">;
-  triage: Pick<ClientTriage, "run">;
+  triage: Pick<ClientGate, "run">;
   /** Whether a message already has its finding: the triage ran for it. */
   triaged?: ((org: string, key: string) => boolean) | undefined;
   majhiHome: string;

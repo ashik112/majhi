@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import type { CaptainChore } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { upperFirst } from "../machine/busy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal, skillInstallInput } from "./upkeep-ports.ts";
+import { coverageBrief } from "./watch-coverage.ts";
 
 /**
  * The self-upkeep chores: the captain keeps majhi itself in shape. Each run is cheap, one pass over
@@ -20,7 +22,7 @@ const MAX_SIGNALS = 10;
 
 type Chores = Pick<
   Record<CaptainChore, (run: ChoreRun) => Promise<void>>,
-  "discover" | "tidy" | "health" | "checklist"
+  "discover" | "tidy" | "health" | "checklist" | "watches"
 >;
 
 const clip = (s: string, n = 100) => (s.length <= n ? s : `${s.slice(0, n - 3)}...`);
@@ -83,6 +85,37 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
     });
 
   return {
+    /**
+     * Wakes the captain to review the workspace's watch coverage whenever the facts it would reason from changed
+     * (an environment, a watch, a connection, an incident). The same facts never wake it twice. The captain adds
+     * the watches, one History line each; the chore only hands it the facts and the catalogue.
+     */
+    async watches(run) {
+      const u = ports.upkeep;
+      if (u?.watchCoverage === undefined || u.wakeCaptain === undefined) return;
+      const { org, ws } = run;
+      const facts = await u.watchCoverage(org);
+      if (facts.projects.length === 0) {
+        await summary(run, "Watch coverage", "no project to cover");
+        return;
+      }
+      const digest = createHash("sha1").update(JSON.stringify(facts)).digest("hex").slice(0, 12);
+      const outcome = await run.act({
+        key: `watches:${org}:${digest}`,
+        text: `Asked the captain to review watch coverage in ${ws.name}`,
+        reason: "A project, a watch, a connection or an incident changed since the last review",
+        do: async () => {
+          u.wakeCaptain?.(org, coverageBrief(ws.name, facts));
+          return { undoNote: "A request to the captain: nothing to undo" };
+        },
+      });
+      await summary(
+        run,
+        "Watch coverage",
+        outcome === "done" ? "asked the captain to review it" : "nothing changed",
+      );
+    },
+
     async discover(run) {
       const u = ports.upkeep;
       if (u === undefined) return;
