@@ -12,11 +12,14 @@ const NOW = new Date("2026-10-04T12:00:00.000Z");
 /** A findings store that keeps what was filed, by dedupe key, and what the owner dismissed. */
 function fakeFindings(dismissed: string[] = []) {
   const filed = new Map<string, string>(dismissed.map((k) => [k, "dismissed"]));
+  const details = new Map<string, string>();
   return {
     filed,
+    details,
     find: (_org: string, key: string) => (filed.has(key) ? { status: filed.get(key) } : undefined),
-    report: async (input: { dedupeKey?: string; title: string }) => {
+    report: async (input: { dedupeKey?: string; title: string; detail?: string }) => {
       filed.set(input.dedupeKey ?? input.title, "open");
+      details.set(input.dedupeKey ?? input.title, input.detail ?? "");
       return {};
     },
     settle: (_org: string, _source: string, prefix: string, stillTrue: ReadonlySet<string>) => {
@@ -56,6 +59,7 @@ function setup(opts: {
   findings?: ReturnType<typeof fakeFindings>;
   authority?: Partial<Authority>;
   rules?: AutonomyOrg;
+  org?: string;
 }) {
   const findings = opts.findings ?? fakeFindings();
   const ports = {
@@ -69,7 +73,7 @@ function setup(opts: {
     repo,
     now: () => NOW,
     workspace: async () => ({
-      org: "acme",
+      org: opts.org ?? "acme",
       name: "Acme",
       mode: "on",
       authority: { ...ALL_ASK, upkeep: "decide", ...opts.authority } as Authority,
@@ -176,6 +180,81 @@ describe("tidy", () => {
     await t.runner.start("acme", "tidy", "daily");
     expect(clean).not.toHaveBeenCalled();
     expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("open");
+  });
+});
+
+describe("the disk", () => {
+  const GB = 1_000_000_000;
+  const quiet: Partial<UpkeepPorts> = {
+    failingConnections: async () => [],
+    staleSecrets: async () => [],
+    tidy: async () => [],
+  };
+  const disk = (over: Partial<NonNullable<UpkeepPorts["disk"]>>): NonNullable<UpkeepPorts["disk"]> => ({
+    reading: () => ({ freeBytes: 200 * GB, totalBytes: 1000 * GB, low: false }),
+    docker: async () => ({ images: 0, volumes: 0, bytes: 0 }),
+    freeDocker: async () => ({ images: 0, volumes: 0, bytes: 0 }),
+    plan: async () => ({ bytes: 0, lines: [] }),
+    consumers: async () => [],
+    ...over,
+  });
+
+  it("removes unused Docker images and old volumes on a tidy run, and says so in one line", async () => {
+    const freeDocker = vi.fn(async () => ({ images: 3, volumes: 2, bytes: 9 * GB }));
+    const t = setup({
+      upkeep: {
+        ...quiet,
+        disk: disk({ docker: async () => ({ images: 3, volumes: 2, bytes: 9 * GB }), freeDocker }),
+      },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    expect(freeDocker).toHaveBeenCalledOnce();
+    expect(t.repo.allActions().map((a) => a.text)).toContain(
+      "Removed 3 unused Docker images (9.0 GB) and 2 volumes of old tasks",
+    );
+  });
+
+  it("does nothing to Docker when nothing qualifies", async () => {
+    const freeDocker = vi.fn();
+    const t = setup({ upkeep: { ...quiet, disk: disk({ freeDocker }) } });
+    await t.runner.start("acme", "tidy", "daily");
+    expect(freeDocker).not.toHaveBeenCalled();
+  });
+
+  it("frees task folders at once when the disk is low, and files no card when that is enough", async () => {
+    const freeFolders = vi.fn(async () => ({ bytes: 100 * GB, tasks: [] }));
+    const t = setup({
+      org: "private",
+      upkeep: {
+        ...quiet,
+        disk: disk({ reading: () => ({ freeBytes: 20 * GB, totalBytes: 500 * GB, low: true }) }),
+      },
+      ports: { freeFolders },
+    });
+    await t.runner.start("private", "tidy", "The disk is low");
+    expect(freeFolders).toHaveBeenCalledOnce();
+    expect(t.findings.filed.size).toBe(0);
+  });
+
+  it("files one card with the biggest consumers and what one click removes when the disk stays low", async () => {
+    const t = setup({
+      org: "private",
+      upkeep: {
+        ...quiet,
+        disk: disk({
+          reading: () => ({ freeBytes: 10 * GB, totalBytes: 500 * GB, low: true }),
+          plan: async () => ({ bytes: 12 * GB, lines: ["8 unused Docker images (12.0 GB)"] }),
+          consumers: async () => ["Task folders 30.0 GB", "Docker images 45.0 GB"],
+        }),
+      },
+      ports: { freeFolders: async () => ({ bytes: GB, tasks: [] }) },
+    });
+    await t.runner.start("private", "tidy", "The disk is low");
+    const [key] = [...t.findings.filed.keys()];
+    expect(key).toBe("disk:low:2026-10-04");
+    expect(t.findings.details.get(key ?? "")).toBe(
+      "Biggest: Task folders 30.0 GB, Docker images 45.0 GB. One click would remove: 8 unused Docker images (12.0 GB). Press Free 12.0 GB in Health to remove exactly this.",
+    );
   });
 });
 

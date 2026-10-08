@@ -2757,3 +2757,11 @@ Window: 7 days, at most 100 rows (what waits is always in it). Who did it uses `
 **How to try it.** Click the bell. Tests: `pnpm exec vitest run apps/server/src/notices` (workspace scoping; owner-only and forward-only marks).
 
 **Left.** Unstable decision times (a sign-in decision's time is its last check) keep such rows at the top of their group until read. A reply held for the owner shows as a decision, not as a reply row.
+
+## Disk tidy: folders, Docker, low-disk guard (built, branch feat/disk-tidy-2, not merged)
+
+- **Task folders.** `folder-sweep.ts` also handles tasks in review or paused with no change for `cleanup.idle_deps_days` (default 3): node_modules only, never a running task, and skipped when the repo has an uncommitted change to a tracked file (the done-task guard). A marker file in the task folder makes the next agent turn say to run the install command (`runs/prompt.ts` `takeDepsNote`, `runs/manager.ts`).
+- **Docker.** `containers/prune.ts`: majhi's own unused preview images (label `majhi.container=image`) older than 7 days, as before, and volumes of tasks done for 7 days (closing a task keeps them). `DockerCli.exec` still allows only the age-filtered cache prune of a majhi task builder. The update's own clean-up (`apps/host/src/diskHygiene.ts`, build cache capped by age) is main's and unchanged.
+- **Disk guard.** `disk/guard.ts` (`DiskGuard`). Free under 15% or 30 GB wakes Tidy (`captain/service.ts` `diskLow`), which frees what is safe, then files one Private card. Health shows "Free space" with a "Free N GB" fix listing exactly what goes (owner only).
+- **Dashboard.** The Machine cell shows "majhi uses X GB: tasks Y, Docker Z".
+- **Left.** Not run on the live app. The card has no button of its own: it points to Health. 

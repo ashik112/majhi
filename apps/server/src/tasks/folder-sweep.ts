@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
-import { lstat, readdir, realpath, rm, stat } from "node:fs/promises";
+import { lstat, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import type { Task } from "@majhi/shared";
@@ -37,10 +37,19 @@ export const REBUILDABLE = [
 /** Names that are often source too: only removed when git ignores them. */
 export const REBUILDABLE_IF_IGNORED = ["dist", "build", "target"] as const;
 
+/** What an idle task in review or paused gives up: the dependencies only. Build output may be what the owner is looking at. */
+const IDLE_REBUILDABLE: readonly string[] = ["node_modules", ".pnpm-store"];
+
+/** Left in the task folder when dependencies were removed; the next turn of an agent reads and deletes it. */
+export const DEPS_DROPPED_FILE = ".majhi-deps-dropped";
+
 /** Folders of a task that are never searched. */
 const SKIPPED = new Set([".git", "attachments"]);
 /** How deep under a task folder a rebuildable folder is looked for (task/repo/packages/x/node_modules is 4). */
 const MAX_DEPTH = 7;
+
+/** Done tasks give up everything rebuildable; idle ones in review or paused only their dependencies. */
+export type Mode = "done" | "idle";
 
 export interface SweepDeps {
   store: Store;
@@ -54,12 +63,16 @@ export interface SweepOptions {
   hours: number;
   /** Also remove the worktrees of tasks done for this many days. 0 is off. */
   worktreeDays: number;
+  /** Also remove node_modules of tasks in review or paused with no change for this many days. Absent or 0 is off. */
+  idleDays?: number | undefined;
   /** Only tasks of this workspace. Absent: every workspace. */
   org?: string | undefined;
 }
 
 export interface SweepTask {
   id: string;
+  /** `done`: a done task, `idle`: one in review or paused. */
+  mode: Mode;
   /** Bytes that deleting frees (hard links shared with a store are not counted). */
   bytes: number;
   /** Folders removed, relative to the task folder. */
@@ -81,6 +94,7 @@ interface Plan {
   /** Real path of the task folder. */
   root: string;
   doneAt: string;
+  mode: Mode;
   /** Rebuildable folders, as paths under `root`. */
   folders: string[];
   /** Worktrees that can go whole. */
@@ -269,28 +283,42 @@ export class TaskFolderSweep {
       if (task === undefined) continue;
       if (options.org !== undefined && (task.org ?? "private") !== options.org) continue;
       const wholeTrees = options.worktreeDays > 0 && doneAt < treeCutoff;
-      const result = await this.sweepTask(task, doneAt, tasksRoot, wholeTrees, dry);
+      const result = await this.sweepTask(task, doneAt, tasksRoot, "done", wholeTrees, dry);
       if (result.bytes > 0 || result.kept.length > 0) report.tasks.push(result);
       report.freedBytes += result.bytes;
+    }
+    const idleDays = options.idleDays ?? 0;
+    if (idleDays > 0) {
+      const idleCutoff = new Date(this.now().getTime() - idleDays * DAY_MS).toISOString();
+      for (const { id, at } of this.deps.store.tasks.idleBefore(idleCutoff)) {
+        const task = this.deps.store.tasks.get(id);
+        if (task === undefined) continue;
+        if (options.org !== undefined && (task.org ?? "private") !== options.org) continue;
+        const result = await this.sweepTask(task, at, tasksRoot, "idle", false, dry);
+        if (result.bytes > 0 || result.kept.length > 0) report.tasks.push(result);
+        report.freedBytes += result.bytes;
+      }
     }
     return report;
   }
 
-  /** True while the task is still done and unchanged since it was looked at. */
-  private stillDone(id: string, doneAt: string): boolean {
+  /** True while the task is still in the state it was chosen in (done, or review or paused) and unchanged since. */
+  private stillSo(id: string, at: string, mode: Mode): boolean {
     const now = this.deps.store.tasks.get(id);
-    return now !== undefined && now.status === "done" && now.updatedAt === doneAt;
+    if (now === undefined || now.updatedAt !== at) return false;
+    return mode === "done" ? now.status === "done" : now.status === "review" || now.status === "paused";
   }
 
   private async sweepTask(
     task: Task,
     doneAt: string,
     tasksRoot: string,
+    mode: Mode,
     wholeTrees: boolean,
     dry: boolean,
   ): Promise<SweepTask> {
-    const out: SweepTask = { id: task.id, bytes: 0, removed: [], worktrees: [], kept: [] };
-    const plan = await this.plan(task, doneAt, tasksRoot, wholeTrees);
+    const out: SweepTask = { id: task.id, mode, bytes: 0, removed: [], worktrees: [], kept: [] };
+    const plan = await this.plan(task, doneAt, tasksRoot, mode, wholeTrees);
     out.kept.push(...plan.kept);
     if (plan.folders.length === 0 && plan.trees.length === 0) return out;
 
@@ -299,8 +327,8 @@ export class TaskFolderSweep {
     for (const repo of plan.trees) {
       const worktree = repo.worktree;
       if (worktree === undefined) continue;
-      if (!this.stillDone(task.id, doneAt)) {
-        out.kept.push("it was reopened");
+      if (!this.stillSo(task.id, doneAt, mode)) {
+        out.kept.push(mode === "done" ? "it was reopened" : "it changed");
         return out;
       }
       const bytes = await treeBytes(worktree);
@@ -320,8 +348,8 @@ export class TaskFolderSweep {
 
     for (const folder of plan.folders) {
       if (gone.some((g) => folder === g || inside(folder, g))) continue;
-      if (!this.stillDone(task.id, doneAt)) {
-        out.kept.push("it was reopened");
+      if (!this.stillSo(task.id, doneAt, mode)) {
+        out.kept.push(mode === "done" ? "it was reopened" : "it changed");
         return out;
       }
       // Right before deleting: the path is still a real folder inside the task folder, not a link.
@@ -340,12 +368,23 @@ export class TaskFolderSweep {
       out.removed.push(relative(plan.root, folder));
       out.bytes += bytes;
     }
+    if (!dry && mode === "idle" && out.removed.length > 0) {
+      await writeFile(join(plan.root, DEPS_DROPPED_FILE), `${out.removed.join("\n")}\n`).catch(
+        () => undefined,
+      );
+    }
     return out;
   }
 
   /** Decides what may go from this task, from a fresh look at its folder and repos. */
-  private async plan(task: Task, doneAt: string, tasksRoot: string, wholeTrees: boolean): Promise<Plan> {
-    const plan: Plan = { task, root: task.folder, doneAt, folders: [], trees: [], kept: [] };
+  private async plan(
+    task: Task,
+    doneAt: string,
+    tasksRoot: string,
+    mode: Mode,
+    wholeTrees: boolean,
+  ): Promise<Plan> {
+    const plan: Plan = { task, root: task.folder, doneAt, mode, folders: [], trees: [], kept: [] };
     const root = await realpath(task.folder).catch(() => undefined);
     if (root === undefined) return plan;
     if (!inside(root, tasksRoot)) {
@@ -404,8 +443,10 @@ export class TaskFolderSweep {
       if (entry.isSymbolicLink() || !entry.isDirectory()) continue;
       if (SKIPPED.has(entry.name)) continue;
       const path = join(dir, entry.name);
-      const always = (REBUILDABLE as readonly string[]).includes(entry.name);
-      const ignoredOnly = (REBUILDABLE_IF_IGNORED as readonly string[]).includes(entry.name);
+      const names = plan.mode === "idle" ? IDLE_REBUILDABLE : (REBUILDABLE as readonly string[]);
+      const always = names.includes(entry.name);
+      const ignoredOnly =
+        plan.mode === "done" && (REBUILDABLE_IF_IGNORED as readonly string[]).includes(entry.name);
       if (!always && !ignoredOnly) {
         await this.find(root, path, depth + 1, repoClean, plan);
         continue;

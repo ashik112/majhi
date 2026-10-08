@@ -243,7 +243,8 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       "Re-test a failing connection. File what is stale as a finding with a proposal to close it. Leave a worktree with uncommitted changes for the owner. Send one summary line.",
     outputs: ["finding", "log"],
     cost: { tier: "rules", tokens: PASS_BOUND.tokens },
-    turnOn: "Tidies majhi once a day where Upkeep is Captain. Destructive steps wait for you.",
+    turnOn:
+      "Tidies majhi once a day where Upkeep is Captain, and at once when the disk runs low. Destructive steps wait for you.",
     outcomes: [
       { id: "tidy-retest", text: "A failing connection: test it again" },
       { id: "tidy-propose", text: "Something stale: propose closing it" },
@@ -252,6 +253,10 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
         text: "A duplicate or abandoned secret request: withdraw it. The rest: try a connection first",
       },
       { id: "tidy-dirty", text: "A worktree with uncommitted changes: ask me, never remove" },
+      {
+        id: "tidy-disk",
+        text: "Unused Docker images and volumes of old tasks: remove them. A low disk: free task folders now and ask me before more. The build cache stays",
+      },
     ],
     runner: { kind: "chore", chore: "tidy" },
   }),

@@ -40,6 +40,8 @@ import { type Identity, revertMerge } from "./undo.ts";
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const HOURLY_MS = 60 * 60_000;
+/** A low disk starts the tidy chore at most this often. */
+const DISK_TRIGGER_EVERY_MS = 3 * 3_600_000;
 /** A burst of triggers is looked at once. */
 const TRIGGER_MS = 1_500;
 
@@ -334,6 +336,20 @@ export class CaptainService {
       for (const chore of ["cards", "ship", "tidy"] as const)
         this.trigger(org, chore, "majhi was updated", "majhi");
     }
+  }
+
+  /** When the low-disk tidy last started, so a disk that stays low starts it every few hours, not every poll. */
+  private diskTriggeredAt = 0;
+
+  /**
+   * The machine's disk is low (under 15% or under 30 GB free): every workspace's tidy chore runs now,
+   * not at the next daily run. At most once in 3 hours, so a disk that stays low does not loop.
+   */
+  diskLow(orgs: readonly string[]): void {
+    const now = this.now().getTime();
+    if (now - this.diskTriggeredAt < DISK_TRIGGER_EVERY_MS) return;
+    this.diskTriggeredAt = now;
+    for (const org of new Set(orgs)) this.trigger(org, "tidy", "The disk is low", "majhi");
   }
 
   gitChanged(org: string): void {

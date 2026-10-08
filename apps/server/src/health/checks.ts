@@ -99,7 +99,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkSshHosts(ctx.sshHosts, ctx.host, ctx.env.sshAgentOff),
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
-    [checkTaskFolders(ctx.services)],
+    [checkTaskFolders(ctx.services), ...checkLowDisk(ctx.services)],
     [checkMachine(ctx.services)],
     checkClientChat(ctx.services),
     checkSecrets(ctx.services),
@@ -509,6 +509,27 @@ function checkTaskFolders(services: Services): Check {
     detail: m.rebuildableBytes > 0 ? detail : `${detail}. Nothing in done tasks can be freed.`,
     ...(m.rebuildableBytes > 0 ? { fix: { label: "Free space now" } } : {}),
   };
+}
+
+/** The disk is low (under 15% or 30 GB free): lists exactly what one click removes. Absent while it is not low. */
+function checkLowDisk(services: Services): Check[] {
+  const reading = services.diskGuard.reading();
+  if (reading?.low !== true) return [];
+  const base = { id: "disk-guard", group: "disk", name: "Free space" } as const;
+  const free = `${(reading.freeBytes / 1e9).toFixed(0)} GB free`;
+  const plan = services.diskGuard.planSnapshot();
+  if (plan === undefined) return [{ ...base, status: "warn", detail: `${free}. Measuring what can go...` }];
+  if (plan.lines.length === 0) {
+    return [{ ...base, status: "warn", detail: `${free}. Nothing more is safe to remove on its own.` }];
+  }
+  return [
+    {
+      ...base,
+      status: "warn",
+      detail: `${free}. It removes: ${plan.lines.join("; ")}. The Docker build cache stays.`,
+      fix: { label: `Free ${sizeText(plan.bytes)}` },
+    },
+  ];
 }
 
 /** Warn under 5 GB, fail under 1 GB. */

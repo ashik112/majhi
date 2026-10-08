@@ -213,6 +213,7 @@ export class HealthService {
         const report = await services.folderSweep.run({
           hours: cleanup.free_after_hours,
           worktreeDays: cleanup.worktree_after_days,
+          idleDays: cleanup.idle_deps_days,
         });
         const n = report.tasks.filter((t) => t.bytes > 0).length;
         return {
@@ -222,6 +223,11 @@ export class HealthService {
               ? "Nothing to free: every done task is already clean, or has changes that stay."
               : `Freed ${sizeText(report.freedBytes)} in ${n} done ${n === 1 ? "task" : "tasks"}.`,
         };
+      }
+      if (id === "disk-guard") {
+        if (actor !== "owner") return { ok: false, detail: "Only the owner frees space with this." };
+        const freed = await services.diskGuard.freeNow();
+        return { ok: true, detail: freed.text };
       }
       if (id === "tasks-dir") {
         const { state } = await config.load();

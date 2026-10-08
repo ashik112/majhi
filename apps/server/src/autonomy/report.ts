@@ -86,7 +86,10 @@ export function finishedByDay(
 }
 
 /** The report's machine line, or nothing while the host helper is not connected. */
-export function machineOf(reading: MachineReading | undefined): Pick<AutonomyReport, "machine"> {
+export function machineOf(
+  reading: MachineReading | undefined,
+  usage?: { tasksBytes: number; dockerBytes: number | undefined },
+): Pick<AutonomyReport, "machine"> {
   const host = reading?.host;
   if (reading === undefined || host === undefined) return {};
   const busy = busyReason(host);
@@ -100,6 +103,14 @@ export function machineOf(reading: MachineReading | undefined): Pick<AutonomyRep
         ? {}
         : { memFreePct: (host.memAvailableBytes / host.memTotalBytes) * 100 }),
       ...(host.diskFreeBytes === undefined ? {} : { diskFreeGb: host.diskFreeBytes / 1_000_000_000 }),
+      ...(usage === undefined
+        ? {}
+        : {
+            usage: {
+              tasksGb: usage.tasksBytes / 1_000_000_000,
+              ...(usage.dockerBytes === undefined ? {} : { dockerGb: usage.dockerBytes / 1_000_000_000 }),
+            },
+          }),
       ...(busy === undefined ? {} : { busy }),
     },
   };

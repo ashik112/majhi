@@ -300,9 +300,24 @@ export function StatusStrip({
                 </>
               )}
             </p>
+            {machine.usage !== undefined && (
+              <p
+                className="tnum m-0 truncate text-xs leading-4 text-fg-muted"
+                title={usageLine(machine.usage)}
+              >
+                {usageLine(machine.usage)}
+              </p>
+            )}
           </>
         )}
       </Segment>
     </div>
   );
+}
+
+/** "majhi uses 40 GB: tasks 20, Docker 20". */
+function usageLine(u: { tasksGb: number; dockerGb?: number | undefined }): string {
+  const total = Math.round(u.tasksGb + (u.dockerGb ?? 0));
+  const docker = u.dockerGb === undefined ? "" : `, Docker ${Math.round(u.dockerGb)}`;
+  return `majhi uses ${total} GB: tasks ${Math.round(u.tasksGb)}${docker}`;
 }
