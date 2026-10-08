@@ -1,5 +1,5 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
-import { ATTACHMENT_ACCEPT, canWorkIn, type Task } from "@majhi/shared";
+import { ATTACHMENT_ACCEPT, canWorkIn, parseMentions, type Task } from "@majhi/shared";
 import { KeyRound, Paperclip } from "lucide-react";
 import {
   type ClipboardEvent,
@@ -167,7 +167,7 @@ export function Composer({
   const toCaptain =
     task !== undefined &&
     task.kind !== "chat" &&
-    addressed === undefined &&
+    parseMentions(text, task.team).length === 0 &&
     [...index.values()].some((a) => a.isBoss);
   // One action in one place: Stop while the agent works and the box is empty, else Send.
   const stops = busy && !hasContent;

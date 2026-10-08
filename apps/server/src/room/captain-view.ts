@@ -36,9 +36,11 @@ export function roomWithCaptain(
   const own = store.room.pageAt(task.id, limit, olderThan);
   if (task.kind === "chat") return own;
   const tagged = store.room.mergedPage(view.lanesOf(task.org ?? PRIVATE), { about: task.id }, limit, bounds);
-  if (tagged.items.length === 0) return own;
-  const all = [...own.items, ...tagged.items].sort(byAtDesc);
-  return { items: all.slice(0, limit), more: own.more || tagged.more || all.length > limit };
+  // The client messages that opened or joined the task are part of its one timeline.
+  const client = store.room.clientLinesOf(task.id, limit, olderThan);
+  if (tagged.items.length === 0 && client.items.length === 0) return own;
+  const all = [...own.items, ...tagged.items, ...client.items].sort(byAtDesc);
+  return { items: all.slice(0, limit), more: own.more || tagged.more || client.more || all.length > limit };
 }
 
 /** Where a line written in `task` is shown live: a thread line to every lane of the workspace, a tagged line to its task. */

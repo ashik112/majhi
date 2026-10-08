@@ -227,6 +227,24 @@ export class RoomRepo {
     return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
+  /** The client messages, in any client room, that became or joined the task. */
+  clientLinesOf(task: string, limit: number, olderThan?: string): { items: RoomItem[]; more: boolean } {
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          eq(roomItems.outcomeTask, task),
+          eq(roomItems.type, "client"),
+          olderThan === undefined ? undefined : lt(roomItems.at, olderThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
   /** The next `limit` items after `afterSeq`, newest first, and whether newer ones exist beyond them. */
   pageAfter(task: string, limit: number, afterSeq: number): { items: RoomItem[]; more: boolean } {
     const rows = this.q.after.all({ task, seq: afterSeq, limit: limit + 1 });

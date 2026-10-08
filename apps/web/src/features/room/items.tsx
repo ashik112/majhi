@@ -310,7 +310,33 @@ function ItemBody({
       return <PausedCard item={item} owner={owner} />;
     case "owner-question":
       return <QuestionActions item={item} owner={owner} />;
+    case "client":
+      return <ClientMessage item={item} />;
   }
+}
+
+/** A client's message that opened or joined this task, in its one timeline. The chat itself is in Chats. */
+function ClientMessage({ item }: { item: Of<"client"> }) {
+  const name = item.sender.name === "" ? "Client" : item.sender.name;
+  return (
+    <article aria-label={name} className="flex gap-2.5">
+      <span
+        aria-hidden="true"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-raised text-[10px] font-semibold text-fg-soft"
+      >
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex h-6 items-center gap-2">
+          <span className="text-base font-semibold text-fg">{name}</span>
+          <Stamp at={item.at} />
+        </div>
+        <div className={cn(MEASURE, "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg")}>
+          {item.text}
+        </div>
+      </div>
+    </article>
+  );
 }
 
 const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {

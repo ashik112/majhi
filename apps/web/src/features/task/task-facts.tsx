@@ -12,7 +12,9 @@ function formatClock(iso: string): string {
 }
 
 /** The goal in one line: the first paragraph of the brief, else the title. */
-function goalOf(task: Pick<Task, "brief" | "title">, brief: string): string {
+function goalOf(task: Pick<Task, "brief" | "title" | "typing">, brief: string): string {
+  // An incident's brief is what majhi gathered, not what it is for: its title says what is wrong.
+  if (task.typing?.type === "incident") return `Restore service: ${task.title}`;
   const first = brief.split("\n\n")[0]?.trim() ?? "";
   const line = (first === "" ? task.title : first)
     .split("\n")
