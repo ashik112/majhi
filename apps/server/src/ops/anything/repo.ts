@@ -1,4 +1,4 @@
-import { type WatchDef, WatchDefSchema, type WatchSample } from "@majhi/shared";
+import { ActorSchema, type WatchDef, WatchDefSchema, type WatchSample } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { z } from "zod";
 
@@ -28,6 +28,8 @@ export const WatchStateSchema = z.object({
   reportedOk: z.boolean().optional(),
   /** Who paused the watch and why. A watch paused before this existed has none: it reads as `unrecorded`. */
   pausedBy: z.enum(["owner", "agent"]).optional(),
+  /** The same pause with who it was: the owner, the captain or an agent. */
+  pausedActor: ActorSchema.optional(),
   pausedNote: z.string().max(200).optional(),
   quietUntil: z.string().optional(),
   quietKind: z.enum(["snooze", "maintenance"]).optional(),

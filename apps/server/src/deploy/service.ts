@@ -1,4 +1,7 @@
 import {
+  type Actor,
+  didWords,
+  OWNER,
   type DeployEnvironment,
   type DeployHoldInputSchema,
   type DeployInput,
@@ -426,7 +429,9 @@ export class DeployService {
   }
 
   /** The owner said hold: no rule deploys this step or commit until the owner does it. */
-  async hold(input: z.infer<typeof DeployHoldInputSchema>): Promise<DeployRecord> {
+  async hold(input: z.infer<typeof DeployHoldInputSchema>, by: Actor = OWNER): Promise<DeployRecord> {
+    const heldWords = didWords(by, "held", "it");
+    const deployBy = by.kind === "owner" ? "owner" : "captain";
     const at = this.deps.now().toISOString();
     if ("record" in input) {
       const rec = this.deps.repo.get(input.record);
@@ -435,7 +440,7 @@ export class DeployService {
       if (rec.state !== "planned" && rec.state !== "queued") {
         throw new UserError(`Deploy ${rec.id} is ${rec.state}, so it cannot be held.`, 409);
       }
-      const held = this.deps.repo.move(rec.id, rec.state, "held", at, { reason: "You held it", by: "owner" });
+      const held = this.deps.repo.move(rec.id, rec.state, "held", at, { reason: heldWords, by: deployBy });
       if (held === undefined) throw new UserError(`Deploy ${rec.id} changed while it was held.`, 409);
       this.changed();
       return held;
@@ -453,8 +458,8 @@ export class DeployService {
       commit: input.commit,
       state: "held",
       runs: input.runs ?? [],
-      by: "owner",
-      reason: "You held it",
+      by: deployBy,
+      reason: heldWords,
       at,
       ...(input.task === undefined ? {} : { task: input.task }),
     });

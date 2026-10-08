@@ -1,13 +1,11 @@
 import type { RoomItem } from "@majhi/shared";
 
 /**
- * The room's quiet lines (system notes, handoffs, plans, compactions and the owner's old approval
- * messages) as one short line each, with the full text behind an expander. Values set in backticks
+ * The room's quiet lines (system notes, handoffs, plans, compactions) as one short line each, with the full text behind an expander. Values set in backticks
  * (`opus`) show in mono; @handles and task ids link as in any message.
  */
 
 type SystemItem = Extract<RoomItem, { type: "system" }>;
-type OwnerItem = Extract<RoomItem, { type: "owner" }>;
 
 export interface Quiet {
   /** One line, backticks around values. */
@@ -152,48 +150,6 @@ const SAME_MOMENT_MS = 3_000;
 export function sameMoment(group: readonly SystemItem[], next: SystemItem): boolean {
   const last = group.at(-1);
   return last !== undefined && Math.abs(Date.parse(next.at) - Date.parse(last.at)) <= SAME_MOMENT_MS;
-}
-
-function lowerFirst(text: string): string {
-  const [first, second] = text;
-  if (first === undefined || second === undefined || second !== second.toLowerCase()) return text;
-  return first.toLowerCase() + text.slice(1);
-}
-
-function firstSentence(text: string, max = 90): string {
-  const cut = text.indexOf(". ");
-  const line = cut === -1 ? text : text.slice(0, cut);
-  return line.length > max ? `${line.slice(0, max - 3).trimEnd()}...` : line;
-}
-
-const DECIDED =
-  /^The owner (approved|rejected): ([\s\S]*?)(?:\. Result: ([\s\S]*)|, but it failed: ([\s\S]*))?\.?$/;
-const RESULT_ID = /^\{"id":"([A-Z][A-Z0-9]{0,9}-[1-9][0-9]*)"/;
-
-/**
- * An owner message majhi wrote for the owner (an approval decided, a choice picked, a secret
- * answered, before those became plain lines), as the line it should have been. Undefined for a
- * message the owner typed.
- */
-export function ownerNotice(item: OwnerItem): Quiet | undefined {
-  if (item.attachments.length > 0) return undefined;
-  const text = item.text.trim();
-  const decided = DECIDED.exec(text);
-  if (decided) {
-    const [, verb = "", summary = "", result, failed] = decided;
-    const id = result === undefined ? undefined : RESULT_ID.exec(result)?.[1];
-    const what = lowerFirst(firstSentence(summary));
-    const on = id === undefined || what.includes(id) ? "" : ` (${id})`;
-    const tail = failed === undefined ? "" : `. It failed: ${failed}`;
-    return { short: `You ${verb}: ${what}${on}${tail}` };
-  }
-  const chose = /^Owner chose: (.+)$/.exec(text);
-  if (chose) return { short: `You chose: ${chose[1]}` };
-  const saved = /^Saved as secret:(\S+)$/.exec(text);
-  if (saved) return { short: `You gave a secret, kept as \`secret:${saved[1]}\`` };
-  const declined = /^The owner did not provide (\S+)\.$/.exec(text);
-  if (declined) return { short: `You did not provide \`${declined[1]}\`` };
-  return undefined;
 }
 
 /** A line split into plain text and backticked values, in order. */

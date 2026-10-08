@@ -51,6 +51,7 @@ import {
   type TaskId,
   ToolIdSchema,
 } from "@majhi/shared";
+import { type Actor, type AutonomyEventKind, actorOfName, CAPTAIN, MAJHI, OWNER } from "@majhi/shared";
 import type { z } from "zod";
 import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
@@ -231,6 +232,20 @@ const LIGHT_STATUS_MS = 2000;
  * run gate, spend and holds, the self-approval of cards within limits, the hard limits, the feed and
  * the owner's settings. The rules are in docs/PROGRESS.md under PRV-74.
  */
+/** Who an History line is about when the writer names no one: the captain does the work, the owner guides it, majhi keeps time. */
+const EVENT_ACTOR: Record<AutonomyEventKind, Actor> = {
+  mode: MAJHI,
+  tick: MAJHI,
+  decision: CAPTAIN,
+  approval: CAPTAIN,
+  refused: CAPTAIN,
+  task: CAPTAIN,
+  answer: CAPTAIN,
+  guide: OWNER,
+  cap: MAJHI,
+  summary: MAJHI,
+};
+
 export class AutonomyService {
   readonly repo: AutonomyRepo;
   /** Each backlog task's size, for the pick rules. */
@@ -679,7 +694,7 @@ export class AutonomyService {
   private setMode(mode: AutonomyMode, by: "owner" | "majhi", text: string, line: string, why?: string): void {
     this.repo.setMode(mode, this.now().toISOString(), by, why);
     if (mode === "off") this.holds = [];
-    this.event({ kind: "mode", text, ...(why === undefined ? {} : { reason: why }) });
+    this.event({ kind: "mode", text, by: actorOfName(by), ...(why === undefined ? {} : { reason: why }) });
     this.say(line);
     this.driver?.onMode(mode);
   }
@@ -3095,6 +3110,7 @@ export class AutonomyService {
   event(e: Omit<AutonomyEvent, "seq" | "at">): number {
     const seq = this.repo.addEvent({
       ...e,
+      by: e.by ?? EVENT_ACTOR[e.kind],
       at: this.now().toISOString(),
       text: redactText(e.text),
       ...(e.reason === undefined ? {} : { reason: redactText(e.reason) }),

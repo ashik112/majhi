@@ -1,4 +1,11 @@
-import { type Fact, type MemoryAction, type MemoryEvent, parseScope } from "@majhi/shared";
+import {
+  actorOfName,
+  actorWords,
+  type Fact,
+  type MemoryAction,
+  type MemoryEvent,
+  parseScope,
+} from "@majhi/shared";
 
 /** The Memory page's filters: every fact, global ones, facts of one org and its projects, and those waiting for the owner. */
 export type ScopeFilter = "all" | "global" | "review" | `org:${string}`;
@@ -112,8 +119,7 @@ export function actionLabel(event: MemoryEvent): string {
 export function actorLabel(event: MemoryEvent): string {
   if (event.actor === "curation")
     return event.provider === undefined ? "Automatic" : `Automatic, ${providerLabel(event.provider)}`;
-  if (event.actor.startsWith("agent:")) return `@${event.actor.slice("agent:".length)}`;
-  return event.actor === "owner" ? "You" : event.actor;
+  return actorWords(actorOfName(event.actor));
 }
 
 const PROVIDERS: Record<string, string> = {

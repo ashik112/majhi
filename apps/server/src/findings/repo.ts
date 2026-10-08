@@ -1,4 +1,6 @@
 import {
+  type Actor,
+  ActorSchema,
   type Finding,
   FindingSchema,
   type FindingSeverity,
@@ -29,6 +31,7 @@ interface Row {
   task: string | null;
   decision: string | null;
   dismissed_reason: string | null;
+  dismissed_by: string | null;
   triage: string | null;
   by: string;
   seen: number;
@@ -77,6 +80,7 @@ function toFinding(r: Row): Finding {
     ...(r.task === null ? {} : { task: r.task }),
     ...(r.decision === null ? {} : { decision: r.decision }),
     ...(r.dismissed_reason === null ? {} : { dismissedReason: r.dismissed_reason }),
+    ...(dismissedByOf(r.dismissed_by) === undefined ? {} : { dismissedBy: dismissedByOf(r.dismissed_by) }),
     by: r.by,
     seen: r.seen,
     createdAt: r.created_at,
@@ -114,6 +118,7 @@ export interface FindingPatch {
   task?: string | null;
   decision?: string | null;
   dismissedReason?: string | null;
+  dismissedBy?: Actor | null;
   triage?: FindingTriage | null;
   lastSeen?: string;
   seen?: number;
@@ -179,6 +184,8 @@ export class FindingsRepo {
     if (p.task !== undefined) set("task", p.task);
     if (p.decision !== undefined) set("decision", p.decision);
     if (p.dismissedReason !== undefined) set("dismissed_reason", p.dismissedReason);
+    if (p.dismissedBy !== undefined)
+      set("dismissed_by", p.dismissedBy === null ? null : JSON.stringify(p.dismissedBy));
     if (p.triage !== undefined) set("triage", p.triage === null ? null : JSON.stringify(p.triage));
     if (p.lastSeen !== undefined) set("last_seen", p.lastSeen);
     if (p.seen !== undefined) set("seen", p.seen);
@@ -255,5 +262,15 @@ export class FindingsRepo {
         .prepare("SELECT * FROM findings WHERE task IS NOT NULL AND status IN ('proposed', 'task')")
         .all() as Row[],
     );
+  }
+}
+
+function dismissedByOf(raw: string | null): Actor | undefined {
+  if (raw === null) return undefined;
+  try {
+    const parsed = ActorSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
   }
 }

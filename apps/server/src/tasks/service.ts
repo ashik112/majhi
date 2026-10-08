@@ -7,14 +7,18 @@ import {
   type AgentFrontmatter,
   type Attachment,
   AUTO,
+  actorOfName,
   BRANCH_TYPE_OF,
   type BranchType,
+  CAPTAIN,
   CHAT_BRIEF,
   type CoordinationMode,
   canWorkIn,
   chatTitleFrom,
   connectionType,
   DEFAULT_CHAT_TITLES,
+  didWords,
+  didWordsInline,
   type HandoffFailed,
   handoffFailedFacts,
   isOwnerChat,
@@ -24,6 +28,7 @@ import {
   MODE_LABELS,
   mayRetype,
   mergeCanBeOverridden,
+  OWNER,
   OWNER_HANDLE,
   type ParsedTask,
   type PendingNotice,
@@ -1376,7 +1381,7 @@ export class TaskService {
       { kind: "containers", op: "stop" },
       { kind: "processes.stop" },
       { kind: "terminals.stop" },
-      { kind: "dropPendingShip", why: "you stopped the task" },
+      { kind: "dropPendingShip", why: didWordsInline(actorOfName(full.by), "stopped", "the task") },
     ] as const)
       await this.runEffect(id, effect, full, { before: states, after: states });
   }
@@ -1967,7 +1972,9 @@ export class TaskService {
           );
         }
       } catch (err) {
-        failed.push(`${repo.project}: could not clean the commits before they leave majhi: ${errorMessage(err)}`);
+        failed.push(
+          `${repo.project}: could not clean the commits before they leave majhi: ${errorMessage(err)}`,
+        );
       }
     }
     if (rewritten) await this.restackOnto(id);
@@ -2997,22 +3004,13 @@ export class TaskService {
       ...(captain === undefined ? {} : { by: "captain" as const }),
     });
     try {
-      if (captain !== undefined)
-        await this.tellAgent({
-          task,
-          agent: card.agent,
-          text: `The captain chose: ${choice}`,
-          settled: "The captain answered",
-          by: captain,
-        });
-      else
-        await this.send({
-          task,
-          text: `Owner chose: ${choice}`,
-          attachments: [],
-          mode: "queue",
-          agent: card.agent,
-        });
+      await this.tellAgent({
+        task,
+        agent: card.agent,
+        text: captain === undefined ? `The owner chose: ${choice}` : `The captain chose: ${choice}`,
+        settled: didWords(captain === undefined ? OWNER : CAPTAIN, "answered"),
+        by: captain ?? "owner",
+      });
     } catch (err) {
       this.deps.room.post(current.id, item, fields);
       throw err;

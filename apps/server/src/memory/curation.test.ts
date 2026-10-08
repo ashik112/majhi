@@ -1,6 +1,6 @@
 import type {
-  Actor,
   Answer,
+  Actor,
   DecideRequestInput,
   DecisionResult,
   MemorySettings,

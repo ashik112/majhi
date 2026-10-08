@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { Actor } from "@majhi/shared";
+import type { Caller } from "@majhi/shared";
 import { errorCode, exitCode } from "../errors.ts";
 
 const run = promisify(execFile);
@@ -41,7 +41,7 @@ export interface CommitRequest {
   /** Paths relative to the config folder. Missing files are skipped. */
   files: readonly string[];
   message: string;
-  actor: Actor;
+  actor: Caller;
   /** Extra `Key: value` lines after the message, read back by `entries`. */
   trailers?: Record<string, string>;
 }
@@ -271,7 +271,7 @@ export class ConfigHistory {
    */
   async revert(
     commit: string,
-    request: { message: string; actor: Actor; trailers: Record<string, string> },
+    request: { message: string; actor: Caller; trailers: Record<string, string> },
   ): Promise<{ commit: string } | { failed: "conflict" | "empty" }> {
     try {
       await this.git(["revert", "--no-commit", commit]);
@@ -321,7 +321,7 @@ export class ConfigHistory {
 }
 
 /** `Owner <owner@majhi.local>`, or `<id> <id@majhi.local>` for an agent. */
-export function authorOf(actor: Actor): string {
+export function authorOf(actor: Caller): string {
   if (actor.kind === "owner") return "Owner <owner@majhi.local>";
   const id = actor.id.replace(/[^A-Za-z0-9._-]/g, "-");
   return `${id} <${id}@majhi.local>`;

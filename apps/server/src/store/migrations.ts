@@ -1981,9 +1981,17 @@ UPDATE tasks SET origin = json_object('kind', 'chat', 'room', (
 `,
   },
   {
+    // Who did it, as the Actor in JSON: who dismissed a finding, and who an autonomy History line is
+    // about. Rows from before have none.
+    id: 185,
+    name: "who did it",
+    sql: `ALTER TABLE findings ADD COLUMN dismissed_by TEXT;
+ALTER TABLE autonomy_events ADD COLUMN by TEXT;`,
+  },
+  {
     // The captain's lane per workspace and job: backlog and routine turns keep the first chat, and urgent
     // reacting work (a client message, an incident) gets a second one, so it never queues behind a long turn.
-    id: 185,
+    id: 186,
     name: "captain lanes per job",
     sql: `
 CREATE TABLE captain_lanes_by_job (

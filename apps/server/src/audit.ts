@@ -1,9 +1,9 @@
 import type { AuditBy } from "@majhi/shared";
 import type { Store } from "./store/index.ts";
 
-/** The audit row's `agent` and `by` for whoever triggered something: `owner`, `majhi`, or an agent id. */
+/** The audit row's `agent` and `by` for whoever triggered something: `owner`, `captain`, `majhi`, or an agent id. */
 export function auditActor(who: string): { agent: string; by: AuditBy } {
-  return { agent: who, by: who === "owner" ? "owner" : who === "majhi" ? "majhi" : "agent" };
+  return { agent: who, by: who === "owner" || who === "captain" || who === "majhi" ? who : "agent" };
 }
 
 /** An error or branch line for the audit `detail` column: one line, short. */

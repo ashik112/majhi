@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
+  type Actor,
+  didWords,
   OPS_DEFAULTS,
   type OpsCheckKind,
   type OpsCheckStatus,
@@ -307,11 +309,12 @@ export class OpsWatch {
   }
 
   /** Stops watching. The open incident, if any, is resolved with the reason on its timeline. */
-  async removeService(id: string): Promise<void> {
+  async removeService(id: string, by?: Actor): Promise<void> {
     const found = this.deps.repo.service(id);
     if (found === undefined) throw new UserError(`There is no service ${id}.`, 404);
     const open = this.deps.repo.latestByKey(incidentKey(id));
-    if (open !== undefined && open.status === "open") await this.resolve(open, "No longer watched");
+    if (open !== undefined && open.status === "open")
+      await this.resolve(open, "No longer watched", "stopped", by);
     this.deps.repo.removeService(id);
     this.deps.changed();
   }
@@ -688,6 +691,7 @@ export class OpsWatch {
     inc: StoredIncident,
     why: string,
     closedBy: "green" | "stopped" = "stopped",
+    by?: Actor,
   ): Promise<void> {
     const at = this.at();
     const duration = Date.parse(at) - Date.parse(inc.openedAt);
@@ -697,7 +701,13 @@ export class OpsWatch {
       resolvedAt: at,
       timeline: cap([
         ...inc.timeline,
-        { at, kind: "resolved", closedBy, text: `${why}. Open for ${span(duration)}.` },
+        {
+          at,
+          kind: "resolved",
+          closedBy,
+          text: `${why}. Open for ${span(duration)}.`,
+          ...(by === undefined ? {} : { by }),
+        },
       ]),
     };
     this.deps.repo.saveIncident(next);
@@ -892,7 +902,7 @@ export class OpsWatch {
   }
 
   /** The owner has seen it. It stops alerting and leaves Decisions; it closes when its checks are green. */
-  async ack(id: number): Promise<OpsIncident> {
+  async ack(id: number, by: Actor): Promise<OpsIncident> {
     const inc = this.deps.repo.incident(id);
     if (inc === undefined) throw new UserError(`There is no incident ${id}.`, 404);
     if (inc.ackedAt !== undefined || inc.status === "resolved") return inc;
@@ -900,7 +910,7 @@ export class OpsWatch {
     const next: StoredIncident = {
       ...inc,
       ackedAt: at,
-      timeline: cap([...inc.timeline, { at, kind: "acked", text: "You acknowledged it" }]),
+      timeline: cap([...inc.timeline, { at, kind: "acked", text: didWords(by, "acknowledged", "it"), by }]),
     };
     this.deps.repo.saveIncident(next);
     this.deps.phone.voidFor(`incident:${id}`);
@@ -926,13 +936,16 @@ export class OpsWatch {
   }
 
   /** Adds a line to an open or resolved incident's timeline (what a fix did, what the captain found). */
-  note(id: number, kind: OpsTimelineEntry["kind"], text: string, at: string = this.at()): void {
+  note(id: number, kind: OpsTimelineEntry["kind"], text: string, at: string = this.at(), by?: Actor): void {
     const inc = this.deps.repo.incident(id);
     if (inc === undefined) return;
     if (kind === "note" && inc.timeline.some((t) => t.kind === "note" && t.text === text)) return;
     this.deps.repo.saveIncident({
       ...inc,
-      timeline: cap([...inc.timeline, { at, kind, text: text.slice(0, 300) }]),
+      timeline: cap([
+        ...inc.timeline,
+        { at, kind, text: text.slice(0, 300), ...(by === undefined ? {} : { by }) },
+      ]),
     });
     this.deps.changed();
   }
@@ -1044,9 +1057,9 @@ export class OpsWatch {
   // Views -----------------------------------------------------------------------
 
   /** Resolves the open incident of a subject that is no longer watched. */
-  async closeSubject(subject: string, why: string): Promise<void> {
+  async closeSubject(subject: string, why: string, by?: Actor): Promise<void> {
     const open = this.openIncident(subject);
-    if (open !== undefined) await this.resolve(open, why);
+    if (open !== undefined) await this.resolve(open, why, "stopped", by);
   }
 
   /** The incident of a watch, open or the latest. */

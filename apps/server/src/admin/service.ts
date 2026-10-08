@@ -20,6 +20,7 @@ import {
   scriptProblem,
   type TaskId,
 } from "@majhi/shared";
+import { actorOfName, didWords, OWNER } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
@@ -1018,6 +1019,7 @@ export class AdminService {
     if (item.proposal !== undefined && (dismissal.by !== "owner" || always !== undefined)) {
       throw new UserError("Only the owner applies or rejects a proposal, and never with a saved rule.", 409);
     }
+    const who = actorOfName(dismissal.by);
     this.deciding.add(item.id);
     try {
       if (decision === "reject") {
@@ -1025,7 +1027,7 @@ export class AdminService {
         this.audit(item, "deny", "owner");
         await this.notify(item.task, item.agent, {
           text: `The owner rejected: ${item.summary}.`,
-          shown: `You rejected: ${lowerFirst(item.summary)}`,
+          shown: `${didWords(who, "rejected")}: ${lowerFirst(item.summary)}`,
         });
         this.pending.delete(item.id);
         this.ownerCards.delete(item.id);
@@ -1061,11 +1063,11 @@ export class AdminService {
         done.ok
           ? {
               text: `The owner approved: ${item.summary}. Result: ${line}`,
-              shown: `You approved: ${lowerFirst(item.summary)}`,
+              shown: `${didWords(who, "approved")}: ${lowerFirst(item.summary)}`,
             }
           : {
               text: `The owner approved: ${item.summary}, but it failed: ${done.error}`,
-              shown: `You approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
+              shown: `${didWords(who, "approved")}: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
               level: "warn",
             },
       );
@@ -1255,7 +1257,7 @@ export class AdminService {
         text: `Saved as secret:${item.name}`,
         shown:
           fetchedBy === undefined
-            ? `You gave ${item.label}, kept as secret:${item.name}`
+            ? `${didWords(OWNER, "gave", item.label)}, kept as secret:${item.name}`
             : `Saved ${item.label} as secret:${item.name}: ${fetchedBy}`,
       },
       fetchedBy === undefined ? "owner" : "captain",
@@ -1282,7 +1284,7 @@ export class AdminService {
     this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
     const problems = (set.output as { problems?: string[] }).problems ?? [];
     if (problems.length > 0) {
-      this.say(item.task, `You gave ${item.label}.`);
+      this.say(item.task, `${didWords(OWNER, "gave", item.label)}.`);
       return this.mustGet(item.task, item.id);
     }
     const tested = await this.execute("connections.test", { id: bind.connection }, meta);
@@ -1296,7 +1298,7 @@ export class AdminService {
     const good = result?.ok === true;
     await this.notify(item.task, item.agent, {
       text: `${bind.connection} ${outcome}. ${good ? "Its tools are in your next session." : "Tell the owner what to fix."}`,
-      shown: `You gave ${item.label}. ${bind.connection} ${outcome}`,
+      shown: `${didWords(OWNER, "gave", item.label)}. ${bind.connection} ${outcome}`,
       ...(good ? {} : { level: "warn" as const }),
     });
     return this.mustGet(item.task, item.id);
@@ -1378,7 +1380,7 @@ export class AdminService {
     const owner = dismissal.by === "owner";
     await this.notify(item.task, item.agent, {
       text: `${owner ? "The owner dismissed" : "The captain withdrew"} the request for ${item.name}${tail}. Do not wait for it: find another way.`,
-      shown: owner ? `You dismissed ${item.label}${tail}` : `Withdrawn: ${item.label}${tail}`,
+      shown: owner ? `${didWords(OWNER, "dismissed", item.label)}${tail}` : `Withdrawn: ${item.label}${tail}`,
     });
     return this.mustGet(item.task, item.id);
   }

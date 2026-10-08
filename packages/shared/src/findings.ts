@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ActorSchema } from "./actor.ts";
 import { IdSchema, TaskIdSchema } from "./ids.ts";
 
 /**
@@ -146,6 +147,8 @@ export const FindingSchema = z.object({
   /** The decision it was handed over as. */
   decision: z.string().optional(),
   dismissedReason: z.string().optional(),
+  /** Who dismissed it. Absent on a dismissal from before it was kept. */
+  dismissedBy: ActorSchema.optional(),
   /** Laya's triage of it, when it ran. */
   triage: FindingTriageSchema.optional(),
   /** Who reported it first: `owner`, `captain` or an agent id. */

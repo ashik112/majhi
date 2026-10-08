@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { type MergeMethod, type PendingShip, shipWords, type Task, type TaskId } from "@majhi/shared";
+import {
+  type Actor,
+  didWordsInline,
+  type MergeMethod,
+  OWNER,
+  type PendingShip,
+  shipWords,
+  type Task,
+  type TaskId,
+} from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { git, uncommitted } from "../git/git.ts";
@@ -7,6 +16,7 @@ import { mergeConflicts } from "../git/merge.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import { actorName } from "./cards.ts";
 import type { TaskService } from "./service.ts";
 import { planTargets, type ShipTargets } from "./ship-plan.ts";
 
@@ -103,10 +113,17 @@ export class PendingShips {
   }
 
   /** The owner changed their mind: the lead keeps working, and nothing ships when it is done. */
-  cancel(id: string): Task {
-    const dropped = this.deps.tasks.dropPendingShip(id, "you cancelled it");
+  cancel(id: string, by: Actor = OWNER): Task {
+    const dropped = this.deps.tasks.dropPendingShip(id, didWordsInline(by, "cancelled", "it"));
     if (dropped !== undefined)
-      this.approval(id, "deny", "owner", `Cancelled: ${shipWords(dropped)}`, dropped.into);
+      this.approval(
+        id,
+        "deny",
+        actorName(by),
+        `Cancelled: ${shipWords(dropped)}`,
+        dropped.into,
+        by.kind === "owner" ? "owner" : "agent",
+      );
     return this.deps.tasks.get(id);
   }
 
