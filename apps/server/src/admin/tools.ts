@@ -79,8 +79,10 @@ function commandSchema(command: CommandName): AdminTool["inputSchema"] {
   return {
     ...rest,
     type: "object",
-    properties: { ...properties, ...EXTRA_PROPERTIES },
-    required: [...required, "ownerAsked", "reason"],
+    // A command's own `reason` keeps its description; the extras fill in only what it lacks.
+    properties: { ...EXTRA_PROPERTIES, ...properties },
+    // A command can already require `reason`: a repeated name makes the schema invalid and the client drops the tool.
+    required: [...new Set([...required, "ownerAsked", "reason"])],
   };
 }
 
