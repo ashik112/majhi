@@ -60,6 +60,19 @@ describe("project briefs", () => {
   });
 });
 
+describe("project brief refreshes", () => {
+  it("writes a version only when the text changed, and a removed project's brief is gone", () => {
+    const m = service().project;
+    const sections = { "What it is": "The Acme api.", Architecture: "Handlers in src/." };
+    expect(m.setBrief("acme-api", sections, "scan").version).toBe(1);
+    expect(m.setBrief("acme-api", sections, "scan").version).toBe(1);
+    expect(m.setBrief("acme-api", { ...sections, Architecture: "Routes in src/." }, "scan").version).toBe(2);
+    expect(m.brief("acme-api").versions.map((v) => v.version)).toEqual([2, 1]);
+    m.forgetBrief("acme-api");
+    expect(m.brief("acme-api")).toEqual({ versions: [] });
+  });
+});
+
 describe("scope isolation", () => {
   it("never gives one org's records to a search in another org's scopes", async () => {
     const m = service().project;

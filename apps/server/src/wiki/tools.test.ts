@@ -151,3 +151,15 @@ describe("the workspace pages", () => {
     expect(hits).toContain("workspace/overview");
   });
 });
+
+describe("a removed project", () => {
+  it("leaves no pages, state or search pieces behind, and the workspace keeps its other projects", async () => {
+    const { store, index } = await world({ acme: true });
+    store.wiki.removeProject("acme", "api");
+    index.dropProject("acme", "api");
+    expect(store.wiki.pages("acme", "api")).toEqual([]);
+    expect(store.wiki.state("acme", "api").builtCommit).toBeUndefined();
+    expect(await index.search({ org: "acme", projects: ["api"], query: "billing service" })).toEqual([]);
+    expect(store.wiki.pages("globex", "shop")).toHaveLength(1);
+  });
+});
