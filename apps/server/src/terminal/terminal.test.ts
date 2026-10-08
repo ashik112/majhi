@@ -52,7 +52,8 @@ describe("login terminals over WebSocket", () => {
     expect(await rejected(`/api/term/${terminal.id}`, "https://evil.example")).toBe(403);
     expect(await rejected("/api/term/unknown-id")).toBe(404);
     expect(await rejected("/api/nothing")).toBe(404);
-    expect(await rejected("/api/events", "http://localhost:5173")).toBe(101);
+    expect(await rejected("/api/events", "http://localhost:5173")).toBe(403);
+    expect(await rejected("/api/events", "http://localhost:7070")).toBe(101);
     expect(await rejected(`/api/term/${terminal.id}`, "http://127.0.0.1:7070")).toBe(101);
   });
 });

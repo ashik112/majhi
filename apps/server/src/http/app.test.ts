@@ -62,13 +62,17 @@ describe("HTTP API", () => {
       "null",
       "http://127.0.0.1:9999",
       "https://127.0.0.1:7070",
-      "http://localhost:7070",
+      "http://localhost:9999",
+      "https://localhost:7070",
       "http://user@127.0.0.1:7070",
       `${env.origin}/evil`,
     ]) {
       expect(isOwnerOrigin(origin, env.origin)).toBe(false);
     }
     expect(isOwnerOrigin("http://127.0.0.1:5173", "http://127.0.0.1:5173")).toBe(true);
+    // Every loopback name on the configured scheme and port is this machine: the owner may open localhost.
+    expect(isOwnerOrigin("http://localhost:7070", "http://127.0.0.1:7070")).toBe(true);
+    expect(isOwnerOrigin("http://[::1]:7070", "http://127.0.0.1:7070")).toBe(true);
   });
 
   it("refuses commands, uploads and sockets from an opaque origin, like a sandboxed agent page", async () => {

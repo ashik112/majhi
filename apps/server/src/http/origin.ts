@@ -22,9 +22,23 @@ export function isOwnerOrigin(origin: string, configured = DEFAULT_MAJHI_ORIGIN)
       url.pathname === "/" &&
       url.search === "" &&
       url.hash === "" &&
-      url.origin === new URL(configured).origin
+      sameOrigin(url, new URL(configured))
     );
   } catch {
     return false;
   }
+}
+
+/**
+ * The configured origin, or the same scheme and port on another loopback name: localhost, 127.0.0.1 and [::1] are
+ * all this machine, and the owner may type any of them. Another port is another site and stays out.
+ */
+function sameOrigin(url: URL, configured: URL): boolean {
+  if (url.origin === configured.origin) return true;
+  return (
+    url.protocol === configured.protocol &&
+    url.port === configured.port &&
+    LOOPBACK_HOSTS.includes(url.hostname) &&
+    LOOPBACK_HOSTS.includes(configured.hostname)
+  );
 }
