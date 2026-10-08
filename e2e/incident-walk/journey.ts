@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { HOST_HOME } from "../paths.ts";
-import { boot, cmd, results, setReplies, shot, sleep, stage, until, type World } from "./walk.ts";
+import { boot, cmd, DB_PORT, GITLAB_PORT, results, setReplies, shot, sleep, stage, until, type World } from "./walk.ts";
 
 const REPO = join(HOST_HOME, "Work", "storefront");
 
@@ -39,7 +39,7 @@ async function setup(w: World): Promise<string> {
   await cmd("projects.setEnvironments", {
     project: "storefront",
     environments: [
-      { env: "production", tier: "production", check: "http://127.0.0.1:7492/health/production" },
+      { env: "production", tier: "production", check: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
     ],
   });
   await cmd("chat.channelLink", { connection: "slack", channel: "C0CLIENT", org: "acme" });
@@ -62,7 +62,7 @@ async function watchFires(w: World): Promise<string> {
     org: "acme",
     def: {
       name: "Database usage",
-      spec: { kind: "website", url: "http://127.0.0.1:7493/", jsonPath: "db.usage" },
+      spec: { kind: "website", url: `http://127.0.0.1:${DB_PORT}/`, jsonPath: "db.usage" },
       condition: { type: "above", value: 90 },
       everyMin: 1,
       fire: { alert: { on: true, phone: false }, investigate: true },

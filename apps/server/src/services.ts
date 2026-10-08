@@ -1693,6 +1693,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
     // Bound below: autonomous mode measures the spend.
     rest: (org, account) => autonomy.laneRest(org, account),
+    halted: () => captainRepo.isStopped(),
   });
   const machineDocker = dockerCli(env.runner.cliEnv);
   const memoryWatch = new MemoryWatch();

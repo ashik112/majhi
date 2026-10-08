@@ -3140,6 +3140,7 @@ export class AutonomyService {
    * the owner is told once per cap per day. Undefined: it may run.
    */
   async laneRest(org: string, account: string, job: Job = "backlog"): Promise<string | undefined> {
+    if (this.halted()) return STOPPED_WHY;
     const rest = await this.capWhy(org, account);
     if (rest === undefined || job === "backlog") return rest;
     this.deps.tell?.(

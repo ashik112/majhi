@@ -461,7 +461,6 @@ export class CaptainService {
         org,
         name: ws.name,
         authority,
-        effective: ws.authority,
         rules: settings.autonomy.orgs[org] ?? {},
         ...(cap === undefined ? {} : { budget: cap }),
         used: spend.used,

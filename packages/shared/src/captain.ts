@@ -139,8 +139,6 @@ export const CaptainOrgSchema = z.object({
   name: z.string(),
   /** Who decides each row, defaults applied and old settings carried over. */
   authority: AuthoritySchema,
-  /** What holds now: every row but upkeep is "ask" while Autonomous is not On. */
-  effective: AuthoritySchema,
   /** The settings as saved, for "More rules". */
   rules: AutonomyOrgSchema,
   /** The daily budget (its cap) and what the captain and autonomous work spent here today. */
