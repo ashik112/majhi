@@ -234,7 +234,7 @@ function Log({
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           if (pinned.current) setUnseen(false);
         }}
-        className="scroll-fade flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 focus-visible:outline-none"
+        className="scroll-fade flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-1 pr-14 pb-6 pl-0.5 focus-visible:outline-none"
       >
         {more && (
           <Button variant="ghost" size="sm" className="self-center" onClick={() => void loadOlder()}>
@@ -398,7 +398,7 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
  */
 function WaitingLine({ org }: { org: string }) {
   const toast = useToast();
-  const status = useWaitingOn(org, true).data;
+  const status = useWaitingOn(org).data;
   const answer = useAnswerLaneCard();
   const resume = useCaptainCommand("captain.resume");
   const blocker = status?.orgs[0]?.blocker;

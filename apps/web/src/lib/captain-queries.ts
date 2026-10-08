@@ -20,14 +20,13 @@ export function useCaptainStatus() {
 }
 
 /**
- * The workspace's captain status while a message waits on it: read every few seconds, so the reason it waits
- * (a card for the owner, no account, Stop everything) shows and goes away without a reload.
+ * The workspace's captain status while a message waits on it. The `captain` topic refetches it, and the server
+ * emits that topic when a card for the owner appears or goes, so the reason it waits shows and goes without polling.
  */
-export function useWaitingOn(org: string, active: boolean) {
+export function useWaitingOn(org: string) {
   return useQuery<CaptainStatus, ApiRequestError>({
     queryKey: statusKey,
     queryFn: () => cmd("captain.status", {}),
-    refetchInterval: active ? 5_000 : false,
     select: (status) => ({ ...status, orgs: status.orgs.filter((o) => o.org === org) }),
   });
 }

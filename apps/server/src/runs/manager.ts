@@ -157,6 +157,8 @@ export interface RunDeps {
   };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: (task: string, rows: boolean) => void;
+  /** A permission card for the owner appeared or went. */
+  onCardChange?: (() => void) | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**

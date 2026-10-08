@@ -89,6 +89,8 @@ export class PermissionFlow {
       connections?: ConnectionToolRules | undefined;
       /** Where "Always allow this tool" is kept and read: the policy rules, listed on the agent's page. */
       config?: ConfigService | undefined;
+      /** A card for the owner appeared or went: the captain's status (what a waiting message waits on) is read again. */
+      onCardChange?: (() => void) | undefined;
     },
     private readonly live: RunLive,
     private readonly now: () => Date,
@@ -145,6 +147,7 @@ export class PermissionFlow {
               : [o],
           );
     room.post(run.task, id, { ...base, options, state: "pending" });
+    this.deps.onCardChange?.();
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, {
@@ -224,6 +227,7 @@ export class PermissionFlow {
         ? kept
         : kept.flatMap((o) => (o.id === once.id ? [o, ...extra] : [o]));
     room.post(run.task, id, { ...base, options, state: "pending" });
+    this.deps.onCardChange?.();
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, {
@@ -294,6 +298,7 @@ export class PermissionFlow {
     });
     pending.resolve(resolveWith);
     this.backToWork(run);
+    this.deps.onCardChange?.();
     const updated = room.get(task, itemId);
     if (updated === undefined) throw new Error("The prompt was not stored");
     return updated;
@@ -374,6 +379,7 @@ export class PermissionFlow {
     else this.log(run, pending.ask, "cancelled", "owner");
     pending.resolve(undefined);
     this.backToWork(run);
+    this.deps.onCardChange?.();
   }
 
   private backToWork(run: AgentRun): void {

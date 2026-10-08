@@ -506,6 +506,9 @@ async function unblock(w: World): Promise<string> {
   await w.page.getByText("#acme-client").first().click();
   await w.page.getByText("Reply waits for you").first().waitFor({ timeout: 120_000 });
   console.log(await shotHere(w, "09-held-reply"));
+  await w.page.setViewportSize({ width: 1100, height: 800 });
+  console.log(await shotHere(w, "09-held-reply-1100"));
+  await w.page.setViewportSize({ width: 1440, height: 900 });
   await w.page.getByRole("button", { name: "Discard", exact: true }).first().click();
   await w.page.getByText("Reply discarded").first().waitFor({ timeout: 30_000 });
   console.log(await shotHere(w, "09-discarded"));
