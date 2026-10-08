@@ -2069,7 +2069,7 @@ export const commands = {
   "projects.planDeploy": {
     risk: "change",
     summary:
-      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
     input: PlanDeployInputSchema,
     output: PlanDeployResultSchema,
   },
@@ -2367,14 +2367,14 @@ export const commands = {
   "tasks.update": {
     risk: "change",
     summary:
-      "Change a task's title, description (the text after the title line), its agent, the owner's priority (high, normal, low) and deadline (due, YYYY-MM-DD), or the starting branch (base) while it has not started. Its key, folder and branch stay. TASK.md is rewritten",
+      "Change a task's title, description (the text after the title line), its agent, the owner's priority (high, normal, low) and deadline (due, YYYY-MM-DD), or the branch a repo starts from and ships into (base): before the task starts it is cut from it; after, its work merges, opens merge requests and is checked for conflicts against it. Changing a parent's base moves its children that shared the old one. Its key, folder and branch stay. TASK.md is rewritten",
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
       brief: z.string().max(100_000).optional(),
       /**
-       * The branch the task's worktree is cut from. Only before the task starts (no worktree yet).
-       * Refused when the repo has no such branch.
+       * The branch the task's worktree is cut from and ships into. Refused when the repo has no such
+       * branch, while an agent works, for a stacked branch, and once the task is done.
        */
       base: LocalBranchSchema.optional(),
       /** The repo whose base changes. Needed when the task has more than one. */

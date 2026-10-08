@@ -101,6 +101,7 @@ export async function rig(
     "github-workflow": createGitHubProvider(providerDeps),
     "gitlab-pipeline": gitlab,
     "gitlab-job": gitlab,
+    "gitlab-merge": gitlab,
     "bitbucket-pipeline": createBitbucketProvider(providerDeps),
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
@@ -118,6 +119,7 @@ export async function rig(
     git: {
       tip: async () => tip.value,
       whyNoTip: async () => "majhi could not read the project's base branch.",
+      file: async () => undefined,
     },
     repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
     checksConfigured: () => checks.configured,

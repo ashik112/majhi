@@ -200,9 +200,17 @@ export function useThreadItems(threads: readonly { org: string; chat: string }[]
 /** "Start fresh" in a workspace's thread. */
 export function useStartFresh() {
   const client = useQueryClient();
-  return useMutation<CommandOutput<"captain.startFresh">, ApiRequestError, { org: string; name: string; urgent?: boolean }>({
+  return useMutation<
+    CommandOutput<"captain.startFresh">,
+    ApiRequestError,
+    { org: string; name: string; urgent?: boolean }
+  >({
     mutationFn: ({ org, name, urgent }) =>
-      cmd("captain.startFresh", { org, ...(urgent === true ? { urgent } : {}) }, { reason: `Owner started fresh in the captain's ${name} thread` }),
+      cmd(
+        "captain.startFresh",
+        { org, ...(urgent === true ? { urgent } : {}) },
+        { reason: `Owner started fresh in the captain's ${name} thread` },
+      ),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.captain }),
   });
 }

@@ -38,7 +38,10 @@ it("a problem report with no watch firing leads the captain to open an incident 
           { tool: "majhi_watch_overview", args: { org: "acme" } },
           {
             tool: "majhi_chat_openIncident",
-            args: { room, found: "No watch is firing and the last deploy is green, but the client sees the page fail." },
+            args: {
+              room,
+              found: "No watch is firing and the last deploy is green, but the client sees the page fail.",
+            },
           },
           {
             tool: "majhi_chat_reply",
@@ -58,7 +61,10 @@ it("a problem report with no watch firing leads the captain to open an incident 
     ],
     { task: lane },
   );
-  await chatParts.ingest.deliver(CONN, envelope({ message: "2", text: "The orders page is not loading for us" }));
+  await chatParts.ingest.deliver(
+    CONN,
+    envelope({ message: "2", text: "The orders page is not loading for us" }),
+  );
   const calls = await script.calls(4);
 
   expect(calls.map((c) => c.tool)).toEqual([

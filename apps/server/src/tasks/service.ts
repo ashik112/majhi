@@ -593,13 +593,17 @@ export class TaskService {
             fallback: agent,
             mode: input.mode,
           });
+    // A child ships where its parent does: a repo it shares with the parent and picks no base for takes the parent's.
+    const bases = new Map(picks.bases);
+    for (const r of parentTask?.repos ?? [])
+      if (r.stack === undefined && !bases.has(r.project)) bases.set(r.project, r.base);
     const repoPlan = investigation
       ? { repos: [], warnings: [] }
       : await this.planRepos(
           id,
           parsed,
           projects,
-          picks.bases,
+          bases,
           input.branchType ?? (typing === undefined ? undefined : BRANCH_TYPE_OF[typing.type]),
         );
     const repos = repoPlan.repos.map((r) => (picks.writes.has(r.project) ? { ...r, writes: true } : r));
@@ -1482,8 +1486,10 @@ export class TaskService {
   }
 
   /**
-   * Moves a repo's starting branch while the task waits: in the inbox or ready, before its worktree
-   * exists. The new base must be in the repo. The task branch name stays.
+   * Moves the branch a repo starts from and ships into. Before the worktree exists the task is cut from
+   * it; after, the worktree stays and ship, the conflict check and syncing read the new branch. Not
+   * while an agent works, not for a branch stacked on another task's. Children of the task that shared
+   * the old branch follow, so a parent sets where a whole piece of work lands.
    */
   private async changeBase(task: Task, base: string, project: string | undefined): Promise<void> {
     if (task.repos.length === 0) throw new UserError(`${task.id} has no repo, so it has no starting branch.`);
@@ -1494,21 +1500,41 @@ export class TaskService {
     const repo = project === undefined ? task.repos[0] : task.repos.find((r) => r.project === project);
     if (repo === undefined) throw new UserError(`${task.id} has no repo ${project}.`, 404);
     if (repo.base === base) return;
-    if ((task.status !== "inbox" && task.status !== "ready") || repo.worktree !== undefined)
-      throw new UserError(
-        `${task.id} has started, so its starting branch stays ${repo.base}. Only a task that has not started can change it.`,
-        409,
-      );
+    const refusal = this.baseChangeRefusal(task, repo);
+    if (refusal !== undefined) throw new UserError(refusal, 409);
     if (!(await baseExists(repo.source, base)))
       throw new UserError(
         `${repo.project} has no branch ${base}. The starting branch stays ${repo.base}.`,
         409,
       );
-    this.deps.store.tasks.setRepoBase(task.id, repo.project, base, this.now().toISOString());
+    const old = repo.base;
+    const at = this.now().toISOString();
+    const { store } = this.deps;
+    store.tasks.setRepoBase(task.id, repo.project, base, at);
     this.note(
       task.id,
-      `Starting branch${task.repos.length > 1 ? ` of ${repo.project}` : ""}: ${base}, was ${repo.base}.`,
+      `Ships into ${base}${task.repos.length > 1 ? ` for ${repo.project}` : ""}, was ${old}.`,
     );
+    for (const childId of store.tasks.children(task.id)) {
+      const child = store.tasks.get(childId);
+      const shared = child?.repos.find((r) => r.project === repo.project && r.base === old);
+      if (child === undefined || shared === undefined) continue;
+      const why = this.baseChangeRefusal(child, shared);
+      if (why !== undefined) {
+        this.note(task.id, `${child.id} still ships into ${old}: ${why}`);
+        continue;
+      }
+      await this.changeBase(child, base, repo.project);
+    }
+  }
+
+  private baseChangeRefusal(task: Task, repo: TaskRepo): string | undefined {
+    if (task.status === "done") return `${task.id} is done, so where it shipped stays ${repo.base}.`;
+    if (repo.stack !== undefined)
+      return `${task.id} is stacked on ${repo.stack.task}'s branch, which majhi moves with that task.`;
+    if (this.deps.runs.working(task.id).length > 0)
+      return `an agent is working in ${task.id}. Change it once the turn ends.`;
+    return undefined;
   }
 
   /** A new coordination mode starts its own turn order; the loop guard's count and the removed agents stay. */

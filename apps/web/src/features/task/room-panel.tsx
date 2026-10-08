@@ -126,13 +126,13 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
   );
 }
 
-/** The branch the worktree is cut from. Until the task starts, a pick changes it. */
+/** The branch the worktree is cut from and the work ships into. A pick changes it until the task is done. */
 function StartingBranch({ task, repo }: { task: Task; repo: TaskRepo }) {
-  const waiting = (task.status === "inbox" || task.status === "ready") && repo.worktree === undefined;
-  const branches = useTaskBranches(task.id, waiting);
+  const open = task.status !== "done" && repo.stack === undefined;
+  const branches = useTaskBranches(task.id, open);
   const update = useUpdateTask();
   const toast = useToast();
-  if (!waiting) {
+  if (!open) {
     return (
       <span className="text-xs text-fg-faint">
         Starting branch <span className="font-mono text-fg-soft">{repo.base}</span>

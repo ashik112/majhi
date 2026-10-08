@@ -27,6 +27,7 @@ export function runHost(run: DeployRunStep): GitHost {
       return "github";
     case "gitlab-job":
     case "gitlab-pipeline":
+    case "gitlab-merge":
       return "gitlab";
     case "bitbucket-pipeline":
       return "bitbucket";

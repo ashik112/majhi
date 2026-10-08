@@ -5,7 +5,8 @@ describe("hot memory warning", () => {
   it("is one line per task and level, however many containers or readings reach the bar", () => {
     const lines = new Map<string, string>();
     const post = (_task: string, id: string, text: string) => void lines.set(id, text);
-    const rows = "majhi-run-check-a\tACM-1\nmajhi-run-check-b\tACM-1\nmajhi-run-0123456789ab\tACM-2\nmajhi-run-x\t";
+    const rows =
+      "majhi-run-check-a\tACM-1\nmajhi-run-check-b\tACM-1\nmajhi-run-0123456789ab\tACM-2\nmajhi-run-x\t";
     const args = {
       hot: ["majhi-run-check-a", "majhi-run-check-b", "majhi-run-0123456789ab", "majhi-run-x"],
       rows,

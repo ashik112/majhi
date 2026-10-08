@@ -15,7 +15,7 @@ import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { WikiAsk } from "./ask.ts";
 import type { DriftOf } from "./drift.ts";
-import { WORKSPACE_STATE, type WikiRepo } from "./repo.ts";
+import { type WikiRepo, WORKSPACE_STATE } from "./repo.ts";
 import { flowsNotChosen, type WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
 import { answerAddress, answerCall, answerRole } from "./system/answers.ts";

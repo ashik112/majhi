@@ -52,7 +52,9 @@ export function Segmented<T extends string>({
                 : "text-fg-muted hover:bg-raised hover:text-fg",
             )}
           >
-            {segment.lamp !== undefined && <Lamp state={segment.lamp} size={6} className="mr-1.5 inline-block" />}
+            {segment.lamp !== undefined && (
+              <Lamp state={segment.lamp} size={6} className="mr-1.5 inline-block" />
+            )}
             {segment.label}
             {segment.count !== undefined && (
               <span className={cn("tnum ml-1.5 font-mono", on ? "text-accent-ink/75" : "text-fg-faint")}>

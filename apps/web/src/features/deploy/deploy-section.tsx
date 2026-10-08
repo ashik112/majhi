@@ -77,7 +77,7 @@ function DeployPageButton({ project }: { project: ProjectView }) {
 
 /** What the captain is asked to do when a project has no environments: read how it deploys, then propose them. */
 export function setupDeploysAsk(project: string): string {
-  return `Set up deploys for ${project}. Read its Deploys wiki page and its CI files, then add its environments with the branch each deploys from and its check address, in the order they go live. Add them as production; I can switch a tier to staging on its row. Tell me what you found in a line or two.`;
+  return `Set up deploys for ${project}. Read its Deploys wiki page and its CI files, then add its environments with the branch each deploys from, its check address and, when its CI reads the environment's .env from a GitLab CI/CD variable, that variable's name (envVariable), in the order they go live. Add them as production; I can switch a tier to staging on its row. Tell me what you found in a line or two.`;
 }
 
 /** Where the project is deployed: one row per environment with its branch and check address, and what reached it last. */

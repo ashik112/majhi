@@ -1,11 +1,13 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { call, HostUnreachable, num, str } from "../gitConnect/http.ts";
+import { envKeys } from "./git.ts";
 import {
   apiScheme,
   type DeployContext,
   DeployProblem,
   type DeployProvider,
   type ProviderDeps,
+  type RepoRef,
   type RunHandle,
   type RunProgress,
 } from "./types.ts";
@@ -23,16 +25,16 @@ interface Access {
   slug: string;
 }
 
-type Remoted = Extract<DeployRunStep, { kind: "gitlab-pipeline" | "gitlab-job" }>;
+type Remoted = Extract<DeployRunStep, { kind: "gitlab-pipeline" | "gitlab-job" | "gitlab-merge" }>;
 
 function gitlabStep(step: DeployRunStep): Remoted {
-  if (step.kind !== "gitlab-pipeline" && step.kind !== "gitlab-job") {
+  if (step.kind !== "gitlab-pipeline" && step.kind !== "gitlab-job" && step.kind !== "gitlab-merge") {
     throw new DeployProblem("This run is not a GitLab run.");
   }
   return step;
 }
 
-/** The branch a pipeline starts from: the run's own, else the project's base. */
+/** The branch a pipeline starts from: the run's own, else the project's base. A merge starts from the base. */
 function ref(ctx: DeployContext, step: Remoted): string {
   return step.kind === "gitlab-pipeline" && step.ref !== "base" ? step.ref : ctx.base;
 }
@@ -59,11 +61,13 @@ async function api(
   a: Access,
   path: string,
   json?: unknown,
+  method?: "PUT",
 ): Promise<{ status: number; body: unknown }> {
   try {
     const answer = await call(deps.fetch, `${a.base}${path}`, {
       headers: { authorization: `Bearer ${a.token}`, "user-agent": "majhi" },
       ...(json === undefined ? {} : { json }),
+      ...(method === undefined ? {} : { method }),
     });
     if (answer.status === 401 || answer.status === 403) {
       throw new DeployProblem(
@@ -160,6 +164,99 @@ async function retryJob(a: Access, id: number, deps: ProviderDeps): Promise<RunH
 
 const jobHandle = (job: Job): RunHandle => ({ id: String(job.id), url: job.url });
 
+const MERGE_TRIES = 10;
+const MERGE_WAIT_MS = 3_000;
+
+/**
+ * Brings the commit into the environment's branch through a merge request from the base branch, then
+ * finds the pipeline GitLab runs on the result. Merged only while the base branch is still at the commit
+ * (GitLab checks `sha`), never forced. A branch that has the commit already gets its newest pipeline.
+ */
+async function mergeInto(
+  ctx: DeployContext,
+  step: Extract<DeployRunStep, { kind: "gitlab-merge" }>,
+  a: Access,
+  deps: ProviderDeps,
+): Promise<RunHandle> {
+  const branch = encodeURIComponent(step.branch);
+  const compare = await api(
+    deps,
+    a,
+    `/projects/${a.id}/repository/compare?from=${branch}&to=${encodeURIComponent(ctx.commit)}&straight=true`,
+  );
+  const missing = (compare.body as { commits?: unknown[] } | undefined)?.commits;
+  if (compare.status === 200 && Array.isArray(missing) && missing.length === 0) {
+    const tip = await api(deps, a, `/projects/${a.id}/repository/branches/${branch}`);
+    const head = str((tip.body as { commit?: unknown } | undefined)?.commit, "id");
+    if (head === undefined) throw new DeployProblem(`GitLab has no branch ${step.branch} in ${a.slug}.`);
+    return pipelineOn(step.branch, head, a, deps);
+  }
+  const source = encodeURIComponent(ctx.base);
+  const open = await api(
+    deps,
+    a,
+    `/projects/${a.id}/merge_requests?state=opened&source_branch=${source}&target_branch=${branch}&per_page=1`,
+  );
+  let iid = Array.isArray(open.body) ? num(open.body[0], "iid") : undefined;
+  if (iid === undefined) {
+    const made = await api(deps, a, `/projects/${a.id}/merge_requests`, {
+      source_branch: ctx.base,
+      target_branch: step.branch,
+      title: `Deploy ${ctx.commit.slice(0, 7)} to ${ctx.env.env}`,
+      remove_source_branch: false,
+    });
+    iid = num(made.body, "iid");
+    if (made.status !== 201 || iid === undefined)
+      throw new DeployProblem(
+        `GitLab did not open a merge request from ${ctx.base} into ${step.branch} (it answered ${made.status}).`,
+      );
+  }
+  // A new merge request needs a moment before GitLab knows it can merge.
+  for (let i = 0; i < MERGE_TRIES; i++) {
+    const merged = await api(
+      deps,
+      a,
+      `/projects/${a.id}/merge_requests/${iid}/merge`,
+      { sha: ctx.commit, should_remove_source_branch: false },
+      "PUT",
+    );
+    if (merged.status === 200) {
+      const head = str(merged.body, "merge_commit_sha") ?? str(merged.body, "sha") ?? ctx.commit;
+      return pipelineOn(step.branch, head, a, deps);
+    }
+    if (merged.status === 409)
+      throw new DeployProblem(
+        `${ctx.base} moved past ${ctx.commit.slice(0, 7)} on GitLab. Plan the deploy again.`,
+      );
+    if (merged.status !== 405 && merged.status !== 406 && merged.status !== 422)
+      throw new DeployProblem(
+        `GitLab did not merge ${ctx.base} into ${step.branch} (it answered ${merged.status}).`,
+      );
+    if (i < MERGE_TRIES - 1) await deps.sleep(MERGE_WAIT_MS);
+  }
+  throw new DeployProblem(
+    `GitLab cannot merge ${ctx.base} into ${step.branch}: they conflict, or the merge request waits on something. See merge request !${iid}.`,
+  );
+}
+
+/** The pipeline GitLab runs on `branch` at `head`. A push needs a moment to start one. */
+async function pipelineOn(branch: string, head: string, a: Access, deps: ProviderDeps): Promise<RunHandle> {
+  for (let i = 0; i < JOB_FIND_TRIES; i++) {
+    const found = await api(
+      deps,
+      a,
+      `/projects/${a.id}/pipelines?ref=${encodeURIComponent(branch)}&sha=${encodeURIComponent(head)}&order_by=id&sort=desc&per_page=1`,
+    );
+    const first = Array.isArray(found.body) ? found.body[0] : undefined;
+    const id = num(first, "id");
+    if (id !== undefined) return { id: String(id), url: str(first, "web_url") };
+    if (i < JOB_FIND_TRIES - 1) await deps.sleep(JOB_FIND_WAIT_MS);
+  }
+  throw new DeployProblem(
+    `${branch} is at ${head.slice(0, 7)} on GitLab, but GitLab started no pipeline on it.`,
+  );
+}
+
 export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
   return {
     async preflight(ctx, run) {
@@ -184,6 +281,7 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
     async start(ctx, run) {
       const step = gitlabStep(run);
       const a = await access(ctx, step, deps);
+      if (step.kind === "gitlab-merge") return mergeInto(ctx, step, a, deps);
       if (step.kind === "gitlab-job") {
         const pipeline = await pipelineOf(ctx, step, a, deps);
         const job = await jobOf(step.job, pipeline, a, deps);
@@ -241,6 +339,10 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
     // branch of its own (named by the commit, made once) and the same pipeline, with the same inputs, runs on it.
     async redeploy(ctx, run, previous) {
       const step = gitlabStep(run);
+      if (step.kind === "gitlab-merge")
+        throw new DeployProblem(
+          `A merge into ${step.branch} cannot go back: majhi never rewinds a branch. Revert on the base branch and deploy again.`,
+        );
       const a = await access(ctx, step, deps);
       if (step.kind === "gitlab-job") {
         if (previous.run === undefined)
@@ -270,4 +372,35 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       return { id: String(id), url: str(started.body, "web_url") };
     },
   };
+}
+
+/**
+ * The keys a GitLab CI/CD variable sets, read as a .env file. Only the names leave this function: the
+ * value is never returned, logged or kept.
+ */
+export async function gitlabVariableKeys(
+  deps: ProviderDeps,
+  org: string,
+  repo: RepoRef,
+  name: string,
+): Promise<{ keys: string[] } | { problem: string }> {
+  if (repo.provider !== "gitlab") return { problem: `${repo.slug} is not on GitLab` };
+  const got = await deps.credentials.git(org, repo.host, "gitlab");
+  if ("problem" in got) return { problem: got.problem };
+  const a: Access = {
+    token: got.token,
+    base: `${apiScheme(repo.host)}://${repo.host}/api/v4`,
+    id: encodeURIComponent(repo.slug),
+    slug: repo.slug,
+  };
+  try {
+    const answer = await api(deps, a, `/projects/${a.id}/variables/${encodeURIComponent(name)}`);
+    if (answer.status === 404) return { problem: `GitLab has no variable ${name} in ${repo.slug}` };
+    const value = str(answer.body, "value");
+    if (answer.status !== 200 || value === undefined)
+      return { problem: `GitLab answered ${answer.status} for ${name}` };
+    return { keys: envKeys(value) };
+  } catch (err) {
+    return { problem: err instanceof Error ? err.message : String(err) };
+  }
 }

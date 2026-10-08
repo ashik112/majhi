@@ -79,11 +79,14 @@ export function groupByOrg<T extends { org: string }>(
 export interface MrRemoteChoice {
   /** The remote's name in git, like `origin`. */
   name: string;
+  /** The remote kept current with what lands on the MR remote, if any. */
+  mirror?: string | undefined;
 }
 
-/** The remote MRs go to, from the project's config. */
+/** The remote MRs go to and the mirror, from the project's config. */
 export function choiceFromProject(project: ProjectView | undefined): MrRemoteChoice {
-  return { name: project?.mrRemote ?? "origin" };
+  const mirror = Object.entries(project?.remotes ?? {}).find(([, r]) => r.mirror === true)?.[0];
+  return { name: project?.mrRemote ?? "origin", mirror };
 }
 
 /** Remote names to pick from: the ones git has, the ones the config names, and always `origin`. */
@@ -103,9 +106,11 @@ export function buildRemotes(
   const flagged = Object.entries(current).some(([, r]) => r.mr === true);
   const next: Record<string, RemoteConfig> = {};
   for (const [name, remote] of Object.entries(current)) {
-    const { mr: _mr, ...rest } = remote;
+    const { mr: _mr, mirror: _mirror, ...rest } = remote;
     next[name] = rest;
   }
+  if (choice.mirror !== undefined && choice.mirror !== choice.name)
+    next[choice.mirror] = { ...next[choice.mirror], mirror: true };
   const { mr: _cleared, ...kept } = next[choice.name] ?? {};
   const entry: RemoteConfig = { ...kept };
   // `origin` is the default: it needs the flag only to take it back from another remote.

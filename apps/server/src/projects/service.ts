@@ -307,6 +307,8 @@ function checkRemotes(remotes: Readonly<Record<string, RemoteConfig>>): void {
       `Only one remote can take MRs, but ${marked.map(([n]) => n).join(" and ")} are marked.`,
     );
   }
+  const both = Object.entries(remotes).find(([, r]) => r.mr === true && r.mirror === true);
+  if (both !== undefined) throw new UserError(`${both[0]} takes MRs, so it cannot also be a mirror.`);
 }
 
 /** Links point at other registered projects and never close a loop (5.5). */

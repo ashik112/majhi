@@ -1,7 +1,5 @@
 import {
   type Actor,
-  didWords,
-  OWNER,
   type DeployEnvironment,
   type DeployHoldInputSchema,
   type DeployInput,
@@ -10,6 +8,8 @@ import {
   type DeployRunStep,
   deployHasCommit,
   deployIsActive,
+  didWords,
+  OWNER,
   type PlanDeployInput,
   type PlanDeployResult,
   PRIVATE,
@@ -19,7 +19,8 @@ import {
 import type { z } from "zod";
 import { errorMessage, UserError } from "../errors.ts";
 import type { DeployRepo } from "../store/deploys.ts";
-import type { DeployGit } from "./git.ts";
+import { type DeployGit, envKeys } from "./git.ts";
+import { gitlabVariableKeys } from "./gitlab.ts";
 import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
 import {
@@ -281,6 +282,13 @@ export class DeployService {
       if (seen.has(key)) throw new UserError(`${step.env} of ${step.project} is in the plan twice.`, 409);
       seen.add(key);
     }
+    const notes = await Promise.all(
+      input.steps.map(async (step) => {
+        const gap = await this.envGap(org, step.project, step.env);
+        const note = [step.note, gap].filter((n) => n !== undefined).join(" ");
+        return note === "" ? undefined : note.slice(0, 500);
+      }),
+    );
     const at = this.deps.now().toISOString();
     // Steps that ran keep their place: the new ones come after them.
     const kept = this.deps.repo
@@ -297,7 +305,7 @@ export class DeployService {
         state: step.hold === undefined ? ("planned" as const) : ("held" as const),
         runs: step.runs,
         seq: first + i,
-        ...(step.note === undefined ? {} : { note: step.note }),
+        ...(notes[i] === undefined ? {} : { note: notes[i] }),
         ...(step.hold === undefined ? {} : { reason: "Held for a migration: the owner lets it go" }),
         task: input.task,
         by: actor,
@@ -307,6 +315,32 @@ export class DeployService {
     if (input.steps.length === 0) await this.deps.nothingDeploys?.(input.task, actor);
     this.changed();
     return { records };
+  }
+
+  /**
+   * The keys of the release's `.env.example` that the environment's env variable lacks, in a sentence, or
+   * undefined when nothing is missing or the environment names no variable. Names only, never a value.
+   */
+  private async envGap(org: string, projectId: string, envName: string): Promise<string | undefined> {
+    const project = await this.deps.projects.get(projectId).catch(() => undefined);
+    const env = project?.environments.find((e) => e.env === envName);
+    if (project === undefined || env?.envVariable === undefined || project.base === undefined)
+      return undefined;
+    const name = env.envVariable;
+    const tip = await this.deps.git.tip(project.path, project.base);
+    const example =
+      tip === undefined ? undefined : await this.deps.git.file(project.path, tip, ".env.example");
+    if (example === undefined) return undefined;
+    const repo = await this.deps.repoRef(project);
+    if (repo === undefined)
+      return `Could not check ${name}: the project's remote is not on a host majhi reaches.`;
+    const got = await gitlabVariableKeys(this.deps.providerDeps, org, repo, name);
+    if ("problem" in got) return `Could not check ${name}: ${got.problem}.`;
+    const have = new Set(got.keys);
+    const missing = envKeys(example).filter((k) => !have.has(k));
+    if (missing.length === 0) return undefined;
+    const listed = `${missing.slice(0, 12).join(", ")}${missing.length > 12 ? ` and ${missing.length - 12} more` : ""}`;
+    return `${name} lacks ${listed} from .env.example.`;
   }
 
   /**

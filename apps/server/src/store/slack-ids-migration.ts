@@ -40,7 +40,9 @@ function mergeContacts(db: Database.Database): void {
   }
   const owners = (group: IdRow[]): string[] =>
     [...new Map(group.map((r) => [r.contact, r])).values()]
-      .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.contact < b.contact ? -1 : 1))
+      .sort((a, b) =>
+        a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.contact < b.contact ? -1 : 1,
+      )
       .map((r) => r.contact);
   const del = db.prepare(
     "DELETE FROM contact_ids WHERE contact = ? AND org = ? AND app = 'slack' AND account = ? AND native = ?",
@@ -110,7 +112,9 @@ function foldInto(db: Database.Database, kept: string, absorbed: string): void {
   const move = db.prepare(
     "UPDATE contact_ids SET contact = ? WHERE contact = ? AND app = ? AND account = ? AND native = ?",
   );
-  const drop = db.prepare("DELETE FROM contact_ids WHERE contact = ? AND app = ? AND account = ? AND native = ?");
+  const drop = db.prepare(
+    "DELETE FROM contact_ids WHERE contact = ? AND app = ? AND account = ? AND native = ?",
+  );
   for (const i of ids) {
     const twin = JSON.stringify([i.app, i.account, i.app === "slack" ? slackPersonId(i.native) : i.native]);
     if (own.has(twin)) drop.run(absorbed, i.app, i.account, i.native);
@@ -129,7 +133,9 @@ function rewriteSenders(db: Database.Database): void {
           AND instr(json_extract(payload, '$.sender.id'), ':') > 0`,
     )
     .all() as { rowid: number; id: string }[];
-  const set = db.prepare("UPDATE room_items SET payload = json_set(payload, '$.sender.id', ?) WHERE rowid = ?");
+  const set = db.prepare(
+    "UPDATE room_items SET payload = json_set(payload, '$.sender.id', ?) WHERE rowid = ?",
+  );
   for (const item of items) set.run(slackPersonId(item.id), item.rowid);
 }
 

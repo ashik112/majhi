@@ -35,11 +35,26 @@ export function deployStepOf(tier: DeployTier): Extract<ShipStep, "deployStaging
 /**
  * One environment of a project. `branch`: pushing or merging to it deploys (the host's CI does it).
  * `check`: answers 2xx when the environment is up. A tier that is not named is production.
+ * `envVariable`: the GitLab CI/CD variable that holds the environment's .env file: a planned deploy
+ * names the keys of the release's `.env.example` it lacks (names only, never a value).
  */
 export const DeployEnvironmentSchema = z.object({
   env: EnvNameSchema,
   tier: DeployTierSchema.default("production"),
   branch: LocalBranchSchema.optional(),
+  envVariable: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine(
+      (v) =>
+        [...v].every(
+          (c) => (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "_",
+        ),
+      "Letters, digits and _ only",
+    )
+    .optional(),
   check: z
     .url({ protocol: /^https?$/ })
     .max(500)
@@ -126,6 +141,15 @@ export const DeployRunStepSchema = z.discriminatedUnion("kind", [
     variables: InputsSchema.optional(),
   }),
   z.object({
+    kind: z.literal("gitlab-merge"),
+    remote: RemoteNameSchema,
+    /**
+     * The environment's branch (`stg`, `prod-beta`): the commit is merged into it through a merge request
+     * from the base branch, never forced, and the pipeline that runs on it is followed.
+     */
+    branch: LocalBranchSchema,
+  }),
+  z.object({
     kind: z.literal("bitbucket-pipeline"),
     remote: RemoteNameSchema,
     /** A custom pipeline of the project, the name under `pipelines: custom:` in `bitbucket-pipelines.yml`. */
@@ -158,6 +182,7 @@ export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
   "github-workflow": "GitHub workflow",
   "gitlab-job": "GitLab job",
   "gitlab-pipeline": "GitLab pipeline",
+  "gitlab-merge": "GitLab merge into",
   "bitbucket-pipeline": "Bitbucket pipeline",
   vercel: "Vercel",
   ssh: "SSH command",
@@ -172,6 +197,8 @@ export function deployRunLine(run: DeployRunStep): string {
       return `${DEPLOY_KIND_LABEL[run.kind]} ${run.job}`;
     case "gitlab-pipeline":
       return DEPLOY_KIND_LABEL[run.kind];
+    case "gitlab-merge":
+      return `${DEPLOY_KIND_LABEL[run.kind]} ${run.branch}`;
     case "bitbucket-pipeline":
       return `${DEPLOY_KIND_LABEL[run.kind]} ${run.pipeline}`;
     case "vercel":

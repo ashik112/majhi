@@ -177,9 +177,7 @@ export class ProjectMemory {
 
   brief(project: string): { current?: ProjectBrief; versions: ProjectBrief[] } {
     // Older builds wrote the same text over and over: a run of identical versions shows as its newest one.
-    const versions = this.store
-      .briefs(project)
-      .filter((v, i, all) => all[i + 1]?.body !== v.body);
+    const versions = this.store.briefs(project).filter((v, i, all) => all[i + 1]?.body !== v.body);
     const [current] = versions;
     return current === undefined ? { versions } : { current, versions };
   }

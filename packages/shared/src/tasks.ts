@@ -42,6 +42,12 @@ import { DaySchema } from "./usage.ts";
 export const RemoteConfigSchema = z.looseObject({
   /** True on the remote MRs are opened against. Default: `origin`. */
   mr: z.boolean().optional(),
+  /**
+   * True on a copy of the repo kept current: after majhi pushes a branch to the MR remote, or a merge
+   * request merges there, the same commit is pushed here. Never forced: a mirror that has moved on
+   * its own is left as it is and said in the room.
+   */
+  mirror: z.boolean().optional(),
   /** Credentials for this remote's host: overrides the org's `mr_tokens`. */
   token: SecretRefSchema.optional(),
 });
