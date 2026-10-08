@@ -85,7 +85,7 @@ describe("detectSecrets and code identifiers", () => {
     ["token", "blob=Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dFgHjK+9Xw=="],
     ["token", "key is Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dF"],
     ["assigned", 'password="hunter2xyz9"'],
-    ["assigned", 'secret: "z.string().min(1)"'],
+    ["assigned", ["secret:", JSON.stringify("z.string().min(1)")].join(" ")],
     ["assigned", "password='hunter2xyz9'"],
   ] as const)("still flags a %s in %s", (kind, text) => {
     expect(detectSecrets(text).map((m) => m.kind)).toContain(kind);
