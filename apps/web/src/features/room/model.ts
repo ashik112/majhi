@@ -91,6 +91,13 @@ export function oldestSeq(items: readonly RoomItem[]): number | undefined {
   return min;
 }
 
+/** The earliest `at` we hold: the cursor for `room.items`, which pages the merged read (task plus captain lines) by time. */
+export function oldestAt(items: readonly RoomItem[]): string | undefined {
+  let min: string | undefined;
+  for (const item of items) if (min === undefined || item.at < min) min = item.at;
+  return min;
+}
+
 function upsertAgent(agents: readonly AgentLive[], next: AgentLive): AgentLive[] {
   const at = agents.findIndex((a) => a.agent === next.agent);
   if (at === -1) return [...agents, next];

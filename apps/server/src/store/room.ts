@@ -22,6 +22,20 @@ const OWNER_WAIT_TYPES: RoomItem["type"][] = [
   "choice",
   "owner-question",
 ];
+/**
+ * What of the captain's lane shows in the task it is about: its words, its cards and its notes. Its tool calls and
+ * thoughts stay in the lane (one line with the result is what the task needs).
+ */
+const CAPTAIN_LINES_IN_TASK: RoomItem["type"][] = [
+  "agent",
+  "system",
+  "approval",
+  "permission",
+  "secret-request",
+  "ask",
+  "choice",
+  "owner-question",
+];
 /** An item whose `state` is pending: an indexed virtual column (migration 153), not a JSON parse per row. */
 const PENDING = sql`${roomItems.pending} = 1`;
 
@@ -192,7 +206,10 @@ export class RoomRepo {
     bounds: { olderThan?: string; newerThan?: string } = {},
   ): { items: RoomItem[]; more: boolean } {
     if (rooms.length === 0) return { items: [], more: false };
-    const tag = "about" in which ? eq(roomItems.about, which.about) : sql`${roomItems.about} IS NULL`;
+    const tag =
+      "about" in which
+        ? and(eq(roomItems.about, which.about), inArray(roomItems.type, CAPTAIN_LINES_IN_TASK))
+        : sql`${roomItems.about} IS NULL`;
     const rows = this.db
       .select()
       .from(roomItems)

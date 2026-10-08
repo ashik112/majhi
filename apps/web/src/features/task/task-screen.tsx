@@ -21,6 +21,7 @@ import { briefBody } from "./model";
 import { ReportTab } from "./report-tab";
 import { RoomPanel } from "./room-panel";
 import { RoomOverlay, RoomRail } from "./room-rail";
+import { TaskFacts } from "./task-facts";
 import { TaskHeader } from "./task-header";
 import { TAB_PANEL_ID, type TaskTab, TaskTabs, tabId } from "./task-tabs";
 import { TaskTerminal } from "./task-terminal";
@@ -170,6 +171,7 @@ function TaskView({ taskId }: { taskId: string }) {
           >
             {/* The room stays mounted while another tab shows, so a draft and the scroll place are kept. */}
             <div className={shown === "room" ? "contents" : "hidden"}>
+              {data.kind !== "chat" && <TaskFacts task={data} brief={brief} />}
               <RoomPane
                 task={data}
                 state={room.state}

@@ -8,7 +8,7 @@ import {
   emptyRoom,
   newestAgentAt,
   newestSeq,
-  oldestSeq,
+  oldestAt,
   parseRoomMessage,
   type RoomState,
   roomReducer,
@@ -94,11 +94,11 @@ export function useRoom(taskId: string) {
     if (loadingOlder.current || !current.more) return;
     loadingOlder.current = true;
     try {
-      const beforeSeq = oldestSeq(current.items);
+      const beforeAt = oldestAt(current.items);
       const page = await cmd("room.items", {
         task: taskId,
         limit: 100,
-        ...(beforeSeq === undefined ? {} : { beforeSeq }),
+        ...(beforeAt === undefined ? {} : { beforeAt }),
       });
       dispatch({ type: "older", items: page.items, more: page.more });
     } catch {

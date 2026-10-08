@@ -163,6 +163,9 @@ export function Composer({
   const hasContent = text.trim() !== "" || attachmentIds(attachments.items).length > 0;
   const canSend = hasContent && !attachments.uploading;
   const addressed = task ? addressedAgent(text, task.team) : undefined;
+  // On a task's page the captain is the default recipient; an @mention of an agent still addresses that agent.
+  const toCaptain =
+    task !== undefined && task.kind !== "chat" && addressed === undefined && [...index.values()].some((a) => a.isBoss);
   // One action in one place: Stop while the agent works and the box is empty, else Send.
   const stops = busy && !hasContent;
 
@@ -187,7 +190,10 @@ export function Composer({
     setText("");
     setCaret(0);
     attachments.clear();
-    cmd("room.send", { task: taskId, text: sentText, attachments: attachmentIds(sentFiles), mode }).then(
+    const body = { task: taskId, text: sentText, attachments: attachmentIds(sentFiles), mode };
+    // A message with files goes to the lead as before: the captain's lane takes words only.
+    const toLane = toCaptain && sentFiles.length === 0;
+    cmd("room.send", toLane ? { ...body, to: "captain" as const } : body).then(
       ({ item }) => {
         onDrop(pending.id);
         onSent(item);
@@ -377,7 +383,9 @@ export function Composer({
             aria-controls={popupOpen ? listId : undefined}
             aria-activedescendant={popupOpen ? `${listId}-${activeIndex}` : undefined}
             placeholder={
-              focused
+              toCaptain
+                ? "Message the captain about this task"
+                : focused
                 ? busy
                   ? "Enter queues, Shift Enter new line, Esc stops"
                   : "Enter sends, Shift Enter new line, @ mention, / commands"
