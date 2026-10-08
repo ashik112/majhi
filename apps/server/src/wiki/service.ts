@@ -77,6 +77,7 @@ export interface WikiProject {
 export interface PageIndex {
   put(page: WikiPage): Promise<void>;
   drop(org: string, project: string | undefined, id: WikiPageId): void;
+  dropProject(org: string, project: string): void;
 }
 
 export interface WikiServiceDeps {
@@ -152,6 +153,14 @@ export class WikiService {
   /** Draws again what depends on the links (every Gaps page, the workspace overview's picture) after an answer or a role choice. */
   redraw(org: string): Promise<void> {
     return this.workspace.redraw(org);
+  }
+
+  /** A project was removed: its pages and search pieces go, and the workspace pages that drew on it are redrawn. */
+  async forgetProject(org: string, project: string): Promise<void> {
+    this.deps.repo.removeProject(org, project);
+    this.deps.index?.dropProject(org, project);
+    this.deps.changed();
+    await this.workspace.redraw(org).catch(() => undefined);
   }
 
   /** Resolves when every run and graph refresh has ended: shutdown waits for it. */

@@ -181,6 +181,12 @@ export class ProjectMemory {
     return current === undefined ? { versions } : { current, versions };
   }
 
+  /** A removed project: its brief and history are deleted. */
+  forgetBrief(project: string): void {
+    this.store.deleteBriefs(project);
+    this.changed();
+  }
+
   currentBrief(project: string): ProjectBrief | undefined {
     return this.store.brief(project);
   }

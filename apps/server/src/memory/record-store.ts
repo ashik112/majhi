@@ -287,6 +287,11 @@ export class RecordStore {
     return row === undefined ? undefined : toBrief(row);
   }
 
+  /** A removed project: its brief and every version go. */
+  deleteBriefs(project: string): void {
+    this.db.prepare("DELETE FROM project_briefs WHERE project = ?").run(project);
+  }
+
   /** Adds the next version. Earlier versions are never changed. */
   addBrief(input: {
     project: string;

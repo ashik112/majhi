@@ -805,8 +805,12 @@ export function createHandlers({
       return services.deploy.service.hold(input);
     },
     "projects.remove": async (input, ctx) => {
+      const org = (await services.projects.infos()).find((p) => p.id === input.id)?.org;
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       services.cards.forget(input.id);
+      // Its wiki pages and memory brief go with it: nothing is left that the owner cannot see or clear.
+      services.memory.project.forgetBrief(input.id);
+      if (org !== undefined) await services.wiki.forgetProject(org, input.id);
       return { removed: input.id };
     },
 
