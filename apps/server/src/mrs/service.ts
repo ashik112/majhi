@@ -59,7 +59,7 @@ import type { HostGit } from "./hostGit.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
 import { nextMerge, type RepoMrState } from "./policy.ts";
-import { commitsAhead, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
+import { commitsAhead, PUSH_TIMEOUT_MS, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, realHostOf, repoSlug, rewriteRemoteUrl } from "./remote.ts";
 import {
   chooseRoute,
@@ -888,6 +888,7 @@ export class MrService {
             ok: true,
             detail: `Pushed ${into} to ${target.remote}.`,
           });
+          await this.mirror(input.id, repo, into, `refs/heads/${into}`);
         } catch (err) {
           results.push({
             project: repo.project,
@@ -942,15 +943,18 @@ export class MrService {
     });
   }
 
-  /** Where a repo's branches are pushed: the MR remote, through the SSH route of the workspace's git account for its host. */
-  private async pushTarget(repo: Pick<TaskRepo, "project" | "source">): Promise<PushTarget> {
+  /**
+   * Where a repo's branches are pushed: the MR remote, or `named`, through the SSH route of the
+   * workspace's git account for its host.
+   */
+  private async pushTarget(repo: Pick<TaskRepo, "project" | "source">, named?: string): Promise<PushTarget> {
     const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     if (project === undefined)
       throw new UserError(
         `${repo.project} is not a registered project any more. Register it in Projects.`,
         409,
       );
-    const remote = mrRemoteName(project.remotes);
+    const remote = named ?? mrRemoteName(project.remotes);
     const url = await remoteUrl(repo.source, remote).catch(() => undefined);
     if (url === undefined)
       throw new FixableError(
@@ -994,6 +998,36 @@ export class MrService {
       pushUrl: pushUrl === url ? undefined : pushUrl,
       viaHost: false,
     };
+  }
+
+  /**
+   * Pushes `ref` to `branch` on each mirror remote of the repo's project, never forced. A mirror that
+   * cannot take it (moved on its own, no route) is said in the room; the ship it follows stands.
+   */
+  private async mirror(
+    task: string,
+    repo: Pick<TaskRepo, "project" | "source">,
+    branch: string,
+    ref: string,
+  ) {
+    const project = await this.deps.projects.get(repo.project).catch(() => undefined);
+    const mirrors = Object.entries(project?.remotes ?? {}).filter(([, r]) => r.mirror === true);
+    for (const [name] of mirrors) {
+      try {
+        const target = await this.pushTarget(repo, name);
+        if (target.viaHost) throw new Error(`${name} is https, and majhi mirrors over SSH only`);
+        await git(repo.source, ["push", "--quiet", target.pushUrl ?? name, `${ref}:refs/heads/${branch}`], {
+          timeoutMs: PUSH_TIMEOUT_MS,
+        });
+        this.note(task, `${repo.project}: mirrored ${branch} to ${name}.`);
+      } catch (err) {
+        this.note(
+          task,
+          `${repo.project}: could not mirror ${branch} to ${name}: ${err instanceof Error ? err.message : String(err)}`,
+          "error",
+        );
+      }
+    }
   }
 
   /** The push function for an https route, or undefined for SSH and plain remotes. */
@@ -1610,6 +1644,7 @@ export class MrService {
             into: repo.base,
             at: this.now().toISOString(),
           });
+          await this.mirror(task.id, repo, repo.base, `refs/remotes/${remote}/${repo.base}`);
         }
       }
     }

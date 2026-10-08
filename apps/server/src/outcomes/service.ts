@@ -6,6 +6,8 @@ import {
   type Cadence,
   type CaptainChore,
   ceilingDecisionId,
+  didWords,
+  didWordsInline,
   isOutboundKey,
   type MoneySetInput,
   type MoneyStatus,
@@ -14,6 +16,7 @@ import {
   OUTBOUND_CHANNELS,
   type OutboundChannel,
   type OutboundMode,
+  OWNER,
   type OwnerDecision,
   outboundKey,
   PRIVATE,
@@ -28,7 +31,6 @@ import {
   type TrustList,
   trustDecisionId,
 } from "@majhi/shared";
-import { didWords, didWordsInline, OWNER } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { UserError } from "../errors.ts";
 import { addDays, dayStart, localDay, weekStart } from "../usage/ranges.ts";

@@ -556,7 +556,7 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
   const { state, setState, save } = useSectionSave(project);
   const known = repo ?? stubRepo(project);
   const git = useGitStatus(project.org);
-  const dirty = choice.name !== initial.name;
+  const dirty = choice.name !== initial.name || choice.mirror !== initial.mirror;
   // Opened from a link that points here (Ship's "Fix it in Projects"): show the MR remote at once.
   const [section, setSection] = useSearchParam("section");
   const mrField = useRef<string>(undefined);
@@ -607,6 +607,7 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
               <span className="flex min-w-0 max-w-[240px] shrink-0 items-center gap-2 text-xs">
                 <PushesAs org={project.org} remote={remote} status={git.data} />
                 {remote.name === initial.name && <span className="shrink-0 text-accent-text">MRs</span>}
+                {remote.name === initial.mirror && <span className="shrink-0 text-fg-soft">Mirror</span>}
               </span>
             </li>
           ))}
@@ -622,7 +623,8 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
                 value={choice.name}
                 onChange={(e) => {
                   if (state.kind !== "saving") setState(IDLE);
-                  setChoice({ name: e.target.value });
+                  const name = e.target.value;
+                  setChoice((c) => ({ name, mirror: c.mirror === name ? undefined : c.mirror }));
                 }}
               >
                 {remoteNames(known, project).map((name) => (
@@ -633,6 +635,28 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
               </Select>
             );
           }}
+        </Field>
+        <Field label="Mirror to" hint="Gets what lands on the MR remote. Never forced.">
+          {(props) => (
+            <Select
+              {...props}
+              value={choice.mirror ?? ""}
+              onChange={(e) => {
+                if (state.kind !== "saving") setState(IDLE);
+                const mirror = e.target.value === "" ? undefined : e.target.value;
+                setChoice((c) => ({ ...c, mirror }));
+              }}
+            >
+              <option value="">None</option>
+              {remoteNames(known, project)
+                .filter((name) => name !== choice.name)
+                .map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+            </Select>
+          )}
         </Field>
       </div>
     </SaveSection>

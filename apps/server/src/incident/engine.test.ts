@@ -296,7 +296,12 @@ describe("a paused watch", () => {
       status: "resolved",
       resolvedAt: new Date(t.clock.now.getTime() + 5 * MIN).toISOString(),
       timeline: [
-        { at: t.clock.now.toISOString(), kind: "resolved", closedBy: "stopped", text: "You paused the watch." },
+        {
+          at: t.clock.now.toISOString(),
+          kind: "resolved",
+          closedBy: "stopped",
+          text: "You paused the watch.",
+        },
       ],
     });
     t.clock.now = new Date(t.clock.now.getTime() + 600 * MIN);

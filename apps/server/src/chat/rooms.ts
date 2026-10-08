@@ -4,11 +4,11 @@ import {
   type ChatApp,
   type ChatHolder,
   CLIENT_CHAT_BRIEF,
-  externalKeyText,
   type ClientList,
   type ClientRoom,
   type ClientRow,
   type Conversation,
+  externalKeyText,
   LOCAL_TASK_PREFIX,
   type RoomItem,
   sendAsMeProblem,
@@ -141,7 +141,12 @@ export class ClientRooms {
       for (const item of said) {
         if (item.type !== "client") continue;
         const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = item;
-        this.deps.room.postExternal(before.id as TaskId, externalKeyText(item.external), item.id, () => payload);
+        this.deps.room.postExternal(
+          before.id as TaskId,
+          externalKeyText(item.external),
+          item.id,
+          () => payload,
+        );
       }
       const back = this.patch(before, { archived: undefined, ignored: undefined, trouble: undefined });
       const refreshed = this.refresh(back, { title: room.chat.title, people: room.chat.people });

@@ -84,7 +84,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const project = text(search.project);
   const tab = text(search.tab);
   const thread = text(search.thread);
-  const urgent = thread && search.urgent === true || search.urgent === "true" ? true : undefined;
+  const urgent = (thread && search.urgent === true) || search.urgent === "true" ? true : undefined;
   const section = text(search.section);
   const scope = text(search.scope);
   const about = text(search.about);

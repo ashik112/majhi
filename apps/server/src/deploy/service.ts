@@ -1,7 +1,5 @@
 import {
   type Actor,
-  didWords,
-  OWNER,
   type DeployEnvironment,
   type DeployHoldInputSchema,
   type DeployInput,
@@ -10,6 +8,8 @@ import {
   type DeployRunStep,
   deployHasCommit,
   deployIsActive,
+  didWords,
+  OWNER,
   type PlanDeployInput,
   type PlanDeployResult,
   PRIVATE,

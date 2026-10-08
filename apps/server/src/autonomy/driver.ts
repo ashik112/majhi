@@ -148,13 +148,7 @@ export class AutonomyDriver {
    * Something the captain should look at happened in a workspace: batched into that lane's next
    * tick. Without a workspace it goes to every lane of a workspace where the captain starts work.
    */
-  wake(
-    line: string,
-    org?: string,
-    kind: WakeKind = "news",
-    job: Job = "reacting",
-    toMain = false,
-  ): boolean {
+  wake(line: string, org?: string, kind: WakeKind = "news", job: Job = "reacting", toMain = false): boolean {
     const { autonomy } = this.deps;
     if (autonomy.halted() || (job === "backlog" && autonomy.mode() !== "on")) return false;
     if (org === undefined) {
@@ -291,7 +285,9 @@ export class AutonomyDriver {
     // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
     const job: Job = lane.reasons.every((r) => lane.backlog.has(r)) ? "backlog" : "reacting";
     // The gate (Auto-pilot, hours) follows `job`; the lane that hears it is the main one when every line goes there.
-    const into: Job = lane.reasons.every((r) => lane.backlog.has(r) || lane.main.has(r)) ? "backlog" : "reacting";
+    const into: Job = lane.reasons.every((r) => lane.backlog.has(r) || lane.main.has(r))
+      ? "backlog"
+      : "reacting";
     const chat = await this.deps.autonomy.laneChat(org, job, into);
     if (chat === undefined) {
       // At rest (working hours, a freeze) backlog news is kept and delivered when the captain resumes, not lost.
