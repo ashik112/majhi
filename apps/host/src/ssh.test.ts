@@ -51,7 +51,10 @@ const fail = (code: number, stderr = ""): RunResult => ({ code, stdout: "", stde
 /** The askpass's answer, cut at the first line break as ssh-add does. Undefined when it exits non-zero. */
 async function ask(options: RunOptions, prompt: string): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync(options.env.SSH_ASKPASS ?? "", [prompt], { env: options.env });
+    // Through `sh`: starting a script file the product has just written costs 200 ms on macOS (the system scans it).
+    const { stdout } = await execFileAsync("/bin/sh", [options.env.SSH_ASKPASS ?? "", prompt], {
+      env: options.env,
+    });
     return stdout.split(/[\r\n]/)[0];
   } catch {
     return undefined;
