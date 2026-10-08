@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, link, mkdir, rename, stat, writeFile, copyFile, rm } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,7 +15,13 @@ const FOLDER = join(tmpdir(), "majhi-fast-bin");
 /** The shared copy of an executable with this content, made if no test has made it. */
 export async function sharedExecutable(content: string): Promise<string> {
   const path = join(FOLDER, createHash("sha1").update(content).digest("hex").slice(0, 20));
-  if (await stat(path).then(() => true, () => false)) return path;
+  if (
+    await stat(path).then(
+      () => true,
+      () => false,
+    )
+  )
+    return path;
   await mkdir(FOLDER, { recursive: true });
   // Other test files make the same file at once: write apart, then rename into place.
   const temp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;

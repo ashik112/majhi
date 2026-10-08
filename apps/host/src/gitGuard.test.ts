@@ -58,7 +58,19 @@ async function httpsGit(root: string, dir: string) {
   const key = join(dir, "key.pem");
   const cert = join(dir, "cert.pem");
   await exec("openssl", [
-    ...["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1"],
+    ...[
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:prime256v1",
+      "-nodes",
+      "-days",
+      "1",
+      "-subj",
+      "/CN=127.0.0.1",
+    ],
     ...["-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert],
   ]);
   const server = createServer({ key: await readFile(key), cert: await readFile(cert) }, (req, res) => {
