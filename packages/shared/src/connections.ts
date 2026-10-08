@@ -1095,6 +1095,8 @@ export const ConnectionTestResultSchema = z.object({
   checked: z.array(z.string().min(1).max(200)).optional(),
   /** Who the service says the credential belongs to. */
   account: z.string().max(200).optional(),
+  /** A pass that still needs the owner, like a chat bot that cannot read group messages. */
+  attention: ConnectionFailureSchema.optional(),
 });
 export type ConnectionTestResult = z.infer<typeof ConnectionTestResultSchema>;
 

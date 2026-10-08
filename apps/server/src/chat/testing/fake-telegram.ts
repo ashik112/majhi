@@ -55,6 +55,8 @@ export class FakeTelegram {
   readonly sent: SentMessage[] = [];
   readonly files = new Map<string, Uint8Array>();
   webhook = "";
+  /** Group privacy (BotFather's /setprivacy): while on, a group gives the bot only @mentions, commands and replies. */
+  privacy = false;
   /** The user ids Telegram lists as administrators of every chat. */
   admins: number[] = [];
   private updates: { update_id: number; [key: string]: unknown }[] = [];
@@ -77,6 +79,7 @@ export class FakeTelegram {
   /** A message arrives. Returns its update id. */
   push(message: FakeMessage, kind: "message" | "edited_message" = "message", messageId?: number): number {
     const id = this.nextUpdate++;
+    if (kind === "message" && this.privacy && !this.reachesBot(message)) return id;
     const message_id = messageId ?? this.nextMessage++;
     const body: Record<string, unknown> = {
       message_id,
@@ -96,6 +99,12 @@ export class FakeTelegram {
     this.updates.push({ update_id: id, [kind]: body });
     this.waiter?.();
     return id;
+  }
+
+  private reachesBot(message: FakeMessage): boolean {
+    if (message.chat.type === "private" || message.chat.type === "channel") return true;
+    const text = message.text ?? message.caption ?? "";
+    return message.reply_to !== undefined || text.startsWith("/") || text.includes(`@${this.bot.username}`);
   }
 
   /** The next call of this method fails with this answer. */
@@ -143,7 +152,14 @@ export class FakeTelegram {
   ): Promise<unknown> {
     switch (method) {
       case "getMe":
-        return { id: this.bot.id, is_bot: true, first_name: "Majhi test", username: this.bot.username };
+        return {
+          id: this.bot.id,
+          is_bot: true,
+          first_name: "Majhi test",
+          username: this.bot.username,
+          can_join_groups: true,
+          can_read_all_group_messages: !this.privacy,
+        };
       case "getWebhookInfo":
         return { url: this.webhook };
       case "deleteWebhook":

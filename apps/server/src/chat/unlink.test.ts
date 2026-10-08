@@ -24,14 +24,14 @@ it("stops triage after an unlink, and a relink to another workspace never shows 
   await w.rooms.link(fresh?.id ?? "", "globex");
   const texts = (id: string) =>
     w.store.room.page(id, 50).items.flatMap((i) => (i.type === "client" ? [i.text] : []));
-  expect(texts(fresh?.id ?? "")).toEqual([]);
+  expect(texts(fresh?.id ?? "")).toEqual(["Written after the unlink"]);
   expect(texts(old)).toEqual(["Acme secret roadmap"]);
   expect(w.store.client.room(old)).toMatchObject({ org: "acme", chat: { archived: true } });
   expect(w.store.client.room(fresh?.id ?? "")?.org).toBe("globex");
 
   await w.ingest.deliver(CONN, envelope({ message: "3", text: "Globex question" }));
   await w.ingest.idle();
-  expect(texts(fresh?.id ?? "")).toEqual(["Globex question"]);
+  expect(texts(fresh?.id ?? "")).toEqual(["Globex question", "Written after the unlink"]);
   expect(texts(old)).not.toContain("Globex question");
 });
 
@@ -84,7 +84,7 @@ it("links an unlinked chat to the same workspace again as the same room, with it
     .page(old, 50)
     .items.flatMap((i) => (i.type === "client" ? [i.text] : []))
     .toReversed();
-  expect(texts).toEqual(["Acme secret roadmap"]);
+  expect(texts).toEqual(["Acme secret roadmap", "Written while unlinked"]);
   expect(w.rooms.list().clients.map((r) => r.id)).toEqual([old]);
   expect(w.rooms.list().newChats).toEqual([]);
 });

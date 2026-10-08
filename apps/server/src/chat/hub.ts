@@ -6,6 +6,7 @@ import {
   type ChatChannelList,
   type ChatConnection,
   type ChatMessage,
+  type ChatProbe,
   ChatSendError,
   type ChatSink,
   type ChatTarget,
@@ -46,6 +47,8 @@ export interface HubDeps {
   polling: boolean;
   /** Tells the tabs. */
   changed: () => void;
+  /** A connection's read loop has a trouble, or has none now: the connection's one health follows it. */
+  troubled?: (connection: string, trouble: ChatTrouble | undefined) => void;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -120,7 +123,7 @@ export class ChatHub {
       if (tokens === undefined) {
         had?.stop();
         this.running.delete(info.id);
-        this.troubles.set(info.id, "needs-token");
+        this.setTrouble(info.id, "needs-token");
         continue;
       }
       if (
@@ -163,15 +166,19 @@ export class ChatHub {
         this.sawEvent(info.id);
       },
       save: (next) => this.deps.cursors.set(info.id, next),
-      trouble: (trouble) => {
-        if (trouble === undefined) this.troubles.delete(info.id);
-        else this.troubles.set(info.id, trouble);
-        this.deps.changed();
-      },
+      trouble: (trouble) => this.setTrouble(info.id, trouble),
       unreachable: (chat) => this.deps.unreachable(conn, chat),
       gap: (from, to) => this.deps.gap(conn, from, to),
     };
     this.running.set(info.id, { info, tokens, stop: adapter.start(conn, sink, cursor) });
+  }
+
+  private setTrouble(connection: string, trouble: ChatTrouble | undefined): void {
+    const had = this.troubles.get(connection);
+    if (trouble === undefined) this.troubles.delete(connection);
+    else this.troubles.set(connection, trouble);
+    this.deps.changed();
+    if (had !== trouble) this.deps.troubled?.(connection, trouble);
   }
 
   private sawEvent(connection: string): void {
@@ -216,7 +223,7 @@ export class ChatHub {
   async restart(connection: string): Promise<void> {
     this.running.get(connection)?.stop();
     this.running.delete(connection);
-    this.troubles.delete(connection);
+    this.setTrouble(connection, undefined);
     await this.sync();
   }
 
@@ -278,6 +285,13 @@ export class ChatHub {
     await adapter.asYou({ ...conn, userToken: userToken ?? conn.userToken });
   }
 
+  /** Asks the app about a connection's bot now. Throws the app's refusal, for the Test to read by its code. */
+  async probe(connection: string, linked: readonly string[]): Promise<ChatProbe> {
+    const { adapter, info, conn } = await this.byConnection(connection);
+    if (adapter.probe === undefined) throw new Error(`${info.app} has no bot check.`);
+    return adapter.probe(conn, linked);
+  }
+
   /** Whether the owner saved a user token on the account's connection (Slack's Send as Me needs it). */
   async hasUserToken(app: ChatApp, account: string): Promise<boolean> {
     const info = (await this.deps.connections()).find((c) => c.app === app && c.account === account);
@@ -312,8 +326,7 @@ export class ChatHub {
       if (err instanceof ChatSendError && err.kind === "unreachable")
         this.deps.unreachable(conn, target.chat);
       if (err instanceof ChatSendError && err.kind === "needs-token") {
-        this.troubles.set(conn.id, "needs-token");
-        this.deps.changed();
+        this.setTrouble(conn.id, "needs-token");
       }
       throw err;
     }

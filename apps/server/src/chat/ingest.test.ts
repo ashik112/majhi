@@ -35,7 +35,12 @@ describe("a delivery of a chat app", () => {
     await w.ingest.deliver(CONN, envelope({ chatId: "-200", message: "1", text: "hello from a new group" }));
     const fresh = w.rooms.find("telegram", CONN.account, "-200");
     expect(fresh?.org).toBeUndefined();
-    expect(w.store.room.page(fresh?.id ?? "", 10).items).toEqual([]);
+    // Kept for the room it becomes, and read by no one until it is linked.
+    const kept = w.store.room.page(fresh?.id ?? "", 10).items;
+    expect(kept.map((i) => (i.type === "client" ? [i.text, i.early, i.outcome] : []))).toEqual([
+      ["hello from a new group", true, undefined],
+    ]);
+    expect(w.triaged).toEqual([]);
     expect(w.rooms.list().newChats.map((r) => r.id)).toEqual([fresh?.id]);
     await w.ingest.deliver(
       CONN,

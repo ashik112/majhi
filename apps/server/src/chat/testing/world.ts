@@ -136,11 +136,17 @@ export function world(options: WorldOptions = {}) {
   });
   /** A linked room of Acme for the chat `-100`. */
   async function linked(chat = "-100"): Promise<string> {
-    await ingest.deliver(CONN, envelope({ chatId: chat, message: "0", text: "hello" }));
-    const found = rooms.find("telegram", CONN.account, chat);
-    if (found === undefined) throw new Error("the room was not made");
-    await rooms.link(found.id, "acme");
-    return found.id;
+    const opened = rooms.open({
+      app: "telegram",
+      account: CONN.account,
+      chat,
+      title: "Acme group",
+      kind: "group",
+      holder: "captain",
+      sendAs: "bot",
+    });
+    await rooms.link(opened.id, "acme");
+    return opened.id;
   }
   const flags = (over: Partial<ReplyFlags> = {}): ReplyFlags => ({
     promisedTime: false,
