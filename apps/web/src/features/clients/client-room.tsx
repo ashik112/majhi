@@ -531,12 +531,15 @@ function Message({
 }) {
   const name = item.sender.name === "" ? "Unknown" : item.sender.name;
   return (
-    <article className="flex gap-2.5">
+    <article className="group flex gap-2.5">
       <Initial name={name} seed={item.sender.id} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
           <SenderName item={item} name={name} />
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.sentAt ?? item.at)}</span>
+          {item.us !== true && item.outcome?.task === undefined && (
+            <MakeTask room={item.task} item={item.id} />
+          )}
           {item.sender.verified ? null : <Badge>unverified</Badge>}
           {item.forwarded === true && <span className="shrink-0 text-xs text-fg-faint">forwarded</span>}
           {item.early === true && <span className="shrink-0 text-xs text-fg-faint">before the link</span>}
@@ -569,7 +572,6 @@ function Message({
             org={row.org ?? PRIVATE}
           />
         )}
-        {item.us !== true && item.outcome?.task === undefined && <MakeTask room={item.task} item={item.id} />}
       </div>
     </article>
   );
@@ -616,7 +618,7 @@ function MakeTask({ room, item }: { room: string; item: string }) {
     <Button
       size="sm"
       variant="ghost"
-      className="self-start px-1.5 text-fg-muted"
+      className="h-5 px-1.5 text-xs text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
       disabled={make.isPending}
       onClick={() =>
         make.mutate(
@@ -654,7 +656,7 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
   const boss = [...agents.values()].find((a) => a.isBoss);
   const you = item.by === "you";
   return (
-    <article className="flex gap-2.5">
+    <article className="group flex gap-2.5">
       {you ? (
         <Initial name="You" seed="you" />
       ) : (
@@ -684,6 +686,9 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
             {you ? "You" : item.as === "you" ? "You (by the captain)" : `@${boss?.id ?? "captain"}`}
           </span>
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.at)}</span>
+          {item.by === "captain" && (item.state === "sent" || item.state === "failed") && (
+            <MakeTask room={item.task} item={item.id} />
+          )}
         </div>
         <div className="max-w-[72ch] text-base text-fg">
           <Markdown text={withNames(item.text, item.mentions, "**")} size="chat" />
@@ -714,9 +719,6 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
               {retry.isPending ? "Sending..." : "Retry"}
             </Button>
           </span>
-        )}
-        {item.by === "captain" && (item.state === "sent" || item.state === "failed") && (
-          <MakeTask room={item.task} item={item.id} />
         )}
       </div>
     </article>
