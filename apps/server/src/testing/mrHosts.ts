@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { writeFastExecutable } from "./fastBin.ts";
 
 const run = promisify(execFile);
 
@@ -47,8 +48,10 @@ export interface FakeHostState {
 const SCRIPT = String.raw`#!${process.execPath}
 const fs = require("node:fs");
 const cp = require("node:child_process");
-const STATE = __STATE__;
-const KIND = __KIND__;
+// The state file and the kind come from where the program sits: it is a hard link named gh or glab (fastBin.ts).
+const path = require("node:path");
+const STATE = path.join(path.dirname(process.argv[1]), "hosts.json");
+const KIND = path.basename(process.argv[1]);
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i === -1 ? undefined : args[i + 1]; };
 let stdin = "";
@@ -119,16 +122,7 @@ export async function fakeHosts(dir: string): Promise<FakeHosts> {
   const initial: FakeHostState = { repos: {}, prs: {}, ci: {}, mergeFails: {}, requireToken: {}, calls: [] };
   await writeFile(file, JSON.stringify(initial));
   const bins = { gh: join(dir, "gh"), glab: join(dir, "glab") };
-  for (const [kind, path] of [
-    ["gh", bins.gh],
-    ["glab", bins.glab],
-  ] as const) {
-    const source = SCRIPT.replace("__STATE__", JSON.stringify(file)).replace(
-      "__KIND__",
-      JSON.stringify(kind),
-    );
-    await writeFile(path, source, { mode: 0o755 });
-  }
+  for (const path of [bins.gh, bins.glab]) await writeFastExecutable(path, SCRIPT);
   const read = async () => JSON.parse(await readFile(file, "utf8")) as FakeHostState;
   return {
     bins,
