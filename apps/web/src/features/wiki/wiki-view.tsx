@@ -23,6 +23,7 @@ import { UpdateDialog } from "./update-dialog";
 import { useWikiWorkspaces } from "./use-wiki-switch";
 import { PHASE_WORDS, WHOLE, WikiHeader } from "./wiki-header";
 import { WikiOff } from "./wiki-off";
+import { stubSub, WorkspaceStub } from "./workspace-stub";
 
 /** The URL value of `scope` that shows the workspace's own pages. */
 const WORKSPACE_SCOPE = "workspace";
@@ -65,7 +66,7 @@ export function WikiView() {
 function workspaceStatus(
   org: string,
   statuses: readonly WikiStatus[],
-  own: { failed: readonly WikiPageId[]; lastError?: string | undefined } | undefined,
+  own: { failed: readonly WikiPageId[]; flowsNotChosen: boolean; lastError?: string | undefined } | undefined,
 ): WikiStatus | undefined {
   if (statuses.length === 0) return undefined;
   const worst = [...statuses].sort((a, b) => (b.behind ?? 0) - (a.behind ?? 0))[0];
@@ -79,9 +80,10 @@ function workspaceStatus(
     project: worst.project,
     changed: statuses.flatMap((s) => s.changed),
     oldRules: statuses.some((s) => s.oldRules),
-    failed: [...new Set([...statuses.flatMap((s) => s.failed), ...(own?.failed ?? [])])],
+    // The workspace's own pages: a project's failed pages and flows are shown in that project's wiki.
+    failed: [...(own?.failed ?? [])],
     ...(signedOut === undefined ? {} : { signedOut }),
-    flowsNotChosen: statuses.some((s) => s.flowsNotChosen),
+    flowsNotChosen: own?.flowsNotChosen === true,
     ...(lastError === undefined ? {} : { lastError }),
     ...(worst.builtCommit === undefined ? {} : { builtCommit: worst.builtCommit }),
     ...(worst.behind === undefined ? {} : { behind }),
@@ -147,7 +149,7 @@ function Scope({
     [summaries, reads],
   );
   const [open, setOpen] = useState<WikiSource>();
-  const [updating, setUpdating] = useState<{ page?: WikiPageId } | undefined>();
+  const [updating, setUpdating] = useState<{ page?: WikiPageId; project?: string } | undefined>();
 
   /** Go to a project (or the whole workspace) and, when given, one of its pages. */
   const go = (to: { project: string | undefined; id?: WikiPageId }) =>
@@ -165,8 +167,12 @@ function Scope({
     });
 
   const wanted = WikiPageIdSchema.safeParse(search.id).data;
+  // The workspace's own Overview needs pages for two projects: until it is written, its row opens the list of projects.
+  const stubbed = whole && summaries.length > 0 && !summaries.some((s) => s.kind === "overview");
   const selected =
-    summaries.find((s) => s.id === wanted) ?? summaries.find((s) => s.kind === "overview") ?? summaries[0];
+    summaries.find((s) => s.id === wanted) ??
+    summaries.find((s) => s.kind === "overview") ??
+    (stubbed ? undefined : summaries[0]);
   const entries = useMemo<ListEntry[]>(
     () =>
       summaries.map((summary, i) => {
@@ -209,7 +215,7 @@ function Scope({
     body = <RowsSkeleton rows={8} height={44} />;
   } else if (wiki.isError) {
     body = <Problem icon={<BookText />} title="Could not load the wiki" body={describeError(wiki.error)} />;
-  } else if (summaries.length === 0 || current === undefined) {
+  } else if (summaries.length === 0 || (current === undefined && !stubbed)) {
     body = (
       <ListDetail>
         <DetailPane label="Wiki page">
@@ -232,26 +238,41 @@ function Scope({
           notWritten={[...failed].filter((id) => !summaries.some((s) => s.id === id))}
           flowsNotChosen={status?.flowsNotChosen === true}
           workspace={whole}
+          stub={
+            stubbed
+              ? {
+                  selected: current === undefined,
+                  sub: stubSub(statuses),
+                  onSelect: () => go({ project: undefined }),
+                }
+              : undefined
+          }
           onSelect={(id) => go({ project, id })}
         />
-        <PageView
-          page={current.page}
-          scope={{ org, project }}
-          changed={changed}
-          behind={status?.behind}
-          all={loaded}
-          projects={projects}
-          system={system.data}
-          onOpen={setOpen}
-          onGo={(id) => go({ project, id })}
-          onGoPage={(to, id) => go({ project: to, id })}
-          onGoProject={(p) => go({ project: p })}
-          onUpdatePage={(id) => setUpdating({ page: id })}
-          notes={current.notes}
-          failed={failed}
-          flowsNotChosen={status?.flowsNotChosen === true}
-          onRetry={() => setUpdating({})}
-        />
+        {current === undefined ? (
+          <DetailPane label="Overview">
+            <WorkspaceStub statuses={statuses} onBuild={(p) => setUpdating({ project: p })} />
+          </DetailPane>
+        ) : (
+          <PageView
+            page={current.page}
+            scope={{ org, project }}
+            changed={changed}
+            behind={status?.behind}
+            all={loaded}
+            projects={projects}
+            system={system.data}
+            onOpen={setOpen}
+            onGo={(id) => go({ project, id })}
+            onGoPage={(to, id) => go({ project: to, id })}
+            onGoProject={(p) => go({ project: p })}
+            onUpdatePage={(id) => setUpdating({ page: id })}
+            notes={current.notes}
+            failed={failed}
+            flowsNotChosen={status?.flowsNotChosen === true}
+            onRetry={() => setUpdating({})}
+          />
+        )}
       </ListDetail>
     );
   }
@@ -284,11 +305,20 @@ function Scope({
       {updating !== undefined && (
         <UpdateDialog
           org={org}
-          {...(project === undefined ? {} : { project })}
+          {...(updating.project !== undefined
+            ? { project: updating.project }
+            : project === undefined
+              ? {}
+              : { project })}
           {...(updating.page === undefined ? {} : { page: updating.page })}
-          first={(whole ? statuses : status === undefined ? [] : [status]).every(
-            (s) => s.builtCommit === undefined,
-          )}
+          first={(updating.project !== undefined
+            ? statuses.filter((s) => s.project === updating.project)
+            : whole
+              ? statuses
+              : status === undefined
+                ? []
+                : [status]
+          ).every((s) => s.builtCommit === undefined)}
           onClose={() => setUpdating(undefined)}
         />
       )}

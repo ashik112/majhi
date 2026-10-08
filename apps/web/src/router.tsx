@@ -19,7 +19,7 @@ export interface AppSearch {
   agent?: string;
   account?: string;
   /** On Accounts: with `account`, start its sign-in at once (when it is signed out). */
-  signin?: "1";
+  signin?: "start";
   /** On Connections: the connection shown. */
   connection?: string;
   /** On Agents: open the new-agent form in this group (root or an org id). */
@@ -67,7 +67,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const org = text(search.org);
   const agent = text(search.agent);
   const account = text(search.account);
-  const signin = search.signin === "1" || search.signin === 1 ? "1" : undefined;
+  const signin = search.signin === "start" ? "start" : undefined;
   const connection = text(search.connection);
   const create = text(search.create);
   const file = text(search.file);

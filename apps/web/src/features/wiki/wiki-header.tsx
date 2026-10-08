@@ -6,8 +6,8 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pick, type PickOption } from "@/components/ui/pick";
 import { badgeLetters, plural } from "@/lib/format";
-import { SignInButton } from "./sign-in-button";
 import { COPY } from "./copy";
+import { SignInButton } from "./sign-in-button";
 import type { WikiWorkspace } from "./use-wiki-switch";
 
 /** What the project picker says about one project's wiki: not built, built, or how many commits behind. */
@@ -52,6 +52,8 @@ export function WikiHeader({
     label: w.org.name,
     lead: <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />,
   }));
+  // The whole workspace is not up to date while one of its projects has no pages.
+  const unbuilt = scope === WHOLE ? projects.filter((p) => p.status?.builtCommit === undefined).length : 0;
   const projectOptions: PickOption[] = [
     { value: WHOLE, label: COPY.workspace.option, detail: COPY.workspace.repoCount(projects.length) },
     ...projects.map((p) => ({
@@ -86,11 +88,11 @@ export function WikiHeader({
         </span>
       }
     >
-      <StatusLine status={status} commits={commits} />
+      <StatusLine status={status} commits={commits} unbuilt={unbuilt} />
       {onUpdate !== undefined && (
         <>
           <Button
-            variant={needsUpdate(status) ? "primary" : "secondary"}
+            variant={needsUpdate(status) || unbuilt > 0 ? "primary" : "secondary"}
             onClick={onUpdate}
             disabled={status?.running === true}
           >
@@ -127,9 +129,12 @@ function needsUpdate(status: WikiStatus | undefined): boolean {
 function StatusLine({
   status,
   commits,
+  unbuilt,
 }: {
   status: WikiStatus | undefined;
   commits: readonly { project: string; commit: string }[] | undefined;
+  /** Projects of the whole workspace with no pages. */
+  unbuilt: number;
 }) {
   if (status === undefined) return null;
   if (status.running) {
@@ -148,7 +153,9 @@ function StatusLine({
       {status.lastError !== undefined && (
         <span className="flex items-center gap-1.5 text-red" title={status.lastError}>
           <span aria-hidden="true" className="size-1.5 rounded-full bg-red" />
-          {status.signedOut === undefined ? COPY.failed.updateFailed : COPY.failed.signedOut(status.signedOut)}
+          {status.signedOut === undefined
+            ? COPY.failed.updateFailed
+            : COPY.failed.signedOut(status.signedOut)}
           {status.signedOut !== undefined && <SignInButton account={status.signedOut} />}
         </span>
       )}
@@ -177,7 +184,7 @@ function StatusLine({
           <span
             aria-hidden="true"
             className={
-              status.behind > 0 || notWritten > 0
+              status.behind > 0 || notWritten > 0 || unbuilt > 0
                 ? "size-1.5 rounded-full bg-amber"
                 : "size-1.5 rounded-full bg-green"
             }
@@ -186,7 +193,9 @@ function StatusLine({
             ? `${plural(status.behind, "commit")} behind`
             : notWritten > 0
               ? `${plural(notWritten, "page")} not written`
-              : "Up to date"}
+              : unbuilt > 0
+                ? `${unbuilt} not built`
+                : "Up to date"}
         </span>
       )}
       {status.oldRules && <span className="whitespace-nowrap text-amber">Older rules</span>}

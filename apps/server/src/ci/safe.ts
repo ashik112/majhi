@@ -62,8 +62,15 @@ async function safeSegments(
     if (script !== undefined) {
       const body = await lookup(script.script);
       if (body !== undefined && depth < MAX_DEPTH) {
-        const inner = parseShell(body);
-        if (inner.ok) {
+        const parsedBody = parseShell(body);
+        if (parsedBody.ok) {
+          // What follows the script name goes to its last step (`pnpm lint --fix` is `eslint . --fix`): it is checked too.
+          const extra = seg.argv.slice(seg.argv.indexOf(script.script) + 1).filter((a) => a !== "--");
+          const inner = {
+            segments: parsedBody.segments.map((s, i, all) =>
+              i === all.length - 1 && extra.length > 0 ? { ...s, argv: [...s.argv, ...extra] } : s,
+            ),
+          };
           const probe = await safeSegments(inner.segments, lookup, depth + 1, []);
           const writes =
             "why" in probe ||
@@ -77,13 +84,11 @@ async function safeSegments(
               return {
                 why: `its script ${script.script} changes files and runs steps majhi cannot make read-only`,
               };
-            const extra = seg.argv.slice(seg.argv.indexOf(script.script) + 1).filter((a) => a !== "--");
             notes.push(`the ${script.script} script ran read-only`);
             probe.forEach((p, i) => {
-              const last = i === probe.length - 1;
               out.push({
                 env: { ...seg.env, ...p.env },
-                argv: [...exec, ...p.argv, ...(last ? extra : [])],
+                argv: [...exec, ...p.argv],
                 ...(p.joins === undefined
                   ? seg.joins === undefined
                     ? {}

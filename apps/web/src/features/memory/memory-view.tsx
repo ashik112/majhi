@@ -76,6 +76,7 @@ export function MemoryView() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Memory"
+        wrapSubtitle
         subtitle="What majhi keeps per project: a short brief, a record of each finished task, what those tasks left open, and lessons."
       >
         <MemoryReviewActions

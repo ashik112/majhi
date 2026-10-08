@@ -4,8 +4,8 @@ import { ChevronRight, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/segmented";
 import { DetailSection } from "@/components/ui/list-detail";
+import { Segmented } from "@/components/ui/segmented";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
@@ -153,7 +153,7 @@ export function DeploySection({ project }: { project: ProjectView }) {
                       className={cn("size-3.5 transition-transform duration-150", expanded && "rotate-90")}
                     />
                   </button>
-                  {environment.env !== environment.tier && (
+                  {environment.env !== "staging" && environment.env !== "production" && (
                     <span className="truncate font-mono text-fg" title={environment.env}>
                       {environment.env}
                     </span>
@@ -168,7 +168,9 @@ export function DeploySection({ project }: { project: ProjectView }) {
                     setTier.mutate(
                       {
                         project: project.id,
-                        environments: environments.map((e) => (e.env === environment.env ? { ...e, tier } : e)),
+                        environments: environments.map((e) =>
+                          e.env === environment.env ? { ...e, tier } : e,
+                        ),
                       },
                       {
                         onError: (error) =>

@@ -799,7 +799,12 @@ export const WikiViewSchema = z.object({
   status: z.array(WikiStatusSchema),
   /** Only for the workspace's own wiki: the pages its last update could not write, and why it stopped. */
   workspace: z
-    .object({ failed: z.array(WikiPageIdSchema), lastError: z.string().max(500).optional() })
+    .object({
+      failed: z.array(WikiPageIdSchema),
+      /** The workspace's last update could not choose its cross-repo flows. */
+      flowsNotChosen: z.boolean().default(false),
+      lastError: z.string().max(500).optional(),
+    })
     .optional(),
 });
 export type WikiView = z.infer<typeof WikiViewSchema>;

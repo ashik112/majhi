@@ -72,7 +72,7 @@ export function AccountsView() {
   );
   const first = groups.find((g) => g.items[0])?.items[0];
   const selected = all.find((a) => a.id === (linked ?? picked)) ?? first;
-  // A "Sign in" link (?account=<id>&signin=1) starts that account's sign-in, like "Sign in again".
+  // A "Sign in" link (?account=<id>&signin=start) starts that account's sign-in, like "Sign in again".
   const [signin, setSignin] = useSearchParam("signin");
   // biome-ignore lint/correctness/useExhaustiveDependencies: run when the link is followed and the account is known
   useEffect(() => {

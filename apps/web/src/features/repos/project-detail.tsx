@@ -174,11 +174,12 @@ export function ProjectDetail({
           <ProjectCardSection project={project.id} />
         </div>
       )}
-      <DeploysAnchor project={project} />
+      {/* Without the repo there is nothing to deploy, check or push: only the settings that name the project stay. */}
+      {project.exists && <DeploysAnchor project={project} />}
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
-      <HandoffSection project={project} />
-      <RemotesSection project={project} repo={repo} />
+      {project.exists && <HandoffSection project={project} />}
+      {project.exists && <RemotesSection project={project} repo={repo} />}
       <LinksSection project={project} projects={projects} />
     </DetailPane>
   );
@@ -313,7 +314,7 @@ function NamesSection({
         <Field
           label="Base branch"
           hint={
-            repo?.branch
+            project.exists && repo?.branch
               ? `Blank uses the workspace's base, then the repo's default. Checked out now: ${repo.branch}.`
               : "Blank uses the workspace's base, then the repo's default."
           }
@@ -323,7 +324,7 @@ function NamesSection({
               {...props}
               value={draft.base}
               onChange={(e) => set({ base: e.target.value })}
-              placeholder="main"
+              placeholder={project.base ?? "Workspace default"}
               className="font-mono"
             />
           )}

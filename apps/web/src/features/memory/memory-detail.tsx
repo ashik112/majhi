@@ -187,12 +187,12 @@ function Identity({
       <OrgBadge label={badgeLetters(key)} color={org.color} className="size-8 rounded-lg text-xs" />
       <div className="flex min-w-0 flex-col gap-0.5">
         <h2 className="truncate font-mono text-md leading-6 font-semibold">{project.id}</h2>
-        <p className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
+        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-fg-muted">
           <span className="shrink-0">{org.name}</span>
           <span aria-hidden="true" className="text-fg-dim">
             ·
           </span>
-          <span className="min-w-0 truncate">
+          <span className="min-w-0">
             {briefPending ? (
               "Reading the brief"
             ) : brief === undefined ? (

@@ -103,6 +103,7 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
         : {
             workspace: {
               failed: own.gaps.failed.map((f) => f.page),
+              flowsNotChosen: flowsNotChosen(own),
               ...(own.lastError === undefined ? {} : { lastError: own.lastError }),
             },
           }),

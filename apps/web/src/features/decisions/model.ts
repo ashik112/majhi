@@ -144,7 +144,7 @@ export function actionOf(link: DecisionLink): BannerAction {
     case "limits":
       return { kind: "page", to: "/limits" };
     case "account":
-      return { kind: "page", to: "/accounts", search: { account: link.id, signin: "1" } };
+      return { kind: "page", to: "/accounts", search: { account: link.id, signin: "start" } };
     case "playbooks":
       return { kind: "page", to: "/playbooks" };
     case "watch":

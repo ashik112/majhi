@@ -1021,6 +1021,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     options: sessionOptions,
     majhiHome: env.majhiHome,
     usage: usageRecorder,
+    markSignedOut: async (account, detail) => {
+      await accounts.markSignedOut(account, detail);
+    },
   });
   // The wiki folder: each project's source export, facts and code graph, read in a runner container with no
   // network. In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
