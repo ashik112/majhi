@@ -70,11 +70,12 @@ const WATCH_NAME = "Storefront up or down";
  * change of the incident: tell the chat. The script is read from the lane's folder on every turn.
  */
 async function scriptCaptain(room: string): Promise<void> {
-  const lane = await until("the captain's lane", async () => {
-    const list = await cmd("tasks.list", { includeDone: true });
-    return (Array.isArray(list) ? list : (list.tasks ?? [])).find((t: any) => t.title === "Captain: Acme");
-  });
-  const folder = (await cmd("tasks.get", { id: lane.id })).folder as string;
+  const findLane = async () =>
+    ((await cmd("autonomy.status")).lanes as any[]).find((l) => l.org === "acme" && l.chat !== undefined);
+  // The lane is made on the captain's first turn: the owner asking it about the incident makes it.
+  if ((await findLane()) === undefined) await cmd("incident.askCaptain", { task: "ACM-1" });
+  const lane = await until("the captain's lane", findLane);
+  const folder = (await cmd("tasks.get", { id: lane.chat })).folder as string;
   const reply = (text: string) => ({ tool: "majhi_chat_reply", args: { room, text, ...FLAGS } });
   writeFileSync(
     join(folder, "CAPTAIN_SCRIPT.json"),
