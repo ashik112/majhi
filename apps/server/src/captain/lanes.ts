@@ -10,9 +10,10 @@ import { providerAllowed } from "./rules.ts";
 /**
  * The captain's lanes (SPEC 5.18): one chat of the one captain per workspace, so one client's code
  * and details are never in its context while it decides for another. A lane's task has the
- * workspace's org, so its runs get that workspace's credentials and nothing else. A lane runs on the
- * captain's own account unless "More rules" names another account allowed in the workspace; an
- * account of another workspace is never used.
+ * workspace's org, so its runs get that workspace's credentials and nothing else. A client workspace's lane
+ * runs on that workspace's own account (the same tool as the captain's), or on the account "More rules" names.
+ * The owner's Private account pays for a client workspace only when the owner named it there; an account of
+ * another workspace is never used.
  */
 
 export interface LaneDeps {
@@ -26,6 +27,7 @@ export interface LaneDeps {
   rest?: ((org: string, account: string) => Promise<string | undefined>) | undefined;
 }
 
+/** `own`: the captain's own account runs the lane, so no account is swapped in. */
 export type LaneAccount = { account: string; own: boolean } | { problem: string };
 
 export class Lanes {
@@ -106,12 +108,25 @@ export class Lanes {
     if (stored === undefined || !stored.ok)
       return { problem: "the captain's agent file is missing or invalid" };
     const own = stored.agent.frontmatter.account;
-    const id = rules?.account ?? own;
+    const ownAccount = sections.accounts[own];
+    // A client workspace is paid by its own account. The owner's Private account pays only when the owner picked it
+    // for that workspace under More rules: the captain never reaches for it by itself.
+    const fallback =
+      rules?.account === undefined && org !== PRIVATE && ownAccount !== undefined && ownAccount.org !== org
+        ? Object.entries(sections.accounts)
+            .filter(([, a]) => a.org === org && a.tool === ownAccount.tool)
+            .map(([accountId]) => accountId)
+            .toSorted()[0]
+        : undefined;
+    const id = rules?.account ?? fallback ?? own;
     const account = sections.accounts[id];
     if (account === undefined) return { problem: `the account ${id} is not in majhi.yaml` };
-    if (account.org !== org && account.org !== PRIVATE) {
+    if (account.org !== org && (account.org !== PRIVATE || rules?.account === undefined)) {
       return {
-        problem: `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} under More rules`,
+        problem:
+          account.org === PRIVATE
+            ? `${name(org)} has no account of its own for the captain, and ${id} is a Private account. Pick the account that pays for ${name(org)} under More rules`
+            : `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} under More rules`,
       };
     }
     if (!providerAllowed(rules, account.tool)) {

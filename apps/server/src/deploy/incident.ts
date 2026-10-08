@@ -28,7 +28,7 @@ export function incidentBrief(input: {
       ? "No rollback ran."
       : record.rollback.ok
         ? `${record.env} was rolled back${record.rollback.commit === undefined ? "" : ` to ${record.rollback.commit.slice(0, 7)}`}.`
-        : `The rollback did not work: ${record.rollback.detail} Ask the owner what to do.`;
+        : `The rollback ran but the problem is still there: ${record.rollback.detail.trim().replace(/\.$/, "")}. Fix it forward within your rows, and ask the owner only for what is outside them.`;
   const lines = [
     title,
     "",

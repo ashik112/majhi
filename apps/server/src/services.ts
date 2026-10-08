@@ -1550,10 +1550,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
-    incidentDetail: (id) => {
+    incidentDetail: async (id) => {
       const inc = opsWatch?.incident(id);
       if (inc === undefined) return undefined;
-      const found = inc.timeline.findLast((e) => e.kind === "action" && e.text.startsWith("Captain: "));
+      // What the captain found counts only since the incident last fired: an older line is about the last time.
+      const fired = inc.timeline.findLastIndex((e) => e.kind === "opened" || e.kind === "reopened");
+      const found = inc.timeline.findLast(
+        (e, i) => i > fired && e.kind === "action" && e.text.startsWith("Captain: "),
+      );
+      const quiet = inc.status === "open" ? await autonomy.quietWhy(inc.org) : undefined;
       let task: string | undefined;
       try {
         task = inc.finding === undefined ? undefined : findingsStore?.get(inc.finding).task;
@@ -1564,6 +1569,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         ...(inc.finding === undefined ? {} : { finding: inc.finding }),
         ...(found === undefined ? {} : { found: found.text.slice("Captain: ".length).slice(0, 600) }),
         ...(task === undefined ? {} : { task }),
+        ...(quiet === undefined ? {} : { quiet }),
       };
     },
     items: () => store.room.waitingDecisions(),
@@ -2533,6 +2539,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     watch: {
       openIncidents: () => opsWatch?.openIncidents() ?? [],
       incident: (id) => opsWatch?.incident(id),
+      note: (id, text, at) => opsWatch?.note(id, "note", text, at),
+    },
+    announce: {
+      wake: (org, text) => autonomy.news(text, org),
+      notice: (_org, incident, text) =>
+        void notifier
+          .incident({ id: -incident, text, severity: "medium", repeat: false })
+          .catch(() => undefined),
     },
     watchProject: (inc) =>
       inc.watch !== undefined
@@ -2926,6 +2940,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     host: watchHost,
+    fixLive: (inc) => incidentEngine?.fixLive(inc) ?? Promise.resolve(false),
+    incidentResolved: (inc, told) => void incidentEngine?.fixRecovered(inc, told),
     incidentMeta: async (inc) => {
       const quiet = await autonomy.quietWhy(inc.org);
       const task =

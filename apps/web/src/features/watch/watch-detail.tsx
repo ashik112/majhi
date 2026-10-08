@@ -11,6 +11,7 @@ import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { useAnswerDecision } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
@@ -115,6 +116,8 @@ export function WatchDetail({
   const isPrice = def.spec.kind === "price";
   const needsAck = incident !== undefined && incident.status === "open" && incident.ackedAt === undefined;
   const question = watch.question;
+  const mode = useAutonomyStatus().data?.mode;
+  const nobodyLooks = incident?.quiet ?? (mode === "on" ? undefined : "Auto-pilot is off");
   const quiet = watch.quietUntil !== undefined;
   const wsLabel = (
     <span className="truncate rounded-md border border-line px-1.5 text-xs text-fg-soft">{workspace}</span>
@@ -258,6 +261,9 @@ export function WatchDetail({
           checked={fire.investigate}
           onChange={(investigate) => setFire({ investigate })}
         />
+        {fire.investigate && !isPrice && nobodyLooks !== undefined && (
+          <span className="text-sm text-amber">Nobody will look into it now: {nobodyLooks}.</span>
+        )}
         {def.spec.kind === "price" && def.spec.compare.length > 0 && (
           <p className="m-0 text-sm text-fg-faint">
             Compares with {def.spec.compare.map((u) => new URL(u).hostname.replace(/^www\./, "")).join(", ")}.

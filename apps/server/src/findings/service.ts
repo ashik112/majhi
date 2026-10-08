@@ -225,13 +225,18 @@ export class FindingsService {
       return { finding: triaged, result: "created" };
     }
     // The same finding again: last seen moves, evidence joins, severity only rises. A dismissed one stays so.
-    const evidence = [...new Set([...known.evidence, ...input.evidence])].slice(0, MAX_EVIDENCE);
+    // An incident's evidence is what it reads now: the value it fired with last time is not what to show.
+    const evidence =
+      known.source === "incident"
+        ? input.evidence.slice(0, MAX_EVIDENCE)
+        : [...new Set([...known.evidence, ...input.evidence])].slice(0, MAX_EVIDENCE);
     const reopen = known.status === "fixed";
     const refreshed = this.repo.patch(known.id, {
       at,
       lastSeen: at,
       seen: known.seen + 1,
       evidence,
+      ...(known.source === "incident" && input.title !== known.title ? { title: input.title } : {}),
       ...(input.detail !== "" && input.detail !== known.detail ? { detail: input.detail } : {}),
       ...(SEVERITY_RANK[input.severity] > SEVERITY_RANK[known.severity] ? { severity: input.severity } : {}),
       // An incident that fires again keeps its task: the engine opens that task again, so no second fix task appears.

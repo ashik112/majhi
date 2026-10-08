@@ -51,7 +51,8 @@ export function templateLines(f: BriefFacts): string[] {
       f.shippedTitles.length > 0 ? ` (${f.shippedTitles.map((t) => oneLine(t, 40)).join(", ")})` : "";
     done.push(`shipped ${f.shipped}${titles}`);
   }
-  if (f.merged > 0) done.push(`merged ${f.merged}`);
+  // A merge that shipped is the same work: it is counted once.
+  if (f.merged > 0 && f.merged !== f.shipped) done.push(`merged ${f.merged}`);
   if (f.failed > 0) done.push(`${f.failed} failed or refused`);
   const spend = `spent ${money(f.spent)}${f.budget === undefined ? "" : ` of ${money(f.budget)}`}`;
   lines.push(

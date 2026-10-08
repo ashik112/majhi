@@ -146,6 +146,8 @@ export const DecisionDetailSchema = z.object({
       finding: z.number().int().positive().optional(),
       found: z.string().max(600).optional(),
       task: TaskIdSchema.optional(),
+      /** Why nobody looks into it now: "Auto-pilot is off". Absent when the captain is listening. */
+      quiet: z.string().max(200).optional(),
     })
     .optional(),
 });

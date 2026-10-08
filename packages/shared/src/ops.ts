@@ -111,6 +111,8 @@ export const OpsTimelineEntrySchema = z.object({
   kind: z.enum(["opened", "alerted", "escalated", "acked", "action", "reopened", "resolved", "note"]),
   /** Kept whole up to 8000 characters: an error's cause often comes after a long command line. */
   text: z.string().max(8000),
+  /** On a `resolved` entry: `stopped` when the watch was paused or removed, so nothing recovered. Absent: its checks went green. */
+  closedBy: z.enum(["green", "stopped"]).optional(),
 });
 export type OpsTimelineEntry = z.infer<typeof OpsTimelineEntrySchema>;
 

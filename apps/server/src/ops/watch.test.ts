@@ -159,7 +159,7 @@ describe("resolution", () => {
     expect(incidents(w)).toEqual([]);
     const [done] = w.ops.repo.recent(5);
     expect(done?.status).toBe("resolved");
-    expect(done?.timeline.map((t) => t.kind)).toEqual(["opened", "alerted", "resolved"]);
+    expect(done?.timeline.map((t) => t.kind)).toEqual(["opened", "alerted", "action", "resolved"]);
     const [finding] = listed(w);
     expect(finding?.status).toBe("fixed");
   });

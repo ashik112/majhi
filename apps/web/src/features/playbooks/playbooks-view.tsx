@@ -122,11 +122,12 @@ function Row({
 export function PlaybooksView() {
   const orgs = useOrgs().data ?? [];
   const { org: filter, setOrg } = useOrgFilter();
-  const org = filter ?? PRIVATE;
   const workspaces = useMemo(
     () => [{ id: PRIVATE, name: "Private" }, ...orgs.filter((o) => o.id !== PRIVATE)],
     [orgs],
   );
+  // With every workspace picked, open on the first client workspace: that is where the work and the ships are.
+  const org = filter ?? workspaces[1]?.id ?? PRIVATE;
   const query = usePlaybooks(org);
   const now = useNow(30_000);
   const narrow = useMedia("(max-width: 999px)");

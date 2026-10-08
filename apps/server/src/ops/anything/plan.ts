@@ -274,6 +274,9 @@ const IDENT = /^[A-Za-z_][\w.]{0,60}$/;
 
 export class PlanProblem extends Error {}
 
+/** The plan needs a connection the workspace does not have: the owner adds it on the Connections page. */
+export class MissingConnection extends PlanProblem {}
+
 /** The common phrasings. Throws PlanProblem with a sentence for what is missing, undefined for "not a kind I know". */
 export function rulesPlan(
   text: string,
@@ -340,7 +343,7 @@ export function rulesPlan(
   if (/\bredis\b/i.test(t)) {
     const c = pick(conns, t, ["env"], /redis|cache|kv/i);
     if (c === undefined)
-      throw new PlanProblem(
+      throw new MissingConnection(
         "I need a Redis connection in this workspace. Add one in Connections, with a REDIS_URL variable.",
       );
     const metric = /\bclients?\b|\bconnections?\b/i.test(t)
@@ -365,7 +368,7 @@ export function rulesPlan(
   ) {
     const c = pick(conns, t, ["env"], /queue|jobs|redis|cache/i);
     if (c === undefined)
-      throw new PlanProblem(
+      throw new MissingConnection(
         "I need a connection that holds the queue's REDIS_URL or DATABASE_URL. Add one in Connections.",
       );
     const key = /[\w.:-]*(?:queue|jobs)[\w.:-]*/i.exec(t)?.[0] ?? "queue";
@@ -379,7 +382,7 @@ export function rulesPlan(
   if (/\b(postgres(?:ql)?|mysql|database|db|queries|query|replication)\b/i.test(t)) {
     const c = pick(conns, t, ["env"], /postgres|pg|mysql|db|database/i);
     if (c === undefined)
-      throw new PlanProblem(
+      throw new MissingConnection(
         "I need a database connection in this workspace. Add one in Connections, with a DATABASE_URL variable.",
       );
     const engine = /mysql/i.test(t) ? "mysql" : "postgres";
@@ -430,7 +433,7 @@ export function rulesPlan(
   if (/\b(droplet|server|vps|host|disk|cpu|load|memory|ram)\b/i.test(t)) {
     const c = pick(conns, t, ["ssh"], /droplet|server|vps|host/i);
     if (c === undefined)
-      throw new PlanProblem("I need an SSH connection to that server. Add one in Connections.");
+      throw new MissingConnection("I need an SSH connection to that server. Add one in Connections.");
     const metric = /\b(cpu|load)\b/i.test(t) ? "cpu" : /\b(memory|ram)\b/i.test(t) ? "memory" : "disk";
     const fallback: WatchCondition =
       metric === "cpu" ? { type: "above", value: 4, forMin: 10 } : { type: "above", value: 85, forMin: 0 };

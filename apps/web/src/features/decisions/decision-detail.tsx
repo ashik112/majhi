@@ -261,7 +261,10 @@ export function DecisionDetailPane({
                 </Button>
               )}
             </div>
-            {incident.found === undefined && incident.task === undefined && (
+            {incident.quiet !== undefined && (
+              <p className="m-0 text-sm text-amber">Nobody is looking into it: {incident.quiet}.</p>
+            )}
+            {incident.found === undefined && incident.task === undefined && incident.quiet === undefined && (
               <p className="m-0 text-sm text-fg-muted">The captain has not reported on it yet.</p>
             )}
           </Block>
