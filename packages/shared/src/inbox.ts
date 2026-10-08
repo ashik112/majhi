@@ -326,7 +326,8 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
     return { kind: "trust", id: Number(rest[0]) };
   }
   if (id === NOTIFY_ACCESS_DECISION_ID) return { kind: "notify" };
-  if (head === "mrci" && rest.length === 1 && rest[0] !== "") return { kind: "mrci", task: rest[0] as string };
+  if (head === "mrci" && rest.length === 1 && rest[0] !== "")
+    return { kind: "mrci", task: rest[0] as string };
   if (head === "deploy" && rest.length === 3 && rest.every((p) => p !== "")) {
     return { kind: "dwait", task: rest[0] as string, project: rest[1] as string, env: rest[2] as string };
   }

@@ -25,10 +25,11 @@ export function failingMrDecisions(tasks: readonly MrTask[]): OwnerDecision[] {
       task: task.id,
       taskTitle: task.title,
       title: `Checks failed: ${task.title}`.slice(0, 300),
-      sentence: `The checks failed on ${names}. ${lead === undefined ? "The task has no agent." : `@${lead} has not been asked to fix them.`}`.slice(
-        0,
-        500,
-      ),
+      sentence:
+        `The checks failed on ${names}. ${lead === undefined ? "The task has no agent." : `@${lead} has not been asked to fix them.`}`.slice(
+          0,
+          500,
+        ),
       options: lead === undefined ? [] : [{ id: "fix", label: "Fix with agent", primary: true }],
       at: task.updatedAt,
       link: { kind: "task", id: task.id },

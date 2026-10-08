@@ -124,7 +124,26 @@ export function shortSlug(title: string): string {
   return out === "" ? slug.slice(0, MAX_SLUG).replace(/-+$/, "") : endOnWord(out);
 }
 
-const DANGLING = new Set(["a", "an", "the", "of", "to", "on", "in", "at", "by", "for", "and", "or", "with", "when", "is", "are", "if", "as"]);
+const DANGLING = new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "to",
+  "on",
+  "in",
+  "at",
+  "by",
+  "for",
+  "and",
+  "or",
+  "with",
+  "when",
+  "is",
+  "are",
+  "if",
+  "as",
+]);
 
 /** Drops words that cannot end a name ("when", "the"), keeping at least one word. */
 function endOnWord(slug: string): string {

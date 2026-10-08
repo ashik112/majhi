@@ -273,6 +273,41 @@ describe("deploy", () => {
       );
     });
 
+    it("a later plan for a new commit is not blocked by the steps of an older one", async () => {
+      const first = await planBoth();
+      await r.service.deploy({ record: first.records[0]?.id ?? 0 }, "captain");
+      await r.service.idle();
+      await r.service.deploy({ record: first.records[1]?.id ?? 0 }, "owner");
+      await r.service.idle();
+      push(r, C2);
+      const second = await planBoth();
+      await expect(r.service.deploy({ record: second.records[1]?.id ?? 0 }, "owner")).rejects.toThrow(
+        /staging is not live at/,
+      );
+      await r.service.deploy({ record: second.records[0]?.id ?? 0 }, "captain");
+      await r.service.idle();
+      await r.service.deploy({ record: second.records[1]?.id ?? 0 }, "owner");
+      await r.service.idle();
+      expect(r.store.deploys.get(second.records[1]?.id ?? 0)).toMatchObject({ state: "live", commit: C2 });
+    });
+
+    it("Run on a plan for a commit that already failed retries it for the owner and drops the duplicate step", async () => {
+      const first = await planBoth();
+      r.hosts.outcome.github = "failure";
+      await r.service.deploy({ record: first.records[0]?.id ?? 0 }, "captain");
+      await r.service.idle();
+      const failed = r.store.deploys.ofTask("ACM-1").find((x) => x.env === "staging");
+      expect(failed?.state).toBe("failed");
+      const again = await planBoth();
+      r.hosts.outcome.github = "success";
+      const out = await r.service.deploy({ record: again.records[0]?.id ?? 0, retry: true }, "owner");
+      expect(out.repeat).toBe(false);
+      expect(out.record.id).toBe(failed?.id);
+      await r.service.idle();
+      expect(r.store.deploys.get(failed?.id ?? 0)?.state).toBe("live");
+      expect(r.store.deploys.ofTask("ACM-1").filter((x) => x.env === "staging")).toHaveLength(1);
+    });
+
     it("replaces the planned steps of a task and keeps the ones that ran", async () => {
       const first = await planBoth();
       await r.service.deploy({ record: first.records[0]?.id ?? 0 }, "captain");
