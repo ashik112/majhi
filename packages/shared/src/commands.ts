@@ -108,6 +108,8 @@ import {
   ChatSendInputSchema,
   ChatSettingsInputSchema,
   ChatSettingsViewSchema,
+  ChatMakeTaskInputSchema,
+  ChatRetryReplyInputSchema,
   ChatStartTaskInputSchema,
   ChatStartTaskResultSchema,
   ChatUnignoreInputSchema,
@@ -1620,6 +1622,20 @@ export const commands = {
       "The captain, in its workspace lane, makes a task from a client chat's message (origin: the client) and starts it when the owner's Start row allows; otherwise it waits as a card for the owner. When the task is ready you are woken here to tell the client. Set readOnly for a question that needs a look, not a change",
     input: ChatStartTaskInputSchema,
     output: ChatStartTaskResultSchema,
+  },
+  "chat.makeTask": {
+    risk: "change",
+    summary:
+      "Open a task from one message of a client chat (a client's message, or a captain reply, which stands for the message it answers). The task is made in the chat's own workspace with the message as its origin, started as the owner's Start row allows, and the message says which task it became. A message that is not in that chat is refused. Owner only",
+    input: ChatMakeTaskInputSchema,
+    output: ChatStartTaskResultSchema,
+  },
+  "chat.retryReply": {
+    risk: "outbound",
+    summary:
+      "Send a reply to a client chat that failed to go, again. It goes through the same rails as the first send: a case the owner holds waits as a draft, and a secret is refused. Owner only",
+    input: ChatRetryReplyInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
   },
   "contacts.list": {
     risk: "read",

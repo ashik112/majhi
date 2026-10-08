@@ -570,6 +570,14 @@ export const ChatStartTaskInputSchema = z.object({
 export const ChatStartTaskResultSchema = z.object({ task: z.string(), started: z.boolean() });
 export type ChatStartTaskInput = z.infer<typeof ChatStartTaskInputSchema>;
 
+/** The owner opens a task from one message of a client room: a client's message, or a captain reply (the message it answers). */
+export const ChatMakeTaskInputSchema = z.object({ room: z.string().min(1), item: z.string().min(1).max(200) });
+export type ChatMakeTaskInput = z.infer<typeof ChatMakeTaskInputSchema>;
+
+/** The owner sends a failed reply again, through the same rails as the first send. */
+export const ChatRetryReplyInputSchema = z.object({ room: z.string().min(1), item: z.string().min(1).max(200) });
+export type ChatRetryReplyInput = z.infer<typeof ChatRetryReplyInputSchema>;
+
 // ---------------------------------------------------------------------------
 // Chat settings (the sheet opened from a client room's header)
 

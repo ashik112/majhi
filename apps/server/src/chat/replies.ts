@@ -23,6 +23,7 @@ import { ChatSendError } from "./adapter.ts";
 import type { ChatHistory } from "./history.ts";
 import { type People, parseBody, renderPlain } from "./format.ts";
 import type { ChatHub } from "./hub.ts";
+import { writeOutcome } from "./outcome.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
 import type { ClientRooms } from "./rooms.ts";
 import { dayBegins } from "./settings.ts";
@@ -254,6 +255,76 @@ export class ClientReplies {
       },
     );
     this.deps.rooms.holder(room.id, "you");
+    return this.resultOf(draft, undefined);
+  }
+
+  /**
+   * A reply that failed to go, sent again through the same rails as the first send. A secret or another client's
+   * name is refused, and a case the owner holds (Tell, the Hold list, the day's limit) waits as a draft again. The
+   * failed line is marked as sent again, so the room shows one reply, not two.
+   */
+  async retry(roomId: string, itemId: string): Promise<ReplyResult> {
+    const room = this.roomOf(roomId);
+    const old = this.deps.room.get(room.id, itemId);
+    if (old?.type !== "client-reply") throw new UserError(`There is no reply ${itemId} in this chat.`, 404);
+    if (old.state !== "failed") throw new UserError("That reply did not fail, so there is nothing to send again.", 409);
+    // The writer already said these were clean when it first went: a failed send is not a new claim.
+    const flags = { promisedTime: false, money: false, security: false, severalClients: false };
+    const result =
+      old.by === "captain"
+        ? await this.captain({
+            room: room.id,
+            text: old.text,
+            flags,
+            to: old.to,
+            replyTo: old.replyTo,
+            thread: old.thread,
+            note: `Sent a reply again in ${room.chat.title}`,
+          })
+        : await this.ownerAgain(room, old);
+    this.replace(old, { state: "discarded", result: "Sent again" });
+    // The messages that line answered now say what became of the new one.
+    if (old.draft !== undefined) {
+      for (const m of this.deps.store.room.page(room.id, 100).items) {
+        if (m.type !== "client" || m.outcome?.draft !== old.draft) continue;
+        writeOutcome(this.deps, room.id, m, {
+          state: result.state === "sent" ? "replied" : result.state === "held" ? "waits" : "failed",
+          ...(result.state === "sent" ? { why: "Captain replied" } : {}),
+          draft: result.draft,
+        });
+      }
+    }
+    return result;
+  }
+
+  /** The owner's own failed message, sent again: the rails' secret and other-client checks still apply. */
+  private async ownerAgain(room: RoomRow, old: ReplyItem): Promise<ReplyResult> {
+    const org = room.org as string;
+    const verdict = railsFor({
+      tell: "decide",
+      holds: await this.deps.holds(org),
+      text: old.text,
+      flags: { promisedTime: false, money: false, security: false, severalClients: false },
+      others: await this.others(room),
+      firstContact: false,
+      afterGap: false,
+    });
+    if (!verdict.send && (verdict.why === "secret" || verdict.why === "other-client")) {
+      throw new UserError(
+        verdict.why === "secret"
+          ? "The words hold a secret. Edit them and send again."
+          : "The words name another client or workspace. Edit them and send again.",
+        409,
+      );
+    }
+    const { draft } = await this.deps.gate.submit(
+      { org, channel: "client", target: room.id, body: old.text },
+      { kind: "owner" },
+      {
+        release: "now",
+        prepared: (made) => this.post(room, made, { by: "you", to: old.to, replyTo: old.replyTo, thread: old.thread }),
+      },
+    );
     return this.resultOf(draft, undefined);
   }
 
