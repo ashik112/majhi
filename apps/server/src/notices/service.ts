@@ -26,7 +26,13 @@ export class NoticesService {
   async list(org?: string): Promise<NoticeList> {
     const { store } = this.deps;
     const since = new Date(this.now().getTime() - NOTICE_DAYS * DAY_MS).toISOString();
-    const [decisions, update] = await Promise.all([this.deps.decisions(), this.deps.update()]);
+    const [waiting, update] = await Promise.all([this.deps.decisions(), this.deps.update()]);
+    // A sign-in decision's own time keeps moving; the row is as old as the first time it was seen.
+    const first = store.notices.firstSeen(
+      waiting.filter((d) => d.kind === "sign-in").map((d) => d.id),
+      this.now().toISOString(),
+    );
+    const decisions = waiting.map((d) => ({ ...d, at: first.get(d.id) ?? d.at }));
     return buildFeed({
       decisions,
       clientLines: store.notices.clientLines(since, PER_SOURCE),

@@ -1,7 +1,7 @@
 import { type Notice, PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Bell as BellIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Button } from "@/components/ui/button";
@@ -67,25 +67,25 @@ export function Bell() {
   const { fresh, earlier } = groupNotices(notices);
   const side = open ? besideSidebar(trigger.current) : undefined;
 
-  // The panel stays hidden until it is placed, and a hidden element cannot take focus: focus once it shows.
-  useEffect(() => {
-    if (!open) return;
+  // The panel is hidden until it is placed, and a hidden element cannot take focus: focus the first row in the
+  // same commit that shows it. A browser that is not ready yet gets another try on the next frames.
+  useLayoutEffect(() => {
+    if (!open || style.visibility === "hidden") return;
     let frame = 0;
     let tries = 0;
-    const focusWhenShown = () => {
+    const focusFirst = () => {
       const node = panel.current;
       if (node === null) return;
       const target = node.querySelector<HTMLElement>("[data-notice]") ?? node;
-      if (getComputedStyle(node).visibility !== "hidden") target.focus();
-      // A focus call before the panel is rendered does nothing: try again on the next frame.
+      target.focus();
       if (document.activeElement !== target && tries < 30) {
         tries += 1;
-        frame = window.requestAnimationFrame(focusWhenShown);
+        frame = window.requestAnimationFrame(focusFirst);
       }
     };
-    frame = window.requestAnimationFrame(focusWhenShown);
+    focusFirst();
     return () => window.cancelAnimationFrame(frame);
-  }, [open, panel]);
+  }, [open, panel, style.visibility]);
 
   // Esc closes wherever focus is: a button that went away under the pointer (Mark all read) leaves it on the page.
   useEffect(() => {

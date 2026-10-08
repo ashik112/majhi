@@ -95,6 +95,8 @@ export const OwnerDecisionSchema = z.object({
   /** The answers a click gives, primary first. Empty when the answer needs the task open. */
   options: z.array(DecisionOptionSchema),
   suggestion: DecisionSuggestionSchema.optional(),
+  /** What waits on it, in words ("Captain in Globex"): a sign-in carries the pauses it fixes. */
+  waits: z.array(z.string()).optional(),
   /** When it arrived (ISO). */
   at: z.string(),
   link: DecisionLinkSchema,

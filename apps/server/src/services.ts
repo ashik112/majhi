@@ -1646,7 +1646,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     signedOut: async () =>
       (await accounts.list())
         .filter((a) => a.status === "needs-login" || a.status === "unreachable")
-        .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
+        .map((a) => ({ id: a.id, org: a.org, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
     recommendations: new RecommendationRepo(store.raw),
     proposalStale: (item) => admin.proposalStale(item),
     warn: (task, text) =>

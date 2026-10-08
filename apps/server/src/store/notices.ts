@@ -9,6 +9,8 @@ const MarksSchema = z.object({
   seen: z.string().optional(),
   /** Rows read one by one, with the time they were read (to forget them after a week). */
   rows: z.record(z.string(), z.string()).default({}),
+  /** When a sign-in decision was first seen: its own time is its last health check, which never stops moving. */
+  firstSeen: z.record(z.string(), z.string()).default({}),
 });
 type Marks = z.infer<typeof MarksSchema>;
 
@@ -64,12 +66,12 @@ export class NoticesRepo {
     const row = this.db.prepare("SELECT value FROM ops_settings WHERE key = ?").get(KEY) as
       | { value: string }
       | undefined;
-    if (row === undefined) return { rows: {} };
+    if (row === undefined) return { rows: {}, firstSeen: {} };
     try {
       const parsed = MarksSchema.safeParse(JSON.parse(row.value));
-      return parsed.success ? parsed.data : { rows: {} };
+      return parsed.success ? parsed.data : { rows: {}, firstSeen: {} };
     } catch {
-      return { rows: {} };
+      return { rows: {}, firstSeen: {} };
     }
   }
 
@@ -85,6 +87,18 @@ export class NoticesRepo {
   marks(): { seen: string | undefined; rows: Set<string> } {
     const { seen, rows } = this.load();
     return { seen, rows: new Set(Object.keys(rows)) };
+  }
+
+  /** The time each of these ids was first seen, noting the new ones and forgetting the ids no longer listed. */
+  firstSeen(ids: readonly string[], now: string): Map<string, string> {
+    const marks = this.load();
+    const next: Record<string, string> = {};
+    for (const id of ids) next[id] = marks.firstSeen[id] ?? now;
+    const same =
+      Object.keys(next).length === Object.keys(marks.firstSeen).length &&
+      Object.entries(next).every(([id, at]) => marks.firstSeen[id] === at);
+    if (!same) this.save({ ...marks, firstSeen: next });
+    return new Map(Object.entries(next));
   }
 
   /** Moves the "seen up to" time forward. It never moves back. */

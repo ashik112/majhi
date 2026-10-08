@@ -45,6 +45,8 @@ export const NoticeSchema = z.object({
   needsYou: z.boolean(),
   read: z.boolean(),
   link: NoticeLinkSchema,
+  /** A row that waits for the owner and has no one-click answer: the label of the button that opens what it needs ("Sign in"). */
+  openLabel: z.string().max(40).optional(),
   /** The decision's main answer, wired to the same action as Needs you. */
   answer: z
     .object({

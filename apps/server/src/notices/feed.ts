@@ -11,6 +11,7 @@ import {
   type UpdateStatus,
   didWords,
   incidentDecisionId,
+  signInDecisionId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { oneLine } from "../notify/attention.ts";
@@ -40,6 +41,8 @@ const orgOfTask = (org: string | null): string => org ?? PRIVATE;
 function orgOfDecision(d: OwnerDecision): string | undefined {
   return d.org ?? (d.task === undefined ? undefined : PRIVATE);
 }
+
+const SIGN_IN_PREFIX = signInDecisionId("");
 
 /** What a ready-to-ship decision says, by its main answer: Merge, Fix with agent, Mark done. */
 const SHIP_WORDS: Readonly<Record<string, string>> = {
@@ -71,6 +74,13 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
       subject = named("needs a secret");
       detail = d.title;
       break;
+    case "sign-in":
+      subject = `${d.id.slice(SIGN_IN_PREFIX.length)} is signed out`;
+      detail =
+        d.waits === undefined || d.waits.length === 0
+          ? "Its agents cannot run"
+          : `Waiting on it: ${d.waits.join(", ")}`;
+      break;
     default:
       subject = d.title;
       detail = d.taskTitle;
@@ -92,6 +102,7 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
     ...(detail === undefined ? {} : { detail: oneLine(detail) }),
     needsYou: true,
     link: d.link,
+    ...(main === undefined ? { openLabel: d.kind === "sign-in" ? "Sign in" : "Open" } : {}),
     ...(main === undefined ? {} : { answer: { decision: d.id, option: main.id, label: main.label, ...(says === undefined ? {} : { says }) } }),
   };
 }

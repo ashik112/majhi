@@ -63,6 +63,18 @@ function Answer({ notice }: { notice: Notice }) {
  * age on the right. A row that waits for the owner carries its main answer as a button. A read row is
  * one quiet line. The row opens its home; the button answers.
  */
+/** The button of a row that waits for the owner and has no one-click answer: it opens what the row needs. */
+function OpenButton({ notice, onOpen }: { notice: Notice; onOpen: (notice: Notice) => void }) {
+  if (notice.openLabel === undefined) return null;
+  return (
+    <div className="mt-1.5 flex">
+      <Button size="sm" variant="primary" className="ml-auto" onClick={() => onOpen(notice)}>
+        {notice.openLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function NoticeRow({
   notice,
   now,
@@ -115,6 +127,7 @@ export function NoticeRow({
           )}
         </button>
         <Answer notice={notice} />
+        <OpenButton notice={notice} onOpen={onOpen} />
       </div>
     </div>
   );
