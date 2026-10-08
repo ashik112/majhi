@@ -1,3 +1,4 @@
+import { taskPathOf } from "./markdown-rules.ts";
 import type { MediaRef } from "./tasks.ts";
 
 const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"]);
@@ -105,4 +106,35 @@ export function codeLanguageOf(path: string): string | undefined {
   if (name === "dockerfile") return "dockerfile";
   if (name === "makefile") return "makefile";
   return LANGUAGES[extensionOf(path)];
+}
+
+/** A file in the current task, or a validated sibling task URL/path supplied by the captain. */
+export function taskFileReference(
+  target: string,
+  folder: string | undefined,
+  baseDir = "",
+): { path: string; task?: string } | undefined {
+  const api = /^\/api\/tasks\/([A-Z][A-Z0-9]{0,9}-[1-9][0-9]*)\/files\/(.+)$/.exec(target);
+  if (api?.[1] && api[2]) {
+    const path = taskPathOf(api[2], undefined);
+    return path === undefined ? undefined : { task: api[1], path };
+  }
+  const own = taskPathOf(target, folder, baseDir);
+  if (own !== undefined) return { path: own };
+  if (folder === undefined) return undefined;
+  let absolute: string;
+  try {
+    absolute = decodeURIComponent(target.replace(/^file:\/\//i, "").split(/[?#]/)[0] ?? "");
+  } catch {
+    return undefined;
+  }
+  const root = folder.replace(/\/+$/, "");
+  const parent = root.slice(0, root.lastIndexOf("/"));
+  if (!parent || !absolute.startsWith(`${parent}/`)) return undefined;
+  const relative = absolute.slice(parent.length + 1);
+  const slash = relative.indexOf("/");
+  const task = relative.slice(0, slash);
+  if (slash < 0 || !/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/.test(task)) return undefined;
+  const path = taskPathOf(relative.slice(slash + 1), undefined);
+  return path === undefined ? undefined : { task, path };
 }

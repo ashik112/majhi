@@ -1,11 +1,11 @@
-import { isWebHref, safeHref, taskPathOf, type ViewerKind, viewerKindOfPath } from "@majhi/shared";
+import { isWebHref, safeHref, taskFileReference, type ViewerKind, viewerKindOfPath } from "@majhi/shared";
 
 /** Which markdown targets become links or images, and what they point at. The rules live in shared, for the export too. */
 export { dirOf, isWebHref, safeHref, taskPathOf } from "@majhi/shared";
 
 export type LinkTarget =
   | { type: "web"; href: string }
-  | { type: "file"; path: string; kind: ViewerKind }
+  | { type: "file"; path: string; kind: ViewerKind; task?: string }
   | { type: "none" };
 
 /** What a markdown target points at: a web address, a file of the task folder, or nothing usable. */
@@ -13,8 +13,8 @@ export function classifyTarget(target: string, folder: string | undefined, baseD
   const safe = safeHref(target);
   if (safe === undefined) return { type: "none" };
   if (isWebHref(safe)) return { type: "web", href: safe };
-  const path = taskPathOf(safe, folder, baseDir);
-  return path === undefined ? { type: "none" } : { type: "file", path, kind: viewerKindOfPath(path) };
+  const ref = taskFileReference(safe, folder, baseDir);
+  return ref === undefined ? { type: "none" } : { type: "file", ...ref, kind: viewerKindOfPath(ref.path) };
 }
 
 /**

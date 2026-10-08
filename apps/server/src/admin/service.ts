@@ -1005,7 +1005,9 @@ export class AdminService {
    * through the host helper. The value is never returned, put in the room, the audit log or an error.
    */
   private async copyToClipboard(caller: AdminCaller, args: Record<string, unknown>): Promise<ToolResult> {
-    const lane = await this.laneOf(caller, CLIPBOARD_COPY_TOOL);
+    const lane = (await this.inRootChat(caller))
+      ? { org: "root" }
+      : await this.laneOf(caller, CLIPBOARD_COPY_TOOL);
     if ("problem" in lane) return error(lane.problem);
     const parsed = ClipboardCopyInputSchema.safeParse(args);
     if (!parsed.success) {

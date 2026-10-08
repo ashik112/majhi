@@ -411,3 +411,19 @@ function opsWorldWithModel(ask: () => Promise<unknown>): OpsWorld {
   (w.ops.engine as unknown as { deps: { ask: unknown } }).deps.ask = ask;
   return w;
 }
+
+describe("watch recovery between readings", () => {
+  it("closes the incident after the green window without waiting for the next reading", async () => {
+    const w = world();
+    const { id } = await firing(w);
+    w.ops.watch.setSettings({ resolveMin: 1 });
+    w.backend.sqlAnswer = () => "0.4";
+    await w.ops.engine.look(id, true);
+    expect(w.ops.watch.openIncidents().some((i) => i.watch === id)).toBe(true);
+    w.advance(w.ops.watch.settings().resolveMin * MIN);
+    const queries = w.backend.sql.length;
+    await w.ops.engine.tick();
+    expect(w.ops.watch.openIncidents().some((i) => i.watch === id)).toBe(false);
+    expect(w.backend.sql).toHaveLength(queries);
+  });
+});

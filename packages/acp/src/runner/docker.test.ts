@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -376,48 +376,58 @@ async function statefulDocker(): Promise<{
   containers: () => Promise<Record<string, Record<string, string>>>;
   add: (name: string, labels: Record<string, string>) => Promise<void>;
 }> {
-  const state = join(root, "containers.json");
+  const state = join(root, "containers");
   const cli = join(root, "docker");
-  await writeFile(state, "{}");
+  await mkdir(state);
   await writeFastExecutable(
     cli,
     `#!/usr/bin/env node
 const fs = require("node:fs");
-const file = require("node:path").dirname(process.argv[1]) + "/containers.json";
+const file = require("node:path").dirname(process.argv[1]) + "/containers";
 const args = process.argv.slice(2);
-const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-// Atomic, so a test reading the file while a docker CLI writes never sees half of it.
-const write = (s) => {
-  const tmp = file + "." + process.pid;
-  fs.writeFileSync(tmp, JSON.stringify(s));
-  fs.renameSync(tmp, file);
+// Each container owns one file: separate CLI processes cannot lose each other's updates.
+const read = () => Object.fromEntries(fs.readdirSync(file).filter(n => !n.startsWith(".")).flatMap(name => {
+  try { return [[name, JSON.parse(fs.readFileSync(file + "/" + name, "utf8"))]]; }
+  catch (err) { if (err.code === "ENOENT") return []; throw err; }
+}));
+const write = (name, labels) => {
+  const tmp = file + "/." + name + "." + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(labels));
+  fs.renameSync(tmp, file + "/" + name);
 };
 const values = (flag) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
 if (args[0] === "run") {
-  const s = read();
-  s[values("--name")[0]] = Object.fromEntries(values("--label").map((l) => l.split("=")));
-  write(s);
+  write(values("--name")[0], Object.fromEntries(values("--label").map((l) => l.split("="))));
   process.stdin.pipe(process.stdout);
 } else if (args[0] === "ps") {
   const want = values("--filter").map((f) => f.slice("label=".length).split("="));
   for (const [name, labels] of Object.entries(read()))
     if (want.every(([k, v]) => labels[k] === v)) console.log(name);
 } else if (args[0] === "rm") {
-  const s = read();
-  for (const name of args.slice(2)) delete s[name];
-  write(s);
+  for (const name of args.slice(2)) fs.rmSync(file + "/" + name, {force: true});
 }
 `,
   );
-  const containers = async () =>
-    JSON.parse(await readFile(state, "utf8")) as Record<string, Record<string, string>>;
+  const containers = async (): Promise<Record<string, Record<string, string>>> => {
+    const names = (await readdir(state)).filter((name) => !name.startsWith("."));
+    const entries = await Promise.all(
+      names.map(async (name) => {
+        const text = await readFile(join(state, name), "utf8").catch((err) => {
+          if (err.code === "ENOENT") return undefined;
+          throw err;
+        });
+        return text === undefined ? [] : [[name, JSON.parse(text) as Record<string, string>]];
+      }),
+    );
+    return Object.fromEntries(entries.flat());
+  };
   return {
     cli,
     containers,
     async add(name, labels) {
-      const tmp = `${state}.add`;
-      await writeFile(tmp, JSON.stringify({ ...(await containers()), [name]: labels }));
-      await rename(tmp, state);
+      const tmp = join(state, `.${name}.add`);
+      await writeFile(tmp, JSON.stringify(labels));
+      await rename(tmp, join(state, name));
     },
   };
 }
@@ -428,6 +438,13 @@ async function waitFor(check: () => Promise<boolean>): Promise<void> {
 }
 
 describe("runner containers converge to one per live run", () => {
+  it("keeps concurrent fake container creations", async () => {
+    const docker = await statefulDocker();
+    await Promise.all(
+      Array.from({ length: 12 }, (_, n) => docker.add(`majhi-run-${n}`, { "majhi.runner": "1" })),
+    );
+    expect(Object.keys(await docker.containers())).toHaveLength(12);
+  });
   it("removes the container when its docker CLI dies without a kill", async () => {
     const docker = await statefulDocker();
     const spawner = dockerSpawner({ ...cfg, docker: docker.cli });

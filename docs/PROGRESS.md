@@ -1,5 +1,29 @@
 # Progress
 
+## Security, run recovery and captain regressions (branch `fix/security-runs-captain`, merged)
+
+Plan: reproduce the reported secret-script and scan false positives, isolate runner probes, guard checkpoints during git operations, correct restart notices, extend main captain clipboard and file access safely, resolve watch recovery, and reproduce the reported unit and Docker-test failures. Add targeted regression tests for security, git state and incident state transitions, then run typechecks. Preserve the existing doctl fix.
+
+Built:
+- PRV-124: script reads use the shared shell parser, including nested command substitutions and pipelines. The existing doctl behavior remains.
+- PRV-126: isolation and Serena probes each own a temporary account folder and container name.
+- PRV-131: checkpoints skip active merge, rebase, cherry-pick, revert and sequencer state before staging anything.
+- PRV-134: unquoted schema calls and property expressions are not credential literals. Known token formats and quoted credentials are still scanned.
+- PRV-136: restart notices describe an interrupted task without claiming it had a background process.
+- PRV-140, PRV-143, PRV-145: main captain clipboard access retains the owner-request guard, root runs read task output read-only, cross-task file links retain their task, and typed Python assignments copy their value. Workspace lane isolation remains enforced.
+- PRV-147: recovered watch incidents close when the green window expires, even between scheduled readings.
+- PRV-128: the original reported diff scans clean on current main. Its former identifier false positive and missing line/rule diagnostics were already fixed there. Hand-off notes now distinguish check diagnostics from command output, removing the misleading “printed: tr” wording.
+- PRV-132: notifier tests already treat fake programs as installed, independent of the host OS, and the lane-read sweep already skips unrelated public registry searches. Restored the removed captain-slot tests with explicit waits for actual worker turns and without trapping background decision-provider sessions in the fake turn gate. These are test fixes, with no production slot changes.
+- PRV-135: task-docker.http tests now wait for end-of-turn effects as well as task status before starting containers, preventing cleanup from deleting a test container. This file uses FakeDocker, with no real daemon. The separate runner CLI fixture stores state per container to avoid concurrent read-modify-write losses.
+
+Validation: workspace typechecks and the web build pass. Targeted security, git checkpoint, watch recovery, runner isolation, clipboard, path containment, connection gate and hand-off tests pass. The notifier and lane-read tests pass, and the restored captain-slot tests pass after their fixture and synchronization fixes. The exact task-docker.http file passes five shuffled runs on its own after the cleanup barrier and also passes alongside the reported unit files and runner Docker tests. Browser verification in a throwaway home opened a captain link to another task's TASK.md and displayed that task's brief. No full CI or full e2e run was used.
+
+Try: open the main captain chat and ask it to copy a value from a registered project, or link a file from another task. A recovered watch closes after its configured green window. An automatic checkpoint leaves an unfinished git operation untouched.
+
+Owner-only checks: real connection scripts, host clipboard programs and concurrent health checks against the installed Docker runner.
+
+Merge approved by the owner on 2026-10-09. Main has not moved since the fixes were checked. Majhi's merge tool is unavailable in this session, so this approved merge uses Git. The fixes are merged locally; no push was requested.
+
 ## Security and update recovery (branch `fix/update-recovery`, merged)
 
 Plan: restrict browser commands, uploads and sockets to the configured origin; persist runtime and whole-update rollback state; snapshot both databases while the server is stopped and restore them before returning to old images; preserve the runner image; block migration and update when safety backups fail. Test foreign localhost origins, interrupted replacement and recovery, database restoration, runner rollback and backup failure. Run targeted tests and workspace typechecks.

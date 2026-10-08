@@ -70,6 +70,9 @@ describe("detectSecrets and code identifiers", () => {
     "transaction_type__in=COUNTER_SETTLED_TRANSACTION_TYPES",
     "MAX_RETRIES=SOME_CONSTANT",
     "token=settings.API_TOKEN",
+    "secret: z.string().min(1)",
+    "password: config.getPassword()",
+    "secret: credentials.accessToken",
     "password = DEFAULT_ADMIN_PASSWORD_VALUE",
     "secret: some_long_config_name_here",
   ])("does not flag %s", (text) => expect(detectSecrets(text), text).toEqual([]));
@@ -82,6 +85,7 @@ describe("detectSecrets and code identifiers", () => {
     ["token", "blob=Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dFgHjK+9Xw=="],
     ["token", "key is Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dF"],
     ["assigned", 'password="hunter2xyz9"'],
+    ["assigned", ["secret:", JSON.stringify("z.string().min(1)")].join(" ")],
     ["assigned", "password='hunter2xyz9'"],
   ] as const)("still flags a %s in %s", (kind, text) => {
     expect(detectSecrets(text).map((m) => m.kind)).toContain(kind);

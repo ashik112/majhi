@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { agentCommitter, withTaskTrailer } from "@majhi/shared";
 import { git } from "../git/git.ts";
@@ -144,6 +145,23 @@ export async function commitCheckpoint(
         result.skipped.push(
           `${repo.project}: not on ${repo.branch}${head === "" ? "" : ` (on ${head})`}, so no checkpoint was made there`,
         );
+        continue;
+      }
+      const operations = [
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "rebase-merge",
+        "rebase-apply",
+        "sequencer",
+      ];
+      const paths = await Promise.all(
+        operations.map(async (name) =>
+          (await git(repo.worktree, ["rev-parse", "--path-format=absolute", "--git-path", name])).trim(),
+        ),
+      );
+      if (paths.some((path) => existsSync(path))) {
+        result.skipped.push(`${repo.project}: a git operation is in progress, so no checkpoint was made`);
         continue;
       }
       await git(repo.worktree, [...quiet(), "add", "--all"]);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseLine, ShellParseError } from "./shell-parse.ts";
 
 /**
  * Metric watches that combine reads (SPEC watch checks): each read picks values from a tool's answer
@@ -181,45 +182,13 @@ const DATA_FLAGS =
   /^(?:-d|--data(?:-[\w-]+)?|--json|-F|--form|-T|--upload-file|--post-(?:data|file)|--body-(?:data|file))$/;
 
 /** The words of each simple command in a shell script. Quotes group words; `|`, `;`, `&` and newlines end a command. */
-function commandsOf(script: string): string[][] {
-  const commands: string[][] = [];
-  let words: string[] = [];
-  let word = "";
-  let started = false;
-  let quote: "'" | '"' | undefined;
-  const endWord = () => {
-    if (started) words.push(word);
-    word = "";
-    started = false;
-  };
-  const endCommand = () => {
-    endWord();
-    if (words.length > 0) commands.push(words);
-    words = [];
-  };
-  for (let i = 0; i < script.length; i += 1) {
-    const c = script.charAt(i);
-    if (quote !== undefined) {
-      if (c === quote) quote = undefined;
-      else if (c === "\\" && quote === '"' && i + 1 < script.length) word += script.charAt(++i);
-      else word += c;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      quote = c;
-      started = true;
-    } else if (c === "\\" && i + 1 < script.length) {
-      word += script.charAt(++i);
-      started = true;
-    } else if (c === " " || c === "\t") endWord();
-    else if (c === "|" || c === ";" || c === "&" || c === "\n" || c === "(" || c === ")") endCommand();
-    else {
-      word += c;
-      started = true;
-    }
-  }
-  endCommand();
-  return commands;
+function commandsOf(script: string, depth = 0): string[][] {
+  if (depth > 20) throw new ShellParseError("The script nests too many commands.");
+  const parsed = parseLine(script);
+  return [
+    ...parsed.commands.map((command) => command.words),
+    ...parsed.substitutions.flatMap((inner) => commandsOf(inner, depth + 1)),
+  ];
 }
 
 /**
@@ -258,7 +227,11 @@ function sendsData(script: string): boolean {
  */
 export function scriptProblem(script: string, network: "on" | "off" = "on"): string | undefined {
   if (network === "off") return undefined;
-  if (sendsData(script)) return "A watch only reads: it sends data.";
+  try {
+    if (sendsData(script)) return "A watch only reads: it sends data.";
+  } catch {
+    return "A watch only reads: majhi cannot parse the script's commands.";
+  }
   const checks: [RegExp, string][] = [
     [
       /(?:-X|--request)\s*['"]?(?:POST|PUT|PATCH|DELETE)\b/i,

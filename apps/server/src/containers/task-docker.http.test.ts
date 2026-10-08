@@ -60,6 +60,8 @@ async function world(): Promise<{ w: World; env: Record<string, Record<string, s
       return status !== "running" && status !== "queued";
     });
   }
+  // Status is published before all end-of-turn cleanup has settled.
+  await h.majhi.services.runs.idle();
   return { w, env };
 }
 

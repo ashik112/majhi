@@ -224,16 +224,13 @@ export class Resilience {
           runs.notify(
             task.id,
             agent,
-            "majhi restarted, and background processes from before the restart were stopped without reporting back. Start again any you were waiting on, then carry on.",
+            "majhi restarted while this task was running. Check the task state and carry on. If you were waiting on a background process, it did not survive the restart; start it again if still needed.",
           );
-          this.note(
-            task.id,
-            `majhi restarted while @${agent} waited on a background process. Waking @${agent}.`,
-          );
+          this.note(task.id, `majhi restarted while @${agent} was running. Waking @${agent}.`);
         } else {
           await this.lost(
             task.id,
-            `majhi restarted while @${agent} waited on a background process. Automatic resume is off for this org, so resume the task when you are ready.`,
+            `majhi restarted while @${agent} was running. Automatic resume is off for this org, so resume the task when you are ready.`,
           );
         }
       } catch (err) {

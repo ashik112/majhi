@@ -83,7 +83,15 @@ function buildComponents({ task, baseDir, cites }: Scope): Components {
         );
       }
       if (target.type === "file" && task !== undefined) {
-        return <TaskFileLink path={target.path} kind={target.kind} label={children} project={task.project} />;
+        return (
+          <TaskFileLink
+            path={target.path}
+            kind={target.kind}
+            label={children}
+            taskId={target.task}
+            project={target.task === undefined ? task.project : undefined}
+          />
+        );
       }
       return <>{children}</>;
     },
@@ -98,14 +106,20 @@ function buildComponents({ task, baseDir, cites }: Scope): Components {
           return (
             <div className="md-own-line">
               {shown === "player" ? (
-                <TaskFileView taskId={task.id} taskPath={target.path} name={name} onLoad={task.onLoad} />
+                <TaskFileView
+                  taskId={target.task ?? task.id}
+                  taskPath={target.path}
+                  name={name}
+                  onLoad={task.onLoad}
+                />
               ) : (
                 <TaskFileLink
                   path={target.path}
                   kind={target.kind}
                   label={name}
                   card
-                  project={task.project}
+                  taskId={target.task}
+                  project={target.task === undefined ? task.project : undefined}
                 />
               )}
             </div>
@@ -130,7 +144,7 @@ function buildComponents({ task, baseDir, cites }: Scope): Components {
         if (target.kind === "image" || target.kind === "video" || target.kind === "audio") {
           return (
             <TaskFileView
-              taskId={task.id}
+              taskId={target.task ?? task.id}
               taskPath={target.path}
               name={name || target.path}
               onLoad={task.onLoad}
@@ -142,7 +156,8 @@ function buildComponents({ task, baseDir, cites }: Scope): Components {
             path={target.path}
             kind={target.kind}
             label={name || target.path}
-            project={task.project}
+            taskId={target.task}
+            project={target.task === undefined ? task.project : undefined}
           />
         );
       }

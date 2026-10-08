@@ -14,6 +14,16 @@ const KEY = "Zq-live-9f2c41d7a8b35e60";
 describe("pickValue", () => {
   const text = `# keys\nAPI_KEY="${KEY}"\nexport TOKEN=abc==  # rotate monthly\nname: ${KEY}\n${KEY}\n\n`;
 
+  it.each([
+    ['name: str = "v"', "v"],
+    ['name: str | None = "v"', "v"],
+    ['name: list[str] = "v"', "v"],
+    ["TOKEN: abc=xyz", "abc=xyz"],
+    ["URL: https://example.com?q=1", "https://example.com?q=1"],
+  ])("copies only the value from %s", (line, value) => {
+    expect(pickValue(line, 1, "value")).toEqual({ value });
+  });
+
   it("says why there is no value, without the line's text", () => {
     for (const [line, part] of [
       [99, "whole"],
@@ -79,7 +89,7 @@ describe("the captain copying to the owner's clipboard", () => {
     admin.useClipboard({
       roots: async (org) => {
         roots.push(org);
-        return org === "acme" ? [dir as string] : [];
+        return org === "acme" || org === "root" ? [dir as string] : [];
       },
       available: () => connected,
       copy: async (text) => {
@@ -93,6 +103,21 @@ describe("the captain copying to the owner's clipboard", () => {
       JSON.stringify([await w?.items(chat), (await h.cmd("audit.list", {})).body]);
     return { h, chat, copied, roots, call, secrets, everything, dir };
   }
+
+  it("lets the main captain copy without exposing the value in chat or audit", async () => {
+    const t = await lane();
+    if (w === undefined) throw new Error("no world");
+    const caller = { task: w.chat.id, agent: "boss" };
+    expect((await t.call({ file: join(t.dir, ".env"), line: 1, part: "value" }, caller)).isError).not.toBe(
+      true,
+    );
+    expect(t.copied).toEqual([KEY]);
+    expect(t.roots).toEqual(["root"]);
+    expect(JSON.stringify([await t.everything(), await w.items(w.chat.id)])).not.toContain(KEY);
+    expect((await t.call({ file: join(t.dir, ".env"), line: 1, ownerAsked: false }, caller)).isError).toBe(
+      true,
+    );
+  });
 
   it("refuses without ownerAsked, outside the lane's projects, for an agent, and with no helper", async () => {
     const t = await lane();

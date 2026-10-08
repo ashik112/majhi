@@ -1,6 +1,8 @@
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { readMounts } from "../runs/launch.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 
@@ -108,5 +110,23 @@ describe("registered projects in every run", () => {
     expect(projectsFor("root", projects).map((p) => p.id)).toEqual(["acme-api", "globex-ledger"]);
     expect(projectsFor("acme", projects).map((p) => p.id)).toEqual(["acme-api"]);
     expect(projectsFor("initech", projects)).toEqual([]);
+  });
+});
+
+describe("run read mounts", () => {
+  it("mounts task output read-only for root, and never for an org agent", async () => {
+    await readWorld();
+    const task = (await must("tasks.create", {
+      text: "inspect api",
+      repos: [{ project: "acme-api", base: "main" }],
+      start: false,
+    })) as Task;
+    const services = w.h.majhi.services;
+    const deps = { config: services.config, majhiHome: w.h.env.majhiHome, secrets: services.secrets };
+    const loaded = await services.config.load();
+    if (loaded.state.status !== "loaded") throw new Error("no config");
+    const tasks = loaded.state.config.tasksDir;
+    expect(await readMounts(deps, task, "boss", "root")).toContainEqual({ path: tasks, readOnly: true });
+    expect((await readMounts(deps, task, "acme-builder", "acme")).some((m) => m.path === tasks)).toBe(false);
   });
 });
