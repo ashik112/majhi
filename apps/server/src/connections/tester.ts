@@ -560,9 +560,16 @@ export class ConnectionTester {
         fix: "The host took the key but would not run a command. Check that the account may run commands.",
       });
     }
-    return fail(classifyProbe(run).detail, {
+    const probe = classifyProbe(run);
+    if (probe.state === "auth-failed") {
+      return fail(`${alias} answered but refused every key.`, {
+        reason: "rejected",
+        fix: "Add this computer's public key to the host's authorized keys, or choose the key it expects.",
+      });
+    }
+    return fail(probe.detail, {
       reason: "unreachable",
-      fix: "Check the host name and port, and that your ssh-agent holds the key this host needs.",
+      fix: "Check the host name and port, then check again.",
     });
   }
 

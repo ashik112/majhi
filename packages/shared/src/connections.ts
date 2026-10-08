@@ -1147,11 +1147,34 @@ export function failureLine(view: Pick<ConnectionView, "health" | "lastTest">): 
   return withoutPeriod(said === "" ? FAILURE_LINE[health.reason] : said);
 }
 
-/** `failureLine` and `failureFix` as one text, saying a repeated sentence once. */
+/** The sentences of a text, each without its closing full stop. Split on the full stop and a space. */
+function sentencesOf(text: string): string[] {
+  return text
+    .split(". ")
+    .map((part) => withoutPeriod(part.trim()))
+    .filter((part) => part !== "");
+}
+
+/**
+ * The failure and its next step as distinct sentences, none said twice: the check's own first sentence,
+ * then what to do. The Connections page, Health, the banner and Needs you all read these.
+ */
+export function failureSentences(view: Pick<ConnectionView, "health" | "lastTest">): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const sentence of [...sentencesOf(failureLine(view)), ...sentencesOf(failureFix(view))]) {
+    const key = sentence.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(sentence);
+  }
+  return out;
+}
+
+/** `failureSentences` as one text, ending in a full stop. Empty when the connection has not failed. */
 export function failureSentence(view: Pick<ConnectionView, "health" | "lastTest">): string {
-  const line = failureLine(view);
-  const fix = failureFix(view);
-  return withoutPeriod(fix) === line ? `${line}.` : `${line}. ${fix}`;
+  const parts = failureSentences(view);
+  return parts.length === 0 ? "" : `${parts.join(". ")}.`;
 }
 
 /** The next step of a failed connection, the same everywhere. Empty when it has not failed. */

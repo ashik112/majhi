@@ -11,6 +11,7 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { DetailSection } from "@/components/ui/list-detail";
 import { Dot, type DotTone } from "@/components/ui/status-dot";
@@ -178,9 +179,26 @@ function AccountRow({
   onSignedOut: (result: SignOut) => void;
 }) {
   const { remove } = useSetGitAccount();
+  const [confirming, setConfirming] = useState(false);
   const kind = status.kind === "other" ? undefined : status.kind;
   return (
     <li className={ROW}>
+      {confirming && (
+        <ConfirmDialog
+          title={`Remove ${status.account} from ${org.name}`}
+          body={`${org.name} loses its ${status.host} sign-in: the saved token and its connection go too. Projects on ${status.host} cannot be pushed or opened as merge requests until you sign in again. The account itself is not touched.`}
+          confirmLabel="Remove account"
+          busy={remove.isPending}
+          error={remove.error ? describeError(remove.error) : undefined}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() =>
+            remove.mutate(
+              { id: org.id, host: status.host, account: status.account },
+              { onSuccess: () => setConfirming(false) },
+            )
+          }
+        />
+      )}
       <RowHead
         kind={status.kind}
         actions={
@@ -188,12 +206,7 @@ function AccountRow({
             {kind !== undefined && status.token.state !== "missing" && (
               <SignOutButton org={org.id} kind={kind} host={status.host} onSignedOut={onSignedOut} />
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate({ id: org.id, host: status.host, account: status.account })}
-            >
+            <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setConfirming(true)}>
               Remove
             </Button>
           </>

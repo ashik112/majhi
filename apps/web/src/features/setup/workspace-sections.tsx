@@ -197,7 +197,7 @@ export function SshSection({ host, state }: { host: HostStatus | undefined; stat
         }
       >
         <p className="text-base text-fg-muted">{state.detail}</p>
-        <SshNotice />
+        <SshNotice bare />
         <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">{keysNote(host?.info)}</p>
       </DetailSection>
       <DetailSection
@@ -222,9 +222,7 @@ export function SshSection({ host, state }: { host: HostStatus | undefined; stat
                     <Dot tone={s.tone} size={7} />
                     {s.word}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-fg-muted" title={h.detail}>
-                    {h.detail}
-                  </span>
+                  <span className="min-w-0 flex-1 text-sm text-fg-muted text-pretty">{h.detail}</span>
                 </li>
               );
             })}
