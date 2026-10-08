@@ -2069,7 +2069,7 @@ export const commands = {
   "projects.planDeploy": {
     risk: "change",
     summary:
-      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
     input: PlanDeployInputSchema,
     output: PlanDeployResultSchema,
   },

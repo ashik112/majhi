@@ -124,3 +124,67 @@ describe("the gitlab-job provider", () => {
     await expect(provider.start(wrong, step)).rejects.toThrow(/not on GitLab/);
   });
 });
+
+/** A GitLab where `stg` lacks the commit (or has it), for the merge into an environment's branch. */
+function branchHost(over: { contained?: boolean; mergeStatus?: number } = {}) {
+  const calls: { method: string; path: string; body: unknown }[] = [];
+  const fetchFake = (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = new URL(String(url));
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : undefined;
+    calls.push({ method, path: `${u.pathname}${u.search}`, body });
+    const reply = (status: number, json: unknown) =>
+      new Response(JSON.stringify(json), { status, headers: { "content-type": "application/json" } });
+    const path = u.pathname.replace("/api/v4/projects/acme%2Fstorefront", "");
+    if (path === "/repository/compare") return reply(200, { commits: over.contained ? [] : [{ id: "1" }] });
+    if (path === "/repository/branches/stg") return reply(200, { commit: { id: "2".repeat(40) } });
+    if (method === "GET" && path === "/merge_requests") return reply(200, []);
+    if (method === "POST" && path === "/merge_requests") return reply(201, { iid: 7 });
+    if (method === "PUT" && path === "/merge_requests/7/merge")
+      return reply(over.mergeStatus ?? 200, { merge_commit_sha: "3".repeat(40) });
+    if (method === "GET" && path === "/pipelines")
+      return reply(200, [{ id: 42, web_url: "http://gl.test/p/42" }]);
+    return reply(404, {});
+  }) as typeof fetch;
+  const deps: ProviderDeps = {
+    fetch: fetchFake,
+    credentials: {
+      git: async () => ({ token: "gl-token" }),
+      variable: async () => ({ problem: "none" }),
+      ssh: async () => ({ problem: "none" }),
+    },
+    remote: async () => ({ code: 0, output: "" }),
+    sleep: async () => undefined,
+    now: () => new Date(),
+  };
+  const ctx: DeployContext = {
+    org: "acme",
+    project: "storefront",
+    env: { env: "staging", tier: "staging", branch: "stg" },
+    base: "main",
+    commit: "1".repeat(40),
+    repoOf: async () => ({ provider: "gitlab", slug: "acme/storefront", host: "gl.test" }),
+  };
+  return { provider: createGitLabProvider(deps), ctx, calls };
+}
+
+const mergeStep: DeployRunStep = { kind: "gitlab-merge", remote: "origin", branch: "stg" };
+
+describe("the gitlab-merge provider", () => {
+  it("merges only at the deploy commit and follows the pipeline on the merged branch", async () => {
+    const { provider, ctx, calls } = branchHost();
+    const run = await provider.start(ctx, mergeStep);
+    expect(run.id).toBe("42");
+    const merge = calls.find((c) => c.method === "PUT");
+    expect(merge?.body).toEqual({ sha: "1".repeat(40), should_remove_source_branch: false });
+    expect(calls.some((c) => c.path.includes(`ref=stg&sha=${"3".repeat(40)}`))).toBe(true);
+  });
+
+  it("opens no merge request when the branch has the commit, and refuses when the base moved", async () => {
+    const has = branchHost({ contained: true });
+    expect((await has.provider.start(has.ctx, mergeStep)).id).toBe("42");
+    expect(has.calls.some((c) => c.path.includes("merge_requests"))).toBe(false);
+    const moved = branchHost({ mergeStatus: 409 });
+    await expect(moved.provider.start(moved.ctx, mergeStep)).rejects.toThrow("moved past");
+  });
+});

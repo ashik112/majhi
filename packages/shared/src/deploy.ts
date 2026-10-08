@@ -126,6 +126,15 @@ export const DeployRunStepSchema = z.discriminatedUnion("kind", [
     variables: InputsSchema.optional(),
   }),
   z.object({
+    kind: z.literal("gitlab-merge"),
+    remote: RemoteNameSchema,
+    /**
+     * The environment's branch (`stg`, `prod-beta`): the commit is merged into it through a merge request
+     * from the base branch, never forced, and the pipeline that runs on it is followed.
+     */
+    branch: LocalBranchSchema,
+  }),
+  z.object({
     kind: z.literal("bitbucket-pipeline"),
     remote: RemoteNameSchema,
     /** A custom pipeline of the project, the name under `pipelines: custom:` in `bitbucket-pipelines.yml`. */
@@ -158,6 +167,7 @@ export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
   "github-workflow": "GitHub workflow",
   "gitlab-job": "GitLab job",
   "gitlab-pipeline": "GitLab pipeline",
+  "gitlab-merge": "GitLab merge into",
   "bitbucket-pipeline": "Bitbucket pipeline",
   vercel: "Vercel",
   ssh: "SSH command",
@@ -172,6 +182,8 @@ export function deployRunLine(run: DeployRunStep): string {
       return `${DEPLOY_KIND_LABEL[run.kind]} ${run.job}`;
     case "gitlab-pipeline":
       return DEPLOY_KIND_LABEL[run.kind];
+    case "gitlab-merge":
+      return `${DEPLOY_KIND_LABEL[run.kind]} ${run.branch}`;
     case "bitbucket-pipeline":
       return `${DEPLOY_KIND_LABEL[run.kind]} ${run.pipeline}`;
     case "vercel":

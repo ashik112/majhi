@@ -101,6 +101,7 @@ export async function rig(
     "github-workflow": createGitHubProvider(providerDeps),
     "gitlab-pipeline": gitlab,
     "gitlab-job": gitlab,
+    "gitlab-merge": gitlab,
     "bitbucket-pipeline": createBitbucketProvider(providerDeps),
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),

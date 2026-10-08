@@ -124,6 +124,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     "github-workflow": createGitHubProvider(providerDeps),
     "gitlab-pipeline": gitlab,
     "gitlab-job": gitlab,
+    "gitlab-merge": gitlab,
     "bitbucket-pipeline": createBitbucketProvider(providerDeps),
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
@@ -293,7 +294,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
           project: repo.project,
           environments: envs.map(
             (e) =>
-              `${e.env} (${e.tier}${e.branch === undefined ? "" : `, deploys when ${e.branch} is pushed or merged`})`,
+              `${e.env} (${e.tier}${e.branch === undefined ? "" : `, deploys when ${e.branch} is pushed or merged: plan a gitlab-merge run into ${e.branch}`})`,
           ),
         });
       }
