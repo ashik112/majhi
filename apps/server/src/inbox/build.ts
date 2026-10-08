@@ -421,19 +421,32 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     if (draft === undefined) continue;
     const id = decisionIdOf(item);
     const workspace = subject.org === undefined ? undefined : src.orgName?.(subject.org);
+    // A pause of the captain's own thread is a captain item: no task id or title, its reason, and Open goes to its thread.
+    const captainItem =
+      subject.lane === true && draft.kind === "paused"
+        ? {
+            title: workspace === undefined ? "Captain paused" : `Captain paused in ${workspace}`,
+            sentence: item.type === "paused" && item.why !== undefined ? oneLine(item.why, 200) : draft.title,
+          }
+        : undefined;
     out.push({
       id,
       kind: draft.kind,
       ...(subject.org === undefined ? {} : { org: subject.org }),
       task: item.task,
-      taskTitle: subject.title,
+      taskTitle: captainItem?.title ?? subject.title,
       ...(subject.chat ? { chat: true as const } : {}),
-      title: draft.title,
-      sentence: draft.sentence ?? draft.title,
+      title: captainItem?.title ?? draft.title,
+      sentence: captainItem?.sentence ?? draft.sentence ?? draft.title,
       ...(draft.blocked === undefined ? {} : { blocked: draft.blocked }),
       ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
-      link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
+      link:
+        captainItem !== undefined
+          ? { kind: "captain", ...(subject.org === undefined ? {} : { org: subject.org }) }
+          : subject.chat
+            ? { kind: "chat", id: item.task }
+            : { kind: "task", id: item.task, item: item.id },
     });
   }
 

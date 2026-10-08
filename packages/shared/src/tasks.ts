@@ -529,6 +529,11 @@ export function isCaptainLane(task: Pick<Task, "kind" | "brief">): boolean {
   return task.kind === "chat" && task.brief === CAPTAIN_LANE_BRIEF;
 }
 
+/** True for a captain lane or the root Captain chat: the captain's own threads, never a task to the owner. */
+export function isCaptainThread(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && (task.brief === CAPTAIN_LANE_BRIEF || task.brief === BOSS_CHAT_BRIEF);
+}
+
 /** A chat title from the owner's first message: its first line, trimmed and cut to fit. */
 export function chatTitleFrom(text: string): string | undefined {
   const line = text

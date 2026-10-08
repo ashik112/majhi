@@ -141,7 +141,9 @@ export function actionOf(link: DecisionLink): BannerAction {
     case "chat":
       return { kind: "chat", id: link.id };
     case "captain":
-      return { kind: "page", to: "/captain" };
+      return link.org === undefined
+        ? { kind: "page", to: "/captain" }
+        : { kind: "page", to: "/captain", search: { thread: link.org } };
     case "limits":
       return { kind: "page", to: "/limits" };
     case "account":

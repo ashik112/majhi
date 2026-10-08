@@ -94,7 +94,7 @@ export default function DockPanel({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <div className="shrink-0 p-2 pb-0">
-            <WorkspaceTabs list={list.data ?? []} orgs={orgs} />
+            <WorkspaceTabs list={list.data ?? []} orgs={orgs} compact />
           </div>
           <ConversationList onOpen={openRow} onNewChat={setOpenId} />
         </>
