@@ -1,5 +1,26 @@
 # Progress
 
+## Security, run recovery and captain regressions (branch `fix/security-runs-captain`, ready for review)
+
+Plan: reproduce the reported secret-script and scan false positives, isolate runner probes, guard checkpoints during git operations, correct restart notices, extend main captain clipboard and file access safely, resolve watch recovery, and reproduce the reported unit and Docker-test failures. Add targeted regression tests for security, git state and incident state transitions, then run typechecks. Preserve the existing doctl fix.
+
+Built:
+- PRV-124: script reads use the shared shell parser, including nested command substitutions and pipelines. The existing doctl behavior remains.
+- PRV-126: isolation and Serena probes each own a temporary account folder and container name.
+- PRV-131: checkpoints skip active merge, rebase, cherry-pick, revert and sequencer state before staging anything.
+- PRV-134: unquoted schema calls and property expressions are not credential literals. Known token formats and quoted credentials are still scanned.
+- PRV-136: restart notices describe an interrupted task without claiming it had a background process.
+- PRV-140, PRV-143, PRV-145: main captain clipboard access retains the owner-request guard, root runs read task output read-only, cross-task file links retain their task, and typed Python assignments copy their value. Workspace lane isolation remains enforced.
+- PRV-147: recovered watch incidents close when the green window expires, even between scheduled readings.
+- PRV-128: hand-off notes no longer describe scan diagnostics as command output. The specific reported diff still needs a harmless reproducer before its false positive can be confirmed fixed.
+- PRV-135: fake Docker container state is stored per container, removing concurrent read-modify-write losses. The reported file has not been identified, so this fixes the observed helper race without claiming the original failure was reproduced.
+
+Validation: workspace typechecks and the web build pass. Targeted security, git checkpoint, watch recovery, runner isolation, clipboard, path containment, connection gate and hand-off tests pass. The notifier, lane-read and captain-slot tests (PRV-132) already pass on main and also pass with shuffled execution order; no failing assertion was reproduced. Browser verification in a throwaway home opened a captain link to another task's TASK.md and displayed that task's brief. No full CI or full e2e run was used.
+
+Try: open the main captain chat and ask it to copy a value from a registered project, or link a file from another task. A recovered watch closes after its configured green window. An automatic checkpoint leaves an unfinished git operation untouched.
+
+Owner-only checks: real connection scripts, host clipboard programs and concurrent health checks against the installed Docker runner.
+
 ## Security and update recovery (branch `fix/update-recovery`, merged)
 
 Plan: restrict browser commands, uploads and sockets to the configured origin; persist runtime and whole-update rollback state; snapshot both databases while the server is stopped and restore them before returning to old images; preserve the runner image; block migration and update when safety backups fail. Test foreign localhost origins, interrupted replacement and recovery, database restoration, runner rollback and backup failure. Run targeted tests and workspace typechecks.
