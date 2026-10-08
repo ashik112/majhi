@@ -100,6 +100,7 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import { waitingDeployDecisions } from "./deploy/decisions.ts";
+import { FIX_MR_CHECKS_TEXT, failingMrDecisions } from "./mrs/decisions.ts";
 import { createNothingDeploys } from "./deploy/nothing.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
 import type { ServerEnv } from "./env.ts";
@@ -1625,6 +1626,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
       answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
+      fixMrChecks: (task) =>
+        tasks.send({
+          task,
+          text: FIX_MR_CHECKS_TEXT,
+          attachments: [],
+          mode: "queue",
+        }),
+      runDeployStep: async (task, project, env) => {
+        const found = store.tasks.get(task);
+        if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
+        const step = (await deployWorld.planner.stepsOf(found)).find(
+          (s) => s.project === project && s.env === env,
+        );
+        if (step?.record === undefined) throw new UserError("That deploy step is gone.", 409);
+        await deployWorld.service.deploy({ record: step.record, retry: true }, "owner");
+      },
     },
     extras: async () => [
       ...(outcomesService?.decisions() ?? []),
@@ -1632,6 +1649,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(incidentEngine?.decisions(() => undefined) ?? []),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
+      ...failingMrDecisions(
+        [...store.tasks.unmergedMrs()].flatMap((id) => {
+          const found = store.tasks.get(id);
+          return found === undefined ? [] : [found];
+        }),
+      ),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
+import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMergeOrder, useMrCommand, useTaskDetail } from "@/lib/task-queries";
 import {
@@ -169,6 +170,21 @@ function MrActions({ task, step }: { task: Task; step: MrStep }) {
     mark.reset();
   };
   const hasMr = task.repos.some((r) => r.mr !== undefined);
+  const ciFailing = task.repos.some((r) => r.mr?.state === "open" && r.mr.ci === "failing");
+  const [fixing, setFixing] = useState(false);
+  const fix = async () => {
+    setFixing(true);
+    try {
+      await cmd("room.send", {
+        task: task.id,
+        text: "The checks of the merge request failed. Read the failure on the host, fix it, commit, and say when it is done.",
+      });
+    } catch (e) {
+      fail("Could not ask the agent")(e instanceof Error ? e : new Error(String(e)));
+    } finally {
+      setFixing(false);
+    }
+  };
   const projects = task.repos.map((r) => r.project).join(", ");
   const stillOpen = mark.data?.stillOpen ?? [];
 
@@ -181,8 +197,13 @@ function MrActions({ task, step }: { task: Task; step: MrStep }) {
             Open the missing MRs
           </Button>
         )}
+        {(step === "merge" || step === "watch") && ciFailing && (
+          <Button size="sm" variant="primary" disabled={fixing} onClick={() => void fix()}>
+            Fix with agent
+          </Button>
+        )}
         {(step === "merge" || step === "watch") && (
-          <Button size="sm" variant="primary" onClick={() => setDialog("merge")}>
+          <Button size="sm" variant={ciFailing ? "secondary" : "primary"} onClick={() => setDialog("merge")}>
             {step === "merge" ? "Merge in order" : "Merge now"}
           </Button>
         )}
