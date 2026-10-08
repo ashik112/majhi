@@ -33,7 +33,10 @@ export function roomPeople(
 
 /** A reply as the owner edits it: each mention token is `@Name`. */
 export function tokensToNames(text: string, people: readonly Person[]): string {
-  return replaceMentions(text, (id) => `@${mentionName(id, undefined, (c) => people.find((p) => p.id === c)?.name)}`);
+  return replaceMentions(
+    text,
+    (id) => `@${mentionName(id, undefined, (c) => people.find((p) => p.id === c)?.name)}`,
+  );
 }
 
 const isWordChar = (ch: string): boolean => ch.toLowerCase() !== ch.toUpperCase() || (ch >= "0" && ch <= "9");

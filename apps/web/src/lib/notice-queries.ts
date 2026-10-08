@@ -27,17 +27,19 @@ function withRead(list: NoticeList, input: NoticesMarkReadInput): NoticeList {
 /** Marks rows read: the list changes at once, and the server's answer settles it. */
 export function useMarkNoticesRead() {
   const client = useQueryClient();
-  return useMutation<{ ok: true }, ApiRequestError, NoticesMarkReadInput, { before: NoticeList | undefined }>({
-    mutationFn: (input) => cmd("notices.markRead", input, { reason: "Owner read the bell" }),
-    onMutate: async (input) => {
-      await client.cancelQueries({ queryKey: queryKeys.notices });
-      const before = client.getQueryData<NoticeList>(queryKeys.notices);
-      if (before !== undefined) client.setQueryData(queryKeys.notices, withRead(before, input));
-      return { before };
+  return useMutation<{ ok: true }, ApiRequestError, NoticesMarkReadInput, { before: NoticeList | undefined }>(
+    {
+      mutationFn: (input) => cmd("notices.markRead", input, { reason: "Owner read the bell" }),
+      onMutate: async (input) => {
+        await client.cancelQueries({ queryKey: queryKeys.notices });
+        const before = client.getQueryData<NoticeList>(queryKeys.notices);
+        if (before !== undefined) client.setQueryData(queryKeys.notices, withRead(before, input));
+        return { before };
+      },
+      onError: (_error, _input, context) => {
+        if (context?.before !== undefined) client.setQueryData(queryKeys.notices, context.before);
+      },
+      onSettled: () => client.invalidateQueries({ queryKey: queryKeys.notices }),
     },
-    onError: (_error, _input, context) => {
-      if (context?.before !== undefined) client.setQueryData(queryKeys.notices, context.before);
-    },
-    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.notices }),
-  });
+  );
 }

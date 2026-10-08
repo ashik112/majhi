@@ -19,7 +19,13 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding, queryKeys.notices];
     case "tasks":
-      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda, queryKeys.conversations, queryKeys.notices];
+      return [
+        queryKeys.tasks,
+        queryKeys.decisions,
+        queryKeys.agenda,
+        queryKeys.conversations,
+        queryKeys.notices,
+      ];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":

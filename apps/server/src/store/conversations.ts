@@ -220,7 +220,12 @@ function lastOf(row: Row, name: Lookup): { at: string; line: string } | undefine
   // The writer is named as recorded: a reply the captain sent reads "Captain:", the owner's own "You:".
   const who = row.owner_by === "captain" ? "Captain" : row.owner_by === "majhi" ? "majhi" : "You";
   const owner =
-    row.owner_at === null ? undefined : { at: row.owner_at, line: `${who}: ${oneLine(row.owner_text, storedMentions(row.owner_mentions), name)}` };
+    row.owner_at === null
+      ? undefined
+      : {
+          at: row.owner_at,
+          line: `${who}: ${oneLine(row.owner_text, storedMentions(row.owner_mentions), name)}`,
+        };
   if (agent === undefined) return owner;
   if (owner === undefined) return agent;
   return owner.at > agent.at ? owner : agent;
