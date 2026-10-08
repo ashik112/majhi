@@ -394,7 +394,7 @@ export function Timeline({
                   <DeployPlanCard steps={deploys} change={() => owner?.compose("")} />
                 </li>
               )}
-              {incidentOpen && <IncidentCard view={incident} />}
+              {incidentOpen && <IncidentCard view={incident} task={owner?.task} />}
             </ol>
           </section>
         )}

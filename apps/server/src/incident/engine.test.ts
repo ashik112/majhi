@@ -12,7 +12,7 @@ import { IncidentFacts } from "./facts.ts";
 
 const MIN = 60_000;
 
-function setup(options: { starts?: "captain" | "owner"; projects?: string[]; soakMin?: number } = {}) {
+function setup(options: { projects?: string[]; soakMin?: number } = {}) {
   const store = new Store(":memory:");
   const room = new RoomService(store);
   const clock = { now: new Date("2026-10-08T10:00:00.000Z") };
@@ -109,11 +109,10 @@ function setup(options: { starts?: "captain" | "owner"; projects?: string[]; soa
         return store.tasks.get(id) as Task;
       },
       reopen,
-      attachProject: async () => ({}) as Task,
+      setType: () => undefined,
     },
     deploys: { rollback: async () => undefined },
     projects: async () => projects,
-    starts: async () => options.starts ?? "owner",
     changed: () => undefined,
     now: () => clock.now,
   });
@@ -168,7 +167,7 @@ describe("an incident from each source is a startable task on the right project"
     expect(task.typing?.type).toBe("incident");
     expect(task.kind).toBe("code");
     expect(task.repos.map((r) => r.project)).toEqual(["storefront"]);
-    expect(task.status).toBe("inbox");
+    expect(task.status).toBe("running");
     expect(task.origin).toMatchObject({ kind: "watch", incident: 7 });
 
     const t2 = setup();
@@ -197,24 +196,7 @@ describe("an incident from each source is a startable task on the right project"
     expect(t3.store.tasks.get(fromClient.task)?.repos.map((r) => r.project)).toEqual(["storefront"]);
   });
 
-  it("starts at once when Start is the captain's, else waits as one Start card for the owner", async () => {
-    const captain = setup({ starts: "captain" });
-    const a = await captain.engine.open(watchSource(captain.watchIncident()));
-    expect(a.started).toBe(true);
-    expect(captain.started).toEqual([a.task]);
-
-    const owner = setup({ starts: "owner" });
-    const b = await owner.engine.open(watchSource(owner.watchIncident()));
-    expect(b.started).toBe(false);
-    await owner.engine.sweep();
-    const cards = owner.engine.decisions(() => "Acme");
-    expect(cards.map((c) => c.title)).toEqual([expect.stringContaining(`Start incident ${b.task}`)]);
-    expect(cards[0]?.options.map((o) => o.id)).toEqual(["start"]);
-    await owner.engine.answer("start", b.task, "start");
-    expect(owner.started).toEqual([b.task]);
-  });
-
-  it("with several projects and no evidence of which, asks the owner instead of guessing", async () => {
+  it("a client claim starts its investigation at once, with no project known and the owner holding Start", async () => {
     const t = setup({ projects: ["storefront", "ledger"] });
     const out = await t.engine.open({
       kind: "client",
@@ -226,10 +208,9 @@ describe("an incident from each source is a startable task on the right project"
       facts: [],
     });
     expect(out.projectUnknown).toBe(true);
-    await t.engine.sweep();
-    const card = t.engine.decisions(() => undefined)[0];
-    expect(card?.title).toContain("Which project");
-    expect(card?.options.map((o) => o.id)).toEqual(["storefront", "ledger"]);
+    expect(out.started).toBe(true);
+    expect(t.started).toEqual([out.task]);
+    expect(t.engine.decisions(() => undefined)).toEqual([]);
   });
 });
 
@@ -327,7 +308,7 @@ describe("a paused watch", () => {
 
 describe("a failed deploy", () => {
   it("shows in Needs you with its reason until the owner has seen it", async () => {
-    const t = setup({ starts: "captain" });
+    const t = setup();
     const { task } = await t.engine.open({
       kind: "deploy",
       org: "acme",

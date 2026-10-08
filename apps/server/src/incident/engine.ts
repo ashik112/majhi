@@ -18,8 +18,9 @@ import type { IncidentFacts } from "./facts.ts";
 
 /**
  * The one incident engine. An incident, whether a client said it, a watch fired or a deploy failed, is one ordinary
- * task of type `incident` in its workspace, on the project the evidence points to. It starts the way the workspace's
- * Start row says, and what happens to it afterwards (client updates, the resolution, the report) reads the same recorded
+ * task of type `incident` in its workspace, on the project the evidence points to. It starts its read-only
+ * investigation at once, whatever Auto-pilot and the Start row say (they gate fixing, pushing and telling clients, not
+ * looking), and what happens to it afterwards (client updates, the resolution, the report) reads the same recorded
  * facts. A second report or a firing again joins the incident that is open; it never makes a second one.
  */
 
@@ -50,9 +51,9 @@ export interface OpenResult {
   task: string;
   /** An incident was already open: this report joined it. */
   joined: boolean;
-  /** The task runs now (Start is the captain's) rather than waiting for the owner. */
+  /** The investigation runs now. False only when starting it failed, and the owner's card says Start. */
   started: boolean;
-  /** No project is known yet: the owner is asked which. */
+  /** No project is known yet: the lead reads the workspace's projects and names the one. */
   projectUnknown: boolean;
 }
 
@@ -114,12 +115,11 @@ export interface EngineDeps {
       opts: { by: string; whenSubtasksOpen: "stay"; whenUnshipped: "stay" | "keep" },
     ): Promise<Task>;
     reopen(id: string): Promise<Task>;
-    attachProject(id: string, project: string): Promise<Task>;
+    /** Types a task that was made before it was known to be an incident. */
+    setType(id: string, type: "incident", by: "captain"): unknown;
   };
   deploys: { rollback(id: number, actor: "owner"): Promise<unknown> };
   projects: (org: string) => Promise<EngineProject[]>;
-  /** Who starts work in a workspace now: Auto-pilot on and the Start row on the captain. */
-  starts: (org: string) => Promise<"captain" | "owner">;
   /** A short title written from facts, or undefined (no model, a refusal): the facts' own title stands. */
   title?: ((org: string, facts: string) => Promise<string | undefined>) | undefined;
   changed: () => void;
@@ -128,8 +128,6 @@ export interface EngineDeps {
 
 const DAY_MS = 86_400_000;
 const RECENT_DEPLOY_MS = 6 * 3_600_000;
-/** How many projects a "which project" card lists. */
-const PROJECT_OPTIONS = 8;
 
 const capital = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 const oneLine = (text: string, max: number): string => {
@@ -150,6 +148,13 @@ export function asTitle(answer: string | undefined): string | undefined {
 }
 
 const FIX_LIVE = "Fix live";
+
+/** An incident task: typed one, or made by an incident source and not typed by the owner. */
+function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
+  if (t.typing?.type === "incident") return true;
+  const k = t.origin?.kind;
+  return (k === "watch" || k === "deploy" || k === "client") && t.typing?.by !== "owner";
+}
 
 export class IncidentEngine {
   /** Tasks whose watch went green with nothing shipped and whose owner has not answered yet, as of the last sweep. */
@@ -358,11 +363,8 @@ export class IncidentEngine {
       `opened:${task.id}`,
     );
     await this.adopt(task.id, source);
-    let started = false;
-    if (project !== undefined && (await this.deps.starts(source.org)) === "captain") {
-      started = await this.tryStart(task.id);
-    }
-    await this.refresh(source.org).catch(() => undefined);
+    // The investigation reads only: it never waits for Auto-pilot or the Start row.
+    const started = await this.tryStart(task.id);
     this.deps.changed();
     return { task: task.id, joined: false, started, projectUnknown: project === undefined };
   }
@@ -454,7 +456,7 @@ export class IncidentEngine {
 
   /**
    * What waits for the owner in incidents, as Needs-you decisions. Derived: nothing here is stored twice. One card per
-   * incident: asking the project comes first, then starting it, then the newest failed deploy, then a recovery.
+   * incident: a recovery, then starting it (only when majhi could not), then the newest failed deploy.
    */
   decisions(orgName: (org: string) => string | undefined): OwnerDecision[] {
     const out: OwnerDecision[] = [];
@@ -466,30 +468,13 @@ export class IncidentEngine {
     for (const task of tasks) {
       const org = task.org;
       if (org === undefined) continue;
-      const opened = this.deps.facts.events(task.id).find((e) => e.detail.event === "opened")?.detail;
-      const base = {
+        const base = {
         kind: "incident" as const,
         org,
         task: task.id as TaskId,
         taskTitle: task.title,
         link: { kind: "task" as const, id: task.id as TaskId },
       };
-      const asksProject =
-        task.status === "inbox" &&
-        opened?.event === "opened" &&
-        opened.projectUnknown === true &&
-        task.repos.length === 0;
-      if (asksProject) {
-        out.push({
-          ...base,
-          id: incidentAskDecisionId("project", task.id),
-          title: oneLine(`Which project is this about? ${task.title}`, 280),
-          sentence: `${task.id} is an incident and the evidence does not say which project it is in. Pick the project and majhi starts it the way ${orgName(org) ?? "the workspace"}'s Start row says.`,
-          options: this.projectOptions.get(org) ?? [],
-          at: task.createdAt,
-        });
-        continue;
-      }
       if (this.recovered.has(task.id)) {
         out.push({
           ...base,
@@ -507,12 +492,12 @@ export class IncidentEngine {
       }
       const failed = this.unseenFailedDeploy(task, since);
       const failure = failed === undefined ? "" : ` ${this.deployLine(failed)}`;
-      if (task.status === "inbox" && this.startsBy.get(org) === "owner") {
+      if (task.status === "inbox") {
         out.push({
           ...base,
           id: incidentAskDecisionId("start", task.id),
           title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
-          sentence: `${task.id} waits for you to start it.${failure}`,
+          sentence: `Majhi could not start ${task.id} by itself. Start it when you can.${failure}`,
           options: [{ id: "start", label: "Start", primary: true }],
           at: task.createdAt,
         });
@@ -528,7 +513,7 @@ export class IncidentEngine {
             `${capital(failed.env)} deploy failed${failed.reason === undefined ? "" : `: ${oneLine(failed.reason, 160)}`}`,
             280,
           ),
-          sentence: `${this.deployLine(failed)} ${task.status === "inbox" ? `${task.id} has not started.` : `${task.id} is on it.`}`,
+          sentence: `${this.deployLine(failed)} ${task.id} is on it.`,
           options: canRollBack
             ? [
                 { id: "rollback", label: "Roll back", primary: true },
@@ -560,33 +545,11 @@ export class IncidentEngine {
     return `${d.project} ${d.env} at ${d.commit.slice(0, 7)} ${d.state === "rolled-back" ? "failed and was rolled back" : "failed"}${why}.`;
   }
 
-  /** Who starts work and which projects a workspace has, as of the last sweep: cards are built without waiting. */
-  private startsBy = new Map<string, "captain" | "owner">();
-  private projectOptions = new Map<string, { id: string; label: string; primary?: true }[]>();
-
-  /** What the cards need to know about a workspace, read once so a card is built without waiting. */
-  private async refresh(org: string): Promise<void> {
-    this.startsBy.set(org, await this.deps.starts(org));
-    const projects = await this.deps.projects(org);
-    this.projectOptions.set(
-      org,
-      projects.slice(0, PROJECT_OPTIONS).map((p, i) => ({
-        id: p.id,
-        label: p.name,
-        ...(i === 0 ? { primary: true as const } : {}),
-      })),
-    );
-  }
-
   /** The owner's click on one of the cards above. */
   async answer(what: string, ref: string, option: string): Promise<void> {
     const at = this.at();
     if (what === "start") {
       await this.deps.tasks.start(ref, "owner");
-    } else if (what === "project") {
-      await this.deps.tasks.attachProject(ref, option);
-      const org = this.deps.store.tasks.get(ref)?.org;
-      if (org !== undefined && (await this.deps.starts(org)) === "captain") await this.tryStart(ref);
     } else if (what === "recovered") {
       if (option === "close") {
         this.record(ref, { event: "recovered", choice: "closed", at }, `recovered:${at}`);
@@ -672,20 +635,37 @@ export class IncidentEngine {
   // ---------------------------------------------------------------------------
   // The sweep
 
+  private unfinished(): Task[] {
+    return this.deps.store.tasks.list(false).flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
+  }
+
   /**
-   * One pass: refreshes what the cards need, closes an incident that is Resolved (its fix shipped and its watch stayed
+   * Incident tasks that never started (made by older code, or whose start failed) start their investigation now. A
+   * task an incident source made but that was typed something else is typed an incident first. True when one started.
+   */
+  private async adoptStuck(org: string): Promise<boolean> {
+    let started = false;
+    for (const t of this.unfinished()) {
+      if (t.org !== org || t.status !== "inbox" || !isIncidentTask(t)) continue;
+      if (t.typing?.type !== "incident") this.deps.tasks.setType(t.id, "incident", "captain");
+      if (await this.tryStart(t.id)) started = true;
+    }
+    return started;
+  }
+
+  /**
+   * One pass: closes an incident that is Resolved (its fix shipped and its watch stayed
    * green for the soak), and notes the ones that recovered on their own. Never throws.
    */
   async sweep(): Promise<void> {
     let changed = false;
     const recovered = new Set<string>();
     const orgs = new Set<string>();
-    for (const t of this.deps.store.tasks.list(false)) {
-      if (t.typing?.type === "incident" && t.org !== undefined) orgs.add(t.org);
+    for (const t of this.unfinished()) {
+      if (isIncidentTask(t) && t.org !== undefined) orgs.add(t.org);
     }
     for (const org of orgs) {
       try {
-        await this.refresh(org);
         for (const task of this.openTasks(org)) {
           const read = await this.deps.facts.read(task);
           const result = clientStatus(read.facts);
@@ -705,15 +685,9 @@ export class IncidentEngine {
               whenUnshipped: "keep",
             });
             changed = true;
-          } else if (
-            task.status === "inbox" &&
-            this.startsBy.get(org) === "captain" &&
-            task.repos.length > 0
-          ) {
-            // Start moved to the captain after the task was made: it starts now.
-            if (await this.tryStart(task.id)) changed = true;
           }
         }
+        if (await this.adoptStuck(org)) changed = true;
       } catch {
         // The next pass tries again.
       }

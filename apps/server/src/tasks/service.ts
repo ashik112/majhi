@@ -721,19 +721,6 @@ export class TaskService {
   }
 
   /**
-   * Gives an incident that waits in the inbox with no repo its project, once the owner (or the evidence) says which
-   * one it is about: it becomes a code task, and the project joins the way `addRepo` adds one.
-   */
-  async attachProject(id: string, project: string): Promise<Task> {
-    const task = this.get(id);
-    if (task.status !== "inbox" || task.repos.length > 0) {
-      throw new UserError(`${id} already has its project or has started.`, 409);
-    }
-    this.deps.store.tasks.setKind(id, "code", this.now().toISOString());
-    return this.addRepo({ id, project, byOwner: false });
-  }
-
-  /**
    * The type of a task made without one: the rules' reading of the branch type the creator named, the
    * finding's source or the title, and Laya's pick (recorded on the task) when they say nothing.
    */
@@ -2613,7 +2600,14 @@ export class TaskService {
         409,
       );
     }
-    if (task.kind === "ops") {
+    // An incident that began as a read of the whole workspace becomes code work once its lead names the project.
+    const unscoped =
+      task.kind === "ops" &&
+      task.typing?.type === "incident" &&
+      task.repos.length === 0 &&
+      (task.readMounts ?? []).length === 0;
+    if (unscoped) this.deps.store.tasks.setKind(task.id, "code", this.now().toISOString());
+    if (task.kind === "ops" && !unscoped) {
       throw new UserError(
         `${task.id} is an investigation: it reads repos, it does not branch them. Say which repo to read in the room.`,
         409,
