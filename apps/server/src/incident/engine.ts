@@ -74,6 +74,8 @@ export interface EngineProject {
 }
 
 export interface EngineDeps {
+  /** Stop everything is on: nothing starts. */
+  halted?: () => boolean;
   store: Store;
   facts: IncidentFacts;
   room: Pick<RoomService, "post">;
@@ -150,7 +152,7 @@ export function asTitle(answer: string | undefined): string | undefined {
 const FIX_LIVE = "Fix live";
 
 /** An incident task: typed one, or made by an incident source and not typed by the owner. */
-function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
+export function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
   if (t.typing?.type === "incident") return true;
   const k = t.origin?.kind;
   return (k === "watch" || k === "deploy" || k === "client") && t.typing?.by !== "owner";
@@ -382,6 +384,8 @@ export class IncidentEngine {
   }
 
   private async tryStart(task: string): Promise<boolean> {
+    // Reading is never held, except by Stop everything.
+    if (this.deps.halted?.() === true) return false;
     try {
       await this.deps.tasks.start(task, "majhi");
       return true;
@@ -480,7 +484,7 @@ export class IncidentEngine {
     for (const task of tasks) {
       const org = task.org;
       if (org === undefined) continue;
-        const base = {
+      const base = {
         kind: "incident" as const,
         org,
         task: task.id as TaskId,
@@ -534,7 +538,6 @@ export class IncidentEngine {
             : [{ id: "ack", label: "Got it", primary: true }],
           at: failed.updatedAt,
         });
-        continue;
       }
     }
     return out;

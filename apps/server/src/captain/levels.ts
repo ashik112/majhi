@@ -9,6 +9,7 @@ import {
   type CaptainChore,
   CaptainChoreSchema,
   type CaptainLevel,
+  choreSwitchWhy,
   FULL_ACCESS_KEEPS,
   FULL_ACCESS_NEVER,
   PRIVATE,
@@ -89,25 +90,17 @@ export function shipRulesOf(settings: Pick<AutonomySettings, "orgs">, org: strin
 }
 
 /**
- * What the captain may do now. Autonomous is the single place that decides it: while it is not On,
- * starting, answering, approving, merging and pushing behave as "You decide", whatever a workspace is
- * set to. Upkeep keeps its choice, because it is cheap and runs only the chores in `OFF_CHORES`.
+ * The chores that run in a workspace now (`may.ts` decides): none while Stop everything is on; reacting
+ * chores (ship, cards, questions, memory, cleanup) whatever Auto-pilot says; the scheduled upkeep only while
+ * Auto-pilot is on. Each also needs the row of its own table.
  */
-export function effectiveAuthority(authority: Authority, mode: AutonomyMode): Authority {
-  return mode === "on" ? authority : { ...ALL_ASK, upkeep: authority.upkeep };
-}
-
-/** The only chores that run while Autonomous is not On: memory review and cleaning up done tasks. */
-export const OFF_CHORES: readonly CaptainChore[] = ["memory", "cleanup"];
-
-/** The chores that run in a workspace now: all of its table's chores while On, else only `OFF_CHORES`. */
 export function choresNow(
   authority: Authority,
-  mode: AutonomyMode,
+  world: { mode: AutonomyMode; stopped?: boolean | undefined },
   rules: readonly ShipRule[] = [],
 ): readonly CaptainChore[] {
-  const chores = choresOf(authority, rules);
-  return mode === "on" ? chores : chores.filter((chore) => OFF_CHORES.includes(chore));
+  const switches = { autopilot: world.mode, stopped: world.stopped === true };
+  return choresOf(authority, rules).filter((chore) => choreSwitchWhy(switches, chore) === undefined);
 }
 
 /** The saved form after a change to some rows: the rows from `authorityOf`, with the change on top. */

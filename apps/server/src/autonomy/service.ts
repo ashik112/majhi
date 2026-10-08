@@ -24,6 +24,7 @@ import {
   type AutonomyWaiting,
   type Budget,
   type BudgetAsk,
+  type CaptainPolicy,
   type CapUse,
   type CommandMeta,
   type CommandName,
@@ -33,12 +34,18 @@ import {
   detectSecrets,
   type GitLoginsResult,
   isCaptainLane,
+  type Job,
+  jobOfStart,
   lifecycle,
   type MachineReading,
+  may,
+  mayWork,
   PRIVATE,
   type QueueItem,
   type RoomItem,
+  restOf,
   type Spend,
+  STOPPED_WHY,
   TASKS_AT_ONCE,
   type Task,
   type TaskId,
@@ -58,7 +65,8 @@ import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
 import { answerFor, coveredForTask, permissionVerdict, widenedNote } from "../captain/permission-rules.ts";
-import { restWhy, typingWhy } from "../captain/rules.ts";
+import { captainPolicyOf } from "../captain/policy.ts";
+import { typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -76,7 +84,7 @@ import { ancestorsOf } from "../tasks/planner.ts";
 import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
-import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
+import { addDays, dayStart, defaultTimeZone, localDay, validZone, zoneOr } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
 import {
@@ -119,6 +127,9 @@ import { evaluateWaits, waitProblem } from "./waits.ts";
 
 /** Who the pause is credited to: the labels read "Paused when Auto-pilot was turned off". */
 const OFF_BY = "autonomy-off";
+/** The hold scope that marks a task Stop everything paused. */
+const HALTED = "halted";
+const HALT_WHY = "Stop everything was pressed.";
 
 const OFF_WHY =
   "Auto-pilot was turned off, so this task paused. Resume it, or turn Auto-pilot on and resume the tasks it paused.";
@@ -127,6 +138,8 @@ const OFF_WHY =
 export const SWEEP_MS = 60_000;
 
 export interface AutonomyDeps {
+  /** Stop everything is on: the captain starts and does nothing. Absent: never. */
+  halted?: () => boolean;
   store: Store;
   config: ConfigService;
   tasks: TaskService;
@@ -179,7 +192,7 @@ export interface AutonomyDeps {
 /** What the service tells the driver (part B, `driver.ts`). */
 export interface DriverHooks {
   /** For one workspace, or every workspace where the captain starts work when `org` is absent. */
-  wake(line: string, org?: string, kind?: "news" | "soft"): void;
+  wake(line: string, org?: string, kind?: "news" | "soft", job?: Job): boolean;
   onMode(mode: AutonomyMode): void;
   fire(org: string): Promise<void>;
   loopEnded(task: string): void;
@@ -266,6 +279,11 @@ export class AutonomyService {
     return this.repo.state().mode;
   }
 
+  /** The owner pressed Stop everything: the captain does nothing until it is pressed again. */
+  halted(): boolean {
+    return this.deps.halted?.() === true;
+  }
+
   /** The autonomy chat from before lanes, when it is still there. Readable; nothing wakes it. */
   chat(): string | undefined {
     const chat = this.repo.state().chat;
@@ -288,19 +306,11 @@ export class AutonomyService {
   }
 
   /**
-   * The workspaces where the captain has a lane to think in: where it decides when work starts, and
-   * where it does upkeep while the owner starts work (it hears of findings, follow-ups and review there
-   * and files proposals; its rows still limit what it does).
+   * The workspaces where the captain has a lane to think in: all of them. It reacts to what comes in
+   * everywhere, whoever decides when work starts there; its rows limit what it does.
    */
   async thinksIn(): Promise<string[]> {
-    const [sections, settings] = await Promise.all([
-      this.deps.config.sections(),
-      this.deps.config.settings(),
-    ]);
-    return workspaceIds(sections.orgs).filter((org) => {
-      const a = authorityOf(settings.autonomy, org);
-      return a.start === "decide" || a.upkeep === "decide";
-    });
+    return workspaceIds((await this.deps.config.sections()).orgs);
   }
 
   /** The lanes' chats that exist now. */
@@ -315,37 +325,50 @@ export class AutonomyService {
 
   /** Why the workspace is at rest (hours, a freeze), or undefined. The captain resumes by itself when it ends. */
   async restingWhy(org: string): Promise<string | undefined> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const rules = settings.orgs[org];
-    return restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz));
+    return restOf(await this.policy(org), this.now());
   }
 
   /**
-   * Why nobody looked at this workspace's alerts, in the owner's words, or undefined when the captain is listening:
-   * Auto-pilot off, no captain deciding or doing upkeep here, a rest, or the day's cap.
+   * Whether the captain starts a task that came in (a fix task a lead opened, a finding turned into a task): the
+   * Start line, Stop everything and the hours, and never Auto-pilot, because it is a reaction.
    */
-  async quietWhy(org: string): Promise<string | undefined> {
-    if (this.repo.state().mode !== "on") return "Auto-pilot is off";
-    if (!(await this.thinksIn()).includes(org))
-      return "Start and Upkeep are You here, so the captain is not listening";
-    const rest = await this.restingWhy(org);
-    if (rest !== undefined) return `The captain rests: ${rest}`;
-    if (this.dayCapped()) return "the day's spend cap is reached";
-    return undefined;
+  async mayStartReacting(org: string): Promise<boolean> {
+    return may(await this.policy(org), { now: this.now() }, { job: "reacting", act: "start" }, askedWhy).ok;
+  }
+
+  /** The workspace's policy for `may`: its rows, hours and freezes, and the two live switches. */
+  private async policy(org: string): Promise<CaptainPolicy> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    return captainPolicyOf(settings, org, {
+      name: await this.orgName(org),
+      autopilot: this.repo.state().mode,
+      stopped: this.halted(),
+    });
   }
 
   /**
-   * The lane a tick goes to, while the mode is on and the workspace is where the captain starts work. When the
-   * lane's chat was removed or closed, majhi makes or reopens it first and says so in the feed.
-   * Undefined: the mode is not on, the workspace does not run, or there is no captain.
+   * Why nobody looked at this workspace's alerts, in the owner's words, or undefined when the captain is listening.
+   * Only Stop everything keeps it from looking: an incident is read-only work, so Auto-pilot, the rows, the hours
+   * and the day's cap do not hold it.
    */
-  async laneChat(org: string): Promise<string | undefined> {
-    if (this.repo.state().mode !== "on") return undefined;
-    if (!(await this.thinksIn()).includes(org)) return undefined;
-    // Outside the workspace's hours or on a freeze date the captain is not woken there.
-    const settings = (await this.deps.config.settings()).autonomy;
-    const rules = settings.orgs[org];
-    if (restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz)) !== undefined) return undefined;
+  async quietWhy(_org: string): Promise<string | undefined> {
+    return this.halted() ? STOPPED_WHY : undefined;
+  }
+
+  /**
+   * The lane a tick goes to, for a reaction (the default) or for backlog news. A reaction goes to any workspace
+   * whatever Auto-pilot, the rows and the hours say. Backlog news needs Auto-pilot on, a workspace where the captain
+   * starts work or does upkeep, and no rest. When the lane's chat was removed or closed, majhi makes or reopens it
+   * first and says so in the feed. Undefined: Stop everything is on, nothing waits for this job, or there is no captain.
+   */
+  async laneChat(org: string, job: Job = "reacting"): Promise<string | undefined> {
+    if (mayWork({ autopilot: this.repo.state().mode, stopped: this.halted() }, job).ok !== true)
+      return undefined;
+    if (job === "backlog") {
+      const policy = await this.policy(org);
+      if (policy.authority.start !== "decide" && policy.authority.upkeep !== "decide") return undefined;
+      if (restOf(policy, this.now()) !== undefined) return undefined;
+    }
     const before = this.deps.lanes.chat(org);
     const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
     const boss = await this.bossId();
@@ -399,8 +422,8 @@ export class AutonomyService {
   }
 
   /** A line on why the captain should look again: it goes into the next tick of that workspace's lane, or every lane. */
-  private wake(line: string, org?: string, kind: "news" | "soft" = "news"): void {
-    this.driver?.wake(line, org, kind);
+  private wake(line: string, org?: string, kind: "news" | "soft" = "news", job: Job = "backlog"): boolean {
+    return this.driver?.wake(line, org, kind, job) ?? false;
   }
 
   /** Sends a lane's waiting wakes now, without the wait that batches them. */
@@ -418,10 +441,11 @@ export class AutonomyService {
 
   /**
    * A news line for a workspace's lane from outside the autonomy service: a finding, a project card.
-   * Every workspace's lane hears of it, whoever decides when work starts there.
+   * Every workspace's lane hears of it, whoever decides when work starts there. False: nobody was told
+   * (Stop everything is on), so the caller must not mark the work as sent.
    */
-  news(line: string, org: string): void {
-    this.wake(line, org, "news");
+  news(line: string, org: string): boolean {
+    return this.wake(line, org, "news", "reacting");
   }
 
   /**
@@ -1405,6 +1429,18 @@ export class AutonomyService {
     input: Record<string, unknown>,
     reason: string,
   ): Promise<string | undefined> {
+    if (this.halted() && commands[command].risk !== "read") {
+      this.event({
+        kind: "refused",
+        text: `${summarize(command, input)}: ${STOPPED_WHY}`,
+        task: caller.task,
+        agent: caller.agent,
+        command,
+        outcome: "refused",
+        ...this.orgOfTask(caller.task),
+      });
+      return `Refused: ${STOPPED_WHY}.`;
+    }
     const call = { command, input, reason, ...pushOf(await this.shipPlanFor(command, input)) };
     // A read passes nothing between orgs: only the text limits apply, and no org's files are read.
     // In a lane a read still stays in the lane's workspace: another workspace's task or project is refused.
@@ -1547,7 +1583,7 @@ export class AutonomyService {
     });
     const marked = touched.find((t) => t.noAutonomy === true);
     if (marked !== undefined) {
-      return `Refused: the owner marked ${marked.id} Not for Auto-pilot, so Auto-pilot leaves it alone.`;
+      return `Refused: the owner marked ${marked.id} Not for the captain, so the captain leaves it alone.`;
     }
     // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
     if (command === "tasks.start") {
@@ -1558,12 +1594,28 @@ export class AutonomyService {
     if (group === "tasks" || group === "team" || starts) {
       // Starting work needs the start row. Any other change to a task needs the captain to start work or do upkeep there.
       const rows: readonly AuthorityRow[] = starts ? ["start"] : ["upkeep", "start"];
-      // Full access: the owner lets the captain act here even while Auto-pilot is off.
       const outside =
         settings.orgs[org]?.fullAccess === true
           ? undefined
-          : authorityProblem(authorityOf(settings, org), state.mode, rows, org, names);
+          : authorityProblem(authorityOf(settings, org), rows, org, names);
       if (outside !== undefined) return `Refused: ${outside}.`;
+    }
+    if (starts) {
+      // Picking a task from the backlog is backlog work: it needs Auto-pilot. A reaction (an incident, a finding, a fix task) does not.
+      const target = touched.find((t) => t.id === str(input.id));
+      const job: Job = command === "tasks.start" && target !== undefined ? jobOfStart(target) : "reacting";
+      const work = mayWork({ autopilot: state.mode, stopped: this.halted() }, job);
+      if (!work.ok) return `Refused: ${work.why}.`;
+      // Hours and freeze dates hold a start, as they hold every change.
+      const rest = restOf(
+        captainPolicyOf(settings, org, {
+          name: orgName(org, names),
+          autopilot: state.mode,
+          stopped: this.halted(),
+        }),
+        this.now(),
+      );
+      if (rest !== undefined) return `Refused: ${orgName(org, names)} is resting: ${rest}.`;
     }
     // "More rules": the AI tools the work it starts here may run on.
     const providers = settings.orgs[org]?.providers;
@@ -1926,7 +1978,7 @@ export class AutonomyService {
     reason: string,
     done: { ok: boolean; error?: string | undefined },
   ): void {
-    if (commands[command].risk === "read" || this.repo.state().mode === "off") return;
+    if (commands[command].risk === "read") return;
     this.shipRan(caller, command, input, reason, done);
     this.event({
       kind: "decision",
@@ -1990,6 +2042,8 @@ export class AutonomyService {
     this.wake(
       `${caller.task}: left for the owner: ${summary}`,
       this.deps.store.tasks.get(caller.task)?.org ?? PRIVATE,
+      "news",
+      "reacting",
     );
   }
 
@@ -2427,11 +2481,12 @@ export class AutonomyService {
     }
     const authority =
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
-    // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.
-    if (mode === "off") return fail("Auto-pilot is off, so the captain acts only when you ask.");
-    if (command === "autonomy.answer" && mode !== "on") {
-      return fail(`Auto-pilot is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
-    }
+    // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`).
+    const work = mayWork(
+      { autopilot: mode, stopped: this.halted() },
+      command === "autonomy.plan" ? "backlog" : "reacting",
+    );
+    if (!work.ok) return fail(`${work.why}.`);
     const refused = await this.refusal(caller, command, input, reason);
     if (refused !== undefined) return fail(refused);
     if (command === "autonomy.plan") {
@@ -2762,9 +2817,10 @@ export class AutonomyService {
         percent: 0,
         reached: false,
       };
-      const rules = settings.orgs[org];
       const hold = capHoldFor(holds, org);
-      const rest = hold?.text ?? restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz));
+      const rest =
+        hold?.text ??
+        restOf(captainPolicyOf(settings, org, { name: org, autopilot: "on", stopped: false }), this.now());
       out.push({
         org,
         name: org === PRIVATE ? "Private" : (m.names[org] ?? org),
@@ -3078,10 +3134,22 @@ export class AutonomyService {
   }
 
   /**
-   * Why a workspace's lane rests now: the day budget is used, the workspace's own budget is used, or
-   * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.
+   * The spend caps for one job, the only place they are read for background and lane work: the monthly ceiling,
+   * the day budget, the workspace's own budget and the account's floor. Backlog work stops at a cap and gets its
+   * line. A reaction (an incident, a client's chat, the wiki answers and triage they rely on) goes on past it, and
+   * the owner is told once per cap per day. Undefined: it may run.
    */
-  async laneRest(org: string, account: string): Promise<string | undefined> {
+  async laneRest(org: string, account: string, job: Job = "backlog"): Promise<string | undefined> {
+    const rest = await this.capWhy(org, account);
+    if (rest === undefined || job === "backlog") return rest;
+    this.deps.tell?.(
+      `cap-passed:${rest}:${localDay(this.now(), zoneOr((await this.deps.config.settings()).autonomy.tz))}`,
+      `${await this.orgName(org)}: ${rest}. Incidents and client chats keep going. Everything else waits.`,
+    );
+    return undefined;
+  }
+
+  private async capWhy(org: string, account: string): Promise<string | undefined> {
     const ceiling = this.deps.ceilingHeld?.();
     if (ceiling !== undefined) return ceiling;
     const m = await this.measure();
@@ -3093,15 +3161,33 @@ export class AutonomyService {
     return held === undefined ? undefined : `${account} is ${lowerFirst(held.why)}`;
   }
 
-  /** The old "Stop the captain": the same as turning Autonomous off and pausing its tasks. */
-  async stopNowForCaptain(): Promise<void> {
-    if (this.repo.state().mode === "off") return;
-    await this.stopNow();
+  /**
+   * Stop everything was pressed (the flag is the captain's, `captain_state.stopped`): the captain's turns in
+   * every lane end and the tasks it drives pause. Auto-pilot's switch is untouched. Tasks the owner started keep
+   * their own controls.
+   */
+  async haltNow(): Promise<void> {
+    await Promise.all(
+      this.laneChats().map((chat) => this.deps.tasks.cancel(chat, undefined).catch(() => undefined)),
+    );
+    const targets = this.openTasks().filter((task) => this.stoppable(task) || this.deps.runs.inTurn(task.id));
+    const results = await Promise.all(
+      targets.map((task) => this.deps.tasks.stop(task.id, "owner", HALT_WHY, OFF_BY).catch(() => undefined)),
+    );
+    for (const done of results) if (done?.status === "paused") this.repo.hold(done.id, "owner", HALTED);
+    this.deps.events.emit(["autonomy", "tasks"]);
   }
 
-  /** The old "Resume the captain": the same as turning Autonomous on, resuming the tasks it paused. */
-  async startForCaptain(): Promise<void> {
-    await this.start(true);
+  /** Stop everything was pressed again: the tasks it paused continue while Auto-pilot is on, else they stay the owner's. */
+  async resumeHalt(): Promise<void> {
+    const on = this.repo.state().mode === "on";
+    for (const row of this.repo.tasks()) {
+      if (row.held !== "owner" || row.heldScope !== HALTED) continue;
+      if (on) await this.resumeTask(row.task, "Stop everything was lifted");
+      else this.repo.release(row.task);
+    }
+    this.wake("Stop everything was lifted");
+    this.deps.events.emit(["autonomy", "tasks"]);
   }
 }
 
@@ -3168,19 +3254,7 @@ function instructionId(): string {
   return [...randomBytes(8)].map((b) => ID_ALPHABET[b % ID_ALPHABET.length]).join("");
 }
 
-function validZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The settings' zone, or the server's when it has none or names no real zone. */
-export function zoneOr(tz: string | undefined): string {
-  return tz !== undefined && validZone(tz) ? tz : defaultTimeZone();
-}
+export { zoneOr };
 
 /** When the day's summary is due: `HH:MM` on that local day. */
 export function summaryDue(day: string, clock: string, tz: string): Date {

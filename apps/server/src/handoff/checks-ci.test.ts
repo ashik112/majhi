@@ -60,8 +60,6 @@ function world(over: {
       return over.run(cwd, command);
     },
     review: async () => ({ gaps: [], tokens: 0 }),
-    autonomous: () => false,
-    modelBlocked: () => undefined,
     tell: async () => {},
     hold: () => {},
     changed: () => {},

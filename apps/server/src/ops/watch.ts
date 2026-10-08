@@ -72,7 +72,7 @@ export interface OpsDeps {
   /** Desktop and open tabs. High incidents are never held for quiet hours: that is this port's rule to keep. */
   notify: (n: IncidentNotice) => Promise<void>;
   /** Wakes the workspace's captain lane with news. */
-  wake: (org: string, text: string) => void;
+  wake: (org: string, text: string) => boolean;
   orgName: (org: string) => Promise<string>;
   /** The workspace a project belongs to, undefined for none. */
   projectOrg: (project: string) => Promise<string | undefined>;

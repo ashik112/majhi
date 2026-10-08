@@ -11,6 +11,7 @@ import {
   type Fact,
   PRIVATE,
   type RoomItem,
+  restOf,
   type Spend,
 } from "@majhi/shared";
 import { zoneOr } from "../autonomy/service.ts";
@@ -23,12 +24,13 @@ import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";
-import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { authorityOf, choresNow, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
+import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { MEMORY_WAITING, restWhy } from "./rules.ts";
+import { MEMORY_WAITING, pausedToday, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -43,8 +45,10 @@ const TRIGGER_MS = 1_500;
 /** Autonomous mode as the captain needs it: the master switch, its stop, and why a lane rests. */
 export interface AutonomyLink {
   mode(): AutonomyMode;
-  stopNowForCaptain(): Promise<void>;
-  startForCaptain(): Promise<void>;
+  /** Stop everything was pressed: end the captain's turns and pause the tasks it drives. */
+  haltNow(): Promise<void>;
+  /** Stop everything was pressed again. */
+  resumeHalt(): Promise<void>;
   /** Today's spend of the captain and autonomous work in every workspace, read once. */
   orgSpends(): Promise<{ of: (org: string) => Spend; tz: string }>;
 }
@@ -65,6 +69,8 @@ export interface CaptainDeps {
   fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
   cancelTurn: (chat: string) => Promise<void>;
+  /** An action was undone: the trust ladder looks at once. */
+  undone?: () => void;
   /** The org's identity for revert commits. */
   identity: (org: string) => Promise<Identity>;
   /** Runs a command as the owner, for Undo through majhi's own paths. */
@@ -147,12 +153,11 @@ export class CaptainService {
   }
 
   /**
-   * This service closed: nothing of the captain acts. Autonomous being Off is not this: it keeps
-   * memory review and cleanup going (`choresNow`) and stops everything else through the workspace's
-   * authority. The captain's lanes and chats always answer.
+   * This service closed, or the owner pressed Stop everything: nothing of the captain acts. Auto-pilot
+   * being Off is not this: it holds only the backlog work (`may.ts`).
    */
   stopped(): boolean {
-    return this.closed;
+    return this.closed || this.repo.isStopped();
   }
 
   // ---------------------------------------------------------------------------
@@ -211,8 +216,12 @@ export class CaptainService {
     for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
       if (ws === undefined || ws.rest !== undefined) continue;
-      for (const chore of choresNow(ws.authority, ws.mode, ws.rules?.ships)) {
-        if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
+      for (const chore of choresNow(ws.authority, ws, ws.rules?.ships)) {
+        if (
+          this.runner.running(org, chore) ||
+          pausedToday(this.repo.chore(org, chore).offAt, this.now(), ws.tz)
+        )
+          continue;
         const why = this.plays.due(org, chore, ws, {
           any: this.repo.lastRun(org, chore),
           worked: this.repo.lastWorkedRun(org, chore),
@@ -397,15 +406,21 @@ export class CaptainService {
 
   private workspaceOf(org: string, autonomy: AutonomySettings, name: string | undefined): Workspace {
     const rules = autonomy.orgs[org];
-    const tz = zoneOr(rules?.tz ?? autonomy.tz);
     const now = this.now();
-    const rest = restWhy(rules, now, tz);
+    const policy = captainPolicyOf(autonomy, org, {
+      name: name ?? (org === PRIVATE ? "Private" : org),
+      autopilot: this.deps.autonomy.mode(),
+      stopped: this.repo.isStopped(),
+    });
+    const { tz } = policy;
+    const rest = restOf(policy, now);
     const off = this.plays.rulesOff(org);
     return {
       org,
-      name: name ?? (org === PRIVATE ? "Private" : org),
-      mode: this.deps.autonomy.mode(),
-      authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
+      name: policy.name,
+      mode: policy.autopilot,
+      stopped: policy.stopped,
+      authority: policy.authority,
       rules,
       ...(off.length === 0 ? {} : { rulesOff: new Set(off) }),
       tz,
@@ -454,13 +469,17 @@ export class CaptainService {
         ...(paid === undefined || "problem" in paid ? {} : { pays: paid.account }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
-        chores: choresNow(authority, mode, settings.autonomy.orgs[org]?.ships).map((chore) => {
+        chores: choresNow(
+          authority,
+          { mode, stopped: state.stopped },
+          settings.autonomy.orgs[org]?.ships,
+        ).map((chore) => {
           const c = this.repo.chore(org, chore);
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
             ...(this.runner.running(org, chore) ? { running: true as const } : {}),
-            ...(c.offWhy === undefined ? {} : { off: c.offWhy }),
+            ...(c.offWhy === undefined || !pausedToday(c.offAt, this.now(), ws.tz) ? {} : { off: c.offWhy }),
             today: this.repo.actionsToday(org, chore, ws.day),
             ...(last === undefined ? {} : { lastRun: last }),
           };
@@ -468,8 +487,8 @@ export class CaptainService {
       });
     }
     return {
-      // The captain is never stopped; the field stays for older clients. The switch is `autonomy`.
-      stopped: false,
+      stopped: state.stopped,
+      ...(state.stoppedAt === undefined ? {} : { stoppedAt: state.stoppedAt }),
       autonomy: mode,
       ...(sections.boss === undefined ? {} : { captain: sections.boss }),
       day,
@@ -491,20 +510,22 @@ export class CaptainService {
   }
 
   /**
-   * The old "Stop the captain" is now turning Autonomous off and pausing its tasks: every upkeep run
-   * ends at its next step and the lanes' turns end. The captain still answers when spoken to.
+   * Stop everything: every captain run ends at its next step, the lanes' turns end, the tasks the captain
+   * drives pause, and nothing new starts until it is pressed again. Auto-pilot's switch is not touched.
    */
   async stop(): Promise<CaptainStatus> {
     for (const p of this.pending.values()) clearTimeout(p.timer);
     this.pending.clear();
-    if (this.deps.autonomy.mode() !== "off") await this.deps.autonomy.stopNowForCaptain();
+    this.repo.setStopped(true, this.now().toISOString());
     this.deps.events.emit(["captain", "autonomy"]);
+    await this.deps.autonomy.haltNow();
     return this.status();
   }
 
-  /** The old "Resume the captain" is turning Autonomous on, resuming the tasks it paused. */
+  /** Stop everything pressed again: the captain works as its Permissions and Auto-pilot say. */
   async resume(): Promise<CaptainStatus> {
-    await this.deps.autonomy.startForCaptain();
+    this.repo.setStopped(false, this.now().toISOString());
+    await this.deps.autonomy.resumeHalt();
     this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
   }
@@ -598,6 +619,8 @@ export class CaptainService {
     }
     this.repo.markUndone(id, this.now().toISOString());
     this.deps.events.emit(["captain"]);
+    // The owner took the action back: the ladder drops its line to You and says so now, not at the next sweep.
+    this.deps.undone?.();
     const after = this.repo.action(id) ?? action;
     return { action: publicAction(after), detail };
   }

@@ -3,7 +3,9 @@ import {
   type AutonomySettings,
   type DeployEnvironment,
   deployStepOf,
+  mayWork,
   PRIVATE,
+  restOf,
   type ShipFacts,
   type ShipSteps,
   shipRuleSubject,
@@ -11,7 +13,7 @@ import {
   type Task,
 } from "@majhi/shared";
 import { authorityOf, askedSentence as rowSentence, shipRulesOf } from "../captain/levels.ts";
-import { restWhy } from "../captain/rules.ts";
+import { captainPolicyOf } from "../captain/policy.ts";
 import type { AreasReader } from "../tasks/areas.ts";
 import { changedLinesOfTask } from "./lines.ts";
 
@@ -54,6 +56,12 @@ export interface ShipPlannerDeps {
   /** Autonomous mode's settings, as saved. */
   settings(): Promise<AutonomySettings>;
   mode(): AutonomyMode;
+  /** Stop everything is on. */
+  halted(): boolean;
+  /** The captain picked this task from the backlog (it is Auto-pilot's), not the owner or something that came in. */
+  backlog(task: string): boolean;
+  /** An incident's own task: working hours do not hold it. */
+  incident(task: Task): boolean;
   areas: Pick<AreasReader, "of" | "forget">;
   /** The environments of a project. A merge or push into the branch of one is a deploy of it. */
   environments(project: string): Promise<readonly DeployEnvironment[]>;
@@ -61,7 +69,6 @@ export interface ShipPlannerDeps {
   needsDeployPlan(task: Task): Promise<boolean>;
   /** Whether every repo the task changes has a token for its host, so its project works through merge requests. */
   viaMergeRequests(task: Task): Promise<boolean>;
-  zone(tz: string | undefined): string;
   now(): Date;
 }
 
@@ -92,19 +99,21 @@ export class ShipPlanner {
     const org = task.org ?? PRIVATE;
     const settings = await this.deps.settings();
     const facts = await this.facts(task);
-    const base = shipSteps(
-      authorityOf(settings, org),
-      shipRulesOf(settings, org),
-      facts,
-      this.deps.mode() === "on",
-    );
+    // Only a backlog task waits for Auto-pilot; the owner's task and a reaction ship by their own lines. A task
+    // marked Not for the captain is never the captain's.
+    const policy = captainPolicyOf(settings, org, {
+      name: org,
+      autopilot: this.deps.mode(),
+      stopped: this.deps.halted(),
+    });
+    const acts =
+      task.noAutonomy !== true && mayWork(policy, this.deps.backlog(task.id) ? "backlog" : "reacting").ok;
+    const base = shipSteps(authorityOf(settings, org), shipRulesOf(settings, org), facts, acts);
     const gate = await this.gate(task, base);
     const { gated } = gate;
     const { steps, waits } = await this.holdForPlan(task, gate.steps);
     const rule = shipRulesOf(settings, org).find((r) => r.id === steps.rule);
-    const rules = settings.orgs[org];
-    const now = this.deps.now();
-    const rest = restWhy(rules, now, this.deps.zone(rules?.tz ?? settings.tz));
+    const rest = this.deps.incident(task) ? undefined : restOf(policy, this.deps.now());
     const way: ShipWay = (await this.deps.viaMergeRequests(task).catch(() => false))
       ? "merge-request"
       : "local";

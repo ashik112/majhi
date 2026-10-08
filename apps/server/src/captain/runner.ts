@@ -11,7 +11,7 @@ import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { FAILURES_OFF, PASS_BOUND } from "./rules.ts";
+import { FAILURES_PAUSE, PASS_BOUND, pausedToday } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -26,9 +26,11 @@ import { FAILURES_OFF, PASS_BOUND } from "./rules.ts";
 export interface Workspace {
   org: string;
   name: string;
-  /** Autonomous now: only memory and cleanup run while it is not On. */
+  /** Auto-pilot now: the scheduled upkeep runs only while it is On. */
   mode: AutonomyMode;
-  /** Who decides each row now (Autonomous applied: all "ask" but upkeep while it is not On). */
+  /** Stop everything is on. */
+  stopped?: boolean | undefined;
+  /** Who decides each row, as saved. */
   authority: Authority;
   rules: AutonomyOrg | undefined;
   tz: string;
@@ -192,14 +194,14 @@ export class ChoreRun {
       await a.onFail?.(error).catch(() => undefined);
       this.deps.changed?.();
       const failures = this.deps.repo.failed(this.org, this.chore);
-      if (failures >= FAILURES_OFF) {
+      if (failures >= FAILURES_PAUSE) {
         const why = `${failures} failures in a row, the last: ${error}`;
         this.deps.repo.turnOff(this.org, this.chore, at, why);
         this.deps.tellOwner(
           this.org,
-          `${this.ws.name}: the captain turned "${CHORE_LABEL[this.chore]}" off after ${why}. Turn it on again on the Captain page.`,
+          `${this.ws.name}: "${CHORE_LABEL[this.chore]}" failed ${failures} times in a row (${why}). It tries again tomorrow.`,
         );
-        throw new RunEnd("failed", `turned off after ${failures} failures in a row`);
+        throw new RunEnd("failed", `paused until tomorrow after ${failures} failures in a row`);
       }
       return "failed";
     }
@@ -254,7 +256,7 @@ export class ChoreRun {
   private async recheck(a: ActInput): Promise<string | undefined> {
     if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
     const now = await this.deps.workspace(this.org);
-    if (now === undefined || !choresNow(now.authority, now.mode, now.rules?.ships).includes(this.chore)) {
+    if (now === undefined || !choresNow(now.authority, now, now.rules?.ships).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
     if (now.rest !== undefined) throw new RunEnd("rested", now.rest);
@@ -347,16 +349,15 @@ export class ChoreRunner {
     try {
       const ws = await deps.workspace(org);
       if (ws === undefined) return no("There is no such workspace, or no captain yet.");
-      if (!choresNow(ws.authority, ws.mode, ws.rules?.ships).includes(chore)) {
+      if (!choresNow(ws.authority, ws, ws.rules?.ships).includes(chore)) {
         return no(`${CHORE_LABEL[chore]} is not on in ${ws.name}. Turn upkeep on in Delegation.`);
       }
       if (deps.enabled?.(org, chore) === false) {
         return no(`${CHORE_LABEL[chore]} is turned off in ${ws.name}. Turn it on in Playbooks.`);
       }
       if (ws.rest !== undefined) return no(`${ws.name} is resting: ${ws.rest}`);
-      const off = deps.repo.chore(org, chore).offAt;
-      if (off !== undefined)
-        return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
+      if (pausedToday(deps.repo.chore(org, chore).offAt, deps.now(), ws.tz))
+        return no(`${CHORE_LABEL[chore]} failed twice in a row and tries again tomorrow.`);
       const at = deps.now().toISOString();
       const id = deps.repo.openRun({ org, chore, day: ws.day, at, trigger: why });
       if (id === undefined) return no(`${CHORE_LABEL[chore]} is already running here.`);
@@ -388,12 +389,12 @@ export class ChoreRunner {
         status = "failed";
         note = errorMessage(err);
         const failures = deps.repo.failed(run.org, run.chore);
-        if (failures >= FAILURES_OFF) {
+        if (failures >= FAILURES_PAUSE) {
           const why = `${failures} failures in a row, the last: ${note}`;
           deps.repo.turnOff(run.org, run.chore, deps.now().toISOString(), why);
           deps.tellOwner(
             run.org,
-            `${run.ws.name}: the captain turned "${CHORE_LABEL[run.chore]}" off after ${why}. Turn it on again on the Captain page.`,
+            `${run.ws.name}: "${CHORE_LABEL[run.chore]}" failed ${failures} times in a row (${why}). It tries again tomorrow.`,
           );
         }
       }

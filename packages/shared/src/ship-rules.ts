@@ -96,16 +96,18 @@ export interface ShipSteps {
 const who = (choice: "decide" | "ask"): Who => (choice === "decide" ? "captain" : "owner");
 
 /**
- * Who does each step, for a task. `authority` is the workspace's rows as saved. While Autonomous is not
- * On the captain does none of them, whatever a row or a rule says, so every step is the owner's.
+ * Who does each step, for a task. `authority` is the workspace's rows as saved. `captainActs` is the
+ * answer of `mayWork` for this task's job: when the captain may not act at all (Stop everything, or a
+ * backlog task while Auto-pilot is off) every step is the owner's, whatever a row or a rule says.
+ * Otherwise each step reads only its own line.
  */
 export function shipSteps(
   authority: Authority,
   rules: readonly ShipRule[],
   facts: ShipFacts,
-  autonomous: boolean,
+  captainActs: boolean,
 ): ShipSteps {
-  if (!autonomous) {
+  if (!captainActs) {
     return {
       merge: "owner",
       push: "owner",

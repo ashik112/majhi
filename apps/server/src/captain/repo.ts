@@ -147,10 +147,19 @@ export class CaptainRepo {
     };
   }
 
+  /** Stop everything is on. Read once, then kept in step by `setStopped`: every gate asks it. */
+  isStopped(): boolean {
+    this.stoppedNow ??= this.state().stopped;
+    return this.stoppedNow;
+  }
+
+  private stoppedNow: boolean | undefined;
+
   setStopped(stopped: boolean, at: string): void {
     this.db
       .prepare("UPDATE captain_state SET stopped = ?, stopped_at = ? WHERE id = 1")
       .run(stopped ? 1 : 0, stopped ? at : null);
+    this.stoppedNow = stopped;
   }
 
   /** The day the owner was last told the summaries. False when that day was told already. */
@@ -560,7 +569,11 @@ export class CaptainRepo {
   }
 
   succeeded(org: string, chore: CaptainChore): void {
-    this.db.prepare("UPDATE captain_chores SET failures = 0 WHERE org = ? AND chore = ?").run(org, chore);
+    this.db
+      .prepare(
+        "UPDATE captain_chores SET failures = 0, off_at = NULL, off_why = NULL WHERE org = ? AND chore = ?",
+      )
+      .run(org, chore);
   }
 
   turnOff(org: string, chore: CaptainChore, at: string, why: string): void {

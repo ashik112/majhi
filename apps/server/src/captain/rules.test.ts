@@ -1,12 +1,12 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
+import { choresNow, choresOf, migratePickOrgs } from "./levels.ts";
 import { branchAllowed, providerAllowed, restWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
 describe("the authority table per workspace", () => {
-  it("acts only while Autonomous is on", () => {
+  it("runs reacting chores whatever Auto-pilot says, the scheduled upkeep only while it is on, and nothing under Stop everything", () => {
     const all: Authority = {
       ...ALL_ASK,
       start: "decide",
@@ -17,14 +17,11 @@ describe("the authority table per workspace", () => {
       push: "decide",
       own: "decide",
     };
-    expect(effectiveAuthority(all, "on")).toEqual(all);
-    // Not On: everything is "You decide" except upkeep, which keeps its choice (memory and cleanup only).
+    expect(choresNow(all, { mode: "on" })).toEqual(choresOf(all));
     for (const mode of ["off", "paused", "stopping"] as const) {
-      expect(effectiveAuthority(all, mode)).toEqual({ ...ALL_ASK, upkeep: "decide" });
-      expect(effectiveAuthority({ ...all, upkeep: "ask" }, mode)).toEqual(ALL_ASK);
-      expect(choresNow(all, mode)).toEqual(["memory", "cleanup"]);
+      expect(choresNow(all, { mode })).toEqual(["ship", "cards", "questions", "memory", "cleanup"]);
     }
-    expect(choresNow(all, "on")).toEqual(choresOf(all));
+    expect(choresNow(all, { mode: "on", stopped: true })).toEqual([]);
   });
 
   it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {

@@ -1,4 +1,4 @@
-import type { WikiAskOutput, WikiSource } from "@majhi/shared";
+import type { Job, WikiAskOutput, WikiSource } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
 import { BadReply, type Housekeeper, parseJson } from "../memory/housekeeper.ts";
@@ -70,7 +70,7 @@ export interface WikiAskDeps {
   /** Ids of a workspace's registered projects. */
   projects: (org: string) => Promise<readonly string[]>;
   /** Why the workspace's budget has no room, or undefined. */
-  rest: (org: string) => Promise<string | undefined>;
+  rest: (org: string, job?: Job) => Promise<string | undefined>;
   /** Why no model can answer for the workspace, or undefined. */
   unavailable: (org: string) => Promise<string | undefined>;
 }
@@ -91,7 +91,12 @@ export class WikiAsk {
 
   constructor(private readonly deps: WikiAskDeps) {}
 
-  async answer(org: string, project: string | undefined, question: string): Promise<WikiAskOutput> {
+  async answer(
+    org: string,
+    project: string | undefined,
+    question: string,
+    job: Job = "backlog",
+  ): Promise<WikiAskOutput> {
     const projects = await this.deps.projects(org);
     if (project !== undefined && !projects.includes(project)) {
       throw new UserError(`"${project}" is not a project of workspace "${org}".`, 404);
@@ -100,7 +105,7 @@ export class WikiAsk {
     const key = JSON.stringify([org, project ?? null, wordsOf(question), this.built(org, scope)]);
     const cached = this.cache.get(key);
     if (cached !== undefined) return cached;
-    const run = this.compute(org, project, scope, question);
+    const run = this.compute(org, project, scope, question, job);
     this.cache.set(key, run);
     if (this.cache.size > CACHE_ENTRIES) {
       const oldest = this.cache.keys().next().value;
@@ -130,16 +135,17 @@ export class WikiAsk {
     project: string | undefined,
     scope: readonly string[],
     question: string,
+    job: Job,
   ): Promise<WikiAskOutput> {
     const query = searchWords(question);
     const passages = await this.passages(org, scope, query);
     if (passages.length === 0) return { answer: NOT_IN_WIKI, sources: [], pages: [], found: false };
     const unavailable = await this.deps.unavailable(org);
     if (unavailable !== undefined) throw new UserError(unavailable, 409);
-    const rest = await this.deps.rest(org);
+    const rest = await this.deps.rest(org, job);
     if (rest !== undefined) throw new UserError(rest, 409);
     const { value } = await this.deps.housekeeper
-      .ask({ id: `wiki:${org}:ask`, org, project }, prompt(question, passages), (text) =>
+      .ask({ id: `wiki:${org}:ask`, org, project, job }, prompt(question, passages), (text) =>
         parseJson(text, ReplySchema),
       )
       .catch((err: unknown) => {
