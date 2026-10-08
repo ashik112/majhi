@@ -118,8 +118,27 @@ async function tracked(req: PushRequest, tip: string | undefined): Promise<void>
   );
 }
 
+/** The host git asked a login for, from its "could not read Username for 'https://host'" line. */
+function loginHost(message: string): string | undefined {
+  const marker = "could not read Username for '";
+  const at = message.indexOf(marker);
+  if (at === -1) return undefined;
+  const quoted = message.slice(at + marker.length).split("'")[0] ?? "";
+  try {
+    return new URL(quoted).host;
+  } catch {
+    return undefined;
+  }
+}
+
 function asPush(err: unknown): PushProblem {
   if (err instanceof GitError) {
+    const host = loginHost(err.message);
+    if (host !== undefined) {
+      return new PushProblem(
+        `majhi has no git login for ${host}. Open Connections, sign in to ${host} for this workspace, then ship again.`,
+      );
+    }
     const denied = isSshAuthFailure(err.message);
     return new PushProblem(
       denied

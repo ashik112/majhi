@@ -128,6 +128,8 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  const [askMention, setAskMention] = useState(false);
+  const [skipMention, setSkipMention] = useState(false);
   const draft = { title, details };
   const deferred = useDeferredValue(typedText(draft));
   const parseCtx = useMemo(
@@ -159,6 +161,11 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
 
   function submit(start: boolean) {
     if (!ready || sending.current) return;
+    // The words name a project and none is picked: ask once, with one click, before it becomes a chat task.
+    if (chosen.length === 0 && mentioned.length > 0 && !skipMention) {
+      setAskMention(true);
+      return;
+    }
     sending.current = true;
     setSendingStart(start);
     setFailure(undefined);
@@ -429,6 +436,33 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
                   </span>
                 </div>
               ))}
+            {askMention && chosen.length === 0 && mentioned.length > 0 && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-amber-line bg-amber-wash px-2.5 py-1.5 text-sm"
+              >
+                <span className="text-fg">{mentioned.join(", ")} named in the text. Add to the task?</span>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => {
+                    setPicked([...picked, ...mentioned]);
+                    setAskMention(false);
+                  }}
+                >
+                  Add {mentioned.join(", ")}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSkipMention(true);
+                    setAskMention(false);
+                  }}
+                >
+                  No project
+                </Button>
+              </div>
+            )}
             {mentioned.length > 0 && (
               <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
                 Mentioned:
