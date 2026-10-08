@@ -24,6 +24,7 @@ import type { ChatHistory } from "./history.ts";
 import type { IncidentChoice } from "./incidents.ts";
 import { writeOutcome } from "./outcome.ts";
 import type { ClientReplies, ReplyResult } from "./replies.ts";
+import type { ChatWork } from "./work.ts";
 
 /**
  * The captain's first look at a message from a client, through the findings flow: the message is filed as a finding
@@ -66,6 +67,10 @@ export interface TriageDeps {
     /** The answer to "any update?" from the incident's derived status, or nothing when no open incident is linked. */
     answer(room: string): Promise<{ text: string; flags: ReplyFlags } | undefined>;
   };
+  /** What a request or a question the wiki cannot answer becomes: a task that starts at once. */
+  work: Pick<ChatWork, "begin">;
+  /** Told before each read: a budget cap is reached or not. A client chat goes on past it and the owner hears of it once. */
+  pastCap?: ((org: string) => Promise<void>) | undefined;
   /** The captain's History: one line for each thing it does for a client. */
   history?: ChatHistory | undefined;
   /** True when the text tries to instruct an agent. Such a message is only read by the owner. */
@@ -359,6 +364,7 @@ export class ClientTriage {
     }
     const rest = await this.deps.rest(org);
     if (rest !== undefined) throw new Error(rest);
+    await this.deps.pastCap?.(org).catch(() => undefined);
     const incidents = this.deps.incidents(org, room.id);
     const linked = this.deps.incident.linked(room.id);
     const prompt = [
@@ -367,8 +373,8 @@ export class ClientTriage {
       addressed
         ? "The message names our bot or answers one of its messages, so it is addressed to the team: it is never ignored."
         : "",
-      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question the team's wiki can answer), ask (a person must decide), clarify (the report is too vague to act on: it says something is wrong without saying what), attach (it reports an incident already listed, or says a resolved one is still broken or back), update (it asks for news, like "any update?"${linked ? ", and an incident is linked to this chat" : ", and no incident is linked to this chat"}), task (new work or a new problem to look into).`,
-      `{"action": "...", "reason": "one short sentence", "incident": "<id of the listed incident it belongs to, or null>", "outage": true if it is a new problem that is down or failing for the client right now}`,
+      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question: the wiki answers it, or the team looks it up), ask (only the owner can decide it: money, a contract, scope the owner's rules forbid, another client's data, or something the captain has no permission for. Everything else is answer, clarify or task), clarify (the report is too vague to act on: it says something is wrong without saying what), attach (it reports an incident already listed, or says a resolved one is still broken or back), update (it asks for news, like "any update?"${linked ? ", and an incident is linked to this chat" : ", and no incident is linked to this chat"}), task (new work or a new problem to look into).`,
+      `{"action": "...", "reason": "one short sentence; for ask, exactly what the owner must decide", "incident": "<id of the listed incident it belongs to, or null>", "outage": true if it is a new problem that is down or failing for the client right now}`,
       incidents.length === 0
         ? "Incidents: none."
         : `Incidents:\n${incidents.map((i) => `- ${i.id}${i.resolved === true ? " (resolved)" : ""}: ${clip(i.title, 120)}`).join("\n")}`,
@@ -456,8 +462,15 @@ export class ClientTriage {
     const waits = (why: string): Promise<ClientOutcome> | ClientOutcome =>
       addressed ? acknowledge(why) : { state: "waits", why };
     /** The captain did something with it (attached, proposed a task, opened an incident). */
-    const handled = (why: string, task?: string): Promise<ClientOutcome> | ClientOutcome =>
-      addressed ? acknowledge(why, task) : { state: "handled", why, ...(task === undefined ? {} : { task }) };
+    const handled = (
+      why: string,
+      task?: string,
+      work?: "look" | "request",
+    ): Promise<ClientOutcome> | ClientOutcome => {
+      const more = work === undefined ? {} : { work };
+      if (!addressed) return { state: "handled", why, ...(task === undefined ? {} : { task }), ...more };
+      return Promise.resolve(acknowledge(why, task)).then((out) => ({ ...out, ...more }));
+    };
     switch (decision.action) {
       case "clarify":
         return clarify(decision.reason, false);
@@ -520,12 +533,26 @@ export class ClientTriage {
             found.task,
           );
         }
-        const { task } = await this.deps.findings.toTask(finding, { kind: "captain", org });
-        return handled(`Proposed a task: ${task}`, task);
+        const made = await this.deps.work.begin(room, item, finding, "request", readable(room, item));
+        return handled(
+          made.started ? `Started task ${made.task}` : `Made task ${made.task}, it waits for Start`,
+          made.task,
+          "request",
+        );
       }
       case "answer": {
         const wiki = await this.deps.wiki(org, readable(room, item).slice(0, 1000));
-        if (!wiki.found) return waits("The wiki does not cover it");
+        if (!wiki.found) {
+          // The wiki cannot answer: the captain looks into it, read only, and the answer comes back to this chat.
+          const made = await this.deps.work.begin(room, item, finding, "look", readable(room, item));
+          return handled(
+            made.started
+              ? `The wiki does not cover it. Looking into it: ${made.task}`
+              : `The wiki does not cover it. ${made.task} waits for Start`,
+            made.task,
+            "look",
+          );
+        }
         const written = await this.write(org, room, item, wiki.answer);
         const sent = await this.deps.replies.captain({
           room: room.id,
@@ -554,7 +581,7 @@ export class ClientTriage {
   }
 
   /** The reply, written from the wiki's answer alone, with what it says of itself. */
-  private async write(
+  async write(
     org: string,
     room: RoomRow,
     item: Extract<RoomItem, { type: "client" }>,

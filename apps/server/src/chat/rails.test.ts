@@ -178,6 +178,7 @@ describe("the triage step", () => {
       rest: async () => undefined,
       incidents: () => [],
       incident: { linked: () => false, answer: async () => undefined },
+      work: { begin: async () => ({ task: "LOCAL-9", started: true }) },
     } as unknown as TriageDeps;
     return {
       w,
@@ -213,7 +214,7 @@ describe("the triage step", () => {
       attack,
     );
     const { out } = await t.run();
-    // The wiki does not cover it, so the answer path asks the owner. Nothing was sent, nothing created.
+    // The wiki does not cover it, so the captain looks into it. Nothing was sent to the client.
     expect(out?.action).toBe("answer");
     expect(t.w.sent).toEqual([]);
     expect(t.toTask).not.toHaveBeenCalled();
@@ -264,6 +265,7 @@ describe("a message addressed to the bot", () => {
       rest: async () => undefined,
       incidents: () => [],
       incident: { linked: () => false, answer: async () => undefined },
+      work: { begin: async () => ({ task: "LOCAL-9", started: true }) },
       ...extra,
     } as unknown as TriageDeps;
     return {

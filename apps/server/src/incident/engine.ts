@@ -149,23 +149,31 @@ export function asTitle(answer: string | undefined): string | undefined {
 
 const FIX_LIVE = "Fix live";
 
-/** An incident task: typed one, or made by an incident source and not typed by the owner. */
+/** An incident task: typed one, or opened by a watch or a deploy. A client's request is a task with a client origin, not an incident. */
 function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
   if (t.typing?.type === "incident") return true;
   const k = t.origin?.kind;
-  return (k === "watch" || k === "deploy" || k === "client") && t.typing?.by !== "owner";
+  return (k === "watch" || k === "deploy") && t.typing?.by !== "owner";
 }
+
+/** Client claims made before this date were ops tasks with no type: they are incidents. Every later incident is typed when it opens. */
+const UNTYPED_CLIENT_INCIDENTS_BEFORE = "2026-10-08T12:00:00.000Z";
 
 /**
  * An incident that never started: typed incident, or opened by a watch or a deploy, or the old client-claim
  * incident (an ops task with no repo). A client's request proposed as a task is none of these and stays put.
  */
-function isStuckIncident(t: Pick<Task, "typing" | "origin" | "kind" | "repos">): boolean {
+function isStuckIncident(t: Pick<Task, "typing" | "origin" | "kind" | "repos" | "createdAt">): boolean {
   if (t.typing?.type === "incident") return true;
   if (t.typing?.by === "owner") return false;
   const k = t.origin?.kind;
   if (k === "watch" || k === "deploy") return true;
-  return k === "client" && t.kind === "ops" && t.repos.length === 0;
+  return (
+    k === "client" &&
+    t.kind === "ops" &&
+    t.repos.length === 0 &&
+    t.createdAt < UNTYPED_CLIENT_INCIDENTS_BEFORE
+  );
 }
 
 export class IncidentEngine {
@@ -480,7 +488,7 @@ export class IncidentEngine {
     for (const task of tasks) {
       const org = task.org;
       if (org === undefined) continue;
-        const base = {
+      const base = {
         kind: "incident" as const,
         org,
         task: task.id as TaskId,

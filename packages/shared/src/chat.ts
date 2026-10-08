@@ -120,6 +120,11 @@ export const ClientOutcomeSchema = z.strictObject({
   claim: z.literal(true).optional(),
   /** A question went out asking the client for what is missing. */
   asked: z.literal(true).optional(),
+  /**
+   * The task it started answers back to this chat: `look` (a question the wiki could not answer, answered when the read-only
+   * look is ready) or `request` (work, answered when it is done). `told`: the answer went back.
+   */
+  work: z.enum(["look", "request", "told"]).optional(),
 });
 export type ClientOutcome = z.infer<typeof ClientOutcomeSchema>;
 

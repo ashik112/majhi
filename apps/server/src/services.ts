@@ -2615,7 +2615,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const out = await wikiAsk.answer(org, undefined, question);
       return { answer: out.answer, found: out.found };
     },
-    rest: async (org) => (await wikiUnavailable(org)) ?? (await wikiRest(org)),
+    rest: wikiUnavailable,
+    cap: wikiRest,
     findings,
     watch: {
       incident: (id) => opsWatch?.incident(id),
@@ -2633,6 +2634,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await tasks.reopen(task);
     },
     askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
+    createTask: (input) => tasks.create(input),
+    events,
+    startTask: async (task) => void (await tasks.start(task, "majhi")),
+    tellTask: (task, text) => tasks.postFromScheduler({ task, text, from: "chat" }),
     history: ({ text, org, task }) =>
       void autonomy.event({ kind: "decision", text, org, ...(task === undefined ? {} : { task: task as TaskId }) }),
     decisions,
