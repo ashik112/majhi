@@ -536,7 +536,10 @@ function AgentMessage({
   return (
     <article aria-label={captain ? "Captain" : `@${item.agent}`} className="flex gap-2.5">
       {captain ? (
-        <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full border border-line-control text-fg-muted">
+        <span
+          aria-hidden="true"
+          className="grid size-6 shrink-0 place-items-center rounded-full border border-line-control text-fg-muted"
+        >
           <Anchor className="size-3.5" />
         </span>
       ) : (

@@ -2,7 +2,7 @@ import type { Task, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { RoomService } from "../room/service.ts";
 import { Store } from "../store/index.ts";
-import { bossWorld, type BossWorld } from "../testing/boss.ts";
+import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 /** A task row for the store: the fields a room read looks at, the rest as any task. */
 function task(id: string, org: string, patch: Partial<Task> = {}): Task {
@@ -62,8 +62,7 @@ describe("one home: the captain's lines about a task stay in their workspace", (
     say("ACM-1", "a2", "Plain thread talk in acme");
     say("GLX-1", "g1", "Plain thread talk in globex");
 
-    const texts = (t: Task) =>
-      room.snapshot(t).items.flatMap((i) => (i.type === "agent" ? [i.text] : []));
+    const texts = (t: Task) => room.snapshot(t).items.flatMap((i) => (i.type === "agent" ? [i.text] : []));
     const get = (id: string) => store.tasks.get(id) as Task;
     expect(texts(get("ACM-2"))).toEqual(["Added the connection to ACM-2"]);
     expect(texts(get("GLX-2"))).toEqual([]);
@@ -79,7 +78,11 @@ describe("one home: the captain never joins a task's team", () => {
   it("keeps the captain off the team when a worker hands work or mentions it", async () => {
     w = await bossWorld({ real: false });
     await w.addRepo("api");
-    const made = await w.h.cmd("tasks.create", { text: "fix api", start: false, repos: [{ project: "acme-api" }] });
+    const made = await w.h.cmd("tasks.create", {
+      text: "fix api",
+      start: false,
+      repos: [{ project: "acme-api" }],
+    });
     const id = made.body.id as string;
     const { coordinator, tasks } = w.h.majhi.services;
     // The handoff tool: refused or turned into a wake of the lane, never a team change.

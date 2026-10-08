@@ -1488,7 +1488,10 @@ export class TaskService {
     const task = this.get(id);
     // The captain speaks from its workspace lane and never joins a task's team on an agent's say-so.
     if (options.by !== undefined && agent === this.deps.config.knownBoss())
-      throw new UserError(`The captain does not join a task's team. Ask it in the lane: ${id} shows what it says.`, 409);
+      throw new UserError(
+        `The captain does not join a task's team. Ask it in the lane: ${id} shows what it says.`,
+        409,
+      );
     const state = this.deps.store.tasks.roomState(id);
     const removed = state.removed ?? [];
     if (options.by !== undefined && removed.includes(agent))

@@ -11,8 +11,8 @@ import {
   type TaskId,
 } from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
-import type { CaptainHears } from "../captain/hears.ts";
 import type { AgentStore } from "../agents/store.ts";
+import type { CaptainHears } from "../captain/hears.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
@@ -389,7 +389,10 @@ export class RoomCoordinator {
       // Never joins the team: the workspace lane hears it, tagged with this task, and answers there.
       const heard = await this.deps.hears?.hear(task, { kind: "agent", id: caller.agent }, text);
       if (heard === undefined || !heard.heard)
-        throw new UserError(`The captain could not take it now${heard === undefined ? "" : `: ${heard.why}`}.`, 409);
+        throw new UserError(
+          `The captain could not take it now${heard === undefined ? "" : `: ${heard.why}`}.`,
+          409,
+        );
       return "Sent to the captain. Its answer shows in the task. You can end your turn; it does not join your team.";
     }
     if (!task.team.includes(to)) task = await this.deps.tasks.addToTeam(task.id, to, { by: caller.agent });

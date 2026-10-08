@@ -1,7 +1,7 @@
 import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
 import { BarChart3, History, ShieldCheck } from "lucide-react";
-import { Menu } from "@/components/ui/menu";
 import { Lamp } from "@/components/ui/lamp";
+import { Menu } from "@/components/ui/menu";
 import { Segmented } from "@/components/ui/segmented";
 import { useAutonomousSwitch } from "@/features/autonomy/switch";
 import { cn } from "@/lib/cn";
@@ -99,7 +99,12 @@ export function CaptainHeader({
               onSelect: onPermissions,
               disabled: captain === undefined,
             },
-            { group: "Captain", label: "Results", icon: <BarChart3 aria-hidden="true" />, onSelect: onResults },
+            {
+              group: "Captain",
+              label: "Results",
+              icon: <BarChart3 aria-hidden="true" />,
+              onSelect: onResults,
+            },
             {
               group: "Captain",
               label: "History",
@@ -109,7 +114,14 @@ export function CaptainHeader({
             },
             ...(chip === undefined
               ? []
-              : [{ group: "Captain", label: chip.text, icon: <Lamp state="needs" size={6} />, onSelect: onSummary }]),
+              : [
+                  {
+                    group: "Captain",
+                    label: chip.text,
+                    icon: <Lamp state="needs" size={6} />,
+                    onSelect: onSummary,
+                  },
+                ]),
           ]}
         />
       </div>

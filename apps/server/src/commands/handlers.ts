@@ -19,7 +19,6 @@ import type { z } from "zod";
 import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
-import { isRootChat } from "../captain/tell.ts";
 import { sameRule } from "../admin/policy.ts";
 import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
@@ -27,6 +26,7 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
+import { isRootChat } from "../captain/tell.ts";
 import { chatHandlers } from "../chat/handlers.ts";
 import { incidentHandlers } from "../chat/incident-handlers.ts";
 import { resolvePath } from "../config/load.ts";
@@ -1481,14 +1481,24 @@ export function createHandlers({
     "memory.list": async (input) => services.memory.list(input),
     "memory.add": async (input, ctx) => services.memory.add(input, await resolveActor(services, ctx.meta)),
     "memory.edit": async (input, ctx) =>
-      services.memory.edit(input.id, { text: input.text, scope: input.scope }, await resolveActor(services, ctx.meta)),
-    "memory.approve": async (input, ctx) => services.memory.approve(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.reject": async (input, ctx) => services.memory.reject(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.forget": async (input, ctx) => services.memory.forget(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.undo": async (input, ctx) => services.memory.undo(input.event, await resolveActor(services, ctx.meta)),
+      services.memory.edit(
+        input.id,
+        { text: input.text, scope: input.scope },
+        await resolveActor(services, ctx.meta),
+      ),
+    "memory.approve": async (input, ctx) =>
+      services.memory.approve(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.reject": async (input, ctx) =>
+      services.memory.reject(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.forget": async (input, ctx) =>
+      services.memory.forget(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.undo": async (input, ctx) =>
+      services.memory.undo(input.event, await resolveActor(services, ctx.meta)),
     "memory.extract": async (input) => services.extraction.extract(input.task),
-    "memory.promote": async (input, ctx) => services.promotion.promote(input.id, await resolveActor(services, ctx.meta)),
-    "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, await resolveActor(services, ctx.meta)),
+    "memory.promote": async (input, ctx) =>
+      services.promotion.promote(input.id, await resolveActor(services, ctx.meta)),
+    "memory.pin": async (input, ctx) =>
+      services.memory.pin(input.id, input.pinned, await resolveActor(services, ctx.meta)),
     "memory.events": async (input) => services.memory.events(input),
     "memory.approveAll": async (input, ctx) => ({
       count: services.memory.decideAll("approve", input.ids, await resolveActor(services, ctx.meta)),

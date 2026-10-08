@@ -13,9 +13,9 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { AppMark } from "@/features/clients/app-mark";
 import { shortAgo } from "@/features/tasks/schedule";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { type KindFilter, setChatFilter, useChatFilter } from "@/lib/chat-filter";
 import { useNewChat } from "@/lib/chat-queries";
-import { useCaptainStatus } from "@/lib/captain-queries";
 import { useUnlinkChat } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import {
@@ -83,11 +83,7 @@ export function ConversationList({
   const rows = useMemo(
     () =>
       visibleConversations(list.data ?? [], { ...filter, tab }, query, all, new Set(history)).filter(
-        (row) =>
-          !(
-            row.unlinked === true &&
-            newChats.some((n) => n.app === row.app && n.title === row.title)
-          ),
+        (row) => !(row.unlinked === true && newChats.some((n) => n.app === row.app && n.title === row.title)),
       ),
     [list.data, filter, tab, query, all, history, newChats],
   );

@@ -90,7 +90,11 @@ export function Conversation({ className, page = false }: { className?: string; 
               key={t.org}
               label={t.name}
               selected={t.org === org}
-              lamp={(t.thread === "idle" ? t.urgent : t.thread) === "idle" ? undefined : THREAD_LAMP[t.thread === "idle" ? t.urgent : t.thread]}
+              lamp={
+                (t.thread === "idle" ? t.urgent : t.thread) === "idle"
+                  ? undefined
+                  : THREAD_LAMP[t.thread === "idle" ? t.urgent : t.thread]
+              }
               hint={t.thread === "waiting" ? waitingWord(t) : `The captain's thread in ${t.name}`}
               onSelect={() => setTab(wsTab(t.org))}
             />

@@ -165,7 +165,10 @@ export function Composer({
   const addressed = task ? addressedAgent(text, task.team) : undefined;
   // On a task's page the captain is the default recipient; an @mention of an agent still addresses that agent.
   const toCaptain =
-    task !== undefined && task.kind !== "chat" && addressed === undefined && [...index.values()].some((a) => a.isBoss);
+    task !== undefined &&
+    task.kind !== "chat" &&
+    addressed === undefined &&
+    [...index.values()].some((a) => a.isBoss);
   // One action in one place: Stop while the agent works and the box is empty, else Send.
   const stops = busy && !hasContent;
 
@@ -386,12 +389,12 @@ export function Composer({
               toCaptain
                 ? "Message the captain about this task"
                 : focused
-                ? busy
-                  ? "Enter queues, Shift Enter new line, Esc stops"
-                  : "Enter sends, Shift Enter new line, @ mention, / commands"
-                : task?.kind === "chat" && addressed
-                  ? `Message @${addressed}`
-                  : "Talk to the room"
+                  ? busy
+                    ? "Enter queues, Shift Enter new line, Esc stops"
+                    : "Enter sends, Shift Enter new line, @ mention, / commands"
+                  : task?.kind === "chat" && addressed
+                    ? `Message @${addressed}`
+                    : "Talk to the room"
             }
             spellCheck={false}
             onChange={(event) => {

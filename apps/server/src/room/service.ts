@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type AgentLive, PRIVATE, type ProcessInfo, type RoomItem, type RoomServerMessage, type Task, type TaskId } from "@majhi/shared";
+import {
+  type AgentLive,
+  PRIVATE,
+  type ProcessInfo,
+  type RoomItem,
+  type RoomServerMessage,
+  type Task,
+  type TaskId,
+} from "@majhi/shared";
 import { z } from "zod";
 import { redactDeep } from "../connections/redact.ts";
 import type { RoomPayload, Store } from "../store/index.ts";

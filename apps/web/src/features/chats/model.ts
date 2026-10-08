@@ -48,8 +48,7 @@ export function workspaceOf(row: Conversation, all: readonly Workspace[]): Works
 
 /** A row's name: a captain thread is the workspace's captain, an untitled agent chat is a new chat. */
 export function rowTitle(row: Conversation, workspace: string): string {
-  if (row.kind === "captain")
-    return `Captain in ${workspace}`;
+  if (row.kind === "captain") return `Captain in ${workspace}`;
   return row.kind === "agent" ? chatTitle(row) : row.title;
 }
 

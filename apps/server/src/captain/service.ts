@@ -9,8 +9,8 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
-  type Job,
   type Fact,
+  type Job,
   PRIVATE,
   type RoomItem,
   restOf,
@@ -22,7 +22,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { type ChorePlaybooks, DefaultChorePlays } from "../playbooks/chore-plays.ts";
 import type { Store } from "../store/index.ts";
-import { addDays, localDay } from "../usage/ranges.ts";
+import { localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";

@@ -1,11 +1,11 @@
 import type { IncidentView, Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { useIncident } from "@/lib/incident-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTasks } from "@/lib/task-queries";
-import { cn } from "@/lib/cn";
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -14,7 +14,10 @@ function formatClock(iso: string): string {
 /** The goal in one line: the first paragraph of the brief, else the title. */
 function goalOf(task: Pick<Task, "brief" | "title">, brief: string): string {
   const first = brief.split("\n\n")[0]?.trim() ?? "";
-  const line = (first === "" ? task.title : first).split("\n").map((s) => s.trim()).join(" ");
+  const line = (first === "" ? task.title : first)
+    .split("\n")
+    .map((s) => s.trim())
+    .join(" ");
   return line.length > 220 ? `${line.slice(0, 217)}...` : line;
 }
 

@@ -15,7 +15,8 @@ export function useLaneRedirect(task: Task | undefined): boolean {
   const status = useCaptainStatus().data;
   // Both sessions of a workspace are its one thread.
   useEffect(() => {
-    if (lane && status !== undefined) void navigate({ to: PAGE_PATH.captain, search: { thread: org }, replace: true });
+    if (lane && status !== undefined)
+      void navigate({ to: PAGE_PATH.captain, search: { thread: org }, replace: true });
   }, [lane, status, org, navigate]);
   return lane;
 }

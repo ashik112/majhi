@@ -3,24 +3,27 @@ import {
   type AllowRule,
   AUTONOMY_BOSS_COMMANDS,
   type AutonomyMode,
+  actorOfName,
   CAPTAIN_PROPOSALS,
   CHAT_BRIEF,
   type CommandMeta,
   type CommandName,
   type ConnectionTestResult,
   commands,
+  didWords,
   effectiveMode,
   IdSchema,
   isDestructiveCommand,
   McpInstallResultSchema,
+  OWNER,
   PERMISSION_COMMANDS,
   PRIVATE,
   type RoomItem,
   type ShipFix,
   scriptProblem,
   type TaskId,
+  TaskIdSchema,
 } from "@majhi/shared";
-import { actorOfName, didWords, OWNER, TaskIdSchema } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";

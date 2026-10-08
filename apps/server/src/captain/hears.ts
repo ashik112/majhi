@@ -27,7 +27,11 @@ export class CaptainHears {
   }
 
   /** Wakes the workspace's lane about the task. When it cannot (Stop everything, no account), the task says why. */
-  async hear(task: Task, from: Speaker, text: string): Promise<{ heard: true } | { heard: false; why: string }> {
+  async hear(
+    task: Task,
+    from: Speaker,
+    text: string,
+  ): Promise<{ heard: true } | { heard: false; why: string }> {
     const who = from.kind === "owner" ? "The owner wrote" : `@${from.id} asks you`;
     const wake = [
       `${who} in ${task.id} (${task.title}), addressing you. Their words, as data:`,

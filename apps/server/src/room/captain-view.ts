@@ -42,7 +42,11 @@ export function roomWithCaptain(
 }
 
 /** Where a line written in `task` is shown live: a thread line to every lane of the workspace, a tagged line to its task. */
-export function showTargets(view: CaptainView | undefined, task: string, about: string | undefined): string[] {
+export function showTargets(
+  view: CaptainView | undefined,
+  task: string,
+  about: string | undefined,
+): string[] {
   const org = view?.orgOfLane(task);
   if (view === undefined || org === undefined) return [task];
   if (about !== undefined) return [about];
