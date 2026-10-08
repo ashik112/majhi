@@ -1,11 +1,13 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { call, HostUnreachable, num, str } from "../gitConnect/http.ts";
+import { envKeys } from "./git.ts";
 import {
   apiScheme,
   type DeployContext,
   DeployProblem,
   type DeployProvider,
   type ProviderDeps,
+  type RepoRef,
   type RunHandle,
   type RunProgress,
 } from "./types.ts";
@@ -370,4 +372,35 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       return { id: String(id), url: str(started.body, "web_url") };
     },
   };
+}
+
+/**
+ * The keys a GitLab CI/CD variable sets, read as a .env file. Only the names leave this function: the
+ * value is never returned, logged or kept.
+ */
+export async function gitlabVariableKeys(
+  deps: ProviderDeps,
+  org: string,
+  repo: RepoRef,
+  name: string,
+): Promise<{ keys: string[] } | { problem: string }> {
+  if (repo.provider !== "gitlab") return { problem: `${repo.slug} is not on GitLab` };
+  const got = await deps.credentials.git(org, repo.host, "gitlab");
+  if ("problem" in got) return { problem: got.problem };
+  const a: Access = {
+    token: got.token,
+    base: `${apiScheme(repo.host)}://${repo.host}/api/v4`,
+    id: encodeURIComponent(repo.slug),
+    slug: repo.slug,
+  };
+  try {
+    const answer = await api(deps, a, `/projects/${a.id}/variables/${encodeURIComponent(name)}`);
+    if (answer.status === 404) return { problem: `GitLab has no variable ${name} in ${repo.slug}` };
+    const value = str(answer.body, "value");
+    if (answer.status !== 200 || value === undefined)
+      return { problem: `GitLab answered ${answer.status} for ${name}` };
+    return { keys: envKeys(value) };
+  } catch (err) {
+    return { problem: err instanceof Error ? err.message : String(err) };
+  }
 }

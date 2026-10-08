@@ -119,6 +119,7 @@ export async function rig(
     git: {
       tip: async () => tip.value,
       whyNoTip: async () => "majhi could not read the project's base branch.",
+      file: async () => undefined,
     },
     repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
     checksConfigured: () => checks.configured,

@@ -1,6 +1,6 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { createGitLabProvider } from "./gitlab.ts";
+import { createGitLabProvider, gitlabVariableKeys } from "./gitlab.ts";
 import type { DeployContext, ProviderDeps } from "./types.ts";
 
 /** A GitLab that holds one pipeline with one manual job, and answers what the provider asks. */
@@ -186,5 +186,37 @@ describe("the gitlab-merge provider", () => {
     expect(has.calls.some((c) => c.path.includes("merge_requests"))).toBe(false);
     const moved = branchHost({ mergeStatus: 409 });
     await expect(moved.provider.start(moved.ctx, mergeStep)).rejects.toThrow("moved past");
+  });
+});
+
+describe("reading an environment's env variable", () => {
+  it("returns the names it sets and never a value", async () => {
+    const fetchFake = (async () =>
+      new Response(
+        JSON.stringify({
+          key: "env_stg",
+          value: "# comment\nAPI_KEY=sk-secret-value\n\nexport DB_URL=postgres://u:p@h/db\n#OFF=1\n",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    const deps: ProviderDeps = {
+      fetch: fetchFake,
+      credentials: {
+        git: async () => ({ token: "gl-token" }),
+        variable: async () => ({ problem: "none" }),
+        ssh: async () => ({ problem: "none" }),
+      },
+      remote: async () => ({ code: 0, output: "" }),
+      sleep: async () => undefined,
+      now: () => new Date(),
+    };
+    const got = await gitlabVariableKeys(
+      deps,
+      "acme",
+      { provider: "gitlab", slug: "acme/storefront", host: "gl.test" },
+      "env_stg",
+    );
+    expect(got).toEqual({ keys: ["API_KEY", "DB_URL"] });
+    expect(JSON.stringify(got)).not.toContain("secret");
   });
 });

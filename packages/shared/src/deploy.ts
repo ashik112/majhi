@@ -35,11 +35,26 @@ export function deployStepOf(tier: DeployTier): Extract<ShipStep, "deployStaging
 /**
  * One environment of a project. `branch`: pushing or merging to it deploys (the host's CI does it).
  * `check`: answers 2xx when the environment is up. A tier that is not named is production.
+ * `envVariable`: the GitLab CI/CD variable that holds the environment's .env file: a planned deploy
+ * names the keys of the release's `.env.example` it lacks (names only, never a value).
  */
 export const DeployEnvironmentSchema = z.object({
   env: EnvNameSchema,
   tier: DeployTierSchema.default("production"),
   branch: LocalBranchSchema.optional(),
+  envVariable: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine(
+      (v) =>
+        [...v].every(
+          (c) => (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "_",
+        ),
+      "Letters, digits and _ only",
+    )
+    .optional(),
   check: z
     .url({ protocol: /^https?$/ })
     .max(500)
