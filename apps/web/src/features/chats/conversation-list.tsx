@@ -15,6 +15,7 @@ import { AppMark } from "@/features/clients/app-mark";
 import { shortAgo } from "@/features/tasks/schedule";
 import { type KindFilter, setChatFilter, useChatFilter } from "@/lib/chat-filter";
 import { useNewChat } from "@/lib/chat-queries";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { useUnlinkChat } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import {
@@ -42,13 +43,12 @@ import { agentEntryOptions } from "./new-chat-options";
 const KINDS: readonly { value: KindFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "client", label: "Clients" },
-  { value: "task", label: "Tasks" },
   { value: "agent", label: "Agents" },
 ];
 
 /**
- * The one list of conversations, newest first: client chats, task rooms, captain threads and agent chats.
- * The Chats page and the chat bubble both draw it, with the same workspace tab and kind filter.
+ * The one list of chats, newest first: client rooms and the owner's own chats (the Captain, agents). No task rows and
+ * no captain threads: those live on the Tasks and Captain pages. The Chats page and the chat bubble both draw it.
  */
 const NO_ROWS: readonly never[] = [];
 
@@ -96,6 +96,7 @@ export function ConversationList({
     [list.data],
   );
   const actions = useRowActions(onDeleted);
+  const captain = useCaptainStatus().data?.captain;
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
       <div className="flex shrink-0 flex-col gap-2 border-b border-line p-2">
@@ -138,6 +139,7 @@ export function ConversationList({
               key={row.id}
               row={row}
               workspace={workspaceOf(row, all)}
+              isCaptain={row.kind === "agent" && row.org === undefined && row.agent === captain}
               active={row.id === selected}
               showKind={filter.kind === "all"}
               now={now}
@@ -203,7 +205,8 @@ function NewChat({ onStarted }: { onStarted: (id: string) => void }) {
   );
 }
 
-function KindIcon({ row }: { row: Conversation }) {
+function KindIcon({ row, isCaptain }: { row: Conversation; isCaptain: boolean }) {
+  if (isCaptain) return <Anchor aria-hidden="true" className="size-4" />;
   if (row.kind === "client" && row.app !== undefined) return <AppMark app={row.app} size={16} />;
   if (row.kind === "agent" && row.agent !== undefined)
     return <AgentAvatar id={row.agent} size={20} decorative />;
@@ -214,6 +217,7 @@ function KindIcon({ row }: { row: Conversation }) {
 function Row({
   row,
   workspace,
+  isCaptain,
   active,
   showKind,
   now,
@@ -222,13 +226,15 @@ function Row({
 }: {
   row: Conversation;
   workspace: Workspace;
+  /** The owner's chat with the captain: it belongs to no workspace, so it has no workspace badge. */
+  isCaptain: boolean;
   active: boolean;
   showKind: boolean;
   now: number;
   onOpen: () => void;
   items: MenuItem[];
 }) {
-  const title = rowTitle(row, workspace.name);
+  const title = isCaptain ? "Captain" : rowTitle(row, workspace.name);
   const unread = row.archived === true ? 0 : row.unread;
   return (
     <div className="group relative">
@@ -242,7 +248,7 @@ function Row({
         )}
       >
         <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-fg-muted">
-          <KindIcon row={row} />
+          <KindIcon row={row} isCaptain={isCaptain} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span
@@ -254,15 +260,17 @@ function Row({
             {title}
           </span>
           <span className="flex min-w-0 items-center gap-1.5">
-            <OrgBadge
-              label={workspace.letters}
-              color={workspace.color}
-              size="xs"
-              className="size-[14px] text-[6px]"
-            />
-            {showKind && (
+            {!isCaptain && (
+              <OrgBadge
+                label={workspace.letters}
+                color={workspace.color}
+                size="xs"
+                className="size-[14px] text-[6px]"
+              />
+            )}
+            {(showKind || isCaptain) && (
               <Badge className="h-4 px-1 text-2xs" data-kind={row.kind}>
-                {KIND_LABEL[row.kind]}
+                {isCaptain ? "Captain" : KIND_LABEL[row.kind]}
               </Badge>
             )}
             {row.unlinked === true && <Badge className="h-4 px-1 text-2xs">Unlinked</Badge>}

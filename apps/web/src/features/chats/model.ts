@@ -53,10 +53,13 @@ export function rowTitle(row: Conversation, workspace: string): string {
   return row.kind === "agent" ? chatTitle(row) : row.title;
 }
 
+/** Chats are client rooms and the owner's own chats (the Captain, agents). Task rooms and captain threads have their own pages. */
+export function isChat(row: Pick<Conversation, "kind">): boolean {
+  return row.kind === "client" || row.kind === "agent";
+}
+
 function kindMatches(row: Conversation, kind: KindFilter): boolean {
-  if (kind === "all") return true;
-  if (kind === "agent") return row.kind === "agent" || row.kind === "captain";
-  return row.kind === kind;
+  return isChat(row) && (kind === "all" || row.kind === kind);
 }
 
 /** What the filter and the search keep, in the list's order (newest first). */
@@ -83,7 +86,7 @@ export function visibleConversations(
 export function unreadByTab(list: readonly Conversation[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const row of list) {
-    if (row.archived === true) continue;
+    if (row.archived === true || !isChat(row)) continue;
     const id = row.org ?? PRIVATE;
     out.set(id, (out.get(id) ?? 0) + row.unread);
     out.set("all", (out.get("all") ?? 0) + row.unread);
