@@ -1,4 +1,4 @@
-import { type AutonomyMode, PRIVATE, type RoomItem, type Task } from "@majhi/shared";
+import { type AutonomyMode, type Job, PRIVATE, type RoomItem, type Task } from "@majhi/shared";
 import { authorityOf } from "../captain/levels.ts";
 import type { EventHub } from "../events/hub.ts";
 import type { RoomService } from "../room/service.ts";
@@ -13,7 +13,9 @@ import type { AutonomyService } from "./service.ts";
  * workspace where the captain starts work when something it should decide happened there. Each lane has its own
  * batch: events are batched for `DEBOUNCE_MS`, at most one tick waits per lane, and while the captain
  * is in a turn in that lane the next tick goes when the turn ends. A tick holds only its workspace's
- * tasks, cards, backlog and spend. Nothing ticks unless the mode is on.
+ * tasks, cards, backlog and spend. A wake is a reaction (a finding, an incident, a card, a task in
+ * review) or backlog news. Reactions go whatever Auto-pilot says; backlog news goes only while it is on.
+ * Nothing ticks while Stop everything is on.
  *
  * A tick carries news only (SPEC 5.18, "Wakes carry news"). Each wake is `news` (a task finished, a
  * finding or backlog task appeared, a cap lifted, an account changed) or `soft` (a stall alarm, a
@@ -71,6 +73,8 @@ interface Lane {
   counts: Map<string, number>;
   /** Lines of the batch that are news. */
   news: Set<string>;
+  /** Lines of the batch that are backlog news: they go only while Auto-pilot is on and under no cap. */
+  backlog: Set<string>;
   /** The facts and the news lines of the last tick, or of the captain's last turn after it. */
   lastFacts: string | undefined;
   lastNews: Set<string>;
@@ -108,6 +112,7 @@ export class AutonomyDriver {
         reasons: [],
         counts: new Map(),
         news: new Set(),
+        backlog: new Set(),
         lastFacts: undefined,
         lastNews: new Set(),
         timer: undefined,
@@ -140,25 +145,27 @@ export class AutonomyDriver {
    * Something the captain should look at happened in a workspace: batched into that lane's next
    * tick. Without a workspace it goes to every lane of a workspace where the captain starts work.
    */
-  wake(line: string, org?: string, kind: WakeKind = "news"): void {
-    if (this.deps.autonomy.mode() !== "on") return;
+  wake(line: string, org?: string, kind: WakeKind = "news", job: Job = "reacting"): boolean {
+    const { autonomy } = this.deps;
+    if (autonomy.halted() || (job === "backlog" && autonomy.mode() !== "on")) return false;
     if (org === undefined) {
       const generation = this.generation;
-      void this.deps.autonomy
-        .runsOrgs()
+      void (job === "backlog" ? autonomy.runsOrgs() : autonomy.thinksIn())
         .then((orgs) => {
-          if (generation !== this.generation || this.deps.autonomy.mode() !== "on") return;
-          for (const o of orgs) this.wakeLane(o, line, kind);
+          if (generation !== this.generation || autonomy.halted()) return;
+          for (const o of orgs) this.wakeLane(o, line, kind, job);
         })
         .catch(() => undefined);
-      return;
+      return true;
     }
-    this.wakeLane(org, line, kind);
+    this.wakeLane(org, line, kind, job);
+    return true;
   }
 
   /** Adds a line to the lane's batch; a line that is there already is counted, not repeated. */
-  private wakeLane(org: string, line: string, kind: WakeKind = "news"): void {
+  private wakeLane(org: string, line: string, kind: WakeKind, job: Job): void {
     const lane = this.lane(org);
+    if (job === "backlog") lane.backlog.add(line);
     if (lane.counts.has(line)) {
       // Seen again: counted, and moved to the end, where the digest shows the newest.
       lane.counts.set(line, (lane.counts.get(line) ?? 0) + 1);
@@ -170,6 +177,7 @@ export class AutonomyDriver {
       for (const dropped of lane.reasons.splice(0, lane.reasons.length - REASONS_MAX)) {
         lane.counts.delete(dropped);
         lane.news.delete(dropped);
+        lane.backlog.delete(dropped);
       }
     }
     if (lane.timer !== undefined || lane.afterTurn) return;
@@ -180,15 +188,38 @@ export class AutonomyDriver {
     lane.timer.unref();
   }
 
-  /** Paused, stopping or off: no tick waits in any lane. */
+  /**
+   * Auto-pilot is not on, or Stop everything is on. Backlog news goes at once; with Stop everything on,
+   * every lane's batch and tick go.
+   */
   onMode(mode: AutonomyMode): void {
-    if (mode === "on") return;
+    if (mode === "on" && !this.deps.autonomy.halted()) return;
     this.generation += 1;
+    const all = this.deps.autonomy.halted();
     for (const lane of this.lanes.values()) {
+      if (all) {
+        clearTimeout(lane.timer);
+        lane.timer = undefined;
+        lane.afterTurn = false;
+        this.clearBatch(lane);
+        continue;
+      }
+      this.dropBacklog(lane);
+    }
+  }
+
+  /** Takes the backlog news out of a batch; reactions stay. */
+  private dropBacklog(lane: Lane): void {
+    for (const line of lane.backlog) {
+      lane.counts.delete(line);
+      lane.news.delete(line);
+      lane.reasons = lane.reasons.filter((r) => r !== line);
+    }
+    lane.backlog.clear();
+    if (lane.reasons.length === 0) {
       clearTimeout(lane.timer);
       lane.timer = undefined;
       lane.afterTurn = false;
-      this.clearBatch(lane);
     }
   }
 
@@ -196,6 +227,7 @@ export class AutonomyDriver {
     lane.reasons = [];
     lane.counts.clear();
     lane.news.clear();
+    lane.backlog.clear();
   }
 
   /**
@@ -221,7 +253,7 @@ export class AutonomyDriver {
     if (this.deps.quiet !== undefined && !this.deps.quiet(task)) return;
     // A queue for a slot, a cap with its question to the owner, or a card for the owner explains it.
     if (this.deps.explained?.(task) !== undefined) return;
-    this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE, "soft");
+    this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE, "soft", "backlog");
   }
 
   /** Sends a lane's batch now, or after the captain's turn there. One send per lane at a time. */
@@ -229,12 +261,13 @@ export class AutonomyDriver {
     const lane = this.lane(org);
     if (lane.sending !== undefined) return lane.sending;
     const { autonomy } = this.deps;
-    if (autonomy.mode() !== "on" || lane.reasons.length === 0) return;
-    // Under the day cap the captain is not woken: only the owner's own messages reach it.
-    if (autonomy.dayCapped()) {
+    if (autonomy.halted()) {
       this.clearBatch(lane);
       return;
     }
+    // Backlog news goes only while Auto-pilot is on and under the day cap. Reactions (an incident, a finding, a card) always go.
+    if (autonomy.mode() !== "on" || autonomy.dayCapped()) this.dropBacklog(lane);
+    if (lane.reasons.length === 0) return;
     lane.sending = this.deliver(org, lane).finally(() => {
       lane.sending = undefined;
     });
@@ -243,10 +276,11 @@ export class AutonomyDriver {
 
   private async deliver(org: string, lane: Lane): Promise<void> {
     // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
-    const chat = await this.deps.autonomy.laneChat(org);
+    const job: Job = lane.reasons.every((r) => lane.backlog.has(r)) ? "backlog" : "reacting";
+    const chat = await this.deps.autonomy.laneChat(org, job);
     if (chat === undefined) {
-      // At rest (working hours, a freeze) the news is kept and delivered when the captain resumes, not lost.
-      if (this.deps.autonomy.mode() === "on" && (await this.deps.autonomy.restingWhy(org)) !== undefined) {
+      // At rest (working hours, a freeze) backlog news is kept and delivered when the captain resumes, not lost.
+      if (job === "backlog" && (await this.deps.autonomy.restingWhy(org)) !== undefined) {
         lane.timer ??= setTimeout(() => {
           lane.timer = undefined;
           void this.fire(org).catch(() => undefined);
@@ -320,6 +354,7 @@ export class AutonomyDriver {
       ...this.deskTasks(org, new Set(status.now.map((t) => t.task))),
       secretRequests: this.secretLines(org),
       starts: authorityOf(status.settings, org).start === "decide",
+      ...(autonomy.mode() === "on" ? {} : { autopilotOff: true }),
       machine: machineOf(autonomy),
     };
     return { input, boss };
@@ -362,7 +397,7 @@ export class AutonomyDriver {
 
   /** After the captain's turn in a lane: the facts as they stand now are what it has seen. */
   private async rebase(org: string, lane: Lane): Promise<void> {
-    if (this.deps.autonomy.mode() !== "on") return;
+    if (this.deps.autonomy.halted()) return;
     const built = await this.build(org, [], false);
     if (built === undefined) return;
     const after = factsKey(built.input);
@@ -455,7 +490,7 @@ export class AutonomyDriver {
         ...(t.org === undefined ? {} : { org: t.org }),
         status: t.status,
       });
-      if (change.wake) this.wake(change.wakeText, t.org ?? PRIVATE);
+      if (change.wake) this.wake(change.wakeText, t.org ?? PRIVATE, "news", "backlog");
     }
     this.learned = true;
   }
@@ -495,7 +530,7 @@ export class AutonomyDriver {
         if (generation !== this.generation || !orgs.includes(org)) return;
         const chat = this.deps.autonomy.laneChats().find((c) => this.deps.autonomy.laneOrg(c) === org);
         if (chat !== undefined && this.deps.runs.working(chat).length > 0) return;
-        this.wake(line, org, "news");
+        this.wake(line, org, "news", "backlog");
       })
       .catch(() => undefined);
   }

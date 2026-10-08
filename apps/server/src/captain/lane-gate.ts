@@ -54,6 +54,7 @@ export class LaneGate {
     // The chore's own decision: who does the merge here, and how the work lands.
     const plan = await this.deps.ports.shipPlan(org, id);
     if (plan.steps.merge !== "captain") return `Refused: ${shipAsked("merge", ws.name, plan)}.`;
+    if (plan.rest !== undefined) return `Refused: ${ws.name} is resting: ${plan.rest}.`;
     if (command === "tasks.merge" && plan.way === "merge-request") {
       return `Refused: ${id} works through merge requests. Open one with tasks.openMrs, and the captain merges it once it is green.`;
     }

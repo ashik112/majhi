@@ -98,6 +98,8 @@ export interface DigestInput {
    * proposals and does upkeep; it starts nothing.
    */
   starts?: boolean | undefined;
+  /** Auto-pilot is off: the lane looks at what came in and starts nothing from the backlog. */
+  autopilotOff?: boolean | undefined;
   /**
    * The owner's computer and majhi's containers, one line (the machine sensor). `busy` is why new
    * work must not start now. Absent: no sensor runs.
@@ -124,6 +126,7 @@ export function factsOf(input: DigestInput): Facts {
   return {
     workspace: input.workspace,
     starts: input.starts,
+    autopilotOff: input.autopilotOff,
     holds: input.holds.map((h) => [h.kind, h.id, h.text, h.until]),
     accounts: input.accounts.map((a) => [a.id, a.org, a.status, a.blocked?.why]),
     instructions: input.instructions.map((i) => i.text),
@@ -333,12 +336,18 @@ function build(input: DigestInput, scale: number): string {
           "none",
         )),
     "",
-    ...(input.starts === false
+    ...(input.autopilotOff === true
       ? [
-          "The owner decides when work starts in this workspace. Do not start tasks here. Use this wake for upkeep: look at findings and follow-ups, file proposals (majhi_findings_toTask makes an inbox task for the owner to approve), and check ship and review. majhi leaves anything else for the owner.",
+          "Auto-pilot is off. Pick nothing from the backlog and make no queue. Use this wake for what came in: look at findings, incidents, follow-ups, ship and review, answer what the rows let you, and file proposals. Each action still follows its own Permissions line.",
         ]
-      : []),
-    "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
+      : input.starts === false
+        ? [
+            "The owner decides when work starts in this workspace. Do not start tasks here. Use this wake for upkeep: look at findings and follow-ups, file proposals (majhi_findings_toTask makes an inbox task for the owner to approve), and check ship and review. majhi leaves anything else for the owner.",
+          ]
+        : []),
+    input.autopilotOff === true
+      ? "Decide what to do about what came in. End your turn when nothing more is needed."
+      : "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
   ];
   return lines.join("\n");
 }

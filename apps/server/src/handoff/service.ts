@@ -201,12 +201,8 @@ export interface HandoffPorts {
   environment?(): string;
   /** The smallest capable model reads the prompt. Rejects when none can. */
   review(task: { id: string; org: string }, prompt: string): Promise<{ gaps: string[]; tokens: number }>;
-  /** Autonomous is on: the captain may send a lead back to work and spend on a review. */
-  autonomous(): boolean;
   /** The owner switched an outcome rule of Ship finished work off in the task's workspace (`ship-checks`). */
   ruleOff?(org: string, rule: string): boolean;
-  /** Why the model may not be used now (the monthly ceiling), or undefined. */
-  modelBlocked(org: string): string | undefined;
   /** Writes to the task's lead as majhi's check. Rejects when the task has no lead to tell. */
   tell(id: string, text: string, failed?: HandoffFailed): Promise<void>;
   /** Puts a line on the task's review card for the owner, or clears the check's line. */
@@ -1234,17 +1230,6 @@ export class HandoffService {
     const notes = freeReview(diff, { brief: task.brief, hasTests });
     const lines = changedLines(diff);
     if (lines < TRIVIAL_LINES) return { by: "code", why: "a small change", notes, tokens: 0 };
-    const quiet = !this.ports.autonomous() && !force;
-    if (quiet) {
-      return {
-        by: "code",
-        why: "the model reads it when Auto-pilot is on or you press Check again",
-        notes,
-        tokens: 0,
-      };
-    }
-    const blocked = this.ports.modelBlocked(task.org);
-    if (blocked !== undefined) return { by: "code", why: blocked, notes, tokens: 0 };
     try {
       const prompt = reviewPrompt(task.brief, diff, patchBudget(lines));
       const { gaps, tokens } = await this.ports.review({ id: task.id, org: task.org }, prompt);

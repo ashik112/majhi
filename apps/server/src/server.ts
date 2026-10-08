@@ -134,6 +134,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       projects: services.projects,
       processes: services.processes,
       handoff: services.handoff,
+      captainStarts: (org) => services.autonomy.mayStartReacting(org ?? "private"),
       ...(services.containers.available()
         ? {
             containers: {

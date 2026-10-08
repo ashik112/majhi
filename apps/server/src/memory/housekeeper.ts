@@ -11,6 +11,7 @@ import {
   type FactKind,
   type FactSource,
   FactTextSchema,
+  type Job,
   type MemoryScope,
   MemoryScopeSchema,
   PRIVATE,
@@ -423,6 +424,8 @@ export interface JobTask {
   id: string;
   org?: string | undefined;
   project?: string | undefined;
+  /** What the call serves. Background work is `backlog` (the default): the spend caps stop it. A reaction (an incident, a client's chat) is not stopped by a cap. */
+  job?: Job | undefined;
 }
 
 /** The tokens and cost of the turns of one session. `costUsd` adds the turns that have a price; `unpriced` counts the rest. */
@@ -508,6 +511,15 @@ export class Housekeeper {
 
   constructor(private readonly deps: HousekeeperDeps) {}
 
+  private room:
+    | ((org: string | undefined, account: string, job: Job) => Promise<string | undefined>)
+    | undefined;
+
+  /** Binds the spend caps once autonomy, which measures the spend, exists: why a job has no room on the account, or undefined. */
+  useRoom(room: (org: string | undefined, account: string, job: Job) => Promise<string | undefined>): void {
+    this.room = room;
+  }
+
   /**
    * Stops it for good: new questions are refused, open sessions are closed, and this resolves once
    * every question in flight has ended, so nothing of it writes to the home afterwards.
@@ -590,6 +602,8 @@ export class Housekeeper {
     job: (session: OpenSession) => Promise<T>,
   ): Promise<{ value: T; agent: string; spent: Spend }> {
     const resolved = await this.resolve(task.org);
+    const full = await this.room?.(task.org, resolved.fm.account, task.job ?? "backlog");
+    if (full !== undefined) throw new UserError(`Not now: ${full}.`, 409);
     try {
       return await this.runResolved(resolved, task, mode, job);
     } catch (err) {

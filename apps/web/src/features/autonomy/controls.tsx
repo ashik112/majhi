@@ -183,7 +183,7 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
         <p className="text-base text-fg-muted text-pretty">
           {stopping
             ? "Its tasks are finishing the step they are on."
-            : "The captain stops starting work, answering and shipping by itself. It still answers when you talk to it, and keeps memory and cleanup going."}
+            : "The captain stops picking work from the backlog and running scheduled upkeep. It still reacts to incidents, findings, questions and finished work, by your Permissions."}
           {working.length > 0 && !stopping && (
             <span className="text-fg-faint"> Working now: {taskList(working)}.</span>
           )}

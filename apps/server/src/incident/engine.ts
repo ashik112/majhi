@@ -74,6 +74,8 @@ export interface EngineProject {
 }
 
 export interface EngineDeps {
+  /** Why a reaction may not start work now (Stop everything), or undefined. */
+  blocked?: () => string | undefined;
   store: Store;
   facts: IncidentFacts;
   room: Pick<RoomService, "post">;
@@ -150,7 +152,7 @@ export function asTitle(answer: string | undefined): string | undefined {
 const FIX_LIVE = "Fix live";
 
 /** An incident task: typed one, or opened by a watch or a deploy. A client's request is a task with a client origin, not an incident. */
-function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
+export function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
   if (t.typing?.type === "incident") return true;
   const k = t.origin?.kind;
   return (k === "watch" || k === "deploy") && t.typing?.by !== "owner";
@@ -390,6 +392,8 @@ export class IncidentEngine {
   }
 
   private async tryStart(task: string): Promise<boolean> {
+    // Reading is never held, except by Stop everything.
+    if (this.deps.blocked?.() !== undefined) return false;
     try {
       await this.deps.tasks.start(task, "majhi");
       return true;
@@ -542,7 +546,6 @@ export class IncidentEngine {
             : [{ id: "ack", label: "Got it", primary: true }],
           at: failed.updatedAt,
         });
-        continue;
       }
     }
     return out;

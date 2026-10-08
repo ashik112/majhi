@@ -23,15 +23,7 @@ const bad = (output = "AssertionError: expected 1 to be 2", ms = 900): ExecResul
 });
 
 /** A world of fake ports, with every call counted. The head moves when a test says the lead committed. */
-function world(
-  over: {
-    commands?: CardCommands;
-    mergeBase?: string;
-    brief?: string;
-    diff?: DiffFacts;
-    autonomous?: boolean;
-  } = {},
-) {
+function world(over: { commands?: CardCommands; mergeBase?: string; brief?: string; diff?: DiffFacts } = {}) {
   const db = new Database(":memory:");
   migrate(db);
   const calls = {
@@ -45,8 +37,6 @@ function world(
     head: "acme-api@aaa111",
     ready: { ok: true, evidence: "committed, merges cleanly into main" } as ReadyResult,
     exec: (_command: string): ExecResult | Promise<ExecResult> => ok(" Tests  42 passed (42)"),
-    autonomous: over.autonomous ?? true,
-    modelBlocked: undefined as string | undefined,
     review: async (): Promise<string[]> => [],
     tellFails: false,
     off: new Set<string>(),
@@ -108,9 +98,7 @@ function world(
       const gaps = await state.review();
       return { gaps, tokens: Math.ceil(prompt.length / 4) };
     },
-    autonomous: () => state.autonomous,
     ruleOff: (_org, rule) => state.off.has(rule),
-    modelBlocked: () => state.modelBlocked,
     tell: async (id, text, failed) => {
       if (state.tellFails) throw new Error("it is paused");
       calls.tell.push({ id, text, failed });
@@ -271,11 +259,13 @@ describe("three strikes", () => {
 describe("the review pass", () => {
   it("the monthly ceiling and a model that fails leave the free notes, and the check still passes", async () => {
     const w = world({ diff: BIG });
-    w.state.modelBlocked = "the monthly ceiling of $50 is reached";
+    w.state.review = async () => {
+      throw new Error("Not now: the monthly ceiling of $50 is reached.");
+    };
     const held = await w.service.ensure("ACM-1", { force: false });
-    expect(held.review).toMatchObject({ by: "code", why: "the monthly ceiling of $50 is reached" });
+    expect(held.review).toMatchObject({ by: "code" });
+    expect(held.review?.why).toContain("the monthly ceiling of $50 is reached");
     expect(held.verdict).toBe("green");
-    w.state.modelBlocked = undefined;
     w.state.review = async () => {
       throw new Error("No Housekeeper: set memory.housekeeper or choose a captain.");
     };
@@ -348,8 +338,8 @@ describe("the full log of a step", () => {
     expect(r.steps.find((s) => s.id === "build")?.log?.lines).toBe(2);
   });
 
-  it("the lead is told where the whole output is, whether or not Autonomous is on", async () => {
-    const w = world({ autonomous: false });
+  it("the lead is told where the whole output is, whatever Auto-pilot says", async () => {
+    const w = world();
     w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
     const r = await w.service.ensure("ACM-1", { force: false });
     expect(w.calls.tell).toHaveLength(1);
@@ -360,7 +350,7 @@ describe("the full log of a step", () => {
   });
 
   it("the owner's switch for sending failures to the lead still keeps the lead from being told", async () => {
-    const w = world({ autonomous: false });
+    const w = world();
     w.state.off.add("ship-checks");
     w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
     await w.service.ensure("ACM-1", { force: false });

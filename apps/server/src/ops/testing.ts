@@ -168,7 +168,10 @@ export function opsWorld(
         world.alerts.push({ id: n.id, severity: n.severity, text: n.text, repeat: n.repeat });
       }),
     } as unknown as Notifier,
-    wake: (org, text) => world.wakes.push({ org, text }),
+    wake: (org, text) => {
+      world.wakes.push({ org, text });
+      return true;
+    },
     incidentTask: async (inc, _subject, _evidence, again) => {
       world.tasks.push({ incident: inc.id, again });
       return { task: "ACM-1", started: false, readOnly: false };

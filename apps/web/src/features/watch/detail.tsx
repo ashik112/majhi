@@ -119,13 +119,7 @@ export function IncidentDetail({
   const thing = incident.title.replace(/^majhi: /, "").replace(/ is failing$/, "");
   const asked = `Incident: ${incident.title}. ${incident.timeline[0]?.text ?? ""} Look into it, fix what you can, and acknowledge it with majhi_ops_ack once it is handled. Tell me what was wrong in one or two lines.`;
   const askNow = useAskCaptain();
-  const noLook =
-    incident.quiet ??
-    (mode !== "on"
-      ? "Auto-pilot is off"
-      : lane === undefined
-        ? `it has no thread in ${workspace} yet`
-        : undefined);
+  const noLook = incident.quiet ?? (lane === undefined ? `it has no thread in ${workspace} yet` : undefined);
   const runFix = () => {
     if (incident.fix === undefined) return;
     fix.mutate(incident.fix.check, {

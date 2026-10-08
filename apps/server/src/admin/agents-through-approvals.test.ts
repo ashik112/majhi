@@ -74,9 +74,12 @@ describe("full access for the captain", () => {
       allow: [],
       ...plain,
     });
-    expect(allow).toEqual({ text: WAITING_TEXT, isError: false });
+    // Both go to the owner's card: the policy leaves them ("Left for the owner") or the approval mode waits.
+    expect(allow.isError).toBe(false);
+    expect(allow.text).toContain("owner");
     const remove = await admin.call(caller, "majhi_tasks_remove", { id: "ACM-99", ...plain });
-    expect(remove).toEqual({ text: WAITING_TEXT, isError: false });
+    expect(remove.isError).toBe(false);
+    expect(remove.text).toContain("owner");
   });
 
   it("only the owner turns it on", async () => {

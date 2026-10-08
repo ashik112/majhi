@@ -490,6 +490,16 @@ export function createChores(
         // A task that changes a project with deploy environments gets its deploy planned before it ships: one turn
         // of the captain in the lane, which reads the project's wiki and the diff and calls projects.planDeploy.
         if (await planDeploy(run, t)) continue;
+        // Working hours and freezes hold a ship (an incident's fix is exempt: the plan says no rest for it).
+        if (plan.rest !== undefined && (plan.steps.merge === "captain" || plan.steps.push === "captain")) {
+          run.note(
+            `ship:${t.id}:${t.heads}:rest`,
+            `${t.id} is ready but waits for working hours`,
+            `${ws.name} is resting: ${plan.rest}`,
+            t.id,
+          );
+          continue;
+        }
         // The plan is not in yet (asked and not answered, or planning is off): the captain does not merge, and says so.
         if (plan.waits !== undefined) {
           if (!ruleOff(run, "ship-notready")) {

@@ -129,3 +129,17 @@ export function defaultTimeZone(env: NodeJS.ProcessEnv = process.env): string {
   }
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
+
+export function validZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The settings' zone, or the server's when it has none or names no real zone. */
+export function zoneOr(tz: string | undefined): string {
+  return tz !== undefined && validZone(tz) ? tz : defaultTimeZone();
+}

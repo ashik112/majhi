@@ -105,6 +105,8 @@ export interface AdminDeps {
 export interface AutonomyGate {
   callerKind(caller: AdminCaller): Promise<"boss" | "agent" | undefined>;
   mode(): AutonomyMode;
+  /** Stop everything is on. */
+  halted(): boolean;
   refusal(
     caller: AdminCaller,
     command: CommandName,
@@ -669,8 +671,8 @@ export class AdminService {
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
-    // The owner is away: autonomous mode decides what would wait for them, within its limits.
-    if (auto !== undefined && autonomy !== undefined && autonomy.mode() === "on") {
+    // The captain decides what would wait for the owner, within its limits and its Approvals line, whatever Auto-pilot says.
+    if (auto !== undefined && autonomy !== undefined && !autonomy.halted()) {
       return this.decideAutonomously(caller, auto, command, input, parsed, meta, ask);
     }
     const id = `approval:${randomUUID()}`;

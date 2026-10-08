@@ -185,7 +185,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outcomes: [
       { id: "fu-close", text: "A follow-up already done: close it" },
       { id: "fu-finding", text: "The rest: file them as findings" },
-      { id: "fu-task", text: "Concrete work: propose a task in the inbox", default: false },
+      { id: "fu-task", text: "Concrete work: propose a task in the inbox" },
     ],
     runner: { kind: "chore", chore: "followups" },
   }),

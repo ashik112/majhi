@@ -2264,6 +2264,8 @@ export const commands = {
        * first task instead of making another, so a double press or a retry cannot duplicate it.
        */
       requestId: z.string().min(8).max(80).optional(),
+      /** The owner marks the new task Not for the captain: the captain never starts, messages, ships or changes it. */
+      noAutonomy: z.boolean().optional(),
     }),
     output: TaskSchema,
   },

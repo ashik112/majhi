@@ -11,7 +11,6 @@ import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { useAnswerDecision } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
@@ -116,8 +115,7 @@ export function WatchDetail({
   const isPrice = def.spec.kind === "price";
   const needsAck = incident !== undefined && incident.status === "open" && incident.ackedAt === undefined;
   const question = watch.question;
-  const mode = useAutonomyStatus().data?.mode;
-  const nobodyLooks = incident?.quiet ?? (mode === "on" ? undefined : "Auto-pilot is off");
+  const nobodyLooks = incident?.quiet;
   const quiet = watch.quietUntil !== undefined;
   const wsLabel = (
     <span className="truncate rounded-md border border-line px-1.5 text-xs text-fg-soft">{workspace}</span>

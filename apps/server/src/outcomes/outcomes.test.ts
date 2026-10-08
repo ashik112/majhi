@@ -203,27 +203,23 @@ async function fill(d: Desk, kept: number, undone: number, from = T0 - 100 * HOU
 }
 
 describe("the trust ladder: demotion", () => {
-  it("leaves a row alone at exactly 80 percent and drops it below", async () => {
-    const at = desk({ authority: { merge: "decide" } });
-    await fill(at, 16, 4);
-    expect(at.authority.merge).toBe("decide");
-    expect(at.svc.decisions()).toEqual([]);
+  it("drops a line to You and tells the owner when the owner undoes an action the captain took on it", async () => {
+    const clean = desk({ authority: { merge: "decide" } });
+    await fill(clean, 20, 0);
+    expect(clean.authority.merge).toBe("decide");
+    expect(clean.svc.decisions()).toEqual([]);
 
-    const below = desk({ authority: { merge: "decide" } });
-    await fill(below, 15, 5);
-    expect(below.authority.merge).toBe("ask");
-    expect(below.authorityCalls).toHaveLength(1);
-    const [item] = below.svc.decisions();
+    const undone = desk({ authority: { merge: "decide" } });
+    await fill(undone, 19, 1);
+    expect(undone.authority.merge).toBe("ask");
+    expect(undone.authorityCalls).toHaveLength(1);
+    const [item] = undone.svc.decisions();
     expect(item).toMatchObject({ kind: "trust", org: "acme" });
+    expect(item?.title).toContain("Merge is back to You in");
+    expect(item?.title).toContain('you reverted "Shipped ACM-');
     expect(item?.options.map((o) => o.id)).toEqual(["ok", "restore"]);
     // No option of it can be taken in a batch.
     expect(item?.options.every((o) => o.effect === undefined)).toBe(true);
-  });
-
-  it("says nothing on thin evidence: 19 judged actions never demote", async () => {
-    const d = desk({ authority: { merge: "decide" } });
-    await fill(d, 0, 19);
-    expect(d.authority.merge).toBe("decide");
   });
 
   it("does not demote again on the same old evidence, and 'Give it back' restores the row with a clean record", async () => {
