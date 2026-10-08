@@ -13,15 +13,9 @@ export function useLaneRedirect(task: Task | undefined): boolean {
   const lane = task !== undefined && isCaptainLane(task);
   const org = task?.org ?? PRIVATE;
   const status = useCaptainStatus().data;
-  // The on-call chat is the Urgent tab of its workspace's thread.
-  const urgent = status?.orgs.some((o) => o.org === org && o.onCall === task?.id) === true;
+  // Both sessions of a workspace are its one thread.
   useEffect(() => {
-    if (lane && status !== undefined)
-      void navigate({
-        to: PAGE_PATH.captain,
-        search: { thread: org, ...(urgent ? { urgent: true as const } : {}) },
-        replace: true,
-      });
-  }, [lane, status, urgent, org, navigate]);
+    if (lane && status !== undefined) void navigate({ to: PAGE_PATH.captain, search: { thread: org }, replace: true });
+  }, [lane, status, org, navigate]);
   return lane;
 }

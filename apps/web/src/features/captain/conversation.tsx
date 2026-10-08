@@ -1,13 +1,12 @@
 import type { CaptainOrg } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
-import { ExternalLink, History, RotateCcw, SquarePen } from "lucide-react";
+import { History, RotateCcw, SquarePen } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
 import { ChatBox, ChatLog } from "@/features/autonomy/guide";
 import { useBoss } from "@/features/boss/boss-context";
@@ -21,7 +20,7 @@ import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useChats } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
-import { isUrgentTab, orgOfTab, threadsOf, urgentTab, validTab, waitingWord, wsTab } from "./panel-model";
+import { orgOfTab, threadsOf, validTab, waitingWord, wsTab } from "./panel-model";
 
 /** A chip for the conversation: All, or one workspace. The dot shows only when that thread waits on the owner. */
 function Chip({
@@ -57,18 +56,20 @@ function Chip({
 }
 
 /**
- * The one conversation with the captain, on the Captain page and in the Cmd J drawer. Chips pick
- * where a message goes: All is the owner's own chat, each workspace is the captain's thread there.
- * What the captain did between messages folds into one line per turn.
+ * The conversation with the captain. On the Captain page it is one thread per workspace, picked by chips:
+ * the workspace's backlog and on-call sessions read as one thread. In the Cmd J drawer the first chip, All, is the
+ * owner's own chat with the captain. What the captain did between messages folds into one line per turn.
  */
-export function Conversation({ className }: { className?: string }) {
+export function Conversation({ className, page = false }: { className?: string; page?: boolean }) {
   const { tab: asked, setTab } = useBoss();
   const status = useCaptainStatus().data;
   const threads = useMemo(() => threadsOf(status?.orgs ?? []), [status?.orgs]);
-  const tab = validTab(asked, threads);
+  const valid = validTab(asked, threads);
+  // The page has no owner chat chip (that chat is in Chats): it opens on the first workspace.
+  const first = threads[0];
+  const tab = page && valid === "talk" && first !== undefined ? wsTab(first.org) : valid;
   const org = orgOfTab(tab);
   const current = org === undefined ? undefined : threads.find((t) => t.org === org);
-  const urgent = isUrgentTab(tab);
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
       <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
@@ -76,44 +77,31 @@ export function Conversation({ className }: { className?: string }) {
           aria-label="Talk to"
           className="m-0 flex min-w-[220px] flex-1 gap-1.5 overflow-x-auto border-0 p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <Chip
-            label="All"
-            selected={tab === "talk"}
-            hint="Your own chat with the captain"
-            onSelect={() => setTab("talk")}
-          />
+          {!page && (
+            <Chip
+              label="All"
+              selected={tab === "talk"}
+              hint="Your own chat with the captain"
+              onSelect={() => setTab("talk")}
+            />
+          )}
           {threads.map((t) => (
             <Chip
               key={t.org}
               label={t.name}
               selected={t.org === org}
-              lamp={t.thread === "idle" ? undefined : THREAD_LAMP[t.thread]}
+              lamp={(t.thread === "idle" ? t.urgent : t.thread) === "idle" ? undefined : THREAD_LAMP[t.thread === "idle" ? t.urgent : t.thread]}
               hint={t.thread === "waiting" ? waitingWord(t) : `The captain's thread in ${t.name}`}
               onSelect={() => setTab(wsTab(t.org))}
             />
           ))}
         </fieldset>
-        {current?.onCall !== undefined && (
-          <Segmented
-            label="Thread"
-            value={urgent ? "urgent" : "main"}
-            onChange={(v) => setTab(v === "urgent" ? urgentTab(current.org) : wsTab(current.org))}
-            segments={[
-              { value: "main", label: "Main" },
-              {
-                value: "urgent",
-                label: "Urgent",
-                lamp: current.urgent === "idle" ? undefined : "needs",
-              },
-            ]}
-          />
-        )}
         <div className="flex shrink-0 items-center gap-1">
-          {current === undefined ? <TalkActions /> : <ThreadActions org={current} urgent={urgent} />}
+          {current === undefined ? <TalkActions /> : <ThreadActions org={current} />}
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
-        {current === undefined ? <BossConversation /> : <Thread key={tab} org={current} urgent={urgent} />}
+        {current === undefined ? <BossConversation /> : <Thread key={tab} org={current} />}
       </div>
     </div>
   );
@@ -165,20 +153,6 @@ function TalkActions() {
           ]}
         />
       )}
-      {chat.data && (
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Open this chat in Chats"
-          onClick={() => {
-            hide();
-            void navigate({ to: "/chats/$taskId", params: { taskId: chat.data.id } });
-          }}
-        >
-          <ExternalLink aria-hidden="true" />
-          Open in Chats
-        </Button>
-      )}
     </>
   );
 }
@@ -186,11 +160,11 @@ function TalkActions() {
 const THREAD_LAMP = { working: "working", waiting: "needs", idle: "idle" } as const;
 
 /** One workspace's thread: Start fresh, with its confirmation. */
-function ThreadActions({ org, urgent }: { org: CaptainOrg; urgent: boolean }) {
+function ThreadActions({ org }: { org: CaptainOrg }) {
   const toast = useToast();
   const fresh = useStartFresh();
   const [asking, setAsking] = useState(false);
-  if ((urgent ? org.onCall : org.lane) === undefined) return null;
+  if (org.lane === undefined) return null;
   return (
     <>
       <Button
@@ -211,7 +185,7 @@ function ThreadActions({ org, urgent }: { org: CaptainOrg; urgent: boolean }) {
           error={fresh.error ? describeError(fresh.error) : undefined}
           onConfirm={() =>
             fresh.mutate(
-              { org: org.org, name: org.name, urgent },
+              { org: org.org, name: org.name, urgent: false },
               {
                 onSuccess: () => {
                   setAsking(false);
@@ -231,9 +205,10 @@ function ThreadActions({ org, urgent }: { org: CaptainOrg; urgent: boolean }) {
 }
 
 /** One workspace's thread: the conversation and the box. */
-export function Thread({ org, urgent = false }: { org: CaptainOrg; urgent?: boolean }) {
+export function Thread({ org }: { org: CaptainOrg }) {
   const autonomyStatus = useAutonomyStatus().data;
-  const lane = urgent ? org.onCall : org.lane;
+  // One thread: the workspace's sessions read as one, and a message goes to its backlog session.
+  const lane = org.lane ?? org.onCall;
   return (
     <>
       {org.resting !== undefined && (
@@ -251,7 +226,7 @@ export function Thread({ org, urgent = false }: { org: CaptainOrg; urgent?: bool
           <ChatLog chat={lane} />
         )}
         {autonomyStatus ? (
-          <ChatBox status={autonomyStatus} lane={org.org} chat={lane} urgent={urgent} />
+          <ChatBox status={autonomyStatus} lane={org.org} chat={lane} />
         ) : (
           <div className="p-3">
             <RowsSkeleton rows={1} height={72} />

@@ -19,7 +19,7 @@ import { FindingsSheet } from "./findings";
 import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
 import { NowColumn } from "./now-column";
-import { urgentTab, wsTab } from "./panel-model";
+import { wsTab } from "./panel-model";
 import { ScorecardSheet } from "./scorecard";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
@@ -60,8 +60,8 @@ export function CaptainView() {
   const view: View = forced ? "captain" : (picked ?? (autonomy?.mode === "on" ? "dashboard" : "captain"));
   // A link to a thread (an old address of a lane chat) selects it in the conversation.
   useEffect(() => {
-    if (thread !== undefined) setTab(search.urgent === true ? urgentTab(thread) : wsTab(thread));
-  }, [thread, search.urgent, setTab]);
+    if (thread !== undefined) setTab(wsTab(thread));
+  }, [thread, setTab]);
   // A link to an old tab opens its sheet, and the chat tab selects the conversation.
   useEffect(() => {
     const asked = sheetOf(tab);
@@ -117,7 +117,7 @@ export function CaptainView() {
             aria-label="Conversation"
             className={`flex min-h-0 min-w-0 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
           >
-            <Conversation />
+            <Conversation page />
           </section>
           <NowColumn
             captain={status}
