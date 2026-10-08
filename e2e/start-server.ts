@@ -115,6 +115,8 @@ const command = (tool: "claude" | "codex") => {
 Object.assign(process.env, gitEnv, {
   MAJHI_HOST: "127.0.0.1",
   MAJHI_PORT: String(E2E_PORT),
+  // The pages are served from this port: the API only answers its own origin.
+  MAJHI_ORIGIN: `http://127.0.0.1:${E2E_PORT}`,
   HOST_HOME,
   MAJHI_HOME,
   MAJHI_VERSION: "e2e",
