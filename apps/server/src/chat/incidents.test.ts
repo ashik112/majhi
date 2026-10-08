@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { IncidentFacts } from "../incident/facts.ts";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
-import { writeOutcome } from "./outcome.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
 
 /**
@@ -292,20 +291,5 @@ describe("what each client room reads", () => {
     };
     expect(await sent(second)).not.toContain("you told us it was back");
     expect(await sent(first)).toContain("you told us it was back");
-  });
-
-  it("a claim made before the watch fired joins the incident when it opens, and the room is told", async () => {
-    const { w, incidents, woken } = await setup();
-    const room = await w.linked("-300");
-    await w.ingest.deliver(CONN, envelope({ chatId: "-300", message: "7", text: "Login gives 500s" }));
-    const message = w.store.room.page(room, 10).items.find((i) => i.type === "client");
-    if (message?.type !== "client") throw new Error("no message");
-    writeOutcome(w, room, message, { state: "waits", claim: true, finding: 5 });
-    await incidents.tick();
-    expect(w.store.tasks.linksTo(room).map((l) => l.task)).toEqual(["ACM-9"]);
-    expect(w.store.room.get(room, message.id)).toMatchObject({
-      outcome: { state: "handled", task: "ACM-9" },
-    });
-    expect(woken.filter((e) => e.room === room)).toHaveLength(1);
   });
 });

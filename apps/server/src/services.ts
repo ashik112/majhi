@@ -2726,6 +2726,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       background.run(async () => {
         await incidentEngineNow.sweep();
         await chatParts.incidents.tick();
+        chatParts.desk.retry();
         chatParts.waits.settle();
       }),
     INCIDENT_SWEEP_MS,

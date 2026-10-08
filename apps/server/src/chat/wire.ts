@@ -331,11 +331,6 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     room: w.room,
     findings: w.findings,
     whoIs: (room, card, answer) => chat.whoIs(room, card, answer),
-    makeIncident: async (room, item, finding) => {
-      const made = await incidents.claim(room, item, finding, { force: true });
-      if (made === undefined) throw new Error("The incident could not be opened.");
-      return made;
-    },
     history: w.history,
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),

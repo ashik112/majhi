@@ -23,7 +23,6 @@ import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import type { ChatDesk } from "./desk.ts";
 import type { ChatHistory } from "./history.ts";
-import { writeOutcome } from "./outcome.ts";
 import type { ClientReplies } from "./replies.ts";
 
 /**
@@ -331,19 +330,6 @@ export class ClientIncidents {
     return out;
   }
 
-  /** The incidents of a workspace that are not Resolved, with their facts. */
-  private async openOf(org: string): Promise<{ read: Read; result: ReturnType<typeof clientStatus> }[]> {
-    const out: { read: Read; result: ReturnType<typeof clientStatus> }[] = [];
-    for (const id of this.incidentTasks()) {
-      const task = this.deps.store.tasks.get(id);
-      if (task === undefined || task.org !== org || task.typing?.type !== "incident") continue;
-      const read = await this.read(task);
-      const result = clientStatus(read.facts);
-      if (result.status !== "resolved") out.push({ read, result });
-    }
-    return out;
-  }
-
   /** Whether a fix was pushed since the client was last told: the only news between status changes. */
   private fixWrittenSince(read: Read, since: string): boolean {
     return [read.task, ...read.fixes].some((t) =>
@@ -359,20 +345,17 @@ export class ClientIncidents {
   }
 
   /**
-   * A client says something is down. The facts decide: a watch firing or a deploy that failed lately opens the
-   * incident, or joins the one that is open. With no evidence nothing is opened: the caller asks the client for
-   * specifics. Returns the task, or undefined when there is no evidence.
+   * Opens the incident for a client's report, or joins the one that is open, and links the chat. The evidence majhi
+   * holds (a firing watch, a failed deploy) and what the captain found when it checked are the incident's first facts.
    */
   async claim(
     room: RoomRow,
     item: Extract<RoomItem, { type: "client" }>,
     finding: number | undefined,
-    opts?: { force?: boolean; found?: string },
-  ): Promise<{ task: string; joined: boolean } | undefined> {
+    found: string,
+  ): Promise<{ task: string; joined: boolean }> {
     const org = room.org as string;
     const evidence = this.deps.engine.evidence(org);
-    // The owner's "Make incident" and the captain, who checked first, open it on the client's word alone.
-    if (evidence.length === 0 && opts?.force !== true) return undefined;
     const project = evidence.find((e) => e.project !== undefined)?.project;
     const made = await this.deps.engine.open({
       kind: "client",
@@ -382,10 +365,7 @@ export class ClientIncidents {
       ...(finding === undefined ? {} : { finding }),
       project,
       text: item.text,
-      facts: [
-        ...evidence.map((e) => e.title),
-        ...(opts?.found === undefined ? [] : [`The captain checked: ${opts.found}`]),
-      ],
+      facts: [...evidence.map((e) => e.title), `The captain checked: ${found}`],
     });
     this.link(made.task, room.id);
     this.deps.changed();
@@ -409,9 +389,7 @@ export class ClientIncidents {
         if (out.reopened) return { task: followed, joined: true, reopened: true };
       }
     }
-    const made = await this.claim(room, item, item.outcome?.finding, { force: true, found });
-    if (made === undefined) throw new UserError("The incident could not be opened.", 409);
-    return { ...made, reopened: false };
+    return { ...(await this.claim(room, item, item.outcome?.finding, found)), reopened: false };
   }
 
   /** The incidents a chat is linked to with the status a client may hear: what the captain reads before it answers. */
@@ -452,11 +430,6 @@ export class ClientIncidents {
    */
   async tick(): Promise<void> {
     let changed = false;
-    try {
-      if (await this.joinClaims()) changed = true;
-    } catch {
-      // The next pass tries again.
-    }
     for (const id of this.incidentTasks()) {
       try {
         const task = this.deps.store.tasks.get(id);
@@ -478,58 +451,6 @@ export class ClientIncidents {
       }
     }
     if (changed) this.deps.changed();
-  }
-
-  /**
-   * A client reported an outage nothing backed, and an incident has opened since: the claim joins it, and the room is
-   * told like any other (the pass that follows). A workspace with two open incidents is ambiguous: the claim stays
-   * in Needs you for the owner. Chats are not tied to a project, so the workspace is what the claim and the incident
-   * share.
-   */
-  private async joinClaims(): Promise<boolean> {
-    const lately = this.now().getTime() - DAY_MS;
-    let joined = false;
-    const orgs = new Set(this.deps.store.client.rooms().flatMap((r) => (r.org === undefined ? [] : [r.org])));
-    for (const org of orgs) {
-      const open = await this.openOf(org);
-      const only = open.length === 1 ? open[0] : undefined;
-      if (only === undefined) continue;
-      const task = only.read.task;
-      for (const room of this.deps.store.client.rooms()) {
-        if (room.org !== org || room.chat.archived === true || room.chat.ignored === true) continue;
-        if (room.chat.holder !== "captain" || this.incidentsOf(room.id).some((t) => t.id === task.id))
-          continue;
-        const claim = this.deps.store.room
-          .page(room.id, 40)
-          .items.find(
-            (i) => i.type === "client" && i.outcome?.claim === true && Date.parse(i.sentAt ?? i.at) > lately,
-          );
-        if (claim?.type !== "client") continue;
-        await this.attach(room, task.id);
-        writeOutcome(this.deps, room.id, claim, {
-          state: "handled",
-          why: `Joined incident ${task.id}: it opened after the client wrote`,
-          task: task.id,
-          ...(claim.outcome?.finding === undefined ? {} : { finding: claim.outcome.finding }),
-        });
-        if (claim.outcome?.finding !== undefined) this.closeFinding(claim.outcome.finding, task.id, org);
-        this.deps.history?.({
-          text: `Joined ${room.chat.title} to incident ${task.id}: ${claim.sender.name} had reported it`,
-          org,
-          task: task.id,
-        });
-        joined = true;
-      }
-    }
-    return joined;
-  }
-
-  private closeFinding(finding: number, task: string, org: string): void {
-    try {
-      this.deps.findings.dismiss(finding, `Joined incident ${task}`, { kind: "captain", org });
-    } catch {
-      // Closed already, or taken up by the incident.
-    }
   }
 
   /** Resolved more than a day ago and no client has written since: nothing more to say, so the pass skips it. */
