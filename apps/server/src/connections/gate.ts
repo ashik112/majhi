@@ -1,4 +1,5 @@
 import type { ConnectionType, ToolAnnotations } from "@majhi/shared";
+import { cliVerb, firstVerb, KUBECTL_READ_PAIRS, KUBECTL_READS, programReads } from "./read-only.ts";
 import { parseLine, ShellParseError, type SimpleCommand } from "./shell.ts";
 
 /**
@@ -136,24 +137,6 @@ const WRAPPERS = new Set([
 
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 
-const KUBECTL_READS = new Set([
-  "get",
-  "describe",
-  "logs",
-  "top",
-  "explain",
-  "events",
-  "version",
-  "cluster-info",
-  "api-resources",
-  "api-versions",
-  "diff",
-]);
-const KUBECTL_READ_PAIRS: Record<string, readonly string[]> = {
-  auth: ["can-i", "whoami"],
-  config: ["view", "get-contexts", "current-context"],
-  rollout: ["status", "history"],
-};
 /** Global flags that take a value, so the word after them is not the subcommand. */
 const KUBECTL_VALUE_FLAGS = new Set([
   "-n",
@@ -186,87 +169,6 @@ const KUBECTL_IDENTITY_FLAGS = new Set([
   "--tls-server-name",
 ]);
 
-/**
- * Verbs of env CLIs and remote commands that only read: SPEC 5.14's list, plus the listing verbs of
- * container CLIs (`docker ps`, `docker inspect`).
- */
-const CLI_READ_VERBS = new Set([
-  "get",
-  "list",
-  "describe",
-  "show",
-  "ls",
-  "logs",
-  "status",
-  "view",
-  "whoami",
-  "ps",
-  "inspect",
-  "version",
-  "info",
-  "top",
-  "history",
-]);
-/** Verbs that change something. A command whose first verb is one of these is a write. */
-const CLI_WRITE_VERBS = new Set([
-  "create",
-  "delete",
-  "rm",
-  "remove",
-  "put",
-  "update",
-  "set",
-  "apply",
-  "patch",
-  "edit",
-  "replace",
-  "scale",
-  "restart",
-  "run",
-  "exec",
-  "start",
-  "stop",
-  "kill",
-  "terminate",
-  "deploy",
-  "destroy",
-  "drop",
-  "insert",
-  "cp",
-  "mv",
-  "sync",
-  "write",
-  "send",
-  "post",
-  "add",
-  "modify",
-  "reboot",
-  "purge",
-  "invoke",
-  "publish",
-  "upload",
-  "import",
-  "restore",
-  "revoke",
-  "grant",
-  "tag",
-  "untag",
-  "push",
-  "cancel",
-  "enable",
-  "disable",
-  "attach",
-  "detach",
-  "install",
-  "uninstall",
-  "upgrade",
-  "reset",
-  "rotate",
-  "copy",
-  "move",
-  "rename",
-  "truncate",
-]);
 /** Programs of a remote command that only read. */
 const REMOTE_READ_PROGRAMS = new Set([
   ...FILTERS,
@@ -552,7 +454,7 @@ function readCommand(
       c.clis?.includes(name),
   );
   if (env !== undefined) {
-    const verb = cliVerb(args);
+    const verb = programReads(name, args) ?? cliVerb(args);
     if (verb === "read" && !intoFile) result.read(env.id);
     else if (verb === "read") result.other();
     else
@@ -628,27 +530,6 @@ function readKubectl(
   }
   if (intoFile || id === undefined) result.other();
   else result.read(id);
-}
-
-/** The first word of the arguments that is a known verb, or a word starting with one (`describe-instances`). */
-function firstVerb(args: readonly string[]): string | undefined {
-  for (const arg of args) {
-    if (arg.startsWith("-")) continue;
-    const head = arg.toLowerCase().split(/[-_]/, 1)[0] ?? "";
-    if (CLI_READ_VERBS.has(head) || CLI_WRITE_VERBS.has(head)) return head;
-  }
-  return undefined;
-}
-
-/**
- * Whether a CLI's arguments read: by their first verb. Only flags (`--version`, `--help`) read; words
- * with no verb among them count as unknown.
- */
-function cliVerb(args: readonly string[]): "read" | "write" | "unknown" {
-  if (args.every((a) => a.startsWith("-"))) return "read";
-  const verb = firstVerb(args);
-  if (verb === undefined) return "unknown";
-  return CLI_READ_VERBS.has(verb) ? "read" : "write";
 }
 
 /**
