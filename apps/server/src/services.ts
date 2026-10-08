@@ -94,8 +94,6 @@ import { DockerCli } from "./containers/docker.ts";
 import { ImageCheckFailed, runImageCheck } from "./containers/image-check.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { ConversationsService } from "./conversations/service.ts";
-import { NoticesService } from "./notices/service.ts";
-import { readUpdateStatus } from "./system/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
 import { builtinRegistry } from "./decisions/builtinSlots.ts";
 import { CalibrationStore } from "./decisions/calibrationStore.ts";
@@ -163,6 +161,7 @@ import { MrPoller } from "./mrs/poller.ts";
 import { remoteUrl } from "./mrs/push.ts";
 import { realHostOf } from "./mrs/remote.ts";
 import { MrService } from "./mrs/service.ts";
+import { NoticesService } from "./notices/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { MacNotifyAccess } from "./notify/mac-access.ts";
 import { Notifier } from "./notify/service.ts";
@@ -224,6 +223,7 @@ import { SkillStore } from "./skills/store.ts";
 import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { pruneOld } from "./store/retention.ts";
+import { readUpdateStatus } from "./system/service.ts";
 import { AreasReader } from "./tasks/areas.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
@@ -3206,7 +3206,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     roots: async (org) => {
       const { projects } = await config.sections();
       return Object.values(projects ?? {})
-        .filter((project) => project.org === org)
+        .filter((project) => org === "root" || project.org === org)
         .map((project) => resolvePath(project.path, config.paths.hostHome));
     },
     available: () => options.hostLink?.isConnected() ?? false,

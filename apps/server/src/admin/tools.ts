@@ -148,7 +148,7 @@ export function adminTools(): AdminTool[] {
       command: undefined,
       risk: undefined,
       description:
-        "The captain in its lane only, and only when the owner asked for it in the conversation. Put a value on the owner's own clipboard on their computer, so they can paste it without it appearing in chat: the value of a saved secret (secret), or one line of a file in this workspace's projects (file and line, with part value to take what follows the = or : of a KEY=value line). The value is read by majhi and goes only to the clipboard: you never get it back, and it is not put in the room. Say what you copied by its name or its file and line, never by its value.",
+        "The captain in its main chat or a workspace lane, and only when the owner asked for it in the conversation. Put a value on the owner's own clipboard on their computer, so they can paste it without it appearing in chat: the value of a saved secret (secret), or one line of a file in this workspace's projects (file and line, with part value to take what follows the = or : of a KEY=value line). The value is read by majhi and goes only to the clipboard: you never get it back, and it is not put in the room. Say what you copied by its name or its file and line, never by its value.",
       inputSchema: {
         type: "object",
         properties: {

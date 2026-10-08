@@ -364,6 +364,10 @@ export async function readMounts(
   for (const p of projects) {
     await add(p.path, { roots: [p.path], projects: [], scope: "root", blocked, tasksDir });
   }
+  // The main captain may read work produced by any task. Workspace lanes keep their own mounts.
+  if (scope === "root") {
+    await add(tasksDir, { roots: [tasksDir], projects: [], scope: "root", blocked, tasksDir });
+  }
   // Mentioned folders and investigation repos must lie inside the workspace roots.
   const wanted = (task.readMounts ?? []).filter((m) => m.agent === undefined || m.agent === agent);
   for (const m of wanted) {

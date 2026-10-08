@@ -136,23 +136,29 @@ export function TaskFileLink({
   label,
   card = false,
   project,
+  taskId,
 }: {
   path: string;
   kind: ViewerKind;
   label: ReactNode;
   card?: boolean;
   project?: string | undefined;
+  taskId?: string | undefined;
 }) {
   const Icon = FILE_ICON[kind];
-  const task = useContext(RoomTaskContext);
+  const currentTask = useContext(RoomTaskContext);
+  const task = taskId ?? currentTask;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const file = project ? `repo:${project}/${path}` : path;
   // On the task's own page its viewer opens; anywhere else the app's viewer, told which task.
-  const own = task === undefined || pathname.startsWith(`/t/${task}`);
+  const own = task === undefined || pathname === `/t/${task}`;
   return (
     <Link
       to="."
-      search={(prev: object) => ({ ...prev, file, ...(own ? {} : { fileTask: task }) })}
+      search={(prev: { fileTask?: string }) => {
+        const { fileTask: _previousTask, ...rest } = prev;
+        return { ...rest, file, ...(own || task === undefined ? {} : { fileTask: task }) };
+      }}
       title={path}
       aria-label={card && typeof label === "string" ? `Open ${label}` : undefined}
       className={card ? "md-file-card" : "md-link md-file-link"}

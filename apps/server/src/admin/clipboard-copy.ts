@@ -10,8 +10,7 @@ export const CLIPBOARD_COPY_TOOL = "majhi_clipboard_copy";
 export const CLIPBOARD_FILE_MAX = 1_000_000;
 
 /**
- * A saved secret, by name (the part after `secret:`). A constant, because the branch's secret scan
- * reads `secret: z.string()...` as a password written into the code.
+ * A saved secret, by name (the part after `secret:`).
  */
 const SECRET_NAME = z.string().trim().min(1).optional();
 
@@ -43,6 +42,7 @@ export interface ClipboardCopier {
   copy(text: string): Promise<boolean>;
 }
 
+const TYPED_ASSIGNMENT = /^\s*(?:export\s+)?[A-Za-z_][\w.-]*\s*:\s*[A-Za-z_][\w.[\], |]*?\s+=\s*(.*)$/;
 const KEY_LINE = /^\s*(?:export\s+)?[A-Za-z_][\w.-]*\s*[=:]\s*(.*)$/;
 
 /** The part of `text`'s `line` to copy, or why there is none. Messages never carry the line's text. */
@@ -55,7 +55,7 @@ export function pickValue(
   if (raw === undefined) return { problem: `The file has no line ${line}.` };
   let value = raw.trim();
   if (part === "value") {
-    const rest = KEY_LINE.exec(raw)?.[1];
+    const rest = TYPED_ASSIGNMENT.exec(raw)?.[1] ?? KEY_LINE.exec(raw)?.[1];
     if (rest === undefined) return { problem: `Line ${line} is not a KEY=value or KEY: value line.` };
     value = unquote(rest.trim());
   }
