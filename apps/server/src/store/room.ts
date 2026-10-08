@@ -22,6 +22,20 @@ const OWNER_WAIT_TYPES: RoomItem["type"][] = [
   "choice",
   "owner-question",
 ];
+/**
+ * What of the captain's lane shows in the task it is about: its words, its cards and its notes. Its tool calls and
+ * thoughts stay in the lane (one line with the result is what the task needs).
+ */
+const CAPTAIN_LINES_IN_TASK: RoomItem["type"][] = [
+  "agent",
+  "system",
+  "approval",
+  "permission",
+  "secret-request",
+  "ask",
+  "choice",
+  "owner-question",
+];
 /** An item whose `state` is pending: an indexed virtual column (migration 153), not a JSON parse per row. */
 const PENDING = sql`${roomItems.pending} = 1`;
 
@@ -159,6 +173,78 @@ export class RoomRepo {
     return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
+  /** A room's items newest first by `at`, older than `olderThan` when given. */
+  pageAt(task: string, limit: number, olderThan?: string): { items: RoomItem[]; more: boolean } {
+    return this.mergedPageAny([task], limit, olderThan);
+  }
+
+  private mergedPageAny(rooms: readonly string[], limit: number, olderThan?: string) {
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          inArray(roomItems.task, [...rooms]),
+          olderThan === undefined ? undefined : lt(roomItems.at, olderThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
+  /**
+   * Items of several rooms read as one, newest first by `at`, at most `limit`, and whether older ones exist.
+   * `about`: only the lines tagged with that task. `untagged`: only the lines about no task. `olderThan` and `newerThan`
+   * are `at` bounds, exclusive. The captain's thread and a task's timeline are reads of this kind (`roomWithCaptain`).
+   */
+  mergedPage(
+    rooms: readonly string[],
+    which: { about: string } | { untagged: true },
+    limit: number,
+    bounds: { olderThan?: string; newerThan?: string } = {},
+  ): { items: RoomItem[]; more: boolean } {
+    if (rooms.length === 0) return { items: [], more: false };
+    const tag =
+      "about" in which
+        ? and(eq(roomItems.about, which.about), inArray(roomItems.type, CAPTAIN_LINES_IN_TASK))
+        : sql`${roomItems.about} IS NULL`;
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          inArray(roomItems.task, [...rooms]),
+          tag,
+          bounds.olderThan === undefined ? undefined : lt(roomItems.at, bounds.olderThan),
+          bounds.newerThan === undefined ? undefined : gt(roomItems.at, bounds.newerThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
+  /** The client messages, in any client room, that became or joined the task. */
+  clientLinesOf(task: string, limit: number, olderThan?: string): { items: RoomItem[]; more: boolean } {
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          eq(roomItems.outcomeTask, task),
+          eq(roomItems.type, "client"),
+          olderThan === undefined ? undefined : lt(roomItems.at, olderThan),
+        ),
+      )
+      .orderBy(desc(roomItems.at))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
+  }
+
   /** The next `limit` items after `afterSeq`, newest first, and whether newer ones exist beyond them. */
   pageAfter(task: string, limit: number, afterSeq: number): { items: RoomItem[]; more: boolean } {
     const rows = this.q.after.all({ task, seq: afterSeq, limit: limit + 1 });
@@ -177,7 +263,16 @@ export class RoomRepo {
   ): { items: RoomItem[]; older: boolean; newer: boolean } | undefined {
     const row = this.q.get.get({ task, id });
     const target = row === undefined ? undefined : toItem(row);
-    if (target === undefined) return undefined;
+    if (target === undefined) {
+      // A captain line tagged to this task lives in its workspace thread's room: show it alone.
+      const tagged = this.db
+        .select()
+        .from(roomItems)
+        .where(and(eq(roomItems.id, id), eq(roomItems.about, task)))
+        .get();
+      const found = tagged === undefined ? undefined : toItem(tagged);
+      return found === undefined ? undefined : { items: [found], older: false, newer: false };
+    }
     const before = this.page(task, half, target.seq);
     const after = this.pageAfter(task, half, target.seq);
     return { items: [...after.items, target, ...before.items], older: before.more, newer: after.more };
@@ -390,12 +485,12 @@ export class RoomRepo {
     const match = matchQuery(query);
     if (match === undefined) return [];
     const rows = this.db.all<SearchRow>(sql`
-      SELECT r.task AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
+      SELECT coalesce(r.about, r.task) AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
         coalesce(json_extract(r.payload, '$.agent'), json_extract(r.payload, '$.from')) AS agent,
         snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet
       FROM room_search
       JOIN room_items r ON r.rowid = room_search.rowid
-      JOIN tasks t ON t.id = r.task
+      JOIN tasks t ON t.id = coalesce(r.about, r.task)
       WHERE room_search MATCH ${match} ${org === undefined ? sql`` : sql`AND t.org = ${org}`}
       ORDER BY room_search.rank, r.at DESC
       LIMIT ${limit}`);

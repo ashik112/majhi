@@ -47,6 +47,8 @@ interface Row {
   agent_text: string | null;
   owner_at: string | null;
   owner_text: string | null;
+  /** Who wrote the newest owner-side message: `captain`, `majhi` or `you`. */
+  owner_by: string | null;
   app: string | null;
   agent: string | null;
   unlinked: number | null;
@@ -77,8 +79,9 @@ export class ConversationsRepo {
   /** The listed conversations with a message that holds the words (case ignored). Not only the newest line. */
   matching(query: string): string[] {
     const like = `%${query.toLowerCase().split("\\").join("\\\\").split("%").join("\\%").split("_").join("\\_")}%`;
+    // A captain line tagged to a task belongs to that task, so it finds the task, not the thread.
     const rows = this.db.all<{ task: string }>(sql`
-      SELECT DISTINCT r.task AS task FROM room_items r JOIN tasks t ON t.id = r.task
+      SELECT DISTINCT t.id AS task FROM room_items r JOIN tasks t ON t.id = coalesce(r.about, r.task)
        WHERE r.type IN ('agent', 'owner', 'client', 'client-reply') AND ${LISTED}
          AND lower(json_extract(r.payload, '$.text')) LIKE ${like} ESCAPE '\\'
        LIMIT ${LIST_LIMIT}`);
@@ -107,7 +110,8 @@ export class ConversationsRepo {
     this.db.run(sql`
       INSERT INTO read_marks (id, read_at, updated_at)
       SELECT ${id}, min(${upTo}, newest), ${new Date().toISOString()}
-        FROM (SELECT max(at) AS newest FROM room_items WHERE task = ${id} AND type IN ('agent', 'client'))
+        FROM (SELECT max(at) AS newest FROM room_items
+               WHERE (task = ${id} AND about IS NULL OR about = ${id}) AND type IN ('agent', 'client'))
        WHERE newest IS NOT NULL
       ON CONFLICT (id) DO UPDATE
          SET read_at = excluded.read_at, updated_at = excluded.updated_at
@@ -134,17 +138,23 @@ export class ConversationsRepo {
         json_extract(t.client, '$.archived') AS unlinked, t.created_at AS created_at,
         (a.archived_at IS NOT NULL) AS archived, (${PROMOTED}) AS promoted,
         (SELECT count(*) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
-            AND (r.type = 'agent' OR ${NOTIFIES})) AS unread,
-        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('agent', 'client')) AS agent_at,
+          WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
+            AND (r.type = 'agent' OR ${NOTIFIES}))
+          + (SELECT count(*) FROM room_items a
+              WHERE a.about = t.id AND a.type = 'agent' AND a.at > coalesce(m.read_at, '')) AS unread,
+        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client')) AS agent_at,
         (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
             || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
+          WHERE r.task = t.id AND r.about IS NULL AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
         (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
             AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent')) AS owner_at,
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
-            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text,
+        (SELECT CASE WHEN json_extract(r.payload, '$.by') = 'captain' AND json_extract(r.payload, '$.as') IS NULL THEN 'captain'
+                     WHEN json_extract(r.payload, '$.by') = 'majhi' THEN 'majhi' ELSE 'you' END FROM room_items r
+          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_by
       FROM tasks t LEFT JOIN read_marks m ON m.id = t.id LEFT JOIN conversation_archive a ON a.id = t.id
       WHERE ${LISTED}
         AND (t.status != 'done' OR ${AGENT_CHAT} OR EXISTS (
@@ -191,8 +201,10 @@ function kindOf(row: Row): Conversation["kind"] {
 /** The newer of the newest agent and owner messages, as a one-line preview. */
 function lastOf(row: Row): { at: string; line: string } | undefined {
   const agent = row.agent_at === null ? undefined : { at: row.agent_at, line: oneLine(row.agent_text) };
+  // The writer is named as recorded: a reply the captain sent reads "Captain:", the owner's own "You:".
+  const who = row.owner_by === "captain" ? "Captain" : row.owner_by === "majhi" ? "majhi" : "You";
   const owner =
-    row.owner_at === null ? undefined : { at: row.owner_at, line: `You: ${oneLine(row.owner_text)}` };
+    row.owner_at === null ? undefined : { at: row.owner_at, line: `${who}: ${oneLine(row.owner_text)}` };
   if (agent === undefined) return owner;
   if (owner === undefined) return agent;
   return owner.at > agent.at ? owner : agent;

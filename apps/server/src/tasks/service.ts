@@ -243,6 +243,8 @@ export interface TaskDeps {
   onChatTurn?: (id: string) => void;
   /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
   onDone?: (task: Task) => void | Promise<void>;
+  /** The captain side opened or started a task (not the owner, not a subtask): the workspace thread gets a pointer line. */
+  onOpened?: (task: Task) => void;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
   /** Throws when the task may not be closed or removed now: autonomous mode's chat while the mode is not off. */
@@ -682,6 +684,7 @@ export class TaskService {
     let task = this.get(id);
     this.deps.room.publishTask(task);
     if (promoting !== undefined) return this.promoted(task, investigation);
+    if (input.provenance.kind === "captain" || input.provenance.kind === "ref") this.deps.onOpened?.(task);
     // A task that waits stays ready and starts by itself when its dependencies are met.
     const waiting = store.tasks.unmetDependencies(id);
     if (input.start && waiting.length > 0) {
@@ -1126,7 +1129,12 @@ export class TaskService {
     options: { gateReleased?: boolean; wake?: boolean },
   ): Promise<Task> {
     await this.ensureWorktrees(task);
+    const wasRunning = task.status === "running";
     const lifted = await this.enter(id, by, options);
+    if (!wasRunning && by !== "owner" && options.wake !== false) {
+      this.note(id, "Started by the captain.");
+      this.deps.onOpened?.(this.get(id));
+    }
     if (lifted && by === "owner") this.deps.onOwnerResumed?.(id);
     await this.containersRunAgain(id);
     await this.recallMemory(task);
@@ -1524,6 +1532,12 @@ export class TaskService {
   /** Adds an agent that can work in the task's org. With `lead`, it goes first. */
   async addToTeam(id: string, agent: string, options: { lead?: boolean; by?: string } = {}): Promise<Task> {
     const task = this.get(id);
+    // The captain speaks from its workspace lane and never joins a task's team on an agent's say-so.
+    if (options.by !== undefined && agent === this.deps.config.knownBoss())
+      throw new UserError(
+        `The captain does not join a task's team. Ask it in the lane: ${id} shows what it says.`,
+        409,
+      );
     const state = this.deps.store.tasks.roomState(id);
     const removed = state.removed ?? [];
     if (options.by !== undefined && removed.includes(agent))
@@ -2620,6 +2634,8 @@ export class TaskService {
   /** The first message names an untitled chat. */
   private nameChat(task: Task, text: string): void {
     if (!isOwnerChat(task) || !DEFAULT_CHAT_TITLES.includes(task.title)) return;
+    // The chat with the captain is called "Captain", not after its first topic.
+    if (task.org === undefined && task.team[0] === this.deps.config.knownBoss()) return;
     const title = chatTitleFrom(text);
     if (title === undefined) return;
     this.deps.store.tasks.setText(task.id, title, task.brief, this.now().toISOString());
@@ -3915,6 +3931,8 @@ export class TaskService {
     from?: string | undefined;
     mode: "queue" | "interrupt";
     agent?: string | undefined;
+    /** Who writes when it is not the owner: the captain's agent id, or `majhi`. The record and the card say so. */
+    by?: string | undefined;
   }): Promise<RoomItem> {
     let task = this.get(input.task);
     if (input.text.trim() === "" && input.attachments.length === 0)
@@ -3945,7 +3963,8 @@ export class TaskService {
     const attachments = await takePlanned(this.deps.uploads, planned, join(task.folder, "attachments"));
     if (attachments.length > 0) this.deps.store.tasks.addAttachments(task.id, attachments);
     // The owner wrote back: a review card and plain-text questions stop waiting.
-    this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
+    const writer = input.by === undefined ? undefined : this.cards.byCaptain(input.by) ? "captain" : "majhi";
+    this.cards.settle(task.id, "review", `Replied to @${agent}`, input.by ?? "owner");
     this.cards.replied(task.id);
     // The owner spoke: the loop guard counts agent turns from here.
     const state = this.deps.store.tasks.roomState(task.id);
@@ -3966,6 +3985,7 @@ export class TaskService {
       text: input.text,
       attachments,
       mode: input.mode,
+      by: writer,
     });
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emitTask(task.id, true);
@@ -4198,10 +4218,12 @@ export class TaskService {
     return answered;
   }
 
-  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {
-    this.get(id);
+  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number, beforeAt?: string) {
+    const task = this.get(id);
     this.deps.room.flush(id);
     if (afterSeq !== undefined) return this.deps.store.room.pageAfter(id, limit, afterSeq);
+    // The merged read pages by time: a line of the captain's thread has another room's seq.
+    if (beforeAt !== undefined) return this.deps.room.read(task, limit, beforeAt);
     return this.deps.store.room.page(id, limit, beforeSeq);
   }
 

@@ -9,8 +9,8 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
-  type Job,
   type Fact,
+  type Job,
   PRIVATE,
   type RoomItem,
   restOf,
@@ -22,7 +22,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { type ChorePlaybooks, DefaultChorePlays } from "../playbooks/chore-plays.ts";
 import type { Store } from "../store/index.ts";
-import { addDays, localDay } from "../usage/ranges.ts";
+import { localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";
@@ -30,7 +30,6 @@ import { authorityOf, choresNow, migratePickOrgs, workspaceIds } from "./levels.
 import { laneOfScope } from "./memory-scopes.ts";
 import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
-import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
 import { MEMORY_WAITING, pausedToday, restHolds } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
@@ -83,8 +82,6 @@ export interface CaptainDeps {
   ownerCards?: (org: string) => Promise<number>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
-  /** What the relay of a lane captain's message into the root chat reads and writes. Without it, no relay. */
-  relay?: Pick<RelayDeps, "bossChat" | "post">;
   /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
   triggerMs?: number;
   now?: () => Date;
@@ -108,21 +105,11 @@ export class CaptainService {
   private plays: ChorePlaybooks;
   /** The rest of the playbook scheduler, run in the same minute sweep. */
   private playbookSweep: (() => Promise<void>) | undefined;
-  private readonly relay: RootRelay | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = deps.repo ?? new CaptainRepo(deps.store.raw);
-    this.relay =
-      deps.relay === undefined
-        ? undefined
-        : new RootRelay({
-            ...deps.relay,
-            config: deps.config,
-            lanes: deps.lanes,
-            now: () => this.now(),
-          });
     this.laneGate = new LaneGate({
       repo: this.repo,
       ports: deps.ports,
@@ -237,7 +224,6 @@ export class CaptainService {
       }
     }
     await this.playbookSweep?.().catch(() => undefined);
-    await this.dailySummary();
   }
 
   // ---------------------------------------------------------------------------
@@ -308,12 +294,6 @@ export class CaptainService {
   /** A deploy went live: the next environment of its project may go now, so the ship chore looks again. */
   deployChanged(org: string): void {
     this.trigger(org, "ship", "A deploy went live", "majhi");
-  }
-
-  /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
-  turnEnded(turn: { task: string; agent: string; text: string }): void {
-    if (this.relay === undefined || turn.agent !== this.boss) return;
-    void this.relay.relay(turn.task, turn.text).catch(() => undefined);
   }
 
   /** A room item was written: a new card or question wakes the chore that answers it. */
@@ -640,40 +620,6 @@ export class CaptainService {
     this.deps.undone?.();
     const after = this.repo.action(id) ?? action;
     return { action: publicAction(after), detail };
-  }
-
-  /**
-   * Once a day at autonomous mode's summary time, the bell gets one line per workspace for the day
-   * before. Nothing when no workspace did anything.
-   */
-  async dailySummary(): Promise<string | undefined> {
-    const [sections, settings] = await Promise.all([
-      this.deps.config.sections(),
-      this.deps.config.settings(),
-    ]);
-    const tz = zoneOr(settings.autonomy.tz);
-    const now = this.now();
-    const today = localDay(now, tz);
-    const [h = 8, m = 0] = settings.autonomy.summary_at.split(":").map(Number);
-    const clock = new Intl.DateTimeFormat("en-GB", {
-      timeZone: tz,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(now);
-    if (clock < `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`) return undefined;
-    if (!this.repo.markSummary(today)) return undefined;
-    const yesterday = addDays(today, -1);
-    const lines: string[] = [];
-    for (const org of workspaceIds(sections.orgs)) {
-      const line = summaryOf(this.repo.dayActions(org, yesterday));
-      if (line !== "")
-        lines.push(`${org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org)}: ${line}`);
-    }
-    if (lines.length === 0) return undefined;
-    const text = `The captain yesterday. ${lines.join(". ")}.`;
-    this.deps.tell(`captain-summary:${today}`, text);
-    return text;
   }
 
   /** The chore's label, for lines elsewhere. */

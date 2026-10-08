@@ -1,9 +1,8 @@
 import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
 import { BarChart3, History, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
+import { Menu } from "@/components/ui/menu";
 import { Segmented } from "@/components/ui/segmented";
-import { capTone } from "@/features/autonomy/model";
 import { useAutonomousSwitch } from "@/features/autonomy/switch";
 import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/format";
@@ -17,8 +16,8 @@ function dollars(n: number): string {
 }
 
 /**
- * The top of the Captain page, one slim bar: the Auto-pilot switch, today's and this month's spend,
- * yesterday's chip, and the Permissions, Results and History buttons.
+ * The top of the Captain page, one slim bar: Dashboard | Chat, the Auto-pilot switch with Stop everything, and one
+ * menu holding the spend, Permissions, Results and History.
  */
 export function CaptainHeader({
   captain,
@@ -69,48 +68,62 @@ export function CaptainHeader({
         Auto-pilot
         {toggle}
       </div>
-      <div className="tnum flex items-baseline gap-4 text-sm text-fg-muted">
-        {total && (
-          <span
-            title="Auto-pilot spend today against its daily budget"
-            className={cn(capTone(total) === "red" && "text-red")}
-          >
-            <b className="font-mono font-medium text-fg">{dollars(total.used.cost)}</b>
-            {cap !== undefined && ` of ${dollars(cap)}`} today
-          </span>
-        )}
-        {month && (month.spentUsd > 0 || month.ceilingUsd !== undefined) && (
-          <span title="Everything majhi spent this month" className={cn(month.held && "text-red")}>
-            <b className="font-mono font-medium text-fg">{dollars(month.spentUsd)}</b> this month
-          </span>
-        )}
-      </div>
-      {chip && (
-        <button
-          type="button"
-          onClick={onSummary}
-          className={cn(
-            "flex h-6 min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-raised px-2.5 text-sm hover:border-line-hover",
-            chip.over ? "border-amber-line text-amber-soft" : "border-line-control text-fg-soft",
-          )}
-        >
-          <Lamp state="needs" size={6} />
-          <span className="min-w-0 truncate">{chip.text}</span>
-        </button>
-      )}
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <Button variant="secondary" size="sm" disabled={captain === undefined} onClick={onPermissions}>
-          <ShieldCheck aria-hidden="true" />
-          Permissions
-        </Button>
-        <Button variant="secondary" size="sm" onClick={onResults}>
-          <BarChart3 aria-hidden="true" />
-          Results
-        </Button>
-        <Button variant="secondary" size="sm" disabled={captain === undefined} onClick={onHistory}>
-          <History aria-hidden="true" />
-          History
-        </Button>
+        <Menu
+          label="More"
+          items={[
+            ...(total
+              ? [
+                  {
+                    group: "Spend",
+                    label: `${dollars(total.used.cost)}${cap === undefined ? "" : ` of ${dollars(cap)}`} today`,
+                    onSelect: () => undefined,
+                    disabled: true,
+                  },
+                ]
+              : []),
+            ...(month && (month.spentUsd > 0 || month.ceilingUsd !== undefined)
+              ? [
+                  {
+                    group: "Spend",
+                    label: `${dollars(month.spentUsd)} this month`,
+                    onSelect: () => undefined,
+                    disabled: true,
+                  },
+                ]
+              : []),
+            {
+              group: "Captain",
+              label: "Permissions",
+              icon: <ShieldCheck aria-hidden="true" />,
+              onSelect: onPermissions,
+              disabled: captain === undefined,
+            },
+            {
+              group: "Captain",
+              label: "Results",
+              icon: <BarChart3 aria-hidden="true" />,
+              onSelect: onResults,
+            },
+            {
+              group: "Captain",
+              label: "History",
+              icon: <History aria-hidden="true" />,
+              onSelect: onHistory,
+              disabled: captain === undefined,
+            },
+            ...(chip === undefined
+              ? []
+              : [
+                  {
+                    group: "Captain",
+                    label: chip.text,
+                    icon: <Lamp state="needs" size={6} />,
+                    onSelect: onSummary,
+                  },
+                ]),
+          ]}
+        />
       </div>
       {dialogs}
     </header>

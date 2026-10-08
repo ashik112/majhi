@@ -12,6 +12,7 @@ import {
 } from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
+import type { CaptainHears } from "../captain/hears.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
@@ -58,6 +59,8 @@ export interface CoordinatorDeps {
   agents: AgentStore;
   config: ConfigService;
   decisions?: Decisions | undefined;
+  /** What a worker says to the captain about its task: the captain's lane hears it, and the captain never joins the team. */
+  hears?: Pick<CaptainHears, "hear"> | undefined;
   /** Whether the agent waits on a background run it started (`wait: true`): then it asks nobody. */
   waitsOnProcess?: ((task: string, agent: string) => boolean) | undefined;
   /** The agent's account when it needs a new sign-in: no work is handed to such an agent. */
@@ -116,10 +119,15 @@ export class RoomCoordinator {
     if (!task.team.includes(turn.agent)) return;
     const text = turn.text.trim();
     const agents = await this.frontmatters();
-    const mentions = parseMentions(
+    const boss = (await this.deps.config.sections()).boss;
+    const named_ = parseMentions(
       text,
       agents.map((a) => a.id),
     ).filter((m) => m !== turn.agent);
+    // The captain is not a teammate: a worker's words to it wake its workspace lane about this task.
+    const mentions = named_.filter((m) => m !== boss);
+    if (boss !== undefined && named_.includes(boss) && addresses(text, boss))
+      await this.deps.hears?.hear(task, { kind: "agent", id: turn.agent }, text);
     const removed = store.tasks.roomState(task.id).removed ?? [];
     const joined = new Set<string>();
     // Agents that could have joined but were named in passing: the writer is told they did not.
@@ -377,6 +385,16 @@ export class RoomCoordinator {
       );
     const account = await this.deps.signedOut?.(to);
     if (account !== undefined) throw new UserError(signedOutRefusal(to, account), 409);
+    if (to === (await this.deps.config.sections()).boss) {
+      // Never joins the team: the workspace lane hears it, tagged with this task, and answers there.
+      const heard = await this.deps.hears?.hear(task, { kind: "agent", id: caller.agent }, text);
+      if (heard === undefined || !heard.heard)
+        throw new UserError(
+          `The captain could not take it now${heard === undefined ? "" : `: ${heard.why}`}.`,
+          409,
+        );
+      return "Sent to the captain. Its answer shows in the task. You can end your turn; it does not join your team.";
+    }
     if (!task.team.includes(to)) task = await this.deps.tasks.addToTeam(task.id, to, { by: caller.agent });
     const state = this.deps.store.tasks.roomState(task.id);
     const max = await this.maxAgentTurns(task);

@@ -35,6 +35,8 @@ export interface LaneDeps {
   rest?: ((org: string, account: string, job?: Job) => Promise<string | undefined>) | undefined;
   /** Stop everything is on: nothing is told to a lane. */
   halted?: (() => boolean) | undefined;
+  /** The lane's coming turn is about this task: its lines are tagged with it (the room does it when the lane is idle). */
+  about?: ((chat: string, task: string) => void) | undefined;
 }
 
 /** `own`: the captain's own account runs the lane, so no account is swapped in. */
@@ -71,6 +73,14 @@ export class Lanes {
   chat(org: string, job: Job = "backlog"): string | undefined {
     const id = this.deps.repo.lane(org, job);
     return id !== undefined && this.deps.store.tasks.has(id) ? id : undefined;
+  }
+
+  /** Both lanes of a workspace (backlog, then on call) that exist: the chats its one thread is read from. */
+  chatsOf(org: string): string[] {
+    return (["backlog", "reacting"] as const).flatMap((job) => {
+      const chat = this.chat(org, job);
+      return chat === undefined ? [] : [chat];
+    });
   }
 
   /** Every lane with a chat that still exists. */
@@ -180,6 +190,8 @@ export class Lanes {
     text: string,
     settled: string,
     job: Job = "backlog",
+    /** The task the wake is about: the captain's words in answer show in that task. */
+    about?: string,
   ): Promise<{ sent: true; chat: string } | { sent: false; why: string; decision?: string }> {
     if (this.deps.halted?.() === true) return { sent: false, why: STOPPED_WHY };
     const picked = await this.account(org);
@@ -196,6 +208,7 @@ export class Lanes {
       const chat = await this.ensure(org, job);
       const boss = chat.team[0];
       if (boss === undefined) return { sent: false, why: "the lane has no captain" };
+      if (about !== undefined) this.deps.about?.(chat.id, about);
       await this.deps.tasks.tellAgent({ task: chat.id, agent: boss, text, settled, by: "majhi" });
       return { sent: true, chat: chat.id };
     } catch (err) {

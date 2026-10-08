@@ -291,7 +291,7 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
         );
         known.push(finding);
         if (!concrete) return {};
-        const made = await findings.toTask(finding.id, { kind: "captain", org });
+        const made = await findings.toTask(finding.id, { kind: "captain", org }, { followUpOf: t.task });
         return { text: `Proposed task: ${clip(one(t.text), 100)} (${made.task})` };
       },
     });

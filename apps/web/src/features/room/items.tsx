@@ -1,6 +1,8 @@
 import { type AgentLive, permissionOptionLabel, type RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
+  Anchor,
   Brain,
   Check,
   ChevronRight,
@@ -308,7 +310,38 @@ function ItemBody({
       return <PausedCard item={item} owner={owner} />;
     case "owner-question":
       return <QuestionActions item={item} owner={owner} />;
+    case "client":
+      return <ClientMessage item={item} />;
   }
+}
+
+/** A client's message that opened or joined this task, in its one timeline. The chat itself is in Chats. */
+function ClientMessage({ item }: { item: Of<"client"> }) {
+  const name = item.sender.name === "" ? "Client" : item.sender.name;
+  return (
+    <article aria-label={name} className="flex gap-2.5">
+      <span
+        aria-hidden="true"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-raised text-[10px] font-semibold text-fg-soft"
+      >
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex h-6 items-center gap-2">
+          <span className="text-base font-semibold text-fg">{name}</span>
+          <Stamp at={item.at} />
+        </div>
+        <div
+          className={cn(
+            MEASURE,
+            "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
+          )}
+        >
+          {item.text}
+        </div>
+      </div>
+    </article>
+  );
 }
 
 const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {
@@ -398,17 +431,19 @@ function ContextLine({ item, repeat }: { item: Of<"context">; repeat: number }) 
 
 /** The owner's side of the conversation: a light bubble in the same column as the agents. */
 function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: AgentLive | undefined }) {
+  // Not the owner's: the captain (or majhi) wrote it into this task, and the record says so.
+  const who = item.by === "captain" ? "Captain" : item.by === "majhi" ? "majhi" : "You";
   return (
-    <article aria-label="You" className="flex gap-2.5">
+    <article aria-label={who} className="flex gap-2.5">
       <span
         aria-hidden="true"
         className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fg-soft text-[10px] font-semibold text-canvas"
       >
-        Y
+        {item.by === "captain" ? <Anchor className="size-3.5" /> : who.slice(0, 1).toUpperCase()}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className="text-base font-semibold text-fg">You</span>
+          <span className="text-base font-semibold text-fg">{who}</span>
           <Stamp at={item.at} />
           {item.removed === true && <span className="text-sm text-fg-faint">Removed, not sent</span>}
         </div>
@@ -529,12 +564,25 @@ function AgentMessage({
 }) {
   const info = useAgentIndex().get(item.agent);
   const meta = [info?.account, model ?? info?.model].filter(Boolean).join(" · ");
+  // The captain speaks in a task from its workspace thread: it is "Captain", not a teammate's handle.
+  const captain = info?.isBoss === true;
   return (
-    <article aria-label={`@${item.agent}`} className="flex gap-2.5">
-      <AgentAvatar id={item.agent} size={24} />
+    <article aria-label={captain ? "Captain" : `@${item.agent}`} className="flex gap-2.5">
+      {captain ? (
+        <span
+          aria-hidden="true"
+          className="grid size-6 shrink-0 place-items-center rounded-full border border-line-control text-fg-muted"
+        >
+          <Anchor className="size-3.5" />
+        </span>
+      ) : (
+        <AgentAvatar id={item.agent} size={24} />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
-          <span className="shrink-0 font-mono text-base font-semibold text-fg">@{item.agent}</span>
+          <span className={cn("shrink-0 text-base font-semibold text-fg", !captain && "font-mono")}>
+            {captain ? "Captain" : `@${item.agent}`}
+          </span>
           {meta && <span className="min-w-0 truncate font-mono text-xs text-fg-faint">{meta}</span>}
           <Stamp at={item.at} />
         </div>
@@ -846,7 +894,13 @@ function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
       tone={item.level}
       icon={item.level === "info" ? undefined : SYSTEM_ICON[item.level]}
       action={
-        item.decision !== undefined ? (
+        item.pointer !== undefined ? (
+          <Button asChild size="sm" variant="ghost" className="h-6 px-2">
+            <Link to="/t/$taskId" params={{ taskId: item.pointer }}>
+              Open {item.pointer}
+            </Link>
+          </Button>
+        ) : item.decision !== undefined ? (
           <WrongButton decision={item.decision} />
         ) : failed?.log !== undefined && task !== undefined ? (
           <LogLink task={task} log={failed.log} />

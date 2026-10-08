@@ -31,7 +31,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
-import { findBossChat, isBossChat } from "./admin/boss.ts";
+import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
@@ -51,10 +51,12 @@ import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
+import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
 import { PayDecisions } from "./captain/pay-decisions.ts";
+import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -457,6 +459,10 @@ export interface Services {
   wikiAsk: WikiAsk;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
+  /** What the owner or a worker says to the captain about a task. */
+  hears: CaptainHears;
+  /** The lines in a workspace thread, or in the root chat, that point at a task. */
+  pointers: Pointers;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -958,8 +964,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
+      // The captain's turn in a lane is over: its last words are stored with their tag, then the lane is about nothing.
+      room.flush(turn.task);
+      room.setSubject(turn.task, undefined);
       idleWatch.turnEnded(turn);
-      captainRef.current?.turnEnded(turn);
       return coordinator.turnEnded(turn);
     },
     onCheckpoint: (task) => background.run(() => tasks.restackOnto(task)),
@@ -1151,6 +1159,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     enabled: wikiOn,
     links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
   });
+  const pointersRef: { current: Pointers | undefined } = { current: undefined };
   const tasks = new TaskService({
     mergeGate,
     wikiNotes: (task) =>
@@ -1179,7 +1188,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     memory,
     memoryScopes,
     onChatTurn: (id) => void chatMemory?.afterTurn(id),
+    onOpened: (task) => pointersRef.current?.opened(task),
     onDone: async (task) => {
+      pointersRef.current?.done(task);
       if (!isBossChat(task)) extraction.afterClose(task);
       await promotion.release(task);
     },
@@ -1483,7 +1494,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
     changed: () => events.emit(["schedules"]),
   });
+  const hearsRef: { current: CaptainHears | undefined } = { current: undefined };
   const coordinator = new RoomCoordinator({
+    hears: {
+      hear: async (task, from, text) =>
+        (await hearsRef.current?.hear(task, from, text)) ?? { heard: false, why: "the captain is not ready" },
+    },
     store,
     room,
     runs,
@@ -1671,6 +1687,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           text: FIX_MR_CHECKS_TEXT,
           attachments: [],
           mode: "queue",
+          by: "majhi",
         }),
       runDeployStep: async (task, project, env) => {
         const found = store.tasks.get(task);
@@ -1734,6 +1751,56 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account, job) => autonomy.laneRest(org, account, job),
     halted: () => captainRepo.isStopped(),
+    about: (chat, task) => {
+      if (runs.working(chat).length === 0) room.setSubject(chat, task as TaskId);
+    },
+  });
+  const hears = new CaptainHears({ lanes, room });
+  notifier.useCaptainLog((e) => {
+    void config
+      .settings()
+      .then((s) => {
+        const at = new Date();
+        captainRepo.addAction({
+          key: `told:${e.key}`,
+          org: e.org,
+          chore: "cards",
+          day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
+          at: at.toISOString(),
+          text: e.text,
+          reason: "Told the owner without asking",
+          outcome: "done",
+          undoNote: "Nothing to undo",
+        });
+      })
+      .catch(() => undefined); // The database closed under a shutdown.
+  });
+  admin.useCaptainLog((e) => {
+    void config
+      .settings()
+      .then((s) => {
+        const at = new Date();
+        captainRepo.addAction({
+          key: `applied:${e.id}`,
+          org: e.org,
+          chore: "cards",
+          day: localDay(at, zoneOr(s.autonomy.orgs[e.org]?.tz ?? s.autonomy.tz)),
+          at: at.toISOString(),
+          text: e.text,
+          reason: e.reason,
+          ...(e.task === undefined ? {} : { task: e.task }),
+          outcome: e.ok ? "done" : "failed",
+          undoNote: "Done through a tool call; see the task or the Permissions log",
+        });
+      })
+      .catch(() => undefined); // The database closed under a shutdown.
+  });
+  const pointers = new Pointers({ store, room, lanes });
+  pointersRef.current = pointers;
+  hearsRef.current = hears;
+  room.useCaptain({
+    lanesOf: (org) => lanes.chatsOf(org),
+    orgOfLane: (chat) => lanes.orgOf(chat),
   });
   const payDecisions = new PayDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
@@ -1957,6 +2024,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           : { repos: [{ project: n.project }], ...(n.code === true ? { kind: "code" as const } : {}) }),
         byOwner: n.byOwner,
         attachments: [],
+        ...(n.followUpOf === undefined ? {} : { followUpOf: n.followUpOf }),
         // A finding the captain turns into a task starts by the Start line of its workspace; the owner's own click makes a task for the owner.
         start: !n.byOwner && (await autonomy.mayStartReacting(n.org)),
         provenance: {
@@ -2167,7 +2235,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
     checksConfigured: (project) => checksConfigured(project),
-    tellOwner: (key, text) => notifier.captain(key, text),
+    tellOwner: (key, text, org) => notifier.captain(key, text, org),
     incident: async (input) =>
       (
         await incidentEngine?.open({
@@ -2225,14 +2293,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
-    relay: {
-      bossChat: async () => {
-        const boss = await lanes.boss();
-        const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);
-        return boss === undefined || chat === undefined ? undefined : { chat: chat.id, agent: boss };
-      },
-      post: (task, id, payload) => room.post(task as TaskId, id, payload),
-    },
     ports: captainWorld({
       machineBusy: () => busyReason(machine.get()?.host),
       store,
@@ -3267,6 +3327,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     wiki,
     wikiTools,
     wikiAsk,
+    hears,
+    pointers,
     captainTell: new CaptainTell({
       tasks,
       lanes,

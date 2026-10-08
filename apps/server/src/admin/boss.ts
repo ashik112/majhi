@@ -1,5 +1,6 @@
 import {
   BOSS_CHAT_BRIEF,
+  CAPTAIN_CHAT_TITLE,
   CHAT_BRIEF,
   DEFAULT_CHAT_TITLES,
   isAutonomyChat,
@@ -109,10 +110,21 @@ export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<T
     if (summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss) continue;
     const task = deps.tasks.get(summary.id);
     if (isAutonomyChat(task)) continue;
-    if (!fresh || DEFAULT_CHAT_TITLES.includes(task.title)) return task;
+    // A new chat with nothing said in the current one reuses it; otherwise the current one is archived below.
+    const said = ["owner", "agent"].some(
+      (type) => deps.store.room.ofType(task.id, type as "owner" | "agent").length > 0,
+    );
+    if (!fresh || !said) return titled(deps, task);
     // The owner asked for a new conversation. A chat has no repo of its own, so nothing stays behind.
     await deps.tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
     break;
   }
-  return openChat(deps, boss);
+  return titled(deps, await openChat(deps, boss));
+}
+
+/** The captain chat is called "Captain" whatever was first said in it. */
+function titled(deps: BossChatDeps, task: Task): Task {
+  if (task.title === CAPTAIN_CHAT_TITLE) return task;
+  deps.store.tasks.setText(task.id, CAPTAIN_CHAT_TITLE, task.brief, new Date().toISOString());
+  return deps.tasks.get(task.id);
 }

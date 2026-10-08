@@ -1,10 +1,19 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AgentLive, ProcessInfo, RoomItem, RoomServerMessage, Task, TaskId } from "@majhi/shared";
+import {
+  type AgentLive,
+  PRIVATE,
+  type ProcessInfo,
+  type RoomItem,
+  type RoomServerMessage,
+  type Task,
+  type TaskId,
+} from "@majhi/shared";
 import { z } from "zod";
 import { redactDeep } from "../connections/redact.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
+import { type CaptainView, roomWithCaptain, showTargets } from "./captain-view.ts";
 
 /** How many items a new socket gets. */
 export const SNAPSHOT_ITEMS = 200;
@@ -54,6 +63,18 @@ export class RoomService {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly writeListeners = new Set<(task: TaskId, item: RoomItem) => void>();
 
+  /** The captain's lanes: what makes a task's timeline and a workspace thread merged reads. */
+  private captain: CaptainView | undefined;
+  /** The workspace whose captain lane this chat is, or undefined. */
+  laneOrg(chat: string): string | undefined {
+    return this.captain?.orgOfLane(chat);
+  }
+
+  /** The task a lane's turn is about now: its lines are tagged with it (`about`) until the turn ends. */
+  private readonly subjects = new Map<string, TaskId>();
+  /** Lanes whose turn has acted on two different tasks: nothing after that is about either, so it stays in the thread. */
+  private readonly mixed = new Set<string>();
+
   /** The last slash commands each agent advertised, so `/` works before a session starts. */
   private readonly commands = new Map<string, AgentLive["commands"]>();
 
@@ -69,6 +90,54 @@ export class RoomService {
     } catch {
       // No file yet, or an unreadable one: start empty.
     }
+  }
+
+  useCaptain(view: CaptainView): void {
+    this.captain = view;
+  }
+
+  /** The captain's turn in `lane` acts on `task` now (or on nothing): its next lines are about it. Only a task of the lane's own workspace counts. */
+  setSubject(lane: string, task: TaskId | undefined): void {
+    if (task === undefined) {
+      this.subjects.delete(lane);
+      this.mixed.delete(lane);
+      return;
+    }
+    const org = this.captain?.orgOfLane(lane);
+    if (org === undefined || this.mixed.has(lane)) return;
+    const found = this.store.tasks.get(task);
+    if (found === undefined || found.kind === "chat" || (found.org ?? PRIVATE) !== org) return;
+    const before = this.subjects.get(lane);
+    if (before !== undefined && before !== task) {
+      // A second task in one turn: what follows may be about either, so it is about neither.
+      this.subjects.delete(lane);
+      this.mixed.add(lane);
+      return;
+    }
+    this.subjects.set(lane, task);
+  }
+
+  /** What the lane's lines are about now. */
+  subjectOf(lane: string): TaskId | undefined {
+    return this.subjects.get(lane);
+  }
+
+  /** Tags a lane's line with the task its turn is about; a line already tagged keeps its tag. */
+  private stamp(task: TaskId, id: string, payload: RoomPayload): RoomPayload {
+    if (this.captain?.orgOfLane(task) === undefined || payload.about !== undefined) return payload;
+    // A pointer line belongs to the thread, whatever the lane is doing.
+    if (payload.type === "system" && payload.pointer !== undefined) return payload;
+    if (payload.type === "owner") {
+      // The owner starts a new turn: it is about whatever they say, not the last task.
+      this.subjects.delete(task);
+      this.mixed.delete(task);
+      return payload;
+    }
+    // A message that was written across a second task is about neither: it goes back to the thread whole.
+    if (payload.type === "agent" && this.mixed.has(task)) return payload;
+    const kept = this.store.room.get(task, id)?.about;
+    const about = kept ?? this.subjects.get(task);
+    return about === undefined ? payload : { ...payload, about };
   }
 
   knownCommands(agent: string): AgentLive["commands"] {
@@ -156,14 +225,15 @@ export class RoomService {
       if (!s.dirty) continue;
       // The sockets saw the text as deltas: the stored item, whole, makes sure they end up with the same.
       const item = this.save(task as TaskId, id, s, now);
-      this.send(task, { type: "item", item });
+      this.send(task, { type: "item", item }, item.about);
     }
   }
 
   /** A streamed item: the first write goes out whole, later ones as the text that was added. */
   private stream(task: TaskId, id: string, payload: RoomPayload, now: number): void {
     const redact = this.redact;
-    const clean = redact === undefined ? payload : redactDeep(payload, (text) => redact(task, text));
+    const redacted = redact === undefined ? payload : redactDeep(payload, (text) => redact(task, text));
+    const clean = this.stamp(task, id, redacted);
     const text = "text" in clean && typeof clean.text === "string" ? clean.text : undefined;
     const streams = this.streams.get(task) ?? new Map<string, Stream>();
     this.streams.set(task, streams);
@@ -171,7 +241,7 @@ export class RoomService {
     if (text === undefined) {
       streams.delete(id);
       const item = this.store.room.upsert(task, id, clean);
-      this.send(task, { type: "item", item });
+      this.send(task, { type: "item", item }, item.about);
       this.listen(task, item);
       return;
     }
@@ -180,17 +250,16 @@ export class RoomService {
       // New, or changed in a way a delta cannot say (an earlier part redacted, media added).
       const item = this.store.room.upsert(task, id, clean);
       streams.set(id, { sent: text, shape, payload: clean, dirty: false, savedAt: now, touchedAt: now });
-      this.send(task, { type: "item", item });
+      this.send(task, { type: "item", item }, item.about);
       this.listen(task, item);
       return;
     }
     if (text.length > before.sent.length) {
-      this.send(task, {
-        type: "delta",
-        id,
-        offset: before.sent.length,
-        append: text.slice(before.sent.length),
-      });
+      this.send(
+        task,
+        { type: "delta", id, offset: before.sent.length, append: text.slice(before.sent.length) },
+        clean.about,
+      );
       before.sent = text;
       before.payload = clean;
       before.dirty = true;
@@ -226,9 +295,9 @@ export class RoomService {
 
   private write(task: TaskId, id: string, payload: RoomPayload): RoomItem {
     const redact = this.redact;
-    const clean = redact === undefined ? payload : redactDeep(payload, (text) => redact(task, text));
-    const item = this.store.room.upsert(task, id, clean);
-    this.send(task, { type: "item", item });
+    const redacted = redact === undefined ? payload : redactDeep(payload, (text) => redact(task, text));
+    const item = this.store.room.upsert(task, id, this.stamp(task, id, redacted));
+    this.send(task, { type: "item", item }, item.about);
     this.listen(task, item);
     return item;
   }
@@ -313,7 +382,7 @@ export class RoomService {
   /** The last 200 items in the order they appeared, and every team agent's state. */
   snapshot(task: Task): Extract<RoomServerMessage, { type: "snapshot" }> {
     this.flush(task.id);
-    const page = this.store.room.page(task.id, SNAPSHOT_ITEMS);
+    const page = roomWithCaptain(this.store, this.captain, task, SNAPSHOT_ITEMS);
     const items = [...page.items].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
     const agents = task.team.map(
       (id): AgentLive =>
@@ -351,7 +420,16 @@ export class RoomService {
     this.processes.delete(task);
   }
 
-  private send(task: string, message: RoomServerMessage): void {
-    for (const listener of this.listeners.get(task) ?? []) listener(message);
+  /** Sends to the sockets that show the line: its task's, or for a captain lane's line, the thread's or the task it is about. */
+  private send(task: string, message: RoomServerMessage, about?: string): void {
+    const shown =
+      message.type === "item" || message.type === "delta" ? showTargets(this.captain, task, about) : [task];
+    for (const target of shown) for (const listener of this.listeners.get(target) ?? []) listener(message);
+  }
+
+  /** The room as the owner reads it: see `roomWithCaptain`. */
+  read(task: Pick<Task, "id" | "org" | "kind">, limit: number, olderThan?: string) {
+    this.flush(task.id);
+    return roomWithCaptain(this.store, this.captain, task, limit, olderThan);
   }
 }

@@ -60,7 +60,7 @@ export interface DeployWorldDeps {
   nothing: NothingDeploys;
   credentials: CredentialDeps;
   checksConfigured: (project: string) => boolean | Promise<boolean>;
-  tellOwner: (key: string, text: string) => void;
+  tellOwner: (key: string, text: string, org?: string) => void;
   /** Opens or joins the incident of a failed deploy (the incident engine). Absent: the task is made here. */
   incident?:
     | ((input: {
@@ -209,7 +209,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       },
     },
     openIncident,
-    tellOwner: (_org, key, text) => deps.tellOwner(key, text),
+    tellOwner: (org, key, text) => deps.tellOwner(key, text, org),
     audit: (row) => {
       deps.store.permissions.log({
         task: row.task,

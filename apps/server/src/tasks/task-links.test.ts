@@ -44,4 +44,14 @@ describe("parents and children", () => {
     const reopened = await w.h.cmd("tasks.reopen", { id: "ACM-1" });
     expect(reopened.body.status).toBe("inbox");
   });
+
+  it("closes a task that still has open follow-ups", async () => {
+    w = await taskWorld();
+    await create("fix the api outage", { repos: [{ project: "acme-api" }] });
+    await create("tighten the alert on api", { followUpOf: "ACM-1", repos: [{ project: "acme-api" }] });
+    const closed = await w.h.cmd("tasks.close", { id: "ACM-1" });
+    expect(closed.status).toBe(200);
+    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("done");
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).not.toBe("done");
+  });
 });

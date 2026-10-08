@@ -53,6 +53,8 @@ export interface FindingsDeps {
     finding: { id: number; source: FindingSource; severity: FindingSeverity };
     /** A change to code, whatever the words say: an incident's fix reads "is down" but is not an investigation. */
     code?: boolean;
+    /** The task this one follows up (a link of type `follow-up`, so the source can close without it). */
+    followUpOf?: string;
   }): Promise<{ id: string }>;
   /** A task's status, undefined when it is gone. */
   taskStatus(id: string): TaskStatus | undefined;
@@ -400,7 +402,11 @@ export class FindingsService {
    * captain only proposes (SPEC 5.18, Own work): the task waits in the inbox, not started, and the
    * finding says `proposed`. An agent does not make tasks from findings.
    */
-  async toTask(id: number, actor: FindingActor): Promise<FindingToTaskResult> {
+  async toTask(
+    id: number,
+    actor: FindingActor,
+    options: { followUpOf?: string } = {},
+  ): Promise<FindingToTaskResult> {
     if (actor.kind === "agent") {
       throw new UserError("Only the owner and the captain make tasks from findings.", 409);
     }
@@ -421,6 +427,7 @@ export class FindingsService {
       byOwner: actor.kind === "owner",
       finding: { id: found.id, source: found.source, severity: found.severity },
       ...(found.source === "incident" ? { code: true } : {}),
+      ...(options.followUpOf === undefined ? {} : { followUpOf: options.followUpOf }),
     });
     const finding = this.repo.patch(id, { at: this.at(), status: to, task: task.id });
     this.labelled(actor, found, "keep", "the owner made a task of it");

@@ -471,6 +471,8 @@ export type ChangeBranchResult = z.infer<typeof ChangeBranchResultSchema>;
 export const CHAT_BRIEF = "Chat";
 /** Starts the `why` of a review card when the captain tried to ship the task and failed; the reason follows. */
 export const SHIP_FAILED_PREFIX = "The captain tried to ship it and failed: ";
+/** The fixed title of the owner's chat with the captain: it never takes a title from its first topic. */
+export const CAPTAIN_CHAT_TITLE = "Captain";
 /** The same marker on chats made before the Chats page. */
 export const BOSS_CHAT_BRIEF = "Captain chat";
 /** What an untitled chat is called until the owner's first message names it. */
@@ -631,6 +633,11 @@ const RoomItemBase = z.object({
   /** Increases with every insert or update in the task; clients keep the highest. */
   seq: z.number().int().nonnegative(),
   at: z.string(),
+  /**
+   * A line of the captain's workspace thread that is about this task. It stays in the thread's room (one stored
+   * copy); the task's timeline reads it from there (`roomWithCaptain`) and the workspace thread leaves it out.
+   */
+  about: TaskIdSchema.optional(),
 });
 
 export const ToolContentSchema = z.discriminatedUnion("type", [
@@ -747,6 +754,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     removed: z.boolean().optional(),
     /** The agent it went to. */
     to: IdSchema.optional(),
+    /** Who wrote it when it was not the owner: the captain or majhi itself. Absent: the owner. */
+    by: z.enum(["captain", "majhi"]).optional(),
   }),
   RoomItemBase.extend({
     type: z.literal("agent"),
@@ -1095,6 +1104,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     failed: HandoffFailedSchema.optional(),
     /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
     action: z.enum(["memory-retry", "runner-memory"]).optional(),
+    /** A pointer line in a workspace thread: the task this line is about ("Opened ACM-3: api is down"). Linked, never copied. */
+    pointer: TaskIdSchema.optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

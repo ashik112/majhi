@@ -2013,6 +2013,24 @@ ALTER TABLE captain_lanes_by_job RENAME TO captain_lanes;
     name: "task kind fields",
     sql: `ALTER TABLE tasks ADD COLUMN fields TEXT;`,
   },
+  {
+    // A line of a captain's workspace thread can be about a task (`about` in the payload): the task page reads those
+    // lines from the thread's room, and the thread leaves them out. A client message that became or joined a task
+    // names it in its outcome (`outcome_task`), and the task shows it. Virtual columns and indexes make each read
+    // one lookup. Nothing to backfill: SQLite computes it from the payload.
+    id: 190,
+    name: "room items about a task",
+    sql: `
+ALTER TABLE room_items ADD COLUMN about TEXT GENERATED ALWAYS AS (
+  CASE WHEN json_valid(payload) THEN json_extract(payload, '$.about') END
+) VIRTUAL;
+CREATE INDEX room_items_about ON room_items (about, at) WHERE about IS NOT NULL;
+ALTER TABLE room_items ADD COLUMN outcome_task TEXT GENERATED ALWAYS AS (
+  CASE WHEN json_valid(payload) THEN json_extract(payload, '$.outcome.task') END
+) VIRTUAL;
+CREATE INDEX room_items_outcome_task ON room_items (outcome_task, at) WHERE outcome_task IS NOT NULL;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

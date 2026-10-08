@@ -1,5 +1,19 @@
 # Progress
 
+## One home, one voice, slice 1 (branch `feat/one-home-voice`, built, not merged)
+
+The captain speaks where the thing lives: about a task, in that task; elsewhere, in the workspace thread. Slice 2 (board kind tags, post and support types, bubble Now list, client-room Make a task and Not sent) is a separate branch.
+
+**Design note (every new stored field and its one home).**
+- `about: TaskId` on the room item base (`packages/shared/src/tasks.ts`). It is set on a captain lane's line when its turn acts on a task. One stored copy: the line stays in the lane's room. A virtual column `room_items.about` and an index (migration 190) make the reads one lookup. Nothing else is stored.
+- `system.pointer: TaskId` on a system line: "Opened ACM-3: api is down" and "Resolved ACM-3" in the workspace thread, written by `captain/pointers.ts` when a task the captain side opened or started begins and when it finishes. It links the task and copies nothing.
+- Reads, derived: `roomWithCaptain` (`room/captain-view.ts`) is the one read. A task is its own room plus the lane lines tagged `about` it, only from the lanes of its own workspace, merged by `at`. A workspace thread is the untagged lines of both lanes (backlog and on call) merged. The websocket snapshot, the live fan-out and `room.items` (paged by `beforeAt`) all use it. The lanes stay two sessions; the owner reads one thread.
+- Who sets the tag: `RoomService.setSubject(lane, task)`, from a captain tool call that names a task (`tasks.*` with `task` or `id`, any call with `task`), from a result that names `task` (`chat.openIncident`, `chat.startTask`), and from `Lanes.tell(..., about)` when the lane is idle. Cleared at the end of the lane's turn and when the owner writes in the lane. A task of another workspace is refused.
+- The captain never joins a team: `TaskService.addToTeam` refuses it when an agent asks; a worker's mention or `mention` tool to the captain wakes the workspace lane about the task (`captain/hears.ts`). The task page's composer sends `room.send` with `to: "captain"` by default; an @mention of an agent still addresses that agent.
+- Deleted: `captain/relay.ts` and its wiring, `CaptainService.dailySummary` (the Today brief and the Captain sheet stay), the summary line pasted into lanes, `alone` cards in lane rooms (they are History entries), Main | Urgent and "Open in Chats" in the web.
+
+**How to test.** Typecheck, the three tests in `captain/one-home.test.ts` and `tasks/task-links.test.ts`, then the journeys in a throwaway majhi (`e2e/incident-walk` tooling).
+
 ## One home, one voice, slice 2: surfaces (branch `feat/one-home-surfaces`, built, not merged)
 
 Task kinds, the board tag, the bubble's Now list, and the client room's Make a task and Retry. Slice 1 (relay removal, captain tags, task page, Captain and Chats pages) is built apart.

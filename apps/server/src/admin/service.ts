@@ -3,24 +3,27 @@ import {
   type AllowRule,
   AUTONOMY_BOSS_COMMANDS,
   type AutonomyMode,
+  actorOfName,
   CAPTAIN_PROPOSALS,
   CHAT_BRIEF,
   type CommandMeta,
   type CommandName,
   type ConnectionTestResult,
   commands,
+  didWords,
   effectiveMode,
   IdSchema,
   isDestructiveCommand,
   McpInstallResultSchema,
+  OWNER,
   PERMISSION_COMMANDS,
   PRIVATE,
   type RoomItem,
   type ShipFix,
   scriptProblem,
   type TaskId,
+  TaskIdSchema,
 } from "@majhi/shared";
-import { actorOfName, didWords, OWNER } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
@@ -89,6 +92,17 @@ type SecretRequestItem = Extract<RoomItem, { type: "secret-request" }>;
 export interface Dismissal {
   by: "owner" | "captain";
   reason?: string | undefined;
+}
+
+/** One applied call of the captain in its lane, for the History. */
+export interface AppliedEntry {
+  org: string;
+  task?: string;
+  text: string;
+  reason: string;
+  ok: boolean;
+  /** The card id it would have had: the History key. */
+  id: string;
 }
 
 export interface AdminDeps {
@@ -211,6 +225,7 @@ export class AdminService {
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
   private proposals: ProposalWorld | undefined;
+  private captainLog: ((entry: AppliedEntry) => void) | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
@@ -232,6 +247,37 @@ export class AdminService {
   /** What a captain's proposal is measured against: built after this service, from the settings and projects. */
   useProposals(world: ProposalWorld): void {
     this.proposals = world;
+  }
+
+  /** Where the captain's applied calls are logged: History, not the workspace thread. */
+  useCaptainLog(log: (entry: AppliedEntry) => void): void {
+    this.captainLog = log;
+  }
+
+  /**
+   * An applied call that needed no click. In a task's room the card shows what ran. In a captain lane it is a History
+   * entry instead: the workspace thread keeps talk, and a card per tool call buries it.
+   */
+  private appliedAlone(
+    caller: AdminCaller,
+    id: string,
+    payload: ApprovalPayload,
+    entry: { command: CommandName; input: unknown; reason: string; ok: boolean; result: string },
+  ): void {
+    const org = this.deps.room.laneOrg(caller.task);
+    if (org === undefined || this.captainLog === undefined) {
+      this.deps.room.post(caller.task as TaskId, id, payload);
+      return;
+    }
+    const subject = this.deps.room.subjectOf(caller.task);
+    this.captainLog({
+      org,
+      ...(subject === undefined ? {} : { task: subject }),
+      text: `${entry.ok ? "Ran" : "Failed"}: ${summarize(entry.command, entry.input)}`,
+      reason: entry.reason === "" ? entry.result : entry.reason,
+      ok: entry.ok,
+      id,
+    });
   }
 
   /** The host helper's clipboard: built after this service, from the helper link and the config. */
@@ -258,6 +304,7 @@ export class AdminService {
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
+      this.aboutTask(caller, spec.command, input);
       const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
       // What the captain may not do alone becomes a proposal for the owner: no policy, rule, mode or trust applies.
       if (CAPTAIN_PROPOSALS.has(spec.command)) {
@@ -298,6 +345,17 @@ export class AdminService {
     } catch (err) {
       return error(errorMessage(err));
     }
+  }
+
+  /**
+   * The captain in its lane acts on a task (a call that changes something and names the task): the lane's lines
+   * from here to the end of the turn are about that task, so they show in its timeline and not in the workspace thread.
+   */
+  private aboutTask(caller: AdminCaller, command: CommandName, input: Record<string, unknown>): void {
+    if (commands[command].risk === "read") return;
+    const named = command.startsWith("tasks.") ? (input.task ?? input.id) : input.task;
+    const parsed = TaskIdSchema.safeParse(named);
+    if (parsed.success) this.deps.room.setSubject(caller.task, parsed.data);
   }
 
   /**
@@ -540,13 +598,19 @@ export class AdminService {
     }
     const done = await this.execute(command, input, metaFor(caller.agent, ask.reason, caller.task));
     const held = !done.ok && ask.accept?.(done.error) === true;
-    this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
-      ...cardOf(caller.agent, command, input, ask.reason),
-      alone: true,
-      state: done.ok || held ? "applied" : "failed",
-      ...(done.commit === undefined ? {} : { commit: done.commit }),
-      result: done.ok ? lineOf(done.output) : done.error,
-    });
+    const result = done.ok ? lineOf(done.output) : done.error;
+    this.appliedAlone(
+      caller,
+      `approval:${randomUUID()}`,
+      {
+        ...cardOf(caller.agent, command, input, ask.reason),
+        alone: true,
+        state: done.ok || held ? "applied" : "failed",
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result,
+      },
+      { command, input, reason: ask.reason, ok: done.ok || held, result },
+    );
     if (held) return { text: ask.accepted ?? done.error, isError: false };
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
@@ -655,16 +719,22 @@ export class AdminService {
         );
       }
       if (def.risk !== "read") {
-        this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
-          ...cardOf(caller.agent, command, input, ask.reason),
-          alone: true,
-          ...(rule === undefined
-            ? {}
-            : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
-          state: done.ok ? "applied" : "failed",
-          ...(done.commit === undefined ? {} : { commit: done.commit }),
-          result: done.ok ? lineOf(done.output) : done.error,
-        });
+        const result = done.ok ? lineOf(done.output) : done.error;
+        this.appliedAlone(
+          caller,
+          `approval:${randomUUID()}`,
+          {
+            ...cardOf(caller.agent, command, input, ask.reason),
+            alone: true,
+            ...(rule === undefined
+              ? {}
+              : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
+            state: done.ok ? "applied" : "failed",
+            ...(done.commit === undefined ? {} : { commit: done.commit }),
+            result,
+          },
+          { command, input, reason: ask.reason, ok: done.ok, result },
+        );
       }
       if (auto !== undefined && autonomy !== undefined) {
         autonomy.ran(caller, command, input, ask.reason, done);
@@ -728,14 +798,20 @@ export class AdminService {
       "autonomy",
       done.ok ? verdict.why : `${verdict.why}. Failed: ${done.error}`,
     );
-    this.deps.room.post(caller.task as TaskId, id, {
-      ...cardOf(caller.agent, command, input, ask.reason),
-      alone: true,
-      state: done.ok ? "applied" : "failed",
-      autonomy: marker,
-      ...(done.commit === undefined ? {} : { commit: done.commit }),
-      result: done.ok ? lineOf(done.output) : done.error,
-    });
+    const result = done.ok ? lineOf(done.output) : done.error;
+    this.appliedAlone(
+      caller,
+      id,
+      {
+        ...cardOf(caller.agent, command, input, ask.reason),
+        alone: true,
+        state: done.ok ? "applied" : "failed",
+        autonomy: marker,
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result,
+      },
+      { command, input, reason: ask.reason, ok: done.ok, result },
+    );
     autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
     if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
@@ -1456,6 +1532,11 @@ export class AdminService {
     if (!result.ok) {
       const parts = [result.error.error, ...(result.error.details ?? [])];
       return { ok: false, error: redactText(parts.join(". ")) };
+    }
+    // A call that opened or started a task (its result names `task`): the captain's words after it are about that task.
+    if (meta.task !== undefined && typeof result.output === "object" && result.output !== null) {
+      const parsed = TaskIdSchema.safeParse((result.output as { task?: unknown }).task);
+      if (parsed.success) this.deps.room.setSubject(meta.task, parsed.data);
     }
     if (commands[command].risk === "read") {
       if (lane === undefined) return { ok: true, output: result.output };

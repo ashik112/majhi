@@ -157,17 +157,32 @@ export class Notifier {
 
   /**
    * A question of the captain's that waits for the owner: a chore at its daily limit or a budget that
-   * ran out (SPEC 5.18). Told once per key, and only these: what the captain tells without asking
-   * (a chore turned off, the daily summary) is read in the log and never alerts.
+   * ran out (SPEC 5.18). Told once per key, and only these alert. What the captain tells without asking
+   * (a deploy that failed, a chore that failed N times, a playbook that failed) is a line in its History:
+   * never dropped, never an alert. `org` is the workspace it belongs to, when the key does not say.
    */
-  captain(key: string, text: string): void {
+  /** Where what the captain tells without asking is written: its History. Bound once the captain's store exists. */
+  useCaptainLog(log: (entry: { key: string; org: string; text: string }) => void): void {
+    this.captainLog = log;
+  }
+
+  private captainLog: ((entry: { key: string; org: string; text: string }) => void) | undefined;
+
+  captain(key: string, text: string, org?: string): void {
     const path = key.startsWith("budget:")
       ? "/limits"
       : key.startsWith("captain-cap:")
         ? "/captain"
         : undefined;
-    if (path === undefined || this.seen.has(key)) return;
+    if (this.seen.has(key)) return;
     this.seen.add(key);
+    if (path === undefined) {
+      // `captain:<org>:<time>` and `playbook:<org>:<id>:<time>` name the workspace in their second part.
+      const [kind, named] = key.split(":");
+      const own = kind === "captain" || kind === "playbook" ? named : undefined;
+      this.captainLog?.({ key, org: org ?? own ?? "private", text });
+      return;
+    }
     this.enqueue({
       task: "",
       id: key,

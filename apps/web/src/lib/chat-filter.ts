@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 /** Which conversations the Chats page and the chat bubble show: one state, so both always agree. */
-export type KindFilter = "all" | "client" | "task" | "agent";
+export type KindFilter = "all" | "client" | "agent";
 
 export interface ChatFilter {
   /** `all`, or a workspace id. */

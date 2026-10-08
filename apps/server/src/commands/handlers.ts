@@ -26,6 +26,7 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
+import { isRootChat } from "../captain/tell.ts";
 import { chatHandlers } from "../chat/handlers.ts";
 import { incidentHandlers } from "../chat/incident-handlers.ts";
 import { resolvePath } from "../config/load.ts";
@@ -915,12 +916,22 @@ export function createHandlers({
         // A secret in the task text must not reach TASK.md or the agent.
         const captured = await services.secretService.capture(input.text);
         const byOwner = ctx.meta.actor.kind === "owner";
-        const { type, separate, ...rest } = input;
+        const { type, separate, ...given } = input;
+        // An agent that names another task as the parent files a follow-up: a backlog task linked to it, never a subtask
+        // that would hold the source open. Only a lead splitting its own task makes subtasks.
+        const followUp =
+          ctx.meta.actor.kind === "agent" && input.parent !== undefined && input.parent !== ctx.meta.task;
+        const rest = followUp
+          ? { ...given, parent: undefined, followUpOf: given.followUpOf ?? input.parent }
+          : given;
         // An agent in an ordinary chat: the chat becomes the task, unless it asked for a separate one.
+        // The captain's root chat never becomes a task: what it makes is a separate task, and the chat gets a pointer line.
         const chat = chatOf(services.store, ctx);
+        const boss = await services.lanes.boss();
+        const rootChat = chat !== undefined && boss !== undefined && isRootChat(chat, boss);
         const joined =
-          input.parent !== undefined || input.followUpOf !== undefined || input.dependsOn.length > 0;
-        const promote = chat !== undefined && separate !== true && !joined;
+          rest.parent !== undefined || rest.followUpOf !== undefined || input.dependsOn.length > 0;
+        const promote = chat !== undefined && separate !== true && !joined && !rootChat;
         const task = await services.tasks.create({
           ...rest,
           text: captured.text,
@@ -928,12 +939,13 @@ export function createHandlers({
           byOwner,
           provenance:
             chat === undefined || joined
-              ? createdBy(ctx, input.parent !== undefined)
+              ? createdBy(ctx, rest.parent !== undefined)
               : { kind: "in-chat", room: chat.id },
           ...(promote ? { promote: chat.id } : {}),
           ...(type === undefined ? {} : { typing: { type, by: byOwner ? "owner" : "captain" } }),
         });
         noteSecrets(services, task.id, captured.saved);
+        if (rootChat && chat !== undefined) services.pointers.opened(task, chat.id);
         return task;
       })();
       if (key !== undefined) {
@@ -1154,6 +1166,15 @@ export function createHandlers({
           return { item: asked };
         }
       }
+      if (input.to === "captain" && ctx.meta.actor.kind === "owner" && input.attachments.length === 0) {
+        const task = services.tasks.get(input.task);
+        const posted = services.hears.postOwner(task, captured.text);
+        if (posted !== undefined) {
+          noteSecrets(services, input.task, captured.saved);
+          await services.hears.hear(task, { kind: "owner" }, captured.text);
+          return { item: posted };
+        }
+      }
       const item = await services.tasks.send({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, input.task, captured.saved);
       return { item };
@@ -1175,7 +1196,7 @@ export function createHandlers({
     }),
     "tasks.plan": (input) => services.tasks.plan(input.id),
     "room.items": async (input) =>
-      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq),
+      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq, input.beforeAt),
     "room.around": async (input) => services.tasks.itemsAround(input.task, input.item, input.limit),
     "room.search": async (input) => services.tasks.searchRooms(input.query, input.limit, input.org),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
@@ -1470,14 +1491,24 @@ export function createHandlers({
     "memory.list": async (input) => services.memory.list(input),
     "memory.add": async (input, ctx) => services.memory.add(input, await resolveActor(services, ctx.meta)),
     "memory.edit": async (input, ctx) =>
-      services.memory.edit(input.id, { text: input.text, scope: input.scope }, await resolveActor(services, ctx.meta)),
-    "memory.approve": async (input, ctx) => services.memory.approve(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.reject": async (input, ctx) => services.memory.reject(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.forget": async (input, ctx) => services.memory.forget(input.id, await resolveActor(services, ctx.meta), input.reason),
-    "memory.undo": async (input, ctx) => services.memory.undo(input.event, await resolveActor(services, ctx.meta)),
+      services.memory.edit(
+        input.id,
+        { text: input.text, scope: input.scope },
+        await resolveActor(services, ctx.meta),
+      ),
+    "memory.approve": async (input, ctx) =>
+      services.memory.approve(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.reject": async (input, ctx) =>
+      services.memory.reject(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.forget": async (input, ctx) =>
+      services.memory.forget(input.id, await resolveActor(services, ctx.meta), input.reason),
+    "memory.undo": async (input, ctx) =>
+      services.memory.undo(input.event, await resolveActor(services, ctx.meta)),
     "memory.extract": async (input) => services.extraction.extract(input.task),
-    "memory.promote": async (input, ctx) => services.promotion.promote(input.id, await resolveActor(services, ctx.meta)),
-    "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, await resolveActor(services, ctx.meta)),
+    "memory.promote": async (input, ctx) =>
+      services.promotion.promote(input.id, await resolveActor(services, ctx.meta)),
+    "memory.pin": async (input, ctx) =>
+      services.memory.pin(input.id, input.pinned, await resolveActor(services, ctx.meta)),
     "memory.events": async (input) => services.memory.events(input),
     "memory.approveAll": async (input, ctx) => ({
       count: services.memory.decideAll("approve", input.ids, await resolveActor(services, ctx.meta)),
