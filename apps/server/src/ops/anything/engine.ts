@@ -51,6 +51,7 @@ import {
   type Core,
   customPlan,
   modelPrompt,
+  MissingConnection,
   PlanProblem,
   parseModelReply,
   planLine,
@@ -582,6 +583,8 @@ export class WatchEngine {
       try {
         core = rulesPlan(input.text, conns, lookup, accounts) ?? customPlan(input.text);
       } catch (err) {
+        // 409 from the planner: it waits on a connection, so the form can point at the Connections page.
+        if (err instanceof MissingConnection) throw new UserError(err.message, 409);
         if (err instanceof PlanProblem) throw new UserError(err.message, 400);
         throw err;
       }

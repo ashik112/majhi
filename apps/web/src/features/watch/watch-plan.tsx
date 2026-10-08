@@ -1,7 +1,9 @@
-import type { WatchPlan } from "@majhi/shared";
+import { PAGE_PATH, type WatchPlan } from "@majhi/shared";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { ApiRequestError } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import { usePlanWatch, useSaveWatch } from "@/lib/watch-queries";
 
@@ -41,6 +43,7 @@ export function SentenceBox({
   const [text, setText] = useState("");
   const [plan, setPlan] = useState<WatchPlan | undefined>();
   const [problem, setProblem] = useState<string | undefined>();
+  const [needsConnection, setNeedsConnection] = useState(false);
   const planner = usePlanWatch();
   const save = useSaveWatch();
   const toast = useToast();
@@ -49,6 +52,7 @@ export function SentenceBox({
     const sentence = text.trim();
     if (sentence.length < 3 || planner.isPending) return;
     setProblem(undefined);
+    setNeedsConnection(false);
     planner.mutate(
       { text: sentence, ...(org === undefined ? {} : { org }) },
       {
@@ -56,6 +60,7 @@ export function SentenceBox({
         onError: (e) => {
           setPlan(undefined);
           setProblem(describeError(e));
+          setNeedsConnection(e instanceof ApiRequestError && e.status === 409);
         },
       },
     );
@@ -107,7 +112,23 @@ export function SentenceBox({
           Set up manually
         </button>
       </form>
-      {problem !== undefined && <p className="m-0 px-3 pb-2.5 text-sm text-red text-pretty">{problem}</p>}
+      {problem !== undefined && (
+        <p className="m-0 px-3 pb-2.5 text-sm text-red text-pretty">
+          {problem}
+          {needsConnection && (
+            <>
+              {" "}
+              <Link
+                to={PAGE_PATH.connections}
+                search={{}}
+                className="text-accent-text underline-offset-2 hover:underline"
+              >
+                Open Connections
+              </Link>
+            </>
+          )}
+        </p>
+      )}
       {plan !== undefined && (
         <div className="mx-3 mb-2.5 flex flex-col gap-2 rounded-[10px] border border-line bg-raised px-3 py-2.5">
           <Line text={plan.line} />

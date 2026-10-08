@@ -443,12 +443,11 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       return parsed?.kind === "incident" ? [parsed.id] : [];
     }),
   );
-  const services = (useWatch().data?.incidents ?? []).filter(
-    (i) =>
-      i.status === "open" &&
-      (org === undefined || i.org === org) &&
-      !asDecision.has(i.id) &&
-      (i.finding === undefined || !asFinding.has(i.finding)),
+  const open = (useWatch().data?.incidents ?? []).filter(
+    (i) => i.status === "open" && (org === undefined || i.org === org),
+  );
+  const services = open.filter(
+    (i) => !asDecision.has(i.id) && (i.finding === undefined || !asFinding.has(i.finding)),
   );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;
   const quiet = watch.running.length === 0 && incidents.length === 0 && services.length === 0;
@@ -469,7 +468,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       )}
       {quiet && (
         <p className="m-0 text-sm text-fg-muted">
-          {watch.incidents.length > 0
+          {watch.incidents.length > 0 || open.length > 0
             ? "Nothing is running. Open incidents are on the agenda."
             : "Nothing is running and no incident is open."}
         </p>
