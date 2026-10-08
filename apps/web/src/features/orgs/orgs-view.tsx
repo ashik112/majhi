@@ -1,4 +1,4 @@
-import { EMPTY_TOTALS, type OrgView, type UsageTotals } from "@majhi/shared";
+import { EMPTY_TOTALS, type OrgView, PRIVATE, type UsageTotals } from "@majhi/shared";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,7 @@ export function OrgsView() {
                 </div>
                 <NewOrgForm
                   orgCount={orgList.length}
+                  privateAccounts={accountList.filter((a) => a.org === PRIVATE).map((a) => a.id)}
                   onCreated={(id) => {
                     setAdding(false);
                     setPicked(id);

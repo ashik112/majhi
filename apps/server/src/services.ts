@@ -54,6 +54,7 @@ import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
+import { PayDecisions } from "./captain/pay-decisions.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -1646,6 +1647,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);
       },
+      answerCaptainPay: async (org, account) => {
+        await autonomy.configure(
+          { orgs: { [org]: { account } } },
+          {
+            command: "autonomy.configure",
+            meta: { actor: { kind: "owner" }, reason: "Owner picked the account that pays" },
+          },
+        );
+        clientChat?.desk.retry();
+      },
       answerChatWait: (room, ref, option) => clientChat?.waits.answer(room, ref, option) ?? Promise.resolve(),
       answerIncidentAsk: (what, ref, option) =>
         incidentEngine?.answer(what, ref, option) ?? Promise.resolve(),
@@ -1674,6 +1685,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
       ...(clientChat?.waits.decisions() ?? []),
+      ...(await payDecisions.decisions()),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
       ...failingMrDecisions(
@@ -1696,6 +1708,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     rest: (org, account, job) => autonomy.laneRest(org, account, job),
     halted: () => captainRepo.isStopped(),
   });
+  const payDecisions = new PayDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
   const memoryWatch = new MemoryWatch();
   /** A run container that sits at its memory limit is noted once on its task, so the captain or owner sees it. */

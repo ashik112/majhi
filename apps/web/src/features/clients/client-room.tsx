@@ -392,6 +392,17 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
 function OutcomeLine({ outcome, reply }: { outcome: ClientOutcome; reply: Of<"client-reply"> | undefined }) {
   const text = outcomeText(outcome, reply);
   const task = outcome.task;
+  if (outcome.decision !== undefined && reply === undefined) {
+    return (
+      <Link
+        to="/decisions"
+        search={{ id: outcome.decision }}
+        className="text-xs text-fg-faint underline hover:text-fg"
+      >
+        {text}
+      </Link>
+    );
+  }
   const at = task === undefined ? -1 : text.indexOf(task);
   if (task === undefined || at === -1) return <span className="text-xs text-fg-faint">{text}</span>;
   return (
