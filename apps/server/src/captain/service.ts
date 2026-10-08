@@ -528,6 +528,12 @@ export class CaptainService {
   async resume(): Promise<CaptainStatus> {
     this.repo.setStopped(false, this.now().toISOString());
     await this.deps.autonomy.resumeHalt();
+    // What came in while it was stopped is looked at now, not at the next event.
+    for (const org of workspaceIds((await this.deps.config.sections()).orgs)) {
+      for (const chore of ["ship", "cards", "questions"] as const) {
+        this.trigger(org, chore, "Stop everything was lifted", "owner");
+      }
+    }
     this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
   }

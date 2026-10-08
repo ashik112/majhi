@@ -5,7 +5,19 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { HOST_HOME } from "../paths.ts";
-import { boot, cmd, DB_PORT, GITLAB_PORT, results, setReplies, shot, sleep, stage, until, type World } from "./walk.ts";
+import {
+  boot,
+  cmd,
+  DB_PORT,
+  GITLAB_PORT,
+  results,
+  setReplies,
+  shot,
+  sleep,
+  stage,
+  until,
+  type World,
+} from "./walk.ts";
 
 const REPO = join(HOST_HOME, "Work", "storefront");
 
@@ -190,15 +202,31 @@ async function rcaSent(w: World, id: string): Promise<string> {
     {
       when: "Rewrite this incident report",
       say: JSON.stringify({
-        internal: { summary: "Database usage hit 95% and was fixed by indexing the orders query.", impact: "Orders page slow for the client.", cause: "The orders report query scanned the whole table.", fix: "Added a limit and an index; deployed to production.", followUps: "None." },
-        client: { summary: "The orders page was slow because of a database problem, and it is fixed.", impact: "Your orders page was affected.", cause: "A slow query was keeping the database busy.", fix: "We shipped a fix to production.", followUps: "None." },
+        internal: {
+          summary: "Database usage hit 95% and was fixed by indexing the orders query.",
+          impact: "Orders page slow for the client.",
+          cause: "The orders report query scanned the whole table.",
+          fix: "Added a limit and an index; deployed to production.",
+          followUps: "None.",
+        },
+        client: {
+          summary: "The orders page was slow because of a database problem, and it is fixed.",
+          impact: "Your orders page was affected.",
+          cause: "A slow query was keeping the database busy.",
+          fix: "We shipped a fix to production.",
+          followUps: "None.",
+        },
       }),
     },
   ]);
-  const view = await until("the report", async () => {
-    const v = await cmd("incident.view", { task: id });
-    return v?.report ? v : false;
-  }, 120_000);
+  const view = await until(
+    "the report",
+    async () => {
+      const v = await cmd("incident.view", { task: id });
+      return v?.report ? v : false;
+    },
+    120_000,
+  );
   const room = view.rooms[0].room;
   const sentBefore = w.slack.sent.length;
   const out = await cmd("incident.sendReport", { task: id, room });
@@ -211,29 +239,49 @@ async function rcaSent(w: World, id: string): Promise<string> {
 }
 
 async function failedDeploy(w: World): Promise<string> {
-  git("-c", "user.name=owner", "-c", "user.email=o@a.example", "commit", "--allow-empty", "-q", "-m", "chore: a change that breaks the deploy");
+  git(
+    "-c",
+    "user.name=owner",
+    "-c",
+    "user.email=o@a.example",
+    "commit",
+    "--allow-empty",
+    "-q",
+    "-m",
+    "chore: a change that breaks the deploy",
+  );
   w.hosts.branches.set("gitlab:acme/storefront:main", git("rev-parse", "main"));
   w.hosts.outcome.gitlab = "failed";
   const before = (await incidentTasks()).length;
   const out = await cmd("projects.deploy", { project: "storefront", env: "production", runs: GL_RUNS });
-  const failed = await until("the failed deploy", async () => {
-    const v = await cmd("projects.deployView", { project: "storefront" });
-    const r = v.history.find((h: any) => h.id === out.record.id);
-    return r && ["failed", "rolled-back"].includes(r.state) && r.incident ? r : false;
-  }, 120_000);
-  const card = await until("the Needs you card", async () => {
-    const d = (await cmd("decisions.list", {})).decisions.find((x: any) => x.id.startsWith("iask:deploy:"));
-    return d ?? false;
-  }, 60_000);
+  const failed = await until(
+    "the failed deploy",
+    async () => {
+      const v = await cmd("projects.deployView", { project: "storefront" });
+      const r = v.history.find((h: any) => h.id === out.record.id);
+      return r && ["failed", "rolled-back"].includes(r.state) && r.incident ? r : false;
+    },
+    120_000,
+  );
+  const card = await until(
+    "the Needs you card",
+    async () => {
+      const d = (await cmd("decisions.list", {})).decisions.find((x: any) => x.id.startsWith("iask:deploy:"));
+      return d ?? false;
+    },
+    60_000,
+  );
   const tasks = await incidentTasks();
-  if (tasks.length !== before + 1) throw new Error(`expected one new incident task, saw ${tasks.length - before}`);
+  if (tasks.length !== before + 1)
+    throw new Error(`expected one new incident task, saw ${tasks.length - before}`);
   const mine = tasks.find((t: any) => t.id === failed.incident);
   if (!mine) throw new Error("the deploy has no incident task");
   console.log(await shot(w, "07-deploy-failed-needs-you", "/decisions"));
   console.log(await shot(w, "07-deploy-failed-board"));
   // The owner presses Roll back (the fake pipeline succeeds again), through the card.
   w.hosts.outcome.gitlab = "success";
-  if (card.options.some((o: any) => o.id === "rollback")) await cmd("decisions.answer", { id: card.id, option: "rollback" });
+  if (card.options.some((o: any) => o.id === "rollback"))
+    await cmd("decisions.answer", { id: card.id, option: "rollback" });
   const v = await cmd("projects.deployView", { project: "storefront" });
   const rec = v.history.find((h: any) => h.id === out.record.id);
   return `deploy ${failed.state} ("${card.title}"); incident ${mine.id} is ${mine.status}; after the card: ${rec.state}, rollback ${JSON.stringify(rec.rollback?.ok)}`;
@@ -242,18 +290,26 @@ async function failedDeploy(w: World): Promise<string> {
 async function refireAndRecover(w: World): Promise<string> {
   const before = (await incidentTasks()).map((t: any) => t.id).toSorted();
   w.db.usage = 96;
-  const reopened = await until("ACM-1 reopened by the re-fire", async () => {
-    const t = await cmd("tasks.get", { id: "ACM-1" });
-    return t.status !== "done" ? t : false;
-  }, 240_000);
+  const reopened = await until(
+    "ACM-1 reopened by the re-fire",
+    async () => {
+      const t = await cmd("tasks.get", { id: "ACM-1" });
+      return t.status !== "done" ? t : false;
+    },
+    240_000,
+  );
   const after = (await incidentTasks()).map((t: any) => t.id).toSorted();
   if (after.length !== before.length) throw new Error(`a duplicate incident appeared: ${before} -> ${after}`);
   console.log(await shot(w, "08-refire", "/t/ACM-1"));
   w.db.usage = 40;
-  const card = await until("the recovered-on-its-own card", async () => {
-    const d = (await cmd("decisions.list", {})).decisions.find((x: any) => x.id === "iask:recovered:ACM-1");
-    return d ?? false;
-  }, 300_000);
+  const card = await until(
+    "the recovered-on-its-own card",
+    async () => {
+      const d = (await cmd("decisions.list", {})).decisions.find((x: any) => x.id === "iask:recovered:ACM-1");
+      return d ?? false;
+    },
+    300_000,
+  );
   console.log(await shot(w, "08-recovered", "/t/ACM-1"));
   await cmd("decisions.answer", { id: card.id, option: "close" });
   const done = await cmd("tasks.get", { id: "ACM-1" });

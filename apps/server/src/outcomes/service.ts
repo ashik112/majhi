@@ -313,7 +313,7 @@ export class OutcomesService {
         key,
         kind: "demoted",
         text: `${OUTBOUND_CHANNEL_LABEL[channel]} is back to Draft in ${name}: ${what}.`,
-        evidence: "",
+        evidence: "Give it back to let it send by itself again.",
         data: { from: setting, to: "draft" },
         at,
       });
@@ -326,7 +326,7 @@ export class OutcomesService {
         key,
         kind: "demoted",
         text: `${ROW_NAME[row]} is back to You in ${name}: ${what}.`,
-        evidence: "",
+        evidence: "Give it back to let the captain do it again.",
         data: { from: setting, to: "ask" },
         at,
       });
