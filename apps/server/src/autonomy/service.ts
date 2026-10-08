@@ -2379,10 +2379,18 @@ export class AutonomyService {
   ticked(reasons: readonly string[], org?: string, chat?: string): void {
     this.wakes.sent += 1;
     this.repo.setLastTick(this.now().toISOString());
-    // A wake reason can be a whole prompt (a watch's instructions): the log shows its first line only.
-    const first = (reasons.at(-1) ?? "a check").trim().split("\n", 1)[0] ?? "a check";
-    const last = first.length > 120 ? `${first.slice(0, 117)}...` : first;
-    const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
+    // A wake reason can be a whole prompt (a watch's instructions): the log shows each one's first line only, so a
+    // batch that holds a watch's news and a task's names both.
+    const firsts = [
+      ...new Set(
+        reasons.map((r) => {
+          const line = r.trim().split("\n", 1)[0] ?? "";
+          return line.length > 90 ? `${line.slice(0, 87)}...` : line;
+        }),
+      ),
+    ].filter((l) => l !== "");
+    const shown = firsts.slice(-3).join("; ") || "a check";
+    const text = `Woke the captain: ${shown}${firsts.length > 3 ? ` (and ${firsts.length - 3} more)` : ""}`;
     this.event({ kind: "tick", text, ...(org === undefined || org === PRIVATE ? {} : { org }) });
     if (chat !== undefined) this.sayIn(chat, text);
   }

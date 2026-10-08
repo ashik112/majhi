@@ -96,7 +96,7 @@ export interface InboxDeps {
   /** Whether a captain's proposal no longer matches the setting it was measured against. */
   proposalStale?: (item: Extract<RoomItem, { type: "approval" }>) => Promise<boolean>;
   /** What is known of an incident: its finding, the captain's found text, the fix task. */
-  incidentDetail?: (id: number) => NonNullable<DecisionDetail["incident"]> | undefined;
+  incidentDetail?: (id: number) => Promise<NonNullable<DecisionDetail["incident"]> | undefined>;
   /** Says in a task's room that something the owner did could not be carried out. */
   warn?: (task: string, text: string) => void;
   /** Rebuilds or closes the pending proposals whose setting changed since. */
@@ -515,7 +515,7 @@ export class InboxService {
     const out: DecisionDetail = { id };
     const parsed = parseDecisionId(id);
     if (parsed?.kind === "incident") {
-      const incident = deps.incidentDetail?.(parsed.id);
+      const incident = await deps.incidentDetail?.(parsed.id);
       if (incident !== undefined) out.incident = incident;
       return out;
     }

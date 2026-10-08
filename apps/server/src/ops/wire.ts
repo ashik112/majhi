@@ -3,6 +3,7 @@ import type {
   AutomationRun,
   Draft,
   NotificationsSettings,
+  OpsIncident,
   OwnerDecision,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
@@ -83,6 +84,10 @@ export interface OpsWiring {
   /** An incident opened or fired again: the incident engine's task for it (see `OpsDeps.incidentTask`). */
   incidentTask?: OpsDeps["incidentTask"];
   incidentMeta?: OpsDeps["incidentMeta"];
+  /** The incident's fix is live (see `OpsDeps.fixLive`). */
+  fixLive?: OpsDeps["fixLive"];
+  /** An incident closed: the incident engine looks at what it means. `told`: the watch already told the owner. */
+  incidentResolved?: ((inc: OpsIncident, told: boolean) => void) | undefined;
   changed: () => void;
   now?: () => Date;
   /** For tests: the network behind the checks, the ntfy server, and the wait between two looks. */
@@ -194,7 +199,8 @@ export function createOps(w: OpsWiring): Ops {
     ...(w.incidentTask === undefined ? {} : { incidentTask: w.incidentTask }),
     ...(w.incidentMeta === undefined ? {} : { incidentMeta: w.incidentMeta }),
     onAcked: (inc) => engine?.onAcked(inc),
-    onResolved: (inc) => engine?.onResolved(inc),
+    ...(w.fixLive === undefined ? {} : { fixLive: w.fixLive }),
+    onResolved: (inc) => w.incidentResolved?.(inc, engine?.onResolved(inc) === true),
     question: (inc) => engine?.question(inc),
   });
   const watchPorts: WatchPorts = {

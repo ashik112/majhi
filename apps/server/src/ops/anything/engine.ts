@@ -1142,20 +1142,22 @@ export class WatchEngine {
     this.deps.repo.save({ ...w, state });
   }
 
-  onResolved(inc: OpsIncident): void {
-    if (inc.watch === undefined) return;
+  /** True when the owner was told it is back to normal. */
+  onResolved(inc: OpsIncident): boolean {
+    if (inc.watch === undefined) return false;
     const w = this.deps.repo.get(inc.watch);
-    if (w === undefined) return;
+    if (w === undefined) return false;
     const state: WatchState = { ...w.state };
     delete state.firingSince;
     if (state.fix?.incident === inc.id) delete (state.fix as { proposal?: unknown }).proposal;
     this.deps.repo.save({ ...w, state });
-    if (!w.def.fire.tellOnRecover || inc.resolvedAt === undefined) return;
+    if (!w.def.fire.tellOnRecover || inc.resolvedAt === undefined) return false;
     const took = span(Date.parse(inc.resolvedAt) - Date.parse(inc.openedAt));
     void this.deps
       .orgName(w.org)
       .then((ws) => this.deps.tell(w.org, inc.id, `${ws}: ${w.def.name} is back to normal after ${took}.`))
       .catch(() => undefined);
+    return true;
   }
 
   // Views ------------------------------------------------------------------------------

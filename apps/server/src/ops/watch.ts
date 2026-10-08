@@ -91,6 +91,8 @@ export interface OpsDeps {
   /** Watch anything: the owner acknowledged one of its incidents, or one closed. */
   onAcked?: (inc: OpsIncident) => void;
   onResolved?: (inc: OpsIncident) => void;
+  /** The incident's fix is live (shipped and deployed): it is mending, so it is not escalated. */
+  fixLive?: ((inc: OpsIncident) => Promise<boolean>) | undefined;
   /**
    * An incident opened, or came back inside the reopen window: the incident engine opens (or joins) its task, which is
    * the one place the fix, the client updates and the resolution live. `again` is a re-fire.
@@ -505,7 +507,7 @@ export class OpsWatch {
     const need = this.settings().resolveMin * 60_000;
     if (this.now().getTime() - greenSince < need) return 0;
     if (this.off(open.org, "ops-resolve")) return 0;
-    await this.resolve(open, `All checks green for ${span(need)}`);
+    await this.resolve(open, `All checks green for ${span(need)}`, "green");
     return 1;
   }
 
@@ -598,6 +600,8 @@ export class OpsWatch {
           ...last.timeline,
           { at, kind: "reopened", text: `Failing again: ${evidence.join("; ")}` },
         ]),
+        // The title carries the value now, not the one it first fired with.
+        title,
       };
       delete next.resolvedAt;
       this.deps.repo.saveIncident(next);
@@ -680,14 +684,21 @@ export class OpsWatch {
     return next;
   }
 
-  private async resolve(inc: StoredIncident, why: string): Promise<void> {
+  private async resolve(
+    inc: StoredIncident,
+    why: string,
+    closedBy: "green" | "stopped" = "stopped",
+  ): Promise<void> {
     const at = this.at();
     const duration = Date.parse(at) - Date.parse(inc.openedAt);
     const next: StoredIncident = {
       ...inc,
       status: "resolved",
       resolvedAt: at,
-      timeline: cap([...inc.timeline, { at, kind: "resolved", text: `${why}. Open for ${span(duration)}.` }]),
+      timeline: cap([
+        ...inc.timeline,
+        { at, kind: "resolved", closedBy, text: `${why}. Open for ${span(duration)}.` },
+      ]),
     };
     this.deps.repo.saveIncident(next);
     // A finding that has a task is not fixed because the value dropped: the task closing it (a shipped fix) does that.
@@ -755,7 +766,10 @@ export class OpsWatch {
     if (this.off(inc.org, "ops-wake")) return;
     if (subject.wakeText !== undefined) {
       const text = subject.wakeText(inc, evidence, note, again);
-      if (text !== undefined) this.deps.wake(inc.org, text);
+      if (text !== undefined) {
+        this.deps.wake(inc.org, text);
+        this.noteWake(inc.id, note, again);
+      }
       return;
     }
     const ws = await this.deps.orgName(inc.org);
@@ -777,6 +791,20 @@ export class OpsWatch {
       );
     }
     this.deps.wake(inc.org, lines.join("\n"));
+    this.noteWake(inc.id, note, again);
+  }
+
+  /** What happened shows every time the captain was told, or why it was not. */
+  private noteWake(id: number, note: IncidentTaskNote | undefined, again: boolean): void {
+    this.note(
+      id,
+      "action",
+      note?.quiet === undefined
+        ? again
+          ? "Told the captain again"
+          : "Told the captain"
+        : `The captain was not told: ${note.quiet}`,
+    );
   }
 
   /** Every 30 seconds or so: the second alert, a phone push that failed the first time, what the captain did. */
@@ -789,7 +817,7 @@ export class OpsWatch {
       try {
         next = await this.syncActions(next);
         if (next !== inc) touched = true;
-        if (next.severity === "high" && next.ackedAt === undefined) {
+        if (next.severity === "high" && next.ackedAt === undefined && !(await this.recovering(next))) {
           const waited = this.now().getTime() - Date.parse(next.openedAt);
           const subject = await this.subjectOfIncident(next);
           if (next.escalatedAt === undefined && waited >= escalateMin * 60_000) {
@@ -824,6 +852,18 @@ export class OpsWatch {
     }
     if ((await this.deps.phone.sweepDecisions().catch(() => 0)) > 0) touched = true;
     if (touched) this.deps.changed();
+  }
+
+  /** Its checks read fine now, or the fix is live: nobody needs nagging about an incident that is mending. */
+  private async recovering(inc: StoredIncident): Promise<boolean> {
+    const subject = inc.key.startsWith("watch:")
+      ? inc.key.slice(6)
+      : inc.key.startsWith("ops:")
+        ? inc.key.slice(4)
+        : inc.key;
+    const states = this.deps.repo.states(subject);
+    if (states.length > 0 && states.every((s) => s.lastOk === true && !s.unknown)) return true;
+    return (await this.deps.fixLive?.(inc).catch(() => false)) === true;
   }
 
   private async subjectOfIncident(inc: StoredIncident): Promise<Subject> {
@@ -886,12 +926,13 @@ export class OpsWatch {
   }
 
   /** Adds a line to an open or resolved incident's timeline (what a fix did, what the captain found). */
-  note(id: number, kind: OpsTimelineEntry["kind"], text: string): void {
+  note(id: number, kind: OpsTimelineEntry["kind"], text: string, at: string = this.at()): void {
     const inc = this.deps.repo.incident(id);
     if (inc === undefined) return;
+    if (kind === "note" && inc.timeline.some((t) => t.kind === "note" && t.text === text)) return;
     this.deps.repo.saveIncident({
       ...inc,
-      timeline: cap([...inc.timeline, { at: this.at(), kind, text: text.slice(0, 300) }]),
+      timeline: cap([...inc.timeline, { at, kind, text: text.slice(0, 300) }]),
     });
     this.deps.changed();
   }
