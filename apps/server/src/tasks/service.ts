@@ -241,6 +241,8 @@ export interface TaskDeps {
   onChatTurn?: (id: string) => void;
   /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
   onDone?: (task: Task) => void | Promise<void>;
+  /** The captain side opened or started a task (not the owner, not a subtask): the workspace thread gets a pointer line. */
+  onOpened?: (task: Task) => void;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
   /** Throws when the task may not be closed or removed now: autonomous mode's chat while the mode is not off. */
@@ -680,6 +682,7 @@ export class TaskService {
     let task = this.get(id);
     this.deps.room.publishTask(task);
     if (promoting !== undefined) return this.promoted(task, investigation);
+    if (input.provenance.kind === "captain" || input.provenance.kind === "ref") this.deps.onOpened?.(task);
     // A task that waits stays ready and starts by itself when its dependencies are met.
     const waiting = store.tasks.unmetDependencies(id);
     if (input.start && waiting.length > 0) {
@@ -1080,7 +1083,12 @@ export class TaskService {
     options: { gateReleased?: boolean; wake?: boolean },
   ): Promise<Task> {
     await this.ensureWorktrees(task);
+    const wasRunning = task.status === "running";
     const lifted = await this.enter(id, by, options);
+    if (!wasRunning && by !== "owner" && options.wake !== false) {
+      this.note(id, "Started by the captain.");
+      this.deps.onOpened?.(this.get(id));
+    }
     if (lifted && by === "owner") this.deps.onOwnerResumed?.(id);
     await this.containersRunAgain(id);
     await this.recallMemory(task);

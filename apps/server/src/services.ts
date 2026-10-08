@@ -187,6 +187,7 @@ import { ProjectService } from "./projects/service.ts";
 import { GraphRunner } from "./reader/run.ts";
 import { CodeGraphTools } from "./reader/tools.ts";
 import { CaptainHears } from "./captain/hears.ts";
+import { Pointers } from "./captain/pointers.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
@@ -460,6 +461,8 @@ export interface Services {
   captainTell: CaptainTell;
   /** What the owner or a worker says to the captain about a task. */
   hears: CaptainHears;
+  /** The lines in a workspace thread, or in the root chat, that point at a task. */
+  pointers: Pointers;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -1156,6 +1159,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     enabled: wikiOn,
     links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
   });
+  const pointersRef: { current: Pointers | undefined } = { current: undefined };
   const tasks = new TaskService({
     mergeGate,
     wikiNotes: (task) =>
@@ -1184,7 +1188,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     memory,
     memoryScopes,
     onChatTurn: (id) => void chatMemory?.afterTurn(id),
+    onOpened: (task) => pointersRef.current?.opened(task),
     onDone: async (task) => {
+      pointersRef.current?.done(task);
       if (!isBossChat(task)) extraction.afterClose(task);
       await promotion.release(task);
     },
@@ -1732,6 +1738,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   const hears = new CaptainHears({ lanes, room });
+  const pointers = new Pointers({ store, room, lanes });
+  pointersRef.current = pointers;
   hearsRef.current = hears;
   room.useCaptain({
     lanesOf: (org) => lanes.chatsOf(org),
@@ -1959,6 +1967,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           : { repos: [{ project: n.project }], ...(n.code === true ? { kind: "code" as const } : {}) }),
         byOwner: n.byOwner,
         attachments: [],
+        ...(n.followUpOf === undefined ? {} : { followUpOf: n.followUpOf }),
         // A finding the captain turns into a task starts by the Start line of its workspace; the owner's own click makes a task for the owner.
         start: !n.byOwner && (await autonomy.mayStartReacting(n.org)),
         provenance: {
@@ -3262,6 +3271,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     wikiTools,
     wikiAsk,
     hears,
+    pointers,
     captainTell: new CaptainTell({
       tasks,
       lanes,

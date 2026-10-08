@@ -19,6 +19,7 @@ import type { z } from "zod";
 import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
+import { isRootChat } from "../captain/tell.ts";
 import { sameRule } from "../admin/policy.ts";
 import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
@@ -905,12 +906,22 @@ export function createHandlers({
         // A secret in the task text must not reach TASK.md or the agent.
         const captured = await services.secretService.capture(input.text);
         const byOwner = ctx.meta.actor.kind === "owner";
-        const { type, separate, ...rest } = input;
+        const { type, separate, ...given } = input;
+        // An agent that names another task as the parent files a follow-up: a backlog task linked to it, never a subtask
+        // that would hold the source open. Only a lead splitting its own task makes subtasks.
+        const followUp =
+          ctx.meta.actor.kind === "agent" && input.parent !== undefined && input.parent !== ctx.meta.task;
+        const rest = followUp
+          ? { ...given, parent: undefined, followUpOf: given.followUpOf ?? input.parent }
+          : given;
         // An agent in an ordinary chat: the chat becomes the task, unless it asked for a separate one.
+        // The captain's root chat never becomes a task: what it makes is a separate task, and the chat gets a pointer line.
         const chat = chatOf(services.store, ctx);
+        const boss = await services.lanes.boss();
+        const rootChat = chat !== undefined && boss !== undefined && isRootChat(chat, boss);
         const joined =
-          input.parent !== undefined || input.followUpOf !== undefined || input.dependsOn.length > 0;
-        const promote = chat !== undefined && separate !== true && !joined;
+          rest.parent !== undefined || rest.followUpOf !== undefined || input.dependsOn.length > 0;
+        const promote = chat !== undefined && separate !== true && !joined && !rootChat;
         const task = await services.tasks.create({
           ...rest,
           text: captured.text,
@@ -918,12 +929,13 @@ export function createHandlers({
           byOwner,
           provenance:
             chat === undefined || joined
-              ? createdBy(ctx, input.parent !== undefined)
+              ? createdBy(ctx, rest.parent !== undefined)
               : { kind: "in-chat", room: chat.id },
           ...(promote ? { promote: chat.id } : {}),
           ...(type === undefined ? {} : { typing: { type, by: byOwner ? "owner" : "captain" } }),
         });
         noteSecrets(services, task.id, captured.saved);
+        if (rootChat && chat !== undefined) services.pointers.opened(task, chat.id);
         return task;
       })();
       if (key !== undefined) {

@@ -102,6 +102,8 @@ export class RoomService {
   /** Tags a lane's line with the task its turn is about; a line already tagged keeps its tag. */
   private stamp(task: TaskId, id: string, payload: RoomPayload): RoomPayload {
     if (this.captain?.orgOfLane(task) === undefined || payload.about !== undefined) return payload;
+    // A pointer line belongs to the thread, whatever the lane is doing.
+    if (payload.type === "system" && payload.pointer !== undefined) return payload;
     if (payload.type === "owner") {
       // The owner starts a new turn: it is about whatever they say, not the last task.
       this.subjects.delete(task);
