@@ -67,17 +67,40 @@ export function Bell() {
   const { fresh, earlier } = groupNotices(notices);
   const side = open ? besideSidebar(trigger.current) : undefined;
 
+  // The panel stays hidden until it is placed, and a hidden element cannot take focus: focus once it shows.
   useEffect(() => {
-    if (open) panel.current?.querySelector<HTMLElement>("[data-notice]")?.focus();
+    if (!open) return;
+    let frame = 0;
+    let tries = 0;
+    const focusWhenShown = () => {
+      const node = panel.current;
+      if (node === null) return;
+      const target = node.querySelector<HTMLElement>("[data-notice]") ?? node;
+      if (getComputedStyle(node).visibility !== "hidden") target.focus();
+      // A focus call before the panel is rendered does nothing: try again on the next frame.
+      if (document.activeElement !== target && tries < 30) {
+        tries += 1;
+        frame = window.requestAnimationFrame(focusWhenShown);
+      }
+    };
+    frame = window.requestAnimationFrame(focusWhenShown);
+    return () => window.cancelAnimationFrame(frame);
   }, [open, panel]);
 
-  function onKeyDown(event: React.KeyboardEvent) {
-    if (event.key === "Escape") {
+  // Esc closes wherever focus is: a button that went away under the pointer (Mark all read) leaves it on the page.
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
       event.stopPropagation();
       close();
       trigger.current?.focus();
-      return;
-    }
+    };
+    document.addEventListener("keydown", onEscape, true);
+    return () => document.removeEventListener("keydown", onEscape, true);
+  }, [open, close]);
+
+  function onKeyDown(event: React.KeyboardEvent) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-notice]") ?? []);
@@ -133,6 +156,7 @@ export function Bell() {
             popover="manual"
             id={id}
             role="dialog"
+            tabIndex={-1}
             aria-label="Notifications"
             style={{ ...style, ...side }}
             onKeyDown={onKeyDown}
@@ -146,7 +170,7 @@ export function Bell() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="ml-auto h-6 px-2 text-xs"
+                className="ml-auto h-6 px-2 text-xs text-fg"
                 disabled={unread === 0}
                 onClick={readAll}
               >

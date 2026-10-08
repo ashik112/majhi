@@ -94,11 +94,12 @@ export class NoticesRepo {
     this.save({ ...marks, seen: upTo });
   }
 
-  /** Marks one row read, and forgets the rows read before `forgetBefore`: the seen mark covers them by then. */
-  markRow(id: string, now: string, forgetBefore: string): void {
+  /** Marks rows read, and forgets the rows read before `forgetBefore`: the seen mark covers them by then. */
+  markRows(ids: readonly string[], now: string, forgetBefore: string): void {
     const marks = this.load();
-    const kept = Object.entries(marks.rows).filter(([, at]) => at >= forgetBefore);
-    this.save({ ...marks, rows: { ...Object.fromEntries(kept), [id]: marks.rows[id] ?? now } });
+    const rows = Object.fromEntries(Object.entries(marks.rows).filter(([, at]) => at >= forgetBefore));
+    for (const id of ids) rows[id] ??= now;
+    this.save({ ...marks, rows });
   }
 
   /** Client messages and the replies sent to clients, in client rooms, newest first. */

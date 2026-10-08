@@ -103,6 +103,7 @@ export function useSendDecision() {
         holds.delete(decision.id);
         changed();
         void client.invalidateQueries({ queryKey: queryKeys.decisions });
+        void client.invalidateQueries({ queryKey: queryKeys.notices });
         void cmd("decisions.list", {}).then(
           (left) => options.onDone?.(left),
           () => undefined,

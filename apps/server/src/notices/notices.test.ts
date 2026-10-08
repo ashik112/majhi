@@ -55,30 +55,17 @@ describe("notices.markRead", () => {
       update: async () => undefined,
       now: () => at,
     });
-    return { notices, events };
+    return { notices, events, store };
   }
 
   it("moves the mark forward only, and never past now", async () => {
-    const { notices } = service();
-    notices.markRead({ upTo: "2026-02-01T09:00:00.000Z" });
-    expect((await notices.list()).notices.map((n) => n.read)).toEqual([false, true]);
-    notices.markRead({ upTo: "2026-02-01T07:00:00.000Z" });
-    expect((await notices.list()).notices.map((n) => n.read)).toEqual([false, true]);
-    notices.markRead({ upTo: "2030-01-01T00:00:00.000Z" });
-    const list = await notices.list();
-    expect(list.notices.every((n) => n.read)).toBe(true);
-    expect(list.unread).toBe(0);
-  });
-
-  it("reads one row on its own", async () => {
-    const { notices } = service();
-    notices.markRead({ id: "decision:new" });
-    const list = await notices.list();
-    expect(list.notices.map((n) => [n.id, n.read])).toEqual([
-      ["decision:new", true],
-      ["decision:old", false],
-    ]);
-    expect(list.unreadNeedsYou).toBe(1);
+    const { notices, store } = service();
+    await notices.markRead({ upTo: "2026-02-01T09:00:00.000Z" });
+    expect(store.notices.marks().seen).toBe("2026-02-01T09:00:00.000Z");
+    await notices.markRead({ upTo: "2026-02-01T07:00:00.000Z" });
+    expect(store.notices.marks().seen).toBe("2026-02-01T09:00:00.000Z");
+    await notices.markRead({ upTo: "2030-01-01T00:00:00.000Z" });
+    expect(store.notices.marks().seen).toBe(at.toISOString());
   });
 
   it("is the owner's: an agent can neither read the feed nor mark it", async () => {

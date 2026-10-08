@@ -13,7 +13,7 @@ export function noticesHandlers(
     },
     "notices.markRead": async (input, ctx) => {
       ownerOnly(ctx);
-      notices.markRead(input);
+      await notices.markRead(input);
       return { ok: true as const };
     },
   };

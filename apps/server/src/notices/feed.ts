@@ -1,6 +1,5 @@
 import {
   CAPTAIN,
-  ChatSenderSchema,
   ClientOutcomeSchema,
   type DeployRecord,
   actorOfName,
@@ -42,6 +41,13 @@ function orgOfDecision(d: OwnerDecision): string | undefined {
   return d.org ?? (d.task === undefined ? undefined : PRIVATE);
 }
 
+/** What a ready-to-ship decision says, by its main answer: Merge, Fix with agent, Mark done. */
+const SHIP_WORDS: Readonly<Record<string, string>> = {
+  merge: "ready to merge",
+  fix: "failed its checks",
+  done: "finished",
+};
+
 /** The decision as a row: a plain subject, the task or the asker's words as detail, and its main answer as the button. */
 function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
   const task = d.task ?? "";
@@ -50,7 +56,7 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
   let detail: string | undefined;
   switch (d.kind) {
     case "ship":
-      subject = named(d.blocked !== undefined ? "cannot merge yet" : d.options[0]?.id === "merge" ? "ready to merge" : "ready for review");
+      subject = named(SHIP_WORDS[d.options[0]?.id ?? ""] ?? "ready for review");
       detail = d.taskTitle ?? d.title;
       break;
     case "question":
@@ -91,7 +97,8 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
 }
 
 const ClientMessage = z.object({
-  sender: ChatSenderSchema.pick({ name: true, bot: true }).partial({ name: true, bot: true }),
+  // Only what the row shows. The message's other sender fields are not this feed's to check.
+  sender: z.object({ name: z.string().optional(), bot: z.boolean().optional() }),
   us: z.boolean().optional(),
   deleted: z.boolean().optional(),
   text: z.string().default(""),

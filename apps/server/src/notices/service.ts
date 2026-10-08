@@ -41,17 +41,29 @@ export class NoticesService {
     });
   }
 
-  /** Reads everything up to a time (never later than now, never back), or one row. Tells every tab. */
-  markRead(input: NoticesMarkReadInput): void {
+  /**
+   * Reads everything up to a time (never later than now, never back), or one row. Tells every tab.
+   * A decision's time is when it was last looked at, not when it began, so reading up to a time also
+   * reads the decisions that wait right now: the badge clears.
+   */
+  async markRead(input: NoticesMarkReadInput): Promise<void> {
+    const { notices } = this.deps.store;
     const now = this.now();
     const stamp = now.toISOString();
+    const forget = new Date(now.getTime() - (NOTICE_DAYS + 1) * DAY_MS).toISOString();
     if ("upTo" in input) {
       const upTo = Date.parse(input.upTo);
       // A time in the future would hide what has not happened yet; an invented one is read as "now".
       const clamped = Number.isNaN(upTo) ? now.getTime() : Math.min(upTo, now.getTime());
-      this.deps.store.notices.markSeen(new Date(clamped).toISOString());
+      notices.markSeen(new Date(clamped).toISOString());
+      const waiting = (await this.list()).notices.filter((n) => n.needsYou && !n.read);
+      notices.markRows(
+        waiting.map((n) => n.id),
+        stamp,
+        forget,
+      );
     } else {
-      this.deps.store.notices.markRow(input.id, stamp, new Date(now.getTime() - (NOTICE_DAYS + 1) * DAY_MS).toISOString());
+      notices.markRows([input.id], stamp, forget);
     }
     this.deps.events.emit(["notices"]);
   }
