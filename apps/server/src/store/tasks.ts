@@ -14,6 +14,7 @@ import {
   DaySchema,
   deployStepOfRecord,
   FINDING_SOURCE_LABEL,
+  fieldsFit,
   IdSchema,
   isCaptainLane,
   isOwnerChat,
@@ -31,6 +32,8 @@ import {
   type StoredOrigin,
   StoredOriginSchema,
   type Task,
+  type TaskFields,
+  TaskFieldsSchema,
   type TaskId,
   TaskIdSchema,
   TaskLinkTypeSchema,
@@ -40,11 +43,8 @@ import {
   TaskSchema,
   type TaskStatus,
   type TaskSummary,
-  type TaskFields,
-  TaskFieldsSchema,
   type TaskTyping,
   TaskTypingSchema,
-  fieldsFit,
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
@@ -749,7 +749,11 @@ export class TaskRepo {
    * refused and nothing is written.
    */
   setFields(id: string, fields: TaskFields): void {
-    const row = this.db.select({ type: tasks.type, typeBy: tasks.typeBy }).from(tasks).where(eq(tasks.id, id)).get();
+    const row = this.db
+      .select({ type: tasks.type, typeBy: tasks.typeBy })
+      .from(tasks)
+      .where(eq(tasks.id, id))
+      .get();
     if (row === undefined) throw new Error(`No task ${id}.`);
     const json = fieldsJson({ typing: typingOf(row), fields });
     this.db.update(tasks).set({ fields: json }).where(eq(tasks.id, id)).run();

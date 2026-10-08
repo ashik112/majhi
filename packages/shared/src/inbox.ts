@@ -358,7 +358,8 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };
   }
-  if (head === "publish" && rest.length === 1 && rest[0] !== "") return { kind: "publish", task: rest[0] as string };
+  if (head === "publish" && rest.length === 1 && rest[0] !== "")
+    return { kind: "publish", task: rest[0] as string };
   if (head === "cpay" && rest.length >= 1 && rest[0] !== "") return { kind: "cpay", org: rest.join(":") };
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);

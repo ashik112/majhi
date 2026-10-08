@@ -19,6 +19,7 @@ import {
   DEFAULT_CHAT_TITLES,
   didWords,
   didWordsInline,
+  fieldsFit,
   type HandoffFailed,
   handoffFailedFacts,
   isOwnerChat,
@@ -47,9 +48,8 @@ import {
   shipWords,
   TASK_TYPE_OF_BRANCH,
   TASK_TYPES,
-  fieldsFit,
-  type TaskFieldsInput,
   type Task,
+  type TaskFieldsInput,
   type TaskId,
   type TaskKind,
   type TaskLink,
@@ -771,7 +771,10 @@ export class TaskService {
     }
     if (task.typing?.type === type && task.typing.by === by) return task;
     if (task.fields !== undefined && task.fields.type !== type) {
-      throw new UserError(`${id} holds a ${task.fields.type}'s fields, so it stays a ${task.fields.type}.`, 409);
+      throw new UserError(
+        `${id} holds a ${task.fields.type}'s fields, so it stays a ${task.fields.type}.`,
+        409,
+      );
     }
     this.deps.store.tasks.setTyping(id, { type, by });
     // What the owner or the captain says it is, is the right answer to Laya's pick.

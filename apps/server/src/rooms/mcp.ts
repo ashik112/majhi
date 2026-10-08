@@ -584,7 +584,9 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
       tools: [
         ...listed(
           TASK_TOOLS.filter(
-            (t) => (merge || t.command !== "tasks.merge") && (captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields")),
+            (t) =>
+              (merge || t.command !== "tasks.merge") &&
+              (captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields")),
           ),
           true,
         ),

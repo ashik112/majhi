@@ -13,8 +13,14 @@ it("Make a task from a client message opens the task in the room's workspace and
   w = await bossWorld();
   const { h } = w;
   const { chatParts } = h.majhi.services;
-  await chatParts.ingest.deliver(CONN, envelope({ message: "1", chatId: "-100", text: "Please add a CSV export" }));
-  await chatParts.ingest.deliver(CONN, envelope({ message: "1", chatId: "-200", text: "Other room secret plan" }));
+  await chatParts.ingest.deliver(
+    CONN,
+    envelope({ message: "1", chatId: "-100", text: "Please add a CSV export" }),
+  );
+  await chatParts.ingest.deliver(
+    CONN,
+    envelope({ message: "1", chatId: "-200", text: "Other room secret plan" }),
+  );
   const first = chatParts.rooms.find("telegram", CONN.account, "-100");
   const second = chatParts.rooms.find("telegram", CONN.account, "-200");
   if (first === undefined || second === undefined) throw new Error("no rooms");

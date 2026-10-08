@@ -20,8 +20,8 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import { ChatSendError } from "./adapter.ts";
-import type { ChatHistory } from "./history.ts";
 import { type People, parseBody, renderPlain } from "./format.ts";
+import type { ChatHistory } from "./history.ts";
 import type { ChatHub } from "./hub.ts";
 import { writeOutcome } from "./outcome.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
@@ -267,7 +267,8 @@ export class ClientReplies {
     const room = this.roomOf(roomId);
     const old = this.deps.room.get(room.id, itemId);
     if (old?.type !== "client-reply") throw new UserError(`There is no reply ${itemId} in this chat.`, 404);
-    if (old.state !== "failed") throw new UserError("That reply did not fail, so there is nothing to send again.", 409);
+    if (old.state !== "failed")
+      throw new UserError("That reply did not fail, so there is nothing to send again.", 409);
     // The writer already said these were clean when it first went: a failed send is not a new claim.
     const flags = { promisedTime: false, money: false, security: false, severalClients: false };
     const result =
@@ -322,7 +323,8 @@ export class ClientReplies {
       { kind: "owner" },
       {
         release: "now",
-        prepared: (made) => this.post(room, made, { by: "you", to: old.to, replyTo: old.replyTo, thread: old.thread }),
+        prepared: (made) =>
+          this.post(room, made, { by: "you", to: old.to, replyTo: old.replyTo, thread: old.thread }),
       },
     );
     return this.resultOf(draft, undefined);

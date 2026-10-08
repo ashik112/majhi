@@ -158,7 +158,8 @@ export class CaptainChat {
     let message: ClientItem | undefined;
     if (found?.type === "client") message = found;
     else if (found?.type === "client-reply") message = this.answered(room, found);
-    if (message === undefined) throw new UserError(`There is no message ${itemId} in this chat to make a task from.`, 404);
+    if (message === undefined)
+      throw new UserError(`There is no message ${itemId} in this chat to make a task from.`, 404);
     if (message.us === true) throw new UserError("That message is from your team, not a client.", 409);
     const said = readable(room, message).trim();
     return this.startTask(room, {
@@ -169,11 +170,15 @@ export class CaptainChat {
   }
 
   /** The client message a reply answers: the one it names, else the newest client message before it. */
-  private answered(room: RoomRow, reply: { replyTo?: string | undefined; seq: number }): ClientItem | undefined {
+  private answered(
+    room: RoomRow,
+    reply: { replyTo?: string | undefined; seq: number },
+  ): ClientItem | undefined {
     const clients = this.deps.store.room
       .page(room.id, 200)
       .items.filter((i): i is ClientItem => i.type === "client" && i.us !== true);
-    const named = reply.replyTo === undefined ? undefined : clients.find((c) => c.external.message === reply.replyTo);
+    const named =
+      reply.replyTo === undefined ? undefined : clients.find((c) => c.external.message === reply.replyTo);
     return named ?? clients.filter((c) => c.seq < reply.seq).toSorted((a, b) => b.seq - a.seq)[0];
   }
 

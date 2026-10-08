@@ -148,5 +148,7 @@ export function fieldsFit(typing: TaskTyping | undefined, fields: TaskFields): b
  * What a caller may write: the fields without the owner's approval. `approvedAt` is set only by the
  * owner's answer to the publish decision, never by a command that writes the draft.
  */
-export const TaskFieldsInputSchema = z.discriminatedUnion("type", [PostFieldsSchema.omit({ approvedAt: true })]);
+export const TaskFieldsInputSchema = z.discriminatedUnion("type", [
+  PostFieldsSchema.omit({ approvedAt: true }),
+]);
 export type TaskFieldsInput = z.infer<typeof TaskFieldsInputSchema>;

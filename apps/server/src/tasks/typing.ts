@@ -39,7 +39,8 @@ export function guessType(task: {
 
 const TYPE_MEANING: Record<TaskType, string> = {
   bug: "something that worked is broken or wrong, with no outage happening now",
-  incident: "an outage or errors in production that customers feel right now, even when the text only says it is down",
+  incident:
+    "an outage or errors in production that customers feel right now, even when the text only says it is down",
   feature: "new behavior or a new capability",
   request: "someone asks for a change, an answer or a piece of work",
   research: "find out, compare or investigate, with nothing to ship",

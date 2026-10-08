@@ -173,6 +173,24 @@ export function useDecideReply() {
   });
 }
 
+/** Opens a task from one message of a client room (a client's message, or a captain reply). */
+export function useMakeTask() {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.makeTask">, ApiRequestError, { room: string; item: string }>({
+    mutationFn: (input) => cmd("chat.makeTask", input),
+    onSuccess: done,
+  });
+}
+
+/** Sends a failed reply again, through the same rails as the first send. */
+export function useRetryReply() {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.retryReply">, ApiRequestError, { room: string; item: string }>({
+    mutationFn: (input) => cmd("chat.retryReply", input),
+    onSuccess: done,
+  });
+}
+
 export function useEditReply() {
   const done = useRefetch();
   return useMutation<CommandOutput<"chat.editReply">, ApiRequestError, { draft: number; text: string }>({
