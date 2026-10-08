@@ -579,7 +579,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   trail: TrailSchema,
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
-  /** A workspace thread of the captain (5.18): not a task to the owner, never listed by `tasks.list`. */
+  /** A workspace thread of the captain (5.18) or the root Captain chat: not a task to the owner. The board, Tree, counts and search leave it out. */
   lane: z.boolean().optional(),
   /**
    * The task or chat waits for the owner on an item: an approval, a permission, a secret, a question.

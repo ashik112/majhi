@@ -533,7 +533,11 @@ export class TaskRepo {
           summary.children = { total: kids.length, done: kids.filter((k) => k.status === "done").length };
         if (row.org !== null) summary.org = row.org;
         if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
-        if (isCaptainLane({ kind: summary.kind, brief: row.brief })) summary.lane = true;
+        if (
+          isCaptainLane({ kind: summary.kind, brief: row.brief }) ||
+          (summary.kind === "chat" && row.brief === BOSS_CHAT_BRIEF)
+        )
+          summary.lane = true;
         if (row.pausedReason !== null)
           summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
         if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
