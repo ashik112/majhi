@@ -1,5 +1,7 @@
 # Decisions
 
+Public distribution, 2026-10-09: installers and runtime assets live in a separate release repository. The source workflow publishes only distribution files and runtime assets through a write deploy key scoped to that repository, stored as `MAJHI_RELEASES_DEPLOY_KEY` in source Actions secrets. The public workflow publishes releases with its own repository token. Source version tags stay with the source. The owner requested this before making the source private. Alternatives: store a broad account token in Actions, or keep installers in the private source repository.
+
 Record every decision the spec does not cover: date, decision, reason, alternatives considered.
 
 | Date | Decision | Reason | Alternatives |

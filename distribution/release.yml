@@ -1,0 +1,52 @@
+name: Publish release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify runtime package
+        run: |
+          set -eu
+          printf '%s\n' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          node -e 'const fs=require("node:fs"); const m=JSON.parse(fs.readFileSync("runtime/release.json","utf8")); if(m.version!==process.env.VERSION || !/^[0-9a-f]{40,64}$/.test(m.commit)) process.exit(1)'
+          # Only the expected filename is given to sha256sum, never a filename from the checksum file.
+          expected=$(awk 'NR == 1 {print $1}' runtime/majhi-runtime.tar.gz.sha256)
+          printf '%s\n' "$expected" | grep -qE '^[0-9a-f]{64}$'
+          actual=$(sha256sum runtime/majhi-runtime.tar.gz | awk '{print $1}')
+          [ "$expected" = "$actual" ]
+
+      - name: Create release and upload assets
+        run: |
+          set -eu
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release create "$VERSION" --verify-tag --title "majhi $VERSION" \
+              --notes 'Packaged release of majhi. Installation instructions are in the repository README.' --latest=false
+          fi
+          gh release upload "$VERSION" runtime/majhi-runtime.tar.gz \
+            runtime/majhi-runtime.tar.gz.sha256 runtime/release.json --clobber
+
+      - name: Mark current release latest
+        run: |
+          # Rerunning an older tag must not move the installer back to an older version.
+          git fetch origin main
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            gh release edit "$VERSION" --latest
+          fi

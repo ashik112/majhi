@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs majhi, or updates it to the latest release: run it again to update.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ashik112/majhi-releases/main/install.sh | sh
 #
 # Downloads the latest runtime package and prebuilt images, without a source checkout.
 # macOS, Linux and Windows through WSL2. MAJHI_VERSION pins a release. MAJHI_APP_DIR,
@@ -10,9 +10,9 @@
 set -eu
 
 # Where majhi is served from. Change these (and the line in README.md) when it gets its own domain.
-INSTALL_URL="https://raw.githubusercontent.com/ashik112/majhi/main/install.sh"
-DOWNLOAD_URL=${MAJHI_DOWNLOAD_URL:-https://github.com/ashik112/majhi/releases/download}
-LATEST_URL=${MAJHI_LATEST_URL:-https://api.github.com/repos/ashik112/majhi/releases/latest}
+INSTALL_URL="https://raw.githubusercontent.com/ashik112/majhi-releases/main/install.sh"
+DOWNLOAD_URL=${MAJHI_DOWNLOAD_URL:-https://github.com/ashik112/majhi-releases/releases/download}
+LATEST_URL=${MAJHI_LATEST_URL:-https://api.github.com/repos/ashik112/majhi-releases/releases/latest}
 APP_DIR=${MAJHI_APP_DIR:-$HOME/.majhi/app}
 RELEASE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 # What the checks in scripts/check.sh tell the owner to run again.

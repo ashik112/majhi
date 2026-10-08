@@ -106,12 +106,12 @@ And you always know the bill: tokens, cost and every account's usage window, per
 majhi runs on macOS, Linux and Windows through WSL2. With Docker running (see below for your OS), one line installs it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ashik112/majhi-releases/main/install.sh | sh
 ```
 
 It checks the computer first and stops with the step to take when something is missing. It downloads a runtime package into `~/.majhi/app`, verifies its SHA-256 checksum, and pulls that release's images (amd64 and arm64). It builds only the local user layer, starts majhi on http://127.0.0.1:7070 and opens it. After that, updates are one click in majhi, and running the line again is safe: it updates to the latest release too. `MAJHI_VERSION=v1.2.3` before `sh` installs that release instead. The package contains setup scripts, Compose configuration and version metadata. It contains no app source checkout or Git history. If `~/.majhi/app` already holds a source checkout, the installer leaves it intact and installs into `~/.majhi/app-runtime`, carrying over its `.env` settings.
 
-**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk. Every merge to main with a `feat`, `fix` or `perf` commit becomes a release on its own (`.github/workflows/release.yml`). The workflow uploads `majhi-runtime.tar.gz`, its checksum and `release.json` before marking the release latest. `MAJHI_DOWNLOAD_URL` and `MAJHI_LATEST_URL` let the installer use a separate release host.
+**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk. Every merge to main with a `feat`, `fix` or `perf` commit becomes a release on its own (`.github/workflows/release.yml`). The source workflow pushes only the runtime package, checksum, metadata and distribution files to the public `majhi-releases` repository using its own deploy key. The public workflow publishes assets before marking the release latest. Source version tags stay in the source repository. `MAJHI_DOWNLOAD_URL` and `MAJHI_LATEST_URL` let the installer use a separate release host.
 
 ### macOS
 

@@ -1,5 +1,17 @@
 # Progress
 
+## Public release repository (branch feat/release-packages, built, not merged)
+
+Plan: create the public distribution repository with only the installer, license, README and publishing workflow. Point installation at it and publish runtime assets through a repository-scoped deploy key. Verify public files, shell syntax, YAML and installer tests. Keep source pushes and merges for owner approval.
+
+What works: the owner-requested public release repository is created and initialized with exactly README, LICENSE, install.sh and its release workflow. The public installer is accessible without authentication. A newly generated write deploy key grants access only to the distribution repository; its private half is stored in the source repository Actions secret MAJHI_RELEASES_DEPLOY_KEY and the temporary local copy is deleted. Source installer URLs now point at public distribution. The source release job pushes only runtime assets and distribution files through that key. The public workflow creates the release and uploads its assets using its own repository token. The source job waits for those assets before recording its source tag. GitHub SSH host keys are read from its authenticated HTTPS metadata API. No account token is copied into Actions.
+
+Verified: public visibility, installer contents, deploy-key scope and secret name checked through GitHub. The current server, runner and Laya image manifests are accessible anonymously. Publication against a temporary bare repository passes for the exact seven-file allowlist, atomic branch/tag push, idempotent retry and refusal to reuse a version for another source commit. All 29 affected installer, release and updater tests pass. Shell syntax and both workflow YAML files pass checks.
+
+Left: the source-side changes are local and need an approved merge before the first runtime package is released publicly. No source push, merge or visibility change was made. The public repository README explains that installation becomes available after that first package. No real image release was built in this task.
+
+Owner check: approve the source merge, then try the first public packaged release before retiring the old installation URL.
+
 ## Release packages instead of source checkouts (branch `feat/release-packages`, built, not merged)
 
 **Plan.** Build a runtime-only release archive and checksum, change the installer to download it, and make host updates read packaged version metadata and restore runtime files on failure. Keep development checkouts and older release installs working. Verify archive containment, checksum failures, config preservation, update rollback, targeted host tests and typecheck.
