@@ -22,6 +22,8 @@ export interface OutgoingRequest {
   base: string;
   /** The commit a stacked branch sits on. The range starts there, not at the base. */
   stackCommit?: string | undefined;
+  /** The commit the task branch was made from (often `origin/<base>`, newer than the local base). */
+  startCommit?: string | undefined;
   /**
    * The remote-tracking ref of the branch when the branch was pushed before, else undefined. The
    * range starts at that tip, and a pushed branch whose ref is gone or has diverged is left alone.
@@ -111,14 +113,41 @@ async function rangeBase(req: OutgoingRequest, tip: string): Promise<string | un
       return undefined;
     return sha;
   }
-  if (
-    req.stackCommit !== undefined &&
-    (await gitOk(req.source, ["merge-base", "--is-ancestor", req.stackCommit, tip]))
-  ) {
-    return req.stackCommit;
+  // The fork point is the newest of what the branch was made from: its stack, its start commit, and
+  // where it left the base, locally or on any remote. The local base is often behind the remote one,
+  // and a range from it would take other people's published commits as the task's.
+  const remoteBases = (
+    await git(req.source, ["for-each-ref", "--format=%(refname)", "refs/remotes"]).catch(() => "")
+  )
+    .split("\n")
+    .filter((r) => r !== "" && r.split("/").slice(3).join("/") === req.base);
+  const candidates: string[] = [];
+  for (const c of [req.stackCommit, req.startCommit]) {
+    if (c !== undefined && (await gitOk(req.source, ["merge-base", "--is-ancestor", c, tip])))
+      candidates.push(c);
   }
-  const fork = await git(req.source, ["merge-base", tip, req.base]).catch(() => "");
-  return fork.trim() === "" ? undefined : fork.trim();
+  for (const b of [req.base, ...remoteBases]) {
+    const fork = (await git(req.source, ["merge-base", tip, b]).catch(() => "")).trim();
+    if (fork !== "") candidates.push(fork);
+  }
+  let best: { sha: string; ahead: number } | undefined;
+  for (const sha of candidates) {
+    const ahead = Number((await git(req.source, ["rev-list", "--count", `${sha}..${tip}`])).trim());
+    if (best === undefined || ahead < best.ahead) best = { sha, ahead };
+  }
+  if (best === undefined) return undefined;
+  // Never rewrite a commit that is already on a remote or on the local base: those belong to others.
+  const all = await git(req.source, ["rev-list", "--count", `${best.sha}..${tip}`]);
+  const own = await git(req.source, [
+    "rev-list",
+    "--count",
+    tip,
+    `^${best.sha}`,
+    "--not",
+    "--remotes",
+    `refs/heads/${req.base}`,
+  ]).catch(() => "");
+  return own.trim() === all.trim() ? best.sha : undefined;
 }
 
 async function commitTree(
