@@ -1533,6 +1533,11 @@ export class AdminService {
       const parts = [result.error.error, ...(result.error.details ?? [])];
       return { ok: false, error: redactText(parts.join(". ")) };
     }
+    // A call that opened or started a task (its result names `task`): the captain's words after it are about that task.
+    if (meta.task !== undefined && typeof result.output === "object" && result.output !== null) {
+      const parsed = TaskIdSchema.safeParse((result.output as { task?: unknown }).task);
+      if (parsed.success) this.deps.room.setSubject(meta.task, parsed.data);
+    }
     if (commands[command].risk === "read") {
       if (lane === undefined) return { ok: true, output: result.output };
       const narrowed = lane.output(result.output);
