@@ -163,17 +163,6 @@ export class CaptainRepo {
     this.stoppedNow = stopped;
   }
 
-  /** The day the owner was last told the summaries. False when that day was told already. */
-  markSummary(day: string): boolean {
-    return (
-      this.db
-        .prepare(
-          "UPDATE captain_state SET summary_day = ? WHERE id = 1 AND (summary_day IS NULL OR summary_day < ?)",
-        )
-        .run(day, day).changes > 0
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Lanes
 

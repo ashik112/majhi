@@ -469,6 +469,8 @@ export type ChangeBranchResult = z.infer<typeof ChangeBranchResultSchema>;
 export const CHAT_BRIEF = "Chat";
 /** Starts the `why` of a review card when the captain tried to ship the task and failed; the reason follows. */
 export const SHIP_FAILED_PREFIX = "The captain tried to ship it and failed: ";
+/** The fixed title of the owner's chat with the captain: it never takes a title from its first topic. */
+export const CAPTAIN_CHAT_TITLE = "Captain";
 /** The same marker on chats made before the Chats page. */
 export const BOSS_CHAT_BRIEF = "Captain chat";
 /** What an untitled chat is called until the owner's first message names it. */

@@ -2585,6 +2585,8 @@ export class TaskService {
   /** The first message names an untitled chat. */
   private nameChat(task: Task, text: string): void {
     if (!isOwnerChat(task) || !DEFAULT_CHAT_TITLES.includes(task.title)) return;
+    // The chat with the captain is called "Captain", not after its first topic.
+    if (task.org === undefined && task.team[0] === this.deps.config.knownBoss()) return;
     const title = chatTitleFrom(text);
     if (title === undefined) return;
     this.deps.store.tasks.setText(task.id, title, task.brief, this.now().toISOString());

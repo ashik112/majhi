@@ -57,6 +57,11 @@ export class RoomService {
 
   /** The captain's lanes: what makes a task's timeline and a workspace thread merged reads. */
   private captain: CaptainView | undefined;
+  /** The workspace whose captain lane this chat is, or undefined. */
+  laneOrg(chat: string): string | undefined {
+    return this.captain?.orgOfLane(chat);
+  }
+
   /** The task a lane's turn is about now: its lines are tagged with it (`about`) until the turn ends. */
   private readonly subjects = new Map<string, TaskId>();
 

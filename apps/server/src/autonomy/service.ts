@@ -2793,7 +2793,7 @@ export class AutonomyService {
     });
     if (!this.repo.addSummary(summary)) return undefined;
     const line = summaryLine(summary);
-    this.say(line);
+    // The summary is the Today brief and the Captain sheet: it is not pasted into the workspaces' threads.
     this.event({ kind: "summary", text: line });
     this.deps.notify?.(summary, line);
     return summary;

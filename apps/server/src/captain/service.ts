@@ -224,7 +224,6 @@ export class CaptainService {
       }
     }
     await this.playbookSweep?.().catch(() => undefined);
-    await this.dailySummary();
   }
 
   // ---------------------------------------------------------------------------
@@ -621,40 +620,6 @@ export class CaptainService {
     this.deps.undone?.();
     const after = this.repo.action(id) ?? action;
     return { action: publicAction(after), detail };
-  }
-
-  /**
-   * Once a day at autonomous mode's summary time, the bell gets one line per workspace for the day
-   * before. Nothing when no workspace did anything.
-   */
-  async dailySummary(): Promise<string | undefined> {
-    const [sections, settings] = await Promise.all([
-      this.deps.config.sections(),
-      this.deps.config.settings(),
-    ]);
-    const tz = zoneOr(settings.autonomy.tz);
-    const now = this.now();
-    const today = localDay(now, tz);
-    const [h = 8, m = 0] = settings.autonomy.summary_at.split(":").map(Number);
-    const clock = new Intl.DateTimeFormat("en-GB", {
-      timeZone: tz,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(now);
-    if (clock < `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`) return undefined;
-    if (!this.repo.markSummary(today)) return undefined;
-    const yesterday = addDays(today, -1);
-    const lines: string[] = [];
-    for (const org of workspaceIds(sections.orgs)) {
-      const line = summaryOf(this.repo.dayActions(org, yesterday));
-      if (line !== "")
-        lines.push(`${org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org)}: ${line}`);
-    }
-    if (lines.length === 0) return undefined;
-    const text = `The captain yesterday. ${lines.join(". ")}.`;
-    this.deps.tell(`captain-summary:${today}`, text);
-    return text;
   }
 
   /** The chore's label, for lines elsewhere. */

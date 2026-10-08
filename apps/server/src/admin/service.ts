@@ -91,6 +91,17 @@ export interface Dismissal {
   reason?: string | undefined;
 }
 
+/** One applied call of the captain in its lane, for the History. */
+export interface AppliedEntry {
+  org: string;
+  task?: string;
+  text: string;
+  reason: string;
+  ok: boolean;
+  /** The card id it would have had: the History key. */
+  id: string;
+}
+
 export interface AdminDeps {
   config: ConfigService;
   room: RoomService;
@@ -211,6 +222,7 @@ export class AdminService {
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
   private proposals: ProposalWorld | undefined;
+  private captainLog: ((entry: AppliedEntry) => void) | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
@@ -232,6 +244,37 @@ export class AdminService {
   /** What a captain's proposal is measured against: built after this service, from the settings and projects. */
   useProposals(world: ProposalWorld): void {
     this.proposals = world;
+  }
+
+  /** Where the captain's applied calls are logged: History, not the workspace thread. */
+  useCaptainLog(log: (entry: AppliedEntry) => void): void {
+    this.captainLog = log;
+  }
+
+  /**
+   * An applied call that needed no click. In a task's room the card shows what ran. In a captain lane it is a History
+   * entry instead: the workspace thread keeps talk, and a card per tool call buries it.
+   */
+  private appliedAlone(
+    caller: AdminCaller,
+    id: string,
+    payload: ApprovalPayload,
+    entry: { command: CommandName; input: unknown; reason: string; ok: boolean; result: string },
+  ): void {
+    const org = this.deps.room.laneOrg(caller.task);
+    if (org === undefined || this.captainLog === undefined) {
+      this.deps.room.post(caller.task as TaskId, id, payload);
+      return;
+    }
+    const subject = this.deps.room.subjectOf(caller.task);
+    this.captainLog({
+      org,
+      ...(subject === undefined ? {} : { task: subject }),
+      text: `${entry.ok ? "Ran" : "Failed"}: ${summarize(entry.command, entry.input)}`,
+      reason: entry.reason === "" ? entry.result : entry.reason,
+      ok: entry.ok,
+      id,
+    });
   }
 
   /** The host helper's clipboard: built after this service, from the helper link and the config. */
@@ -552,13 +595,19 @@ export class AdminService {
     }
     const done = await this.execute(command, input, metaFor(caller.agent, ask.reason, caller.task));
     const held = !done.ok && ask.accept?.(done.error) === true;
-    this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
-      ...cardOf(caller.agent, command, input, ask.reason),
-      alone: true,
-      state: done.ok || held ? "applied" : "failed",
-      ...(done.commit === undefined ? {} : { commit: done.commit }),
-      result: done.ok ? lineOf(done.output) : done.error,
-    });
+    const result = done.ok ? lineOf(done.output) : done.error;
+    this.appliedAlone(
+      caller,
+      `approval:${randomUUID()}`,
+      {
+        ...cardOf(caller.agent, command, input, ask.reason),
+        alone: true,
+        state: done.ok || held ? "applied" : "failed",
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result,
+      },
+      { command, input, reason: ask.reason, ok: done.ok || held, result },
+    );
     if (held) return { text: ask.accepted ?? done.error, isError: false };
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
@@ -667,16 +716,22 @@ export class AdminService {
         );
       }
       if (def.risk !== "read") {
-        this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
-          ...cardOf(caller.agent, command, input, ask.reason),
-          alone: true,
-          ...(rule === undefined
-            ? {}
-            : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
-          state: done.ok ? "applied" : "failed",
-          ...(done.commit === undefined ? {} : { commit: done.commit }),
-          result: done.ok ? lineOf(done.output) : done.error,
-        });
+        const result = done.ok ? lineOf(done.output) : done.error;
+        this.appliedAlone(
+          caller,
+          `approval:${randomUUID()}`,
+          {
+            ...cardOf(caller.agent, command, input, ask.reason),
+            alone: true,
+            ...(rule === undefined
+              ? {}
+              : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
+            state: done.ok ? "applied" : "failed",
+            ...(done.commit === undefined ? {} : { commit: done.commit }),
+            result,
+          },
+          { command, input, reason: ask.reason, ok: done.ok, result },
+        );
       }
       if (auto !== undefined && autonomy !== undefined) {
         autonomy.ran(caller, command, input, ask.reason, done);
@@ -740,14 +795,20 @@ export class AdminService {
       "autonomy",
       done.ok ? verdict.why : `${verdict.why}. Failed: ${done.error}`,
     );
-    this.deps.room.post(caller.task as TaskId, id, {
-      ...cardOf(caller.agent, command, input, ask.reason),
-      alone: true,
-      state: done.ok ? "applied" : "failed",
-      autonomy: marker,
-      ...(done.commit === undefined ? {} : { commit: done.commit }),
-      result: done.ok ? lineOf(done.output) : done.error,
-    });
+    const result = done.ok ? lineOf(done.output) : done.error;
+    this.appliedAlone(
+      caller,
+      id,
+      {
+        ...cardOf(caller.agent, command, input, ask.reason),
+        alone: true,
+        state: done.ok ? "applied" : "failed",
+        autonomy: marker,
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result,
+      },
+      { command, input, reason: ask.reason, ok: done.ok, result },
+    );
     autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
     if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
