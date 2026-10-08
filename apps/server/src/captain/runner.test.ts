@@ -170,11 +170,14 @@ describe("the chore runner", () => {
     expect(await t.runner.start("acme", "cleanup", "daily")).toBeUndefined();
   });
 
-  it("runs only memory and cleanup while Autonomous is off, and only where upkeep is the captain's", async () => {
+  it("while Auto-pilot is off runs what reacts (ship, memory, cleanup) by its row and not the scheduled upkeep", async () => {
     const t = setup(async () => {});
     t.state.mode = "off";
-    for (const chore of ["ship", "cards", "questions", "projects", "triage"] as const) {
+    for (const chore of ["projects", "triage"] as const) {
       expect(await t.runner.start("acme", chore, "test")).toBeUndefined();
+    }
+    for (const chore of ["ship", "cards", "questions"] as const) {
+      expect(await t.runner.start("acme", chore, "test")).toBe("done");
     }
     expect(await t.runner.start("acme", "memory", "test")).toBe("done");
     expect(await t.runner.start("acme", "cleanup", "test")).toBe("done");
@@ -183,7 +186,7 @@ describe("the chore runner", () => {
     expect(await t.runner.start("acme", "memory", "test")).toBeUndefined();
     t.state.mode = "on";
     t.state.authority = { ...ALL_ASK, upkeep: "decide" };
-    expect(await t.runner.start("acme", "ship", "test")).toBe("done");
+    expect(await t.runner.start("acme", "projects", "test")).toBe("done");
   });
 
   it("starts nothing while stopped, resting or in Only when I ask, and stops a run at the next step", async () => {

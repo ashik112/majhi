@@ -2163,6 +2163,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     return { yes: true };
   }
   const captain = new CaptainService({
+    repo: captainRepo,
     store,
     config,
     events,

@@ -56,7 +56,7 @@ function setup(s: Setup = {}) {
     shipPlan: async () => {
       reads += 1;
       const facts = reads > 1 && s.later !== undefined ? s.later() : (s.facts ?? bug);
-      return planOf(rows, { rules: s.rules ?? [], facts, autonomous: s.autonomous ?? true });
+      return planOf(rows, { rules: s.rules ?? [], facts });
     },
     shipCheck: async () => s.check?.() ?? READY,
     ship: async (_org: string, _id: string, how: { push: boolean }) => {
@@ -139,7 +139,6 @@ describe("a ship rule", () => {
       ],
       ["the owner is typing in the task", { typing: true }],
       ["the branch is not one the workspace ships to", { branches: ["release"] }],
-      ["Autonomous is off", { autonomous: false }],
       ["the rule stopped covering it between the check and the act", { later: () => feature }],
     ];
     for (const [guard, over] of failing) {
@@ -163,14 +162,13 @@ describe("the lane and the chore", () => {
     ["a bug over the line limit", { rules: [bugRule], facts: { ...bug, changedLines: 500 } }, "asks"],
     ["no rules and the row on You", {}, "asks"],
     ["the row on Captain with no rules", { rows: { ...ALL_ASK, merge: "decide" } }, "merges"],
-    ["Autonomous off", { rules: [bugRule], autonomous: false }, "rests"],
+    ["Auto-pilot off, a task the owner started", { rules: [bugRule], autonomous: false }, "merges"],
     ["a rule that leaves the merge to the owner", { rules: [{ ...bugRule, merge: "ask" }] }, "asks"],
   ];
 
   it.each(cases)("reach the same decision for %s", async (_name, over, outcome) => {
     const t = setup(over);
     await t.chore();
-    // Off, the chore does not run at all: nothing merges and nothing is asked.
     expect([t.calls.merged, t.calls.asked]).toEqual(
       outcome === "merges" ? [1, 0] : outcome === "asks" ? [0, 1] : [0, 0],
     );

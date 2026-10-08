@@ -30,7 +30,7 @@ import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { MEMORY_WAITING, pausedToday, restWhy } from "./rules.ts";
+import { MEMORY_WAITING, pausedToday } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -54,6 +54,8 @@ export interface AutonomyLink {
 }
 
 export interface CaptainDeps {
+  /** The one repo of the captain's tables: the Stop switch is read through it everywhere. */
+  repo?: CaptainRepo;
   store: Store;
   config: ConfigService;
   events: EventHub;
@@ -109,7 +111,7 @@ export class CaptainService {
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
-    this.repo = new CaptainRepo(deps.store.raw);
+    this.repo = deps.repo ?? new CaptainRepo(deps.store.raw);
     this.relay =
       deps.relay === undefined
         ? undefined

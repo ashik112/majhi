@@ -158,11 +158,11 @@ describe("the workspace's choice and the lane", () => {
     });
     expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { providers: null } } })).status).toBe(200);
     expect((await t.call("majhi_tasks_start", { id: acme })).isError).toBe(false);
-    // With Autonomous off, the captain starts nothing.
+    // With Auto-pilot off, the captain picks nothing from the backlog.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
     const other = await t.ownerTask("Add a status page\n\nsmall");
     expect((await t.call("majhi_tasks_start", { id: other })).text).toBe(
-      "Refused: Auto-pilot is off, so the captain does not start or change work in Acme. It acts only when you ask.",
+      "Refused: Auto-pilot is off, so the captain takes no backlog work.",
     );
     // A workspace that does not exist is refused.
     expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { authority: RUNS } } })).status).toBe(
@@ -181,7 +181,7 @@ describe("tasks marked Not for autonomous mode", () => {
     expect(list.find((s) => s.id === id)?.noAutonomy).toBe(true);
     expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBe(true);
 
-    const why = `Refused: the owner marked ${id} Not for Auto-pilot, so Auto-pilot leaves it alone.`;
+    const why = `Refused: the owner marked ${id} Not for the captain, so the captain leaves it alone.`;
     expect(await t.call("majhi_tasks_start", { id })).toEqual({ isError: true, text: why });
     expect(await t.call("majhi_tasks_update", { id, title: "Renamed" })).toEqual({
       isError: true,

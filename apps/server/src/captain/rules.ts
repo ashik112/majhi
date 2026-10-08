@@ -1,4 +1,4 @@
-import { type AutonomyOrg, type CaptainChore, restOf } from "@majhi/shared";
+import type { AutonomyOrg, CaptainChore } from "@majhi/shared";
 import { localDay } from "../usage/ranges.ts";
 
 /**
@@ -44,14 +44,6 @@ export const DAILY_CHORES: readonly CaptainChore[] = [
   "checklist",
   "wiki",
 ];
-
-/**
- * Why the captain rests in this workspace right now: outside its working hours or on a freeze date,
- * both in the workspace's zone. Undefined: it may act. The rule itself is `restOf` in shared.
- */
-export function restWhy(rules: AutonomyOrg | undefined, now: Date, tz: string): string | undefined {
-  return restOf({ hours: rules?.hours, freeze: rules?.freeze, tz }, now);
-}
 
 export { clockIn as clockAt, withinHours } from "@majhi/shared";
 

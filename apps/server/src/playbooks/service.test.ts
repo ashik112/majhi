@@ -212,7 +212,7 @@ describe("a playbook that is off", () => {
 });
 
 describe("Autonomous off", () => {
-  it("fires nothing but memory and cleanup", async () => {
+  it("fires only what reacts (ship, memory, cleanup), not the scheduled upkeep", async () => {
     const t = setup();
     await on(t, "t-rules");
     await on(t, "t-captain");
@@ -229,7 +229,7 @@ describe("Autonomous off", () => {
     );
     expect(held["upkeep-memory"]).toBeUndefined();
     expect(held["upkeep-cleanup"]).toBeUndefined();
-    expect(held["upkeep-ship"]).toBeDefined();
+    expect(held["upkeep-ship"]).toBeUndefined();
     expect(held["upkeep-followups"]).toBeDefined();
   });
 
