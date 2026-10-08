@@ -37,6 +37,7 @@ import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
+import { noticesHandlers } from "../notices/handlers.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -315,6 +316,7 @@ export function createHandlers({
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
     ...conversationsHandlers(services.conversations),
+    ...noticesHandlers(services.notices),
     ...chatHandlers(services.chat),
     ...incidentHandlers({
       incidents: services.chatParts.incidents,

@@ -76,6 +76,8 @@ export const queryKeys = {
   agenda: ["agenda"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
+  /** `notices.list`: the bell's feed. Task, ops, client and captain changes refetch it; the owner's reads do too. */
+  notices: ["notices"],
   /** `conversations.list`: the chat dock. The events feed patches it row by row. */
   conversations: ["conversations"],
   /** `git.signIn.poll` for each flow. */

@@ -1,26 +1,31 @@
-import { PAGE_PATH } from "@majhi/shared";
+import { type Notice, PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Bell as BellIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
-import { DecisionRow } from "@/features/decisions/decision-row";
-import { useNeedsYou } from "@/features/decisions/needs-you";
+import { Button } from "@/components/ui/button";
+import { groupNotices, noticeAction } from "@/features/notices/model";
+import { NoticeRow } from "@/features/notices/notice-row";
 import { cn } from "@/lib/cn";
-import { useDecisions } from "@/lib/decision-queries";
 import { GLASS_STRONG } from "@/lib/glass";
+import { useMarkNoticesRead, useNotices } from "@/lib/notice-queries";
 import { setNoticesOpen, useNoticesOpen } from "@/lib/notices";
+import { useNow } from "@/lib/use-now";
+import { useRunAttention } from "./banner";
 
-/** Where the panel sits: 12px right of the sidebar, level with its top, as tall as the window allows. */
+/** Where the panel sits: 12px right of the sidebar, just under the bell, as tall as the window allows. */
 function besideSidebar(trigger: HTMLElement | null): React.CSSProperties | undefined {
   const aside = trigger?.closest("aside")?.getBoundingClientRect();
-  if (aside === undefined) return undefined;
+  const bell = trigger?.getBoundingClientRect();
+  if (aside === undefined || bell === undefined) return undefined;
+  const top = bell.bottom + 8;
   return {
-    top: aside.top,
+    top,
     bottom: "auto",
     left: aside.right + 12,
     right: "auto",
-    maxHeight: Math.min(640, window.innerHeight - aside.top - 12),
+    maxHeight: Math.min(680, window.innerHeight - top - 12),
   };
 }
 
@@ -29,38 +34,89 @@ function countText(count: number): string {
   return count > 99 ? "99+" : String(count);
 }
 
+function GroupLabel({ children }: { children: string }) {
+  return (
+    <li
+      aria-hidden="true"
+      className="flex items-center gap-2 px-3 pt-2.5 pb-1 text-xs font-medium text-fg-faint"
+    >
+      {children}
+      <span className="h-px flex-1 bg-line" />
+    </li>
+  );
+}
+
 /**
- * The bell in the sidebar head: a count of the decisions that wait for the owner, and a panel that
- * lists them. Each row can be answered right there or opened.
+ * The bell in the sidebar head: what happened since the owner last looked, newest first, in two
+ * groups (New, Earlier). The badge counts the unread rows and is red while one of them waits for the
+ * owner. Opening the panel reads nothing; a row is read when it is opened, and "Mark all read" reads all.
  */
 export function Bell() {
-  const decisions = useDecisions().data?.decisions ?? [];
+  const feed = useNotices().data;
+  const mark = useMarkNoticesRead().mutate;
+  const run = useRunAttention();
   const open = useNoticesOpen();
+  const now = useNow(60_000);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
   const close = useCallback(() => setNoticesOpen(false), []);
   const { panel, style, container } = useAnchoredPanel({ open, close, trigger });
-  const count = useNeedsYou() ?? decisions.length;
-  // The panel opens beside the sidebar, from its top, rather than over the sidebar's own rows.
+  const notices = feed?.notices ?? [];
+  const unread = feed?.unread ?? 0;
+  const urgent = (feed?.unreadNeedsYou ?? 0) > 0;
+  const { fresh, earlier } = groupNotices(notices);
   const side = open ? besideSidebar(trigger.current) : undefined;
 
-  useEffect(() => {
-    if (open) panel.current?.querySelector<HTMLElement>("[data-notice]")?.focus();
-  }, [open, panel]);
+  // The panel is hidden until it is placed, and a hidden element cannot take focus: focus the first row in the
+  // same commit that shows it. A browser that is not ready yet gets another try on the next frames.
+  useLayoutEffect(() => {
+    if (!open || style.visibility === "hidden") return;
+    let frame = 0;
+    let tries = 0;
+    const focusFirst = () => {
+      const node = panel.current;
+      if (node === null) return;
+      const target = node.querySelector<HTMLElement>("[data-notice]") ?? node;
+      target.focus();
+      if (document.activeElement !== target && tries < 30) {
+        tries += 1;
+        frame = window.requestAnimationFrame(focusFirst);
+      }
+    };
+    focusFirst();
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, panel, style.visibility]);
 
-  function onKeyDown(event: React.KeyboardEvent) {
-    if (event.key === "Escape") {
+  // Esc closes wherever focus is: a button that went away under the pointer (Mark all read) leaves it on the page.
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
       event.stopPropagation();
       close();
       trigger.current?.focus();
-      return;
-    }
+    };
+    document.addEventListener("keydown", onEscape, true);
+    return () => document.removeEventListener("keydown", onEscape, true);
+  }, [open, close]);
+
+  function onKeyDown(event: React.KeyboardEvent) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-notice]") ?? []);
     const at = nodes.indexOf(document.activeElement as HTMLElement);
     const next = event.key === "ArrowDown" ? at + 1 : at - 1;
     nodes[(next + nodes.length) % nodes.length]?.focus();
+  }
+
+  function openRow(notice: Notice) {
+    if (!notice.read) mark({ id: notice.id });
+    close();
+    run(noticeAction(notice.link));
+  }
+
+  function readAll() {
+    mark({ upTo: new Date().toISOString() });
   }
 
   return (
@@ -71,12 +127,8 @@ export function Bell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        aria-label={count === 0 ? "Decisions, nothing needs you" : `Decisions, ${count} need you`}
-        title={
-          count === 0
-            ? "Nothing needs you"
-            : `${count} ${count === 1 ? "decision needs" : "decisions need"} you`
-        }
+        aria-label={unread === 0 ? "Notifications, nothing new" : `Notifications, ${unread} unread`}
+        title={unread === 0 ? "Nothing new" : `${unread} unread`}
         onClick={() => setNoticesOpen(!open)}
         className={cn(
           "relative grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-raised hover:text-fg",
@@ -84,12 +136,16 @@ export function Bell() {
         )}
       >
         <BellIcon aria-hidden="true" className="size-4" />
-        {count > 0 && (
+        {unread > 0 && (
           <span
             aria-hidden="true"
-            className="tnum absolute -top-1 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-lamp-needs px-1 font-mono text-[10px] leading-none font-semibold text-canvas"
+            data-urgent={urgent ? "" : undefined}
+            className={cn(
+              "tnum absolute -top-1 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[10px] leading-none font-semibold text-canvas",
+              urgent ? "bg-lamp-needs" : "bg-fg-muted",
+            )}
           >
-            {countText(count)}
+            {countText(unread)}
           </span>
         )}
       </button>
@@ -100,20 +156,55 @@ export function Bell() {
             popover="manual"
             id={id}
             role="dialog"
-            aria-label="Decisions"
+            tabIndex={-1}
+            aria-label="Notifications"
             style={{ ...style, ...side }}
             onKeyDown={onKeyDown}
-            className={cn("z-50 flex w-[420px] flex-col overflow-hidden rounded-xl", GLASS_STRONG)}
+            className={cn(
+              "z-50 flex w-[420px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl",
+              GLASS_STRONG,
+            )}
           >
-            <div className="flex shrink-0 items-baseline gap-2 border-b border-line px-4 pt-3 pb-2.5">
-              <h2 className="text-md font-semibold">Decisions</h2>
-              <span className="tnum font-mono text-sm text-fg-faint">{count}</span>
+            <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 pt-3 pb-2.5">
+              <h2 className="text-md font-semibold">Notifications</h2>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-6 px-2 text-xs text-fg"
+                disabled={unread === 0}
+                onClick={readAll}
+              >
+                Mark all read
+              </Button>
+            </div>
+            {notices.length === 0 ? (
+              <p className="px-4 py-6 text-base text-fg-muted">Nothing happened this week.</p>
+            ) : (
+              <ul
+                aria-label="What happened"
+                className="flex min-h-0 flex-col overflow-y-auto overscroll-contain scroll-fade"
+              >
+                {fresh.length > 0 && <GroupLabel>New</GroupLabel>}
+                {fresh.map((notice) => (
+                  <li key={notice.id}>
+                    <NoticeRow notice={notice} now={now} onOpen={openRow} />
+                  </li>
+                ))}
+                {earlier.length > 0 && <GroupLabel>Earlier</GroupLabel>}
+                {earlier.map((notice) => (
+                  <li key={notice.id}>
+                    <NoticeRow notice={notice} now={now} onOpen={openRow} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex shrink-0 items-center gap-3 border-t border-line px-4 py-2">
               <Link
                 to={PAGE_PATH.decisions}
                 onClick={close}
-                className="ml-auto rounded-sm text-xs text-fg-muted hover:text-fg hover:underline"
+                className="rounded-sm text-xs text-fg-muted hover:text-fg hover:underline"
               >
-                Open all
+                Needs you
               </Link>
               <Link
                 to={PAGE_PATH.setup}
@@ -124,20 +215,6 @@ export function Bell() {
                 Alert settings
               </Link>
             </div>
-            {count === 0 ? (
-              <p className="px-4 py-6 text-base text-fg-muted">Nothing needs you.</p>
-            ) : (
-              <ul
-                aria-label="What needs you"
-                className="flex min-h-0 flex-col overflow-y-auto overscroll-contain scroll-fade"
-              >
-                {decisions.map((decision) => (
-                  <li key={decision.id}>
-                    <DecisionRow decision={decision} compact onOpen={close} />
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>,
           container,
         )}

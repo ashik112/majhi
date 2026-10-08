@@ -109,6 +109,8 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
+    case "notices":
+      return ["notices"];
     case "chat":
     case "contacts":
       // A reply waits in Decisions too.

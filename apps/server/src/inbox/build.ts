@@ -54,6 +54,8 @@ export interface DecisionSources {
   signedOut: readonly {
     id: string;
     at: string;
+    /** The account's workspace. */
+    org?: string | undefined;
     /** What waits on this sign-in, in words ("Captain in Globex"): their pauses are not cards of their own. */
     waits?: readonly string[] | undefined;
   }[];
@@ -598,6 +600,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     out.push({
       id: signInDecisionId(account.id),
       kind: "sign-in",
+      ...(account.org === undefined ? {} : { org: account.org }),
+      ...(account.waits === undefined || account.waits.length === 0 ? {} : { waits: [...account.waits] }),
       title: `Sign in ${account.id}: its agents cannot run until you do`,
       sentence: `${account.id} is signed out. Its agents cannot run until you sign in again.${
         account.waits === undefined || account.waits.length === 0

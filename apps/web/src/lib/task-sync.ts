@@ -77,6 +77,7 @@ export function taskSync(client: QueryClient): {
   const refetchLists = () => {
     void client.invalidateQueries({ queryKey: listKey });
     void client.invalidateQueries({ queryKey: queryKeys.decisions });
+    void client.invalidateQueries({ queryKey: queryKeys.notices });
   };
 
   const flush = async () => {
@@ -100,6 +101,8 @@ export function taskSync(client: QueryClient): {
             : patchDecisions(old.decisions, new Set(ids), answer.decisions);
         return { decisions, counts: answer.counts };
       });
+      // The bell lists what waits and what happened to these tasks.
+      void client.invalidateQueries({ queryKey: queryKeys.notices });
       // An open task page reads its own task again; one nobody looks at is only marked stale.
       for (const id of ids) {
         void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "one", id] });

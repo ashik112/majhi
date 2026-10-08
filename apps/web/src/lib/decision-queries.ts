@@ -104,6 +104,7 @@ export function useAnswerDecision() {
         client.invalidateQueries({ queryKey: queryKeys.tasks }),
         client.invalidateQueries({ queryKey: queryKeys.captain }),
         client.invalidateQueries({ queryKey: queryKeys.autonomy }),
+        client.invalidateQueries({ queryKey: queryKeys.notices }),
       ]);
     },
   });
@@ -120,6 +121,7 @@ export function useAfterBatch() {
       client.invalidateQueries({ queryKey: queryKeys.tasks }),
       client.invalidateQueries({ queryKey: queryKeys.captain }),
       client.invalidateQueries({ queryKey: queryKeys.autonomy }),
+      client.invalidateQueries({ queryKey: queryKeys.notices }),
     ]);
   };
 }

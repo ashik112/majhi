@@ -2692,3 +2692,30 @@ A fresh clone runs with one command, lets the owner pick workspace roots, and sh
 **Measured.** 300 MB database: backup 8 s (text-like data, 98 MB archive) to 17 s (incompressible, 302 MB), test restore 4 to 6 s, about 300 MB of memory.
 
 **Left.** The destination check needs a real container with a mounted folder to prove (owner: pick an iCloud or Dropbox folder on a real install and read the mount message). Restore restarts itself only under docker compose; elsewhere the section says to run `make up`. Old `daily-*.db` snapshots are listed and restorable but not written any more.
+
+## The bell as a notifications feed (built)
+
+**Status.** Built on `feat/bell-feed`, from `main`. Replaces the bell's "Decisions" popup, which only repeated the Needs you rows.
+
+**Design note.** The bell answers "what happened since I last looked". Needs you stays the only queue: a decision row in the bell is the same decision with the same primary button, answered once for every place that shows it. Nothing is stored twice and no event store was added. `notices.list` (risk read, owner only) derives the feed on read from the records each event already lives in:
+
+| Row | Read from |
+| --- | --- |
+| Decision arrived (needs you) | `InboxService.list()` (`inbox/build.ts`), every decision that waits, with its primary answer and the captain's or agent's suggestion |
+| Client message | `room_items` type `client` of rooms with `tasks.client`, newest per room, by the chat's Notify setting (urgent always) |
+| Captain replied to a client | `room_items` type `client-reply`, `by: captain`, state sent or failed, newest per room |
+| Task in review, done, paused | `tasks` joined to its last `task_events` row into the current status; the owner's own moves and what a ship or paused decision already says are left out |
+| Deploy finished or failed | `deploys` in state live, failed or rolled-back |
+| Incident opened or resolved | `ops_incidents` (`opened_at`, `resolved_at`); an unacknowledged one is a decision already |
+| Captain filed a bug | `tasks` with `type = bug` and `type_by = captain` |
+| majhi updated | the helper's `update.json` (`readUpdateStatus`) |
+
+Window: 7 days, at most 100 rows (what waits is always in it). Who did it uses `didWords` ("The captain replied in ..."). The only new stored value is the owner's marks: one JSON value `notices.read` in `ops_settings` (`seen`: everything up to that time is read, never moved back; `rows`: rows read one by one, forgotten after 8 days). `notices.markRead` (owner only, in `AGENT_BLOCKED_COMMANDS`) takes `{ upTo }` (clamped to now; also reads the decisions that wait, because a decision's time is when it was last looked at) or `{ id }`. It emits the `notices` topic so every tab refetches. Live updates use the existing typed events: task, ops, client, captain and project topics, a chat app's conversation event, and every place that changes the decisions list refetch `notices.list`; there is no timer.
+
+**Cost.** Every source is bounded by time and a row limit and uses an existing index (client lines on `room_items (task, type, at)`, a task's last status change on `task_events (task, id)`); tasks, incidents and deploys are small tables read by one filter. Measured against a home with 66 rows across three workspaces: `notices.list` p50 8.5 ms, p95 11 ms through HTTP, about 1 ms more than `decisions.list` (7.5 ms, 8.9 ms) which it contains.
+
+**What works.** Header "Notifications" and "Mark all read"; groups New (unread dot, red when it needs you) and Earlier; a row is workspace tile, bold what happened, one detail line, short age; a read row is one quiet line. A decision row has one primary button. Clicking a row opens its home (task, client room, Watch, Projects, Hub setup), reads it and closes the panel. Opening the panel reads nothing. Badge counts unread rows, red while an unread row needs the owner. Footer: Needs you, Alert settings. The panel sits beside the sidebar under the bell, scrolls inside, Esc closes from anywhere, arrows move between rows.
+
+**How to try it.** Click the bell. Tests: `pnpm exec vitest run apps/server/src/notices` (workspace scoping; owner-only and forward-only marks).
+
+**Left.** Unstable decision times (a sign-in decision's time is its last check) keep such rows at the top of their group until read. A reply held for the owner shows as a decision, not as a reply row.
