@@ -1,10 +1,12 @@
 # Progress
 
-## Landing installation command (branch feat/release-packages, built, not merged)
+Merge verification, 2026-10-09: owner approved all release packaging, public distribution and landing installer changes. Latest main was merged into the branch without conflicts. All five workspace typechecks and all 34 targeted host tests pass; shell syntax and whitespace checks pass. The technical review made no code changes; its recovery and origin findings remain open. Majhi's merge tool is unavailable in this session, so this approved merge uses Git.
+
+## Landing installation command (branch feat/release-packages, merged)
 
 The landing page now displays and copies the public release installer command. Its GitHub links go to the release repository, Source links are labeled Releases, and the FAQ no longer requires host git or says the source is public. Verified in a local browser: the displayed command and actual clipboard contents match, and the release links point to public distribution. Web typecheck passes. The website has not been deployed.
 
-## Public release repository (branch feat/release-packages, built, not merged)
+## Public release repository (branch feat/release-packages, merged)
 
 Plan: create the public distribution repository with only the installer, license, README and publishing workflow. Point installation at it and publish runtime assets through a repository-scoped deploy key. Verify public files, shell syntax, YAML and installer tests. Keep source pushes and merges for owner approval.
 
@@ -12,11 +14,11 @@ What works: the owner-requested public release repository is created and initial
 
 Verified: public visibility, installer contents, deploy-key scope and secret name checked through GitHub. The current server, runner and Laya image manifests are accessible anonymously. Publication against a temporary bare repository passes for the exact seven-file allowlist, atomic branch/tag push, idempotent retry and refusal to reuse a version for another source commit. All 29 affected installer, release and updater tests pass. Shell syntax and both workflow YAML files pass checks.
 
-Left: the source-side changes are local and need an approved merge before the first runtime package is released publicly. No source push, merge or visibility change was made. The public repository README explains that installation becomes available after that first package. No real image release was built in this task.
+Left: the owner approved merging the source-side changes on 2026-10-09. The changes are merged locally; publishing the first runtime package still requires a source push. Source visibility is unchanged. The public repository README explains that installation becomes available after that first package. No real image release was built in this task.
 
-Owner check: approve the source merge, then try the first public packaged release before retiring the old installation URL.
+Owner check: try the first public packaged release before retiring the old installation URL.
 
-## Release packages instead of source checkouts (branch `feat/release-packages`, built, not merged)
+## Release packages instead of source checkouts (branch `feat/release-packages`, merged)
 
 **Plan.** Build a runtime-only release archive and checksum, change the installer to download it, and make host updates read packaged version metadata and restore runtime files on failure. Keep development checkouts and older release installs working. Verify archive containment, checksum failures, config preservation, update rollback, targeted host tests and typecheck.
 
@@ -26,7 +28,7 @@ Owner check: approve the source merge, then try the first public packaged releas
 
 **Verified.** 34 targeted tests pass across release packages, releases, updates, repo info and Git guards. They cover real package downloads from a local HTTP server, startup with stubbed Docker and host services, checksum mismatch, extra archive files, symlinks, settings preservation, checkout preservation and rollback after build or startup failure. All five workspace typechecks pass. Biome checks the touched TypeScript files, shell syntax checks pass, the workflow YAML parses, and Compose resolves the packaged server, runner, CPU Laya and CUDA Laya release references. A missing local link to the already installed, locked `@types/mdast` package was restored for typecheck; no dependency manifests changed.
 
-**Left.** Publishing and repository visibility have not changed. Keeping the source private also needs a public distribution location for the installer and assets. Runtime JavaScript remains inspectable in Docker images. No license enforcement is added. Packaged installs show update availability but no Git commit-subject list. Power loss during replacement is not exercised; an interrupted command-line install may leave its lock or previous package for recovery. No real release images were pulled or started in this task. No majhi merge tool is exposed in this session.
+**Left.** The public distribution repository is configured as described above. Source visibility is unchanged. Runtime JavaScript remains inspectable in Docker images. No license enforcement is added. Packaged installs show update availability but no Git commit-subject list. Power loss during replacement is not exercised; an interrupted command-line install may leave its lock or previous package for recovery. No real release images were pulled or started in this task. No majhi merge tool is exposed in this session.
 
 Owner check: install the first published packaged release with real images on the supported computers.
 
