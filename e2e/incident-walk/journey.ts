@@ -3,6 +3,7 @@
  * The journeys. Stage names are the ones in the report. Run: node --import tsx e2e/incident-walk/journey.ts
  */
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOST_HOME } from "../paths.ts";
 import {
@@ -21,8 +22,7 @@ import {
 
 const REPO = join(HOST_HOME, "Work", "storefront");
 
-const TRIAGE_OUTAGE =
-  '{"action":"task","reason":"The client says the server is down","incident":null,"outage":true}';
+let room = "";
 const TITLE = "Database usage over 90% on storefront";
 
 async function setup(w: World): Promise<string> {
@@ -54,13 +54,83 @@ async function setup(w: World): Promise<string> {
       { env: "production", tier: "production", check: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
     ],
   });
-  await cmd("chat.channelLink", { connection: "slack", channel: "C0CLIENT", org: "acme" });
-  setReplies([
-    { when: "You triage one message", say: TRIAGE_OUTAGE },
-    { when: "Write a short title", say: TITLE },
-  ]);
+  const row = await cmd("chat.channelLink", { connection: "slack", channel: "C0CLIENT", org: "acme" });
+  room = row.id;
+  setReplies([{ when: "Write a short title", say: TITLE }]);
   void w;
   return "Acme: Start, Tell, Merge, Push are the captain's; Auto-pilot on; soak 1 min; Slack channel linked";
+}
+
+const FLAGS = { promisedTime: false, money: false, security: false, severalClients: false };
+const WATCH_NAME = "Storefront up or down";
+
+/**
+ * The captain is the fake agent, scripted: it does what a person on call would do. A client message: read the chat,
+ * look at the watches, open the incident with what it found, tell the client, and add a watch that only alerts. A status
+ * change of the incident: tell the chat. The script is read from the lane's folder on every turn.
+ */
+async function scriptCaptain(room: string): Promise<void> {
+  const lane = await until("the captain's lane", async () => {
+    const list = await cmd("tasks.list", { includeDone: true });
+    return (Array.isArray(list) ? list : (list.tasks ?? [])).find((t: any) => t.title === "Captain: Acme");
+  });
+  const folder = (await cmd("tasks.get", { id: lane.id })).folder as string;
+  const reply = (text: string) => ({ tool: "majhi_chat_reply", args: { room, text, ...FLAGS } });
+  writeFileSync(
+    join(folder, "CAPTAIN_SCRIPT.json"),
+    JSON.stringify({
+      rules: [
+        {
+          when: "Status now: it is resolved",
+          flags: "",
+          steps: [reply("This is resolved. Tell us here if you see it again.")],
+        },
+        {
+          when: "<message ",
+          flags: "",
+          steps: [
+            { tool: "majhi_chat_history", args: { room } },
+            { tool: "majhi_watch_overview", args: { org: "acme" } },
+            {
+              tool: "majhi_chat_openIncident",
+              args: {
+                room,
+                found:
+                  "The live check answers and no deploy failed lately, but a watch is firing on the database.",
+              },
+            },
+            reply(
+              "I checked our watches and recent deploys and found a database problem. I opened an incident and we are on it.",
+            ),
+            {
+              tool: "majhi_watch_save",
+              args: {
+                reason: "No watch covers the live check address",
+                org: "acme",
+                def: {
+                  name: WATCH_NAME,
+                  spec: { kind: "website", url: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
+                  condition: { type: "down" },
+                  everyMin: 5,
+                  fire: { alert: { on: true, phone: false }, investigate: true },
+                  project: "storefront",
+                },
+              },
+            },
+            {
+              tool: "majhi_autonomy_note",
+              args: { text: `Added a watch: ${WATCH_NAME}`, org: "acme" },
+            },
+          ],
+        },
+        {
+          when: "<event>",
+          flags: "",
+          steps: [reply("Update on the incident: we are working on it and will tell you here as it moves.")],
+        },
+      ],
+    }),
+  );
 }
 
 async function incidentTasks(): Promise<any[]> {
@@ -86,6 +156,7 @@ async function watchFires(w: World): Promise<string> {
 }
 
 async function clientSaysDown(w: World): Promise<string> {
+  await scriptCaptain(room);
   w.slack.post({
     channel: "C0CLIENT",
     user: "U0SARA",
@@ -97,7 +168,9 @@ async function clientSaysDown(w: World): Promise<string> {
   const task = await cmd("tasks.get", { id: tasks[0].id });
   const linked = (task.links ?? []).filter((l: any) => l.type === "client");
   if (linked.length === 0) throw new Error("the chat is not linked to the incident task");
-  return `the claim joined ${task.id} (evidence: the firing watch); client was told: "${sent.text}"`;
+  const watches = JSON.stringify(await cmd("watch.overview", { org: "acme" }));
+  if (!watches.includes(WATCH_NAME)) throw new Error("the captain did not add the watch");
+  return `the captain opened or joined ${task.id}, told the client: "${sent.text}", and added the watch "${WATCH_NAME}"`;
 }
 
 async function leadFixes(w: World, id: string): Promise<string> {
@@ -123,12 +196,18 @@ async function leadFixes(w: World, id: string): Promise<string> {
     },
     120_000,
   );
+  const toldBefore = w.slack.sent.length;
   await cmd("incident.cause", {
     task: id,
     text: "The orders report query scanned the whole table and kept the database busy",
     client: "A slow query on the orders page was keeping the database busy",
   });
-  return `lead committed the fix in ${tree}; cause recorded`;
+  await until(
+    "the client to get a reply for Identified",
+    async () => w.slack.sent.length > toldBefore,
+    90_000,
+  );
+  return `lead committed the fix in ${tree}; cause recorded; the client got a reply after the status change`;
 }
 
 const GL_RUNS = [{ kind: "gitlab-pipeline", remote: "origin", ref: "base" }];
@@ -197,7 +276,6 @@ async function recovers(w: World, id: string): Promise<string> {
 
 async function rcaSent(w: World, id: string): Promise<string> {
   setReplies([
-    { when: "You triage one message", say: TRIAGE_OUTAGE },
     { when: "Write a short title", say: TITLE },
     {
       when: "Rewrite this incident report",

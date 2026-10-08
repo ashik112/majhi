@@ -143,6 +143,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     },
     "watch.test": async (input) => engine.test(input.org, input.def),
     "watch.save": async (input, ctx) => {
+      await scope(ctx, input.org);
       await agentMayChange(ctx, input.id, input.def);
       const view = await engine.save(input);
       // Watching something means the engine runs: it has its own clock, and the incidents use the uptime playbook's lane.

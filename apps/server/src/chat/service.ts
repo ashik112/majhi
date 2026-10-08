@@ -2,12 +2,16 @@ import {
   type AuthorityChoice,
   type ChatApp,
   type ChatChannels,
+  type ChatHistoryInput,
+  type ChatHistoryResult,
+  type ChatOpenIncidentInput,
   type ChatPermission,
   type ChatPermissionState,
   type ChatReplyInput,
   type ChatSendAs,
   type ChatSettingsInput,
   type ChatSettingsView,
+  type ChatStartTaskInput,
   type ClientList,
   type ClientRow,
   type CommandMeta,
@@ -27,6 +31,7 @@ import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import { type ChatChannelList, ChatSendError } from "./adapter.ts";
+import type { CaptainChat } from "./captain.ts";
 import type { Contacts } from "./contacts.ts";
 import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
 import type { ChatIngest } from "./ingest.ts";
@@ -42,7 +47,9 @@ export interface ClientChatDeps {
   replies: ClientReplies;
   ingest: Pick<ChatIngest, "settleWaiting">;
   settings: ChatSettings;
-  /** Laya did not answer the last time it read a client message: the captain's triage stood in. */
+  /** What the captain's tools do for a chat besides replying. */
+  captain: CaptainChat;
+  /** Laya did not answer the last time it read a client message: the captain stood in. */
   layaDown?: () => boolean;
   hub: Pick<
     ChatHub,
@@ -361,22 +368,28 @@ export class ClientChat {
     await this.deps.hub.restart(connection);
   }
 
-  /** The captain's reply, from its lane, to a client chat of its own workspace. The rails decide whether it goes. */
-  async reply(
-    input: ChatReplyInput,
-    caller: { agent: string; task: string },
-  ): Promise<{ state: "sent" | "held" | "failed"; why?: string }> {
+  /** The chat of a captain's call: only the captain, from its workspace lane, for a chat of its own workspace. */
+  private async captainRoom(roomId: string, caller: { agent: string; task: string }) {
     const lane = await this.deps.lane(caller.task);
     if (lane === undefined || lane.boss !== caller.agent) {
       throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
     }
-    const room = this.deps.rooms.room(input.room);
+    const room = this.deps.rooms.room(roomId);
     if (room.org !== lane.org) {
       throw new UserError(
         "Refused: that chat belongs to another workspace, and this lane works in its own only.",
         409,
       );
     }
+    return room;
+  }
+
+  /** The captain's reply, from its lane, to a client chat of its own workspace. The rails decide whether it goes. */
+  async reply(
+    input: ChatReplyInput,
+    caller: { agent: string; task: string },
+  ): Promise<{ state: "sent" | "held" | "failed"; why?: string }> {
+    const room = await this.captainRoom(input.room, caller);
     const out = await this.deps.replies.captain({
       room: input.room,
       text: input.text,
@@ -389,10 +402,27 @@ export class ClientChat {
       to: input.to,
       replyTo: input.replyTo,
       thread: input.thread,
+      note: `Replied in ${room.chat.title}`,
     });
+    this.deps.captain.replied(room, out);
     if (out.state === "sent") return { state: "sent" };
     if (out.state === "failed") return { state: "failed", why: out.why };
     return { state: "held", why: REPLY_HOLD_LABEL[out.why] };
+  }
+
+  async history(
+    input: ChatHistoryInput,
+    caller: { agent: string; task: string },
+  ): Promise<ChatHistoryResult> {
+    return this.deps.captain.history(await this.captainRoom(input.room, caller), input);
+  }
+
+  async openIncident(input: ChatOpenIncidentInput, caller: { agent: string; task: string }) {
+    return this.deps.captain.openIncident(await this.captainRoom(input.room, caller), input);
+  }
+
+  async startTask(input: ChatStartTaskInput, caller: { agent: string; task: string }) {
+    return this.deps.captain.startTask(await this.captainRoom(input.room, caller), input);
   }
 
   layaDown(): boolean {

@@ -175,12 +175,15 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
     projectUnknown: z.literal(true).optional(),
     at: z.string(),
   }),
-  /** An update to a client room: what it was told, and the outbound draft it went as. */
+  /**
+   * A client room was woken to the captain for a status: it is never woken for that status again. `draft` is the
+   * captain's reply that went out for it, when one did.
+   */
   z.object({
     event: z.literal("told"),
     room: TaskIdSchema,
     status: ClientStatusSchema,
-    draft: z.number().int().positive(),
+    draft: z.number().int().positive().optional(),
     at: z.string(),
   }),
 ]);
