@@ -1,5 +1,9 @@
 # Progress
 
+## Landing installation command (branch feat/release-packages, built, not merged)
+
+The landing page now displays and copies the public release installer command. Its GitHub links go to the release repository, Source links are labeled Releases, and the FAQ no longer requires host git or says the source is public. Verified in a local browser: the displayed command and actual clipboard contents match, and the release links point to public distribution. Web typecheck passes. The website has not been deployed.
+
 ## Public release repository (branch feat/release-packages, built, not merged)
 
 Plan: create the public distribution repository with only the installer, license, README and publishing workflow. Point installation at it and publish runtime assets through a repository-scoped deploy key. Verify public files, shell syntax, YAML and installer tests. Keep source pushes and merges for owner approval.
