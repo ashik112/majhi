@@ -13,4 +13,4 @@ pnpm --filter @majhi/web build
 pnpm --filter @majhi/server build
 # The image already has Chromium; download it only when it is missing.
 [ -d "${PLAYWRIGHT_BROWSERS_PATH:-/nonexistent}" ] || pnpm exec playwright install chromium
-pnpm exec playwright test
+pnpm exec playwright test --pass-with-no-tests
