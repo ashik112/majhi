@@ -42,6 +42,7 @@ import type { RoomService } from "../room/service.ts";
 import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
 import { reachFromChat } from "../tasks/chat-link.ts";
+import type { Crew } from "../tasks/crew-run.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   CONNECTIONS_PATH,
@@ -95,16 +96,22 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "post",
     description:
-      'Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or start a line of your final reply with "@name:". A name in the middle of a sentence wakes nobody.',
+      "Post a message to the room now, as yourself, without ending your turn. It wakes nobody: work reaches a teammate only as a step of the plan.",
     input: z.object({ text: z.string().trim().min(1).max(20_000) }),
   },
   {
-    name: "mention",
+    name: "step_done",
     description:
-      "Hand work to a teammate now: it gets your text as its next prompt. Counts toward the room's limit of agent turns without the owner.",
+      "Say what your step of the plan produced, in one line. majhi posts it in the room as the step's result when your turn ends and starts the next step. Without it, the first line of your last message is used.",
+    input: z.object({ result: z.string().trim().min(1).max(300) }),
+  },
+  {
+    name: "send_back",
+    description:
+      "Send a finished step back, for example when you review it and it needs changes. Give its number and why. That step and the ones after it up to yours run again, then yours. A step sent back twice stops and goes to the owner. End your turn after calling it.",
     input: z.object({
-      agent: z.string().trim().min(1),
-      text: z.string().trim().min(1).max(20_000),
+      step: z.number().int().min(1).max(8),
+      reason: z.string().trim().min(1).max(600),
     }),
   },
   {
@@ -337,6 +344,8 @@ export interface RoomMcpDeps {
   tasks: TaskService;
   access: RoomAccess;
   coordinator: RoomCoordinator;
+  /** The plan's steps: `step_done` and `send_back`. */
+  crew: Crew;
   admin: AdminService;
   config: ConfigService;
   room: RoomService;
@@ -506,7 +515,10 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const all = () =>
     ROOM_TOOLS.filter(
       (t) =>
-        (t.name !== "code_graph" || deps.codeGraph !== undefined) && (t.name !== "record_plan" || isLead()),
+        (t.name !== "code_graph" || deps.codeGraph !== undefined) &&
+        (t.name !== "record_plan" || isLead()) &&
+        // The steps of a plan are a task's: a chat has none.
+        ((t.name !== "step_done" && t.name !== "send_back") || !isChat()),
     );
   const offered = async () => {
     if (!isChat()) return all();
@@ -548,13 +560,11 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           });
           return ok("Posted.");
         }
-        case "mention":
+        case "step_done":
+          return ok(deps.crew.stepDone(caller.task, caller.agent, args.result as string));
+        case "send_back":
           return ok(
-            await deps.coordinator.mention(
-              caller,
-              String(args.agent).replace(/^@/, "").toLowerCase(),
-              args.text as string,
-            ),
+            await deps.crew.sendBack(caller.task, caller.agent, args.step as number, args.reason as string),
           );
         case "uploads_create": {
           const made = await deps.admin.call(caller, toolName("uploads.create"), { path: args.path });

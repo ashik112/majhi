@@ -1,7 +1,5 @@
 import type { Fact, Role, TaskKind } from "@majhi/shared";
 import { reviewRequest } from "../memory/curator.ts";
-import { verdictQuestion } from "../rooms/coordinator.ts";
-import { mentionQuestion } from "../rooms/mentions.ts";
 import { difficultyQuestion } from "../runs/difficulty.ts";
 import { delegationQuestion } from "../runs/effort-check.ts";
 import { type Fixture, type SlotDef, SlotRegistry } from "./slots.ts";
@@ -50,60 +48,6 @@ const SIZES = (): Fixture[] => [
     "code",
     "large",
   ),
-];
-
-const wake = (from: string, agent: string, text: string, label: string): Fixture => ({
-  request: mentionQuestion(from, [agent], text),
-  question: "acts_1",
-  label,
-});
-
-const WAKES = (): Fixture[] => [
-  wake(
-    "acme-lead",
-    "acme-builder",
-    "@acme-builder please fix the failing checkout test and push the change",
-    "true",
-  ),
-  wake(
-    "acme-lead",
-    "acme-reviewer",
-    "@acme-reviewer can you review the invoice export before I merge?",
-    "true",
-  ),
-  wake(
-    "acme-builder",
-    "acme-tester",
-    "@acme-tester run the full suite on the new branch and report any failures",
-    "true",
-  ),
-  wake("acme-lead", "acme-builder", "@acme-builder what is blocking the export? Answer in the room", "true"),
-  wake("acme-builder", "acme-lead", "Done with the parser. @acme-lead FYI, all tests pass.", "false"),
-  wake(
-    "acme-builder",
-    "acme-reviewer",
-    "Waiting on the CI run. Nothing for @acme-reviewer to do yet.",
-    "false",
-  ),
-  wake("acme-reviewer", "acme-builder", "Looks good to me. Thanks @acme-builder.", "false"),
-  wake("acme-lead", "acme-tester", "Status: the export is merged, as @acme-tester saw earlier.", "false"),
-];
-
-const verdict = (text: string, label: string): Fixture => ({
-  request: verdictQuestion("acme-reviewer", text),
-  question: "verdict",
-  label,
-});
-
-const VERDICTS = (): Fixture[] => [
-  verdict("Reviewed the diff. Everything is correct and tested. Ship it.", "A"),
-  verdict("LGTM, no further changes needed from my side.", "A"),
-  verdict("The change is clean and covers the edge cases. Approved.", "A"),
-  verdict("Nothing to add. The tests pass and the naming is fine.", "A"),
-  verdict("The retry loop never stops on a 4xx. Please fix before merging.", "B"),
-  verdict("Missing tests for the empty list case, and the migration is not reversible.", "B"),
-  verdict("I have not finished reading the second half yet. Notes so far: the cache key is wrong.", "B"),
-  verdict("This breaks the invoice export for orders without a tax id. Needs changes.", "B"),
 ];
 
 const fact = (text: string, label: string): Fixture => ({
@@ -185,24 +129,6 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     // Shadow would let a delegating effort be picked: checked by hand before, so it stays on.
     startMode: "live",
     fixtures: DELEGATES,
-  },
-  {
-    id: "mention-wake",
-    title: "Wake on a mention",
-    use: "routing",
-    question: /^acts_\d+$/,
-    // Shadow would wake every mentioned agent, which costs more; it keeps its own bar until it is calibrated.
-    startMode: "live",
-    target: 0.95,
-    fixtures: WAKES,
-  },
-  {
-    id: "review-verdict",
-    title: "Reviewer's verdict",
-    use: "routing",
-    question: /^verdict$/,
-    target: 0.95,
-    fixtures: VERDICTS,
   },
   {
     id: "task-type",

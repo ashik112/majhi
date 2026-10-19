@@ -227,6 +227,8 @@ const PAUSE_WORDS: Readonly<Record<string, string>> = {
   loop: "agents going in circles",
   blocked: "blocked by another task",
   "signed-out": "account signed out",
+  "agents-down": "every agent is down",
+  preempted: "paused for an urgent task",
 };
 
 /** A task in review, done or paused. The owner's own moves are left out, and so is what Needs you already holds. */

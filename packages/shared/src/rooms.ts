@@ -7,17 +7,15 @@ import { IdSchema } from "./accounts.ts";
  */
 
 /**
- * - `lead`: the lead plans and assigns by mention; the owner gets the task when the work is approved.
- * - `pipeline`: each role runs once in order: lead, builders, reviewer, tester.
- * - `review-loop`: builder and reviewer alternate until the reviewer approves, at most `review_rounds` rounds.
+ * The only way a team takes turns: `lead`. The lead writes a short plan, each step names the worker that
+ * owns it, and workers get work only from the plan, never by @mention. The pipeline and the build and
+ * review loop are gone (workflow reset, step 1b): a stored task that used one reads as `lead`.
  */
-export const CoordinationModeSchema = z.enum(["lead", "pipeline", "review-loop"]);
+export const CoordinationModeSchema = z.enum(["lead"]);
 export type CoordinationMode = z.infer<typeof CoordinationModeSchema>;
 
 export const MODE_LABELS: Record<CoordinationMode, string> = {
-  lead: "Lead delegates",
-  pipeline: "Pipeline",
-  "review-loop": "Build and review loop",
+  lead: "Lead and workers",
 };
 
 /** The owner's choices for one agent in one task. They win over the agent file (5.1). */
@@ -29,9 +27,12 @@ export const TeamOverrideSchema = z.object({
 });
 export type TeamOverride = z.infer<typeof TeamOverrideSchema>;
 
-/** Why an agent was woken by another. */
-/** `guard`: majhi's loop guard woke the lead once to break a loop, before it pauses the room. */
-export const HandoffViaSchema = z.enum(["mention", "pipeline", "review-loop", "tool", "guard"]);
+/**
+ * Why an agent was woken by another. `plan`: a step of the plan is its turn. The others are kept only so
+ * rooms stored before step 1b still read: nothing makes a handoff by mention, pipeline, review loop or the
+ * loop guard any more.
+ */
+export const HandoffViaSchema = z.enum(["plan", "mention", "pipeline", "review-loop", "tool", "guard"]);
 export type HandoffVia = z.infer<typeof HandoffViaSchema>;
 
 /** Written by the owner or an agent to hand the task back to the owner. */

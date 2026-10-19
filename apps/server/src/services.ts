@@ -511,6 +511,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const config = new ConfigService({ majhiHome: env.majhiHome, hostHome: env.hostHome });
   // Hooks and chores started without waiting: `close` waits for them before the stores close.
   const background = new Background();
+  // The task service is built after the accounts, which tell it when an account is back.
+  const tasksRef: { current: TaskService | undefined } = { current: undefined };
   // The built-in org used to be `personal`. Old files read as `private` meanwhile, so this can run late.
   background.run(
     () => config.migrateLegacyOrg(),
@@ -574,7 +576,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runtime,
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
-    onChanged: () => events.emit(["accounts"]),
+    onChanged: () => {
+      events.emit(["accounts"]);
+      // An account that came back wakes the tasks whose every agent was down.
+      background.run(async () => void (await tasksRef.current?.resumeDown()));
+    },
     now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
@@ -668,6 +674,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           store.tasks.getMany(store.tasks.idsWithStatus("paused")).filter((t) => t.pausedReason === "limit"),
         start: (id) => tasks.start(id, "majhi"),
       });
+      // A task whose every agent was down starts again when any of them can run.
+      await tasks.resumeDown();
       // A task paused for a signed-out account resumes once that account is signed in again.
       await resumeSignedIn({
         paused: () =>
@@ -958,7 +966,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     accountLimit: accountLimitOf,
     markLimit: (account, failure) => accounts.markLimit(account, failure),
-    takeOver: (task, from, to) => tasks.takeOver(task, from, to),
+    takeOver: (task, from, to, how) => tasks.takeOver(task, from, to, how),
     fallbackFor: async (task, agent) => {
       const found = store.tasks.get(task);
       if (found === undefined || !(await resilience.handoffOn(found))) return undefined;
@@ -967,22 +975,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (fallback === undefined || found.team.includes(fallback)) return undefined;
       return (await canTakeOver(task, fallback)) ? fallback : undefined;
     },
-    teammateFor: async (task, agent) => {
+    // Another agent of the task's own team takes over: a worker's step goes to the best other agent, the
+    // lead is replaced by the worker with the most headroom (`Crew`), under the same `resume.handoff` switch.
+    successorFor: async (task, agent) => {
       const found = store.tasks.get(task);
-      if (found === undefined || found.team[0] !== agent || !(await resilience.handoffOn(found)))
-        return undefined;
-      for (const other of found.team) {
-        if (other !== agent && (await canTakeOver(task, other))) return other;
-      }
-      return undefined;
-    },
-    teamCanRun: async (task, agent) => {
-      const team = store.tasks.get(task)?.team ?? [];
-      for (const other of team) {
-        if (other === agent) continue;
-        if ((await accounts.signedOutAccountOf(other)) === undefined) return true;
-      }
-      return false;
+      if (found === undefined || !(await resilience.handoffOn(found))) return undefined;
+      return tasks.crew.successor(task, agent);
     },
     onTurnFailed: (turn) => idleWatch.turnFailed(turn),
     // Bound below: autonomous mode is built after the task service.
@@ -1195,6 +1193,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ),
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
+    // The lead's team facts say when this computer is busy: more workers would slow every run.
+    machineBusy: () => busyReason(machine.get()?.host),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
@@ -1247,6 +1247,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  tasksRef.current = tasks;
   chatMemory = new ChatMemory({
     store,
     settings: async () => (await config.settings()).memory,
@@ -1538,20 +1539,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
     changed: () => events.emit(["schedules"]),
   });
-  const hearsRef: { current: CaptainHears | undefined } = { current: undefined };
   const coordinator = new RoomCoordinator({
-    hears: {
-      hear: async (task, from, text) =>
-        (await hearsRef.current?.hear(task, from, text)) ?? { heard: false, why: "the captain is not ready" },
-    },
     store,
     room,
-    runs,
     tasks,
-    agents: agentStore,
-    config,
-    decisions,
-    signedOut: (agent) => accounts.signedOutAccountOf(agent),
+    crew: tasks.crew,
     waitsOnProcess: (task, agent) => processes.waiting(task).some((p) => p.agent === agent),
   });
   coordinator.sweepEmptyQuestions();
@@ -1559,6 +1551,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store,
     room,
     runs,
+    crew: tasks.crew,
     pauseForOwner: (task, text) => tasks.pauseForOwner(task, text, "blocked"),
     waitsOnProcess: (task) => processes.waiting(task).length > 0,
     delayMs: options.idleWatchMs,
@@ -1847,7 +1840,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const pointers = new Pointers({ store, room, lanes });
   pointersRef.current = pointers;
-  hearsRef.current = hears;
   room.useCaptain({
     lanesOf: (org) => lanes.chatsOf(org),
     orgOfLane: (chat) => lanes.orgOf(chat),

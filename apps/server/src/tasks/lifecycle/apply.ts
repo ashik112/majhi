@@ -256,6 +256,8 @@ export function assertedReading(hold: Hold, now: string): lifecycle.ClearReading
     budgetHasRoom: true,
     autopilot: "on",
     runAtStep: true,
+    slotFree: true,
+    anyAccountUp: true,
     lastActivityAt: "9999-12-31T23:59:59.999Z",
   };
 }

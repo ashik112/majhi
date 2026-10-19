@@ -303,7 +303,13 @@ export class AdminService {
       if (tool === WITHDRAW_SECRET_TOOL) return await this.withdrawRequest(caller, args);
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
-      const { ownerAsked, reason, ...input } = args;
+      const { ownerAsked, reason, ...rest } = args;
+      // Starting a task on priority, or making it urgent, may pause a running one: the command needs to know
+      // whether the owner asked for it in the conversation.
+      const input =
+        (spec.command === "tasks.start" || spec.command === "tasks.update") && ownerAsked === true
+          ? { ...rest, ownerAsked: true }
+          : rest;
       this.aboutTask(caller, spec.command, input);
       const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
       // What the captain may not do alone becomes a proposal for the owner: no policy, rule, mode or trust applies.

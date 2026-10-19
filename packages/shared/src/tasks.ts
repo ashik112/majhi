@@ -162,7 +162,8 @@ export function priorityRank(priority: TaskPriority | undefined): number {
 
 /**
  * The order waiting starts take their places: priority first, then the oldest wish. When a place
- * frees, the first of this order starts. No running task is stopped for a more urgent one.
+ * frees, the first of this order starts. A running task is stopped for a more urgent one only when
+ * the owner (or the captain, for a task it made or the owner asked about) starts that one on priority.
  */
 export function lineOrder<T extends { priority?: TaskPriority | undefined; updatedAt: string; id: string }>(
   waiting: readonly T[],
@@ -180,6 +181,9 @@ export function lineOrder<T extends { priority?: TaskPriority | undefined; updat
  * circles. `blocked`: a task it waits on changed. owner, loop and blocked wait for you to continue.
  * `signed-out`: no agent could start because its account is signed out; it resumes by itself once
  * the account is healthy again. An account at its limit, or any other failed start, pauses as `error`.
+ * `preempted`: a more urgent task took its running place; it resumes through the line when one frees.
+ * `down`: every agent of the task is down (limit, signed out, offline account); it resumes by itself
+ * when any account is back.
  */
 export const PausedReasonSchema = z.enum([
   "limit",
@@ -189,6 +193,8 @@ export const PausedReasonSchema = z.enum([
   "loop",
   "blocked",
   "signed-out",
+  "preempted",
+  "down",
 ]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
@@ -734,15 +740,37 @@ export const PermissionOptionSchema = z.object({
 export const PlanHowSchema = z.enum(["alone", "builders", "reviewer", "children", "parallel"]);
 export type PlanHow = z.infer<typeof PlanHowSchema>;
 
-/** The most steps a task's plan has (a split of a big task into steps). */
-export const PLAN_STEPS_MAX = 20;
+/** The most steps a task's plan has (the lead's short plan, workflow reset step 1b). */
+export const PLAN_STEPS_MAX = 8;
 
-/** One step of a plan: who does it ("me", an @agent) and what. */
+/** The most workers a task has besides its lead. */
+export const WORKERS_MAX = 3;
+
+/** How many times a step may be sent back: the second time it stops and goes to Needs you. */
+export const STEP_SEND_BACKS_MAX = 2;
+
+/** Where a step of the plan stands. A step with no status has not started. */
+export const PlanStepStatusSchema = z.enum(["todo", "doing", "done", "stopped"]);
+export type PlanStepStatus = z.infer<typeof PlanStepStatusSchema>;
+
+/**
+ * One step of a plan: who does it ("me" is the lead, an @agent is a worker) and what. The plan is the only
+ * way a worker gets work. majhi keeps the step's progress on the plan's own row: `status`, the one result
+ * line the worker posted and how many times it was sent back. A plan the lead records starts without them.
+ */
 export const PlanStepSchema = z.strictObject({
   /** `me` unless a teammate does it. Default `me`. */
   who: z.string().trim().min(1).max(80).default("me"),
   what: z.string().trim().min(1).max(300),
+  status: PlanStepStatusSchema.optional(),
+  /** The worker's one result line, set when the step is done. */
+  result: z.string().max(300).optional(),
+  /** Times the step was sent back for changes. */
+  sentBack: z.number().int().nonnegative().optional(),
+  /** Why it stopped or was last sent back. */
+  reason: z.string().max(600).optional(),
 });
+export type PlanStep = z.infer<typeof PlanStepSchema>;
 
 /** The lead's plan for a task: who does what, in order, and why that is cheaper or faster. */
 export const TeamPlanSchema = z.strictObject({

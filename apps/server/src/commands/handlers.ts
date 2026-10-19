@@ -987,7 +987,20 @@ export function createHandlers({
       const by = ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner";
       // Only the owner may start a task past the running limit.
       const now = input.now === true && ctx.meta.actor.kind === "owner";
-      if (input.message === undefined) return services.tasks.start(input.id, by, { now });
+      // Start on priority: only the owner and the captain set it, and only they may pause a running task for it.
+      const actor = await resolveActor(services, ctx.meta);
+      if (input.priority !== undefined) {
+        if (actor.kind === "agent")
+          throw new UserError("Only the owner or the captain changes a task's priority.", 409);
+        await services.tasks.update({ id: input.id, priority: input.priority });
+      }
+      const preempt =
+        actor.kind === "owner" || actor.kind === "captain"
+          ? { by: actor.kind, ownerAsked: input.ownerAsked === true }
+          : undefined;
+      if (input.message === undefined)
+        return services.tasks.start(input.id, by, { now, ...(preempt === undefined ? {} : { preempt }) });
+      if (preempt !== undefined) await services.tasks.prioritize(input.id, preempt);
       // The message starts the task and reaches its agent, in order: wait until it was delivered.
       await services.tasks.send({
         task: input.id,
@@ -1008,10 +1021,16 @@ export function createHandlers({
     },
     "tasks.update": async (input, ctx) => {
       // Priority is the owner's and the captain's to change; the captain resolves to its own kind, an agent stays one.
-      if (input.priority !== undefined && (await resolveActor(services, ctx.meta)).kind === "agent") {
+      const actor = await resolveActor(services, ctx.meta);
+      if (input.priority !== undefined && actor.kind === "agent") {
         throw new UserError("Only the owner or the captain changes a task's priority.", 409);
       }
-      return services.tasks.update(input);
+      const { ownerAsked, ...change } = input;
+      const updated = await services.tasks.update(change);
+      // Made urgent while it waits in line: the lowest-priority running task pauses for it.
+      if (input.priority === "urgent" && (actor.kind === "owner" || actor.kind === "captain"))
+        return services.tasks.prioritize(input.id, { by: actor.kind, ownerAsked: ownerAsked === true });
+      return updated;
     },
     "tasks.close": async (input, ctx) =>
       services.tasks.close(input.id, {

@@ -101,6 +101,10 @@ function pausedHold(f: StoredFields, c: StoredContext, lane: Lane): Hold {
       return { cause: "owner-stop", at: c.at };
     case "limit":
       return limitHold(f, c);
+    case "preempted":
+      return { cause: "preempted", at: c.at };
+    case "down":
+      return { cause: "agents-down", at: c.at, down: [] };
     case "offline":
       return { cause: "offline", at: c.at };
     case "signed-out":
@@ -185,6 +189,10 @@ export function toStored(state: Lifecycle, c: Pick<StoredContext, "at" | "resume
       });
     case "account-limit":
       return paused({ pausedReason: "limit" });
+    case "preempted":
+      return paused({ pausedReason: "preempted" });
+    case "agents-down":
+      return paused({ pausedReason: "down" });
     case "offline":
       return paused({ pausedReason: "offline" });
     case "signed-out":

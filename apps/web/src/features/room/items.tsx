@@ -345,6 +345,7 @@ function ClientMessage({ item }: { item: Of<"client"> }) {
 }
 
 const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {
+  plan: "gave its step to",
   mention: "handed to",
   tool: "handed to",
   pipeline: "finished, next step:",

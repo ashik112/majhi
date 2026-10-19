@@ -95,11 +95,7 @@ describe("one home: the captain never joins a task's team", () => {
       repos: [{ project: "acme-api" }],
     });
     const id = made.body.id as string;
-    const { coordinator, tasks } = w.h.majhi.services;
-    // The handoff tool: refused or turned into a wake of the lane, never a team change.
-    await coordinator
-      .mention({ task: id, agent: made.body.team[0] as string }, "boss", "I need an SSH connection")
-      .catch(() => undefined);
+    const { tasks } = w.h.majhi.services;
     // An agent's add of the captain is refused whatever path it comes by.
     await expect(tasks.addToTeam(id, "boss", { by: made.body.team[0] as string })).rejects.toThrow();
     const after = await w.h.cmd("tasks.get", { id });

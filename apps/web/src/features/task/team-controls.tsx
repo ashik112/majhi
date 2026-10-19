@@ -9,7 +9,7 @@ import { type ApiRequestError, cmd } from "@/lib/api";
 import { useAccountModels } from "@/lib/studio-queries";
 import { useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 
-const MODES: CoordinationMode[] = ["lead", "pipeline", "review-loop"];
+const MODES: CoordinationMode[] = ["lead"];
 
 /** Agents that may join the task and are not on it yet, the org's own first. */
 export function useCandidates(task: Pick<Task, "org" | "team"> | undefined) {

@@ -122,6 +122,8 @@ export interface DurableState {
   diff: string;
   /** Why majhi built the note itself. */
   why: string;
+  /** The lead's plan with where each step stands (`progressLines`), when the task has one. */
+  plan?: readonly string[] | undefined;
 }
 
 /** The note majhi writes when the agent cannot: the same headings, filled from durable state. */
@@ -154,7 +156,13 @@ export function durableNote(s: DurableState): string {
     "",
     "## Remaining work",
     "",
-    "Whatever the task asks that the diff below does not cover yet.",
+    ...(s.plan === undefined || s.plan.length === 0
+      ? ["Whatever the task asks that the diff below does not cover yet."]
+      : [
+          "The plan and where each step stands. Carry on with the step in progress, from the checkpoint:",
+          "",
+          ...s.plan,
+        ]),
     "",
     "## Files touched",
     "",

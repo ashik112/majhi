@@ -306,6 +306,8 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   error: "An agent hit an error it could not get past.",
   "signed-out": "An account is signed out. Sign in, then resume.",
   limit: "A spending cap or usage limit was reached. It continues when the limit lifts.",
+  preempted: "A more urgent task took its place. It resumes by itself when a running place frees.",
+  down: "Every agent of the task is down. It resumes by itself when one can run again.",
 };
 
 /** The task paused: Resume, and the fix when majhi knows the cause. Settled: what happened. */
