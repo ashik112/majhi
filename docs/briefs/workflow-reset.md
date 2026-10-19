@@ -91,7 +91,19 @@ Gate admissions for every origin at and over each cap. Name to branch and folder
 
 ## Step 3: three screens
 
-Mockup on live data first, for each screen, and an explicit yes before building (owner rule).
+Approved by the owner on 2026-10-19 after rounds on live data. The reference is `design/console.html` (sample data; open it and use the Data menu for the heavy, storm, all-clear and offline states). Build to match it pair by pair.
+
+**Layout.** One console, no page switching: Needs you, Work and Chat side by side, landing on Needs you. Under 1240px wide, Chat slides in over the right when a task opens. Needs you with nothing in it collapses to a 44px rail and Work and Chat take the room.
+
+**One row anatomy everywhere.** Status lamp, then `project · Name` with the project in its workspace colour (the workspace name when there is no project), then the reason or Now line, then a count, age or status word. Comfortable density (default) puts the reason on a second line; Compact keeps one line; Spacious adds room. The selected row expands in place: the full question or Next and Done when, then its actions. Unset fields are hidden, never "Not set".
+
+**Attention.** Red only for incidents. Queue items get neutral dots; in Work, "your call" is a hollow red ring with a quiet word. Running is a static dot. No infinite animation, no glow; a new item pulses once. One filled primary button on screen, on the selected item, and it fits the state (Answer, Unblock, Start now, Run tests and ship); hover shows an outlined button. The panes not in focus dim and come back on hover. No native tooltips on rows that re-render.
+
+**Names.** Workspaces show their names with a colour square, never the key (`PRV`, `GOA`). Workspace colours are identity, distinct from status colours, tuned per theme.
+
+**Queue.** Incidents, then Decide, then Review, then Done by the captain. Repeats merge into one row with a count (5 tasks blocked by one closed task, 4 sign-ins, 47 alerts). Groups show 8 and "Show N more". Keys: J/K move, Tab next pane, A primary, 1 to 3 pick, Shift+A whole group, E later, U undo, Enter open, S stop, `.` start now, `[` fold, C write. Every action leaves an Undo toast for 5 seconds. Offline: a banner and dimmed actions; answers wait.
+
+**Look.** Themes Graphite (default), Warm, Focus and Mission; mode Light, Dark or System (default); density Compact, Comfortable (default), Spacious. Switched from the sun button in the top bar and remembered. Graphite dark text is 11.7:1, readable text at least 4.5:1, names 14px and details 13px, flat panels with no grid, rings or blur. DESIGN.md is rewritten to these rules; Mission stays only as a theme.
 
 - **Needs you:** one queue, ordered incidents, then approvals and questions, then reviews. Each item is answered in place. A blocked task links to its fix (sign in, raise budget). The bell, banner, Board section, Captain column, Today and Limits copies are deleted.
 - **Work:** grouped by workspace, then project. Each row: status dot, unread mark, `project · Name`, Now and Next. Up next, Ideas, and Done today in time order, which is the answer to "what did agents do today".
