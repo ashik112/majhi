@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { operationInProgress } from "../git/git.ts";
 import { createWorktree } from "../git/worktrees.ts";
 import { git, tempDir } from "../testing/fixtures.ts";
 import { type CheckpointRepo, commitBy, commitCheckpoint, DEFAULT_IDENTITY } from "./checkpoint.ts";
@@ -53,13 +54,18 @@ describe("checkpoints", () => {
     expect(await git(b.worktree, "log", "-1", "--format=%s")).toBe("init");
   });
 
+  /** A branch `incoming` off main with one new file, for a test merge into the task branch. */
+  async function incoming(at: string, back: string): Promise<void> {
+    await git(at, "checkout", "--quiet", "-b", "incoming", "main");
+    await writeFile(join(at, "incoming.txt"), "incoming");
+    await git(at, "add", ".");
+    await git(at, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "incoming");
+    await git(at, "checkout", "--quiet", back);
+  }
+
   it("leaves an unfinished merge and its index intact", async () => {
     const a = await repo("api");
-    await git(a.worktree, "checkout", "--quiet", "-b", "incoming", "main");
-    await writeFile(join(a.worktree, "incoming.txt"), "incoming");
-    await git(a.worktree, "add", ".");
-    await git(a.worktree, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "incoming");
-    await git(a.worktree, "checkout", "--quiet", a.branch);
+    await incoming(a.worktree, a.branch);
     await git(
       a.worktree,
       "-c",
@@ -77,10 +83,32 @@ describe("checkpoints", () => {
     const merge = await readFile(join(a.worktree, ".git", "MERGE_HEAD"), "utf8");
     const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
     expect(result.committed).toEqual([]);
-    expect(result.skipped[0]).toContain("git operation is in progress");
+    expect(result.skipped[0]).toContain("a merge is in progress");
     expect(await git(a.worktree, "rev-parse", "HEAD")).toBe(head);
     expect(await git(a.worktree, "status", "--porcelain")).toBe(before);
     expect(await readFile(join(a.worktree, ".git", "MERGE_HEAD"), "utf8")).toBe(merge);
+  });
+
+  it("does not save a squash test merge, which leaves no MERGE_HEAD, as a checkpoint", async () => {
+    const a = await repo("api");
+    await incoming(a.worktree, a.branch);
+    await git(a.worktree, "merge", "--squash", "incoming");
+    const before = await git(a.worktree, "status", "--porcelain");
+    expect(before).toBe("A  incoming.txt");
+    const head = await git(a.worktree, "rev-parse", "HEAD");
+    const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
+    expect(result.committed).toEqual([]);
+    expect(result.skipped[0]).toContain("a squash merge is in progress");
+    expect(await git(a.worktree, "rev-parse", "HEAD")).toBe(head);
+    expect(await git(a.worktree, "status", "--porcelain")).toBe(before);
+
+    // Aborted, the next turn's changes are checkpointed again.
+    await git(a.worktree, "reset", "--quiet", "--merge");
+    expect(await operationInProgress(a.worktree)).toBeUndefined();
+    await writeFile(join(a.worktree, "work.ts"), "export {};\n");
+    expect((await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"))).committed).toEqual([
+      "api",
+    ]);
   });
 
   it("does not commit a worktree that left the task branch", async () => {
@@ -140,6 +168,30 @@ describe("checkpoints", () => {
         "node_modules/kept/index.js",
         "node_modules/kept/more.js",
       ]);
+    });
+
+    it("sees a test merge in the worktree's own git folder, and not in the owner's checkout", async () => {
+      const { source, repo: a } = await taskWorktree();
+      await incoming(a.worktree, a.branch);
+      expect(await operationInProgress(a.worktree)).toBeUndefined();
+      await git(
+        a.worktree,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "merge",
+        "--no-commit",
+        "--no-ff",
+        "incoming",
+      );
+      expect(await operationInProgress(a.worktree)).toBe("a merge");
+      expect(await operationInProgress(source)).toBeUndefined();
+      await git(a.worktree, "merge", "--abort");
+      expect(await operationInProgress(a.worktree)).toBeUndefined();
+      await git(a.worktree, "merge", "--squash", "incoming");
+      expect(await operationInProgress(a.worktree)).toBe("a squash merge");
+      expect(await operationInProgress(source)).toBeUndefined();
     });
 
     it("leaves the owner's checkout alone", async () => {

@@ -1,5 +1,5 @@
 import type { ShipCheck } from "../captain/ports.ts";
-import { git } from "../git/git.ts";
+import { git, operationInProgress } from "../git/git.ts";
 import { mergeConflicts } from "../git/merge.ts";
 import { changeBase } from "../git/since-start.ts";
 import type { MrService } from "../mrs/service.ts";
@@ -69,6 +69,17 @@ export async function shipReadiness(deps: ReadyDeps, id: string, except?: string
     }
   }
   for (const repo of task.repos) {
+    // Before the uncommitted check: "commit them" would conclude a test merge the agent meant to abort.
+    const operation =
+      repo.worktree === undefined ? undefined : await operationInProgress(repo.worktree).catch(() => "");
+    if (operation === "")
+      return { ready: false, why: `the git state of ${repo.project} could not be read`, owner: true };
+    if (operation !== undefined)
+      return {
+        ready: false,
+        why: `${repo.project} is in the middle of ${operation}: the agent finishes or aborts it before it ships`,
+        unmergeable: "failing",
+      };
     const files = repo.worktree === undefined ? [] : await uncommittedFiles(repo.worktree);
     if (files === undefined)
       return { ready: false, why: `the changes of ${repo.project} could not be read`, owner: true };

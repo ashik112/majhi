@@ -1,7 +1,6 @@
-import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { agentCommitter, withTaskTrailer } from "@majhi/shared";
-import { git } from "../git/git.ts";
+import { git, operationInProgress } from "../git/git.ts";
 import { ensureWorktreeExcludes } from "../git/worktree-excludes.ts";
 
 /**
@@ -147,21 +146,13 @@ export async function commitCheckpoint(
         );
         continue;
       }
-      const operations = [
-        "MERGE_HEAD",
-        "CHERRY_PICK_HEAD",
-        "REVERT_HEAD",
-        "rebase-merge",
-        "rebase-apply",
-        "sequencer",
-      ];
-      const paths = await Promise.all(
-        operations.map(async (name) =>
-          (await git(repo.worktree, ["rev-parse", "--path-format=absolute", "--git-path", name])).trim(),
-        ),
-      );
-      if (paths.some((path) => existsSync(path))) {
-        result.skipped.push(`${repo.project}: a git operation is in progress, so no checkpoint was made`);
+      // An unfinished merge (a test merge of the base, say) is the agent's to finish or abort: a
+      // checkpoint would conclude it as a "wip" commit on the branch, and Ship would carry it.
+      const operation = await operationInProgress(repo.worktree);
+      if (operation !== undefined) {
+        result.skipped.push(
+          `${repo.project}: ${operation} is in progress, so no checkpoint was made. Finish it or abort it`,
+        );
         continue;
       }
       await git(repo.worktree, [...quiet(), "add", "--all"]);

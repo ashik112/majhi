@@ -459,6 +459,43 @@ export async function uncommitted(worktree: string): Promise<string[]> {
   return out.split("\n").filter((l) => l !== "");
 }
 
+/**
+ * The files git keeps in a worktree's own git folder while an operation is unfinished, with the
+ * operation's name. A squash merge leaves no `MERGE_HEAD`, only `SQUASH_MSG` next to the staged
+ * result; `git commit` or `git reset --merge` removes it.
+ */
+const OPERATIONS: readonly (readonly [file: string, name: string])[] = [
+  ["MERGE_HEAD", "a merge"],
+  ["SQUASH_MSG", "a squash merge"],
+  ["CHERRY_PICK_HEAD", "a cherry-pick"],
+  ["REVERT_HEAD", "a revert"],
+  ["rebase-merge", "a rebase"],
+  ["rebase-apply", "a rebase"],
+  ["sequencer", "a cherry-pick or revert"],
+];
+
+/** The git operation a worktree is in the middle of (`"a merge"`, `"a rebase"`), or undefined. */
+export async function operationInProgress(worktree: string): Promise<string | undefined> {
+  const out = await git(worktree, [
+    "rev-parse",
+    "--path-format=absolute",
+    ...OPERATIONS.flatMap(([file]) => ["--git-path", file]),
+  ]);
+  const paths = out.split("\n").filter((p) => p !== "");
+  for (const [i, [, name]] of OPERATIONS.entries()) {
+    const path = paths[i];
+    if (
+      path !== undefined &&
+      (await access(path).then(
+        () => true,
+        () => false,
+      ))
+    )
+      return name;
+  }
+  return undefined;
+}
+
 /** Tracked and untracked, not ignored, files. Paths are relative to `cwd`. */
 export async function listFiles(cwd: string): Promise<string[]> {
   const out = await git(cwd, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
