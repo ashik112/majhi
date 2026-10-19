@@ -63,7 +63,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.mergeMrs": (i) => `Merge the merge requests of ${str(i.id)}`,
   "tasks.markMerged": (i) => `Record the merge requests of ${str(i.id)} as merged`,
   "uploads.create": (i) => `Turn ${str(i.path)} into an upload`,
-  "tasks.split": (i) => `Split ${str(i.task)} into subtasks`,
+  "tasks.split": (i) => `Split ${str(i.task)} into steps`,
   "team.add": (i) => `Add ${str(i.agent)} to ${str(i.task)}`,
   "team.remove": (i) => `Remove ${str(i.agent)} from ${str(i.task)}`,
   "processes.stop": (i) => `Stop ${str(i.id)} in ${str(i.task)}`,

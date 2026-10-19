@@ -68,6 +68,7 @@ describe("a task's origin stays in its workspace", () => {
         attachments: [],
         start: false,
         provenance: { kind: "ref", origin: finding, workspace: "globex" },
+        gate: "owner",
       }),
     ).rejects.toThrow(/own workspace/);
     expect(services.store.tasks.list(true)).toEqual([]);

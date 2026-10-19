@@ -3,6 +3,7 @@ import { UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import type { ProjectService } from "../projects/service.ts";
 import type { Store } from "../store/index.ts";
+import { gateOf } from "../tasks/provenance.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { ActionHost } from "./actions.ts";
 
@@ -52,6 +53,7 @@ export function createActionHost({
         attachments: [],
         start: true,
         provenance: input.provenance,
+        gate: gateOf(input.provenance),
       });
       return { id: task.id };
     },

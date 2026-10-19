@@ -143,7 +143,8 @@ function worldOver(h: Harness): World {
       await copyTemplate(`repo:${name}`, h.dir, () => builtRepo(name));
       return world.repo(name);
     },
-    taskDir: (id) => join(h.dir, "Work", ".majhi", id),
+    // The folder the task stores, like every reader of it (a task made before names: `<tasks_dir>/<id>`).
+    taskDir: (id) => h.majhi.services.store.tasks.get(id)?.folder ?? join(h.dir, "Work", ".majhi", id),
     cleanup: async () => {
       await h.majhi.services.runs.closeAll();
       await h.majhi.services.runs.idle();

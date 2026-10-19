@@ -568,7 +568,7 @@ export class AdminService {
 
   /**
    * Runs a command for an agent at once, whatever the approval policy says, because the caller
-   * checked a rule the owner set (a lead starting a task under `lead_start`). It still leaves an
+   * checked a rule the owner set. It still leaves an
    * `applied` card in the agent's room. `accept` names a failure that is not one (a task that
    * waits on a dependency): the card shows it as applied and the agent gets `accepted` back.
    */
@@ -835,7 +835,6 @@ export class AdminService {
         ? (value as { repos: unknown[] }).repos.length > 0
         : false;
     if (command === "tasks.create") return listsRepos(fields);
-    if (command === "tasks.split") return Array.isArray(fields.children) && fields.children.some(listsRepos);
     return false;
   }
 
@@ -1598,10 +1597,9 @@ export class AdminService {
 
 /** The `attachments` a command's input carries, for the check before its card is posted. */
 function attachmentsOf(command: CommandName, input: unknown): string[] {
-  const data = input as { attachments?: string[]; children?: { attachments?: string[] }[] };
+  const data = input as { attachments?: string[] };
   if (command === "tasks.create" || command === "room.send" || command === "autonomy.guide")
     return data.attachments ?? [];
-  if (command === "tasks.split") return (data.children ?? []).flatMap((c) => c.attachments ?? []);
   return [];
 }
 
@@ -1649,14 +1647,7 @@ const ALWAYS_ASK: ReadonlySet<CommandName> = new Set<CommandName>([
 ]);
 
 /** Fields of `orgs.update` that change git accounts, tokens, identity or what agents may do alone. */
-const SENSITIVE_ORG_FIELDS = [
-  "identity",
-  "commits",
-  "mr_tokens",
-  "git_accounts",
-  "merge",
-  "lead_start",
-] as const;
+const SENSITIVE_ORG_FIELDS = ["identity", "commits", "mr_tokens", "git_accounts", "merge"] as const;
 
 /**
  * Why an agent may not make this call at all, or undefined. Agents never push: the owner pushes from

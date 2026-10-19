@@ -910,13 +910,15 @@ export class AutonomyService {
     }
     const p = await this.staffing().propose(request);
     if (p.lead === undefined) return undefined;
+    // One agent per task: staffing picks who, and only the owner (or an @mention) makes it a team.
+    const team = [p.lead];
     this.staffLines.push({
-      key: command === "tasks.start" ? `start:${str(input.id)}` : p.team.join(","),
+      key: command === "tasks.start" ? `start:${str(input.id)}` : team.join(","),
       reason: p.reason,
     });
     if (this.staffLines.length > 20) this.staffLines.shift();
-    if (command === "tasks.create") return { ...input, team: p.team };
-    await this.deps.tasks.staffTeam(str(input.id) ?? "", p.team);
+    if (command === "tasks.create") return { ...input, team };
+    await this.deps.tasks.staffTeam(str(input.id) ?? "", team);
     return input;
   }
 
@@ -1748,12 +1750,7 @@ export class AutonomyService {
       if (task === undefined || this.repo.isAutonomous(task.id)) return undefined;
       return check(task.id, await this.sizes.of(task));
     }
-    const texts =
-      command === "tasks.create"
-        ? [input]
-        : command === "tasks.split" && Array.isArray(input.children)
-          ? (input.children as unknown[]).map((c) => (typeof c === "object" && c !== null ? c : {}))
-          : [];
+    const texts = command === "tasks.create" ? [input] : [];
     for (const raw of texts as Record<string, unknown>[]) {
       const text = str(raw.text) ?? "";
       const title =
@@ -1815,9 +1812,7 @@ export class AutonomyService {
     command: CommandName,
     input: Record<string, unknown>,
   ): Promise<string | undefined> {
-    const starts =
-      command === "tasks.start" ||
-      ((command === "tasks.create" || command === "tasks.split") && input.start === true);
+    const starts = command === "tasks.start" || (command === "tasks.create" && input.start === true);
     if (!starts || (await this.callerKind(caller)) !== "boss") return undefined;
     const busy = this.machineBusy();
     const { world, sections } = await this.context(caller, command, input);
@@ -2014,9 +2009,6 @@ export class AutonomyService {
     if (typeof existing === "string") for (const a of this.deps.store.tasks.get(existing)?.team ?? []) add(a);
     add(input.agent);
     for (const a of Array.isArray(input.team) ? input.team : []) add(a);
-    for (const c of Array.isArray(input.children) ? input.children : [])
-      add((c as { agent?: unknown }).agent);
-    if (agents.size === 0) for (const a of sections.orgs[world.org]?.team ?? []) add(a);
     return [...new Set([...agents].flatMap((a) => world.agents[a]?.account ?? []))];
   }
 
@@ -2115,13 +2107,6 @@ export class AutonomyService {
       const one = id(output);
       if (typeof one === "string") ids.push(one);
     }
-    if (command === "tasks.split") {
-      const children = (output as { children?: unknown }).children;
-      for (const c of Array.isArray(children) ? children : []) {
-        const one = id(c);
-        if (typeof one === "string") ids.push(one);
-      }
-    }
     let joined = false;
     for (const task of ids) {
       if (!this.repo.join(task, this.now().toISOString(), reason === "" ? undefined : clip(reason, 240)))
@@ -2129,8 +2114,7 @@ export class AutonomyService {
       joined = true;
       const t = this.deps.store.tasks.get(task);
       if (t !== undefined && caller === "boss") this.saidStaffing(command, t);
-      const verb =
-        command === "tasks.start" ? "Started" : command === "tasks.split" ? "Split out" : "Created";
+      const verb = command === "tasks.start" ? "Started" : "Created";
       this.event({ kind: "task", text: `${verb} ${task}: ${t?.title ?? task}`, task, ...orgOf(t) });
     }
     if (joined) this.deps.events.emit(["autonomy", "tasks"]);

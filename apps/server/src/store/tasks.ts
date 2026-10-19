@@ -18,6 +18,7 @@ import {
   IdSchema,
   isCaptainThread,
   isOwnerChat,
+  lineOrder,
   type MrFact,
   type MrReview,
   MrReviewSchema,
@@ -257,6 +258,11 @@ export class TaskRepo {
         .values({
           id: task.id,
           title: task.title,
+          name: task.name ?? null,
+          now: task.now ?? null,
+          next: task.next ?? null,
+          doneWhen: task.doneWhen ?? null,
+          idea: task.idea ?? null,
           brief: task.brief,
           kind: task.kind,
           type: task.typing?.type ?? null,
@@ -334,6 +340,7 @@ export class TaskRepo {
       tx.update(tasks)
         .set({
           title: task.title,
+          name: task.name ?? null,
           brief: task.brief,
           kind: task.kind,
           type: task.typing?.type ?? null,
@@ -434,7 +441,8 @@ export class TaskRepo {
    * pass. The orchestrator asks on every sweep, so it must not load every task to find them.
    */
   waitingToStart(): Task[] {
-    return this.getMany(this.q.waitingIds.all().map((r) => r.id));
+    // The line the running cap holds: priority first, then the oldest wish (`lineOrder`).
+    return lineOrder(this.getMany(this.q.waitingIds.all().map((r) => r.id)));
   }
 
   /** The tasks running now other than `except`, newest first, loaded in one pass. */
@@ -445,6 +453,38 @@ export class TaskRepo {
         .map((r) => r.id)
         .filter((id) => id !== except),
     );
+  }
+
+  /** Ids of the tasks running now. Chats are conversations, not tasks of the task gate: left out. */
+  runningIds(): string[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.status, "running"), ne(tasks.kind, "chat")))
+      .all()
+      .map((r) => r.id);
+  }
+
+  /**
+   * Open tasks the owner did not make, per workspace (`private` for none): the ones their creator
+   * stored an origin other than the owner's for. Done tasks, chats and ideas are left out; a task made
+   * before origins has none and counts as the owner's.
+   */
+  openByOthers(): Record<string, number> {
+    const rows = this.db
+      .select({ org: sql<string>`coalesce(${tasks.org}, 'private')`, n: sql<number>`count(*)` })
+      .from(tasks)
+      .where(
+        and(
+          ne(tasks.status, "done"),
+          ne(tasks.kind, "chat"),
+          sql`${tasks.idea} IS NULL`,
+          sql`json_extract(${tasks.origin}, '$.kind') IN ('captain', 'chat', 'finding', 'watch', 'schedule', 'deploy', 'client')`,
+        ),
+      )
+      .groupBy(sql`coalesce(${tasks.org}, 'private')`)
+      .all();
+    return Object.fromEntries(rows.map((r) => [r.org, r.n]));
   }
 
   /** Ids of the owner's chats and the captain's lanes. */
@@ -532,6 +572,11 @@ export class TaskRepo {
         if (kids !== undefined)
           summary.children = { total: kids.length, done: kids.filter((k) => k.status === "done").length };
         if (row.org !== null) summary.org = row.org;
+        if (row.name !== null) summary.name = row.name;
+        if (row.now !== null) summary.now = row.now;
+        if (row.next !== null) summary.next = row.next;
+        if (row.doneWhen !== null) summary.doneWhen = row.doneWhen;
+        if (row.idea !== null) summary.idea = TaskSchema.shape.idea.unwrap().parse(row.idea);
         if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
         if (isCaptainThread({ kind: summary.kind, brief: row.brief })) summary.lane = true;
         if (row.pausedReason !== null)
@@ -722,6 +767,35 @@ export class TaskRepo {
     const statuses = this.statuses();
     const kids = this.allLinks().filter((l) => l.type === "parent" && l.other === parent);
     return parentIsComplete(kids.flatMap((k) => statuses.get(k.task) ?? []));
+  }
+
+  /** Sets the lines a task's agent keeps current. A line that is undefined stays; null clears it. */
+  setStatusLines(
+    id: string,
+    lines: {
+      now?: string | null | undefined;
+      next?: string | null | undefined;
+      doneWhen?: string | null | undefined;
+    },
+    at: string,
+  ): void {
+    const set: { now?: string | null; next?: string | null; doneWhen?: string | null; updatedAt: string } = {
+      updatedAt: at,
+    };
+    if (lines.now !== undefined) set.now = lines.now;
+    if (lines.next !== undefined) set.next = lines.next;
+    if (lines.doneWhen !== undefined) set.doneWhen = lines.doneWhen;
+    this.db.update(tasks).set(set).where(eq(tasks.id, id)).run();
+  }
+
+  /** Renames a task. Its branch and folder stay as they were. */
+  setName(id: string, name: string, at: string): void {
+    this.db.update(tasks).set({ name, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  /** Takes the idea mark off: the owner started or accepted the task. */
+  clearIdea(id: string): void {
+    this.db.update(tasks).set({ idea: null }).where(eq(tasks.id, id)).run();
   }
 
   startWhenReady(id: string): boolean {
@@ -1326,7 +1400,7 @@ function taskStatements(db: Db) {
     waitingIds: db
       .select({ id: tasks.id })
       .from(tasks)
-      .where(and(inArray(tasks.status, ["inbox", "ready"]), sql`start_when_ready = 1`))
+      .where(and(inArray(tasks.status, ["inbox", "ready", "paused"]), sql`start_when_ready = 1`))
       .orderBy(asc(tasks.updatedAt), asc(tasks.id))
       .prepare(),
     runningIds: db
@@ -1409,6 +1483,11 @@ function buildTask(
   return TaskSchema.parse({
     id: row.id,
     title: row.title,
+    ...(row.name === null ? {} : { name: row.name }),
+    ...(row.now === null ? {} : { now: row.now }),
+    ...(row.next === null ? {} : { next: row.next }),
+    ...(row.doneWhen === null ? {} : { doneWhen: row.doneWhen }),
+    ...(row.idea === null ? {} : { idea: row.idea }),
     brief: row.brief,
     kind: row.kind,
     ...(typing === undefined ? {} : { typing }),

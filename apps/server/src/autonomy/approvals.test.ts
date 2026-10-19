@@ -32,6 +32,7 @@ async function on() {
   /** A task of Acme the captain created, so it is autonomous. Not started. */
   const acmeTask = async () => {
     const made = await call("majhi_tasks_create", {
+      name: "Test task",
       text: "fix the api",
       repos: [{ project: "acme-api" }],
       start: false,
@@ -88,7 +89,11 @@ describe("autonomous mode deciding the cards that would wait", () => {
   it("refuses what breaks a hard limit, in every mode, with no card", async () => {
     const t = await on();
     const key = `sk-ant-api03-${"Ab3dE5gH7jK9mN1pQ3sT5vX7zB9".repeat(2)}`;
-    const leaked = await t.call("majhi_tasks_create", { text: `call the API with ${key}`, start: false });
+    const leaked = await t.call("majhi_tasks_create", {
+      name: "Test task",
+      text: `call the API with ${key}`,
+      start: false,
+    });
     expect(leaked.isError).toBe(true);
     expect(leaked.text).toContain("looks like a secret");
     const forced = await t.call("majhi_tasks_push", { id: "ACM-1", deleteAfter: true });
@@ -140,7 +145,12 @@ describe("autonomous mode's reach", () => {
     expect(await t.call("majhi_tasks_start", { id })).toEqual({ text: held, isError: true });
     expect(t.h.majhi.services.store.tasks.get(id)?.status).toBe("inbox");
     // A lead starting its subtask under lead_start goes the same way.
-    const child = await t.call("majhi_tasks_create", { text: "add a test", parent: id, start: false });
+    const child = await t.call("majhi_tasks_create", {
+      name: "Test task",
+      text: "add a test",
+      parent: id,
+      start: false,
+    });
     const childId = (JSON.parse(child.text) as { id: string }).id;
     const lead = await t.h.majhi.services.admin.runAllowed(
       { task: id, agent: "acme-builder" },

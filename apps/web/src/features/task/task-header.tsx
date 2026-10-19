@@ -10,6 +10,7 @@ import { GLASS } from "@/lib/glass";
 import { useIncident } from "@/lib/incident-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
+import { useTaskLabel } from "@/lib/task-label";
 import { useTaskDetail, useTaskRow, useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
 import { AppMark } from "../clients/app-mark";
@@ -57,6 +58,7 @@ export function TaskHeader({
   shipAsk: number;
 }) {
   const orgs = useOrgs().data ?? [];
+  const labelOf = useTaskLabel();
   const { org: filter } = useOrgFilter();
   const navigate = useNavigate();
   const org = orgs.find((o) => o.id === task.org);
@@ -134,7 +136,9 @@ export function TaskHeader({
           >
             <ArrowLeft aria-hidden="true" className="size-3.5" />
           </Link>
-          <span className="shrink-0 font-mono whitespace-nowrap text-fg-muted">{task.id}</span>
+          <span title={task.id} className="min-w-0 shrink truncate font-mono whitespace-nowrap text-fg-muted">
+            {labelOf(task)}
+          </span>
           <StatusBadge
             status={task.status}
             pausedReason={task.pausedReason}

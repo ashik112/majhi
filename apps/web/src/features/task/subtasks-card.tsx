@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
+import { useTaskLabel } from "@/lib/task-label";
 import { useStartTask, useTasks } from "@/lib/task-queries";
 import { openDue } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
@@ -58,6 +59,7 @@ function SubtaskRow({ task, first }: { task: TaskSummary; first: boolean }) {
   const { org } = useOrgFilter();
   const start = useStartTask();
   const toast = useToast();
+  const labelOf = useTaskLabel();
   const line = subtaskLine(task);
   const search = orgSearch(org);
   const done = task.status === "done";
@@ -73,7 +75,7 @@ function SubtaskRow({ task, first }: { task: TaskSummary; first: boolean }) {
           className="group flex min-w-0 flex-col gap-0.5 rounded-xs text-left"
         >
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="font-mono text-xs text-fg-faint group-hover:text-fg-muted">{task.id}</span>
+            <span className="font-mono text-xs text-fg-faint group-hover:text-fg-muted">{labelOf(task)}</span>
             {task.priority && <PriorityChip priority={task.priority} />}
             {due && <DueChip due={due} />}
           </span>
@@ -108,12 +110,12 @@ function SubtaskRow({ task, first }: { task: TaskSummary; first: boolean }) {
         <Button
           size="sm"
           className="mt-3 shrink-0"
-          title={`Start ${task.id}`}
-          aria-label={`Start ${task.id}`}
+          title={`Start ${labelOf(task)}`}
+          aria-label={`Start ${labelOf(task)}`}
           disabled={start.isPending}
           onClick={() =>
             start.mutate(task.id, {
-              onError: (e) => toast(`Could not start ${task.id}`, { detail: e.message, tone: "error" }),
+              onError: (e) => toast(`Could not start ${labelOf(task)}`, { detail: e.message, tone: "error" }),
             })
           }
         >

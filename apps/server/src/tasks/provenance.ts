@@ -1,4 +1,4 @@
-import type { StoredOrigin, TaskId } from "@majhi/shared";
+import type { GateOrigin, StoredOrigin, TaskId } from "@majhi/shared";
 import { PRIVATE } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 
@@ -55,5 +55,35 @@ export function originFor(
       return undefined;
     case "in-chat":
       return { kind: "chat", room: provenance.room };
+  }
+}
+
+/**
+ * Who the gate treats the maker of a task as, from where it came from. A reference made by a scan or
+ * a watch is a finding or an incident; a child or a task made in a chat is an agent's. An agent's own
+ * call is a `captain` provenance too, so the command that took it says which it was.
+ */
+export function gateOf(provenance: Provenance): GateOrigin {
+  switch (provenance.kind) {
+    case "owner":
+    case "chat":
+      return "owner";
+    case "captain":
+      return "captain";
+    case "child":
+    case "in-chat":
+      return "agent";
+    case "ref":
+      switch (provenance.origin.kind) {
+        case "finding":
+          return "finding";
+        case "schedule":
+          return "schedule";
+        case "client":
+          return "client-chat";
+        case "watch":
+        case "deploy":
+          return "incident";
+      }
   }
 }

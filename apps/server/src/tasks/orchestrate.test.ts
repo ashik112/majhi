@@ -22,7 +22,12 @@ const roomItems = async (id: string) =>
 const lines = async (id: string) =>
   (await roomItems(id)).flatMap((i) => (i.type === "system" ? [i.text] : []));
 
-const split = (children: object[]) => w.h.cmd("tasks.split", { task: "ACM-1", children, start: true });
+// Child tasks already exist and keep working: the owner makes them under a parent.
+const split = async (children: { text: string; repos: object[] }[]) => {
+  for (const child of children) {
+    await w.h.cmd("tasks.create", { ...child, parent: "ACM-1", start: true });
+  }
+};
 
 describe("lead orchestration: the parent", () => {
   it("keeps a parent with commits not shipped open, in review for the owner", async () => {
@@ -48,6 +53,6 @@ describe("lead orchestration: the parent", () => {
       l.startsWith("Every subtask is done, but ACM-1 stays open"),
     );
     expect(said).toHaveLength(1);
-    expect(said[0]).toContain("1 commit on feat/drive-the-api-work");
+    expect(said[0]).toContain("1 commit on feat/drive-api-work");
   });
 });

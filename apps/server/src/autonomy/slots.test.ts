@@ -59,6 +59,7 @@ describe("the captain and free agent slots", () => {
 
     // A task it files with start stays in the backlog.
     const filed = await t.call("majhi_tasks_create", {
+      name: "Test task",
       text: "Add a CSV export",
       repos: [{ project: "acme-api" }],
       start: true,

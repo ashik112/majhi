@@ -85,6 +85,15 @@ export function renderTaskMd(
   const lines: string[] = [`# ${task.id}: ${task.title}`, ""];
   lines.push(`Kind: ${task.kind}${orgName === undefined ? "" : `. Org: ${orgName}`}.`, "");
   lines.push("## Brief", "", task.brief.trim(), "");
+  if (task.kind !== "chat") {
+    lines.push(
+      "## Keep the owner informed",
+      "",
+      "Call the majhi-tasks status tool in your first turn to set name (2 to 4 words that say what this is, like Login redirect) and doneWhen (how the owner will know this task is finished, in one line). Then, at every step, set now (what you are doing) and next (what comes after). One line each, at most 120 characters. They are all the owner reads to follow this task.",
+      ...(task.doneWhen === undefined ? [] : ["", `Done when (set): ${task.doneWhen}`]),
+      "",
+    );
+  }
   lines.push("## Repos", "");
   const reads = task.readMounts ?? [];
   if (task.repos.length === 0 && reads.length > 0) {

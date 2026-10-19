@@ -110,6 +110,8 @@ export class Lanes {
       attachments: [],
       start: false,
       provenance: { kind: "chat" },
+      // A lane is a conversation, outside the gate.
+      gate: "captain",
     });
     const at = this.deps.now().toISOString();
     // The lane is named for its workspace; the brief stays the marker.

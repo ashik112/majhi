@@ -2799,3 +2799,19 @@ Window: 7 days, at most 100 rows (what waits is always in it). Who did it uses `
 - **Disk guard.** `disk/guard.ts` (`DiskGuard`). Free under 15% or 30 GB wakes Tidy (`captain/service.ts` `diskLow`), which frees what is safe, then files one Private card. Health shows "Free space" with a "Free N GB" fix listing exactly what goes (owner only).
 - **Dashboard.** The Machine cell shows "majhi uses X GB: tasks Y, Docker Z".
 - **Left.** Not run on the live app. The card has no button of its own: it points to Health. 
+
+## Workflow reset, step 1: the task model and names, 2026-10-19
+
+Plan (branch `feat/task-model-and-names`): shared name, line and gate-origin types and one migration (191); one pure `admit()` used inside `TaskService.create` and `start` so every creator goes through it; one agent per task (remove the team picks); `majhi-tasks.status` and the TASK.md text; names with branch and folder from one slug function; `taskLabel` on the web surfaces; decisions and spec; then the suites and a walk of the journey with fake agents.
+
+Built: `apps/server/src/tasks/gate.ts`, `task-folder.ts`, `packages/shared/src/task-name.ts`, `task-gate.ts`, `store/migrations.ts` 191 (name, now, next, done_when, idea and an index for the open count). Creators name their origin (`gate`) or the build fails; the captain's and agents' `tasks.create` must give a `name`. Agents file ideas, start only their own task and split into plan steps. Removed: `lead_start`, the org `team` pick, the decision provider's team slot, `rooms/teams.ts`. The web shows `project · Name` on the board card, task header, drawer, inline task references, palette, Today, agent detail, subtasks and chat header, with the id in the tooltip; the card shows Now (else the agent's line), Next and Done when. Settings has the two new limits. Choices are in `docs/DECISIONS.md` (2026-10-19).
+
+Walked in a throwaway home with fake agents: the owner's sentence became name "Fix login redirect cart", branch `fix/login-redirect-cart`, folder `<tasks_dir>/api/fix-login-redirect-cart`; the agent set Done when, Now and Next and the list row carried them; the agent's `create` with `start: true` made an idea (status inbox, `idea: agent-made`) that stayed inbox, and its `start` of it was refused; with `tasks_running: 1` the second start stayed `ready` with "1 task is running (limit 1), so this one waits its turn. Place 1 in line." and ran when the first reached review.
+
+Measured (480 seeded tasks, the perf seed): `tasks.list` store read p50/p95 1.72/2.40 ms before, 1.84/2.47 ms after (`list(true)` 2.50/3.47 to 2.56/3.24). The gate adds two reads on a create (running ids 0.04/0.05 ms, open count 0.06/0.07 ms, indexed) and one on a start; no per-row work. Now, Next and Done when go out with the task's normal change event.
+
+Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2723 tests passed; `pnpm build` and `pnpm exec playwright test` 10 passed. New tests: gate admissions per origin at and over each cap (and the urgent task first when a place frees), names to branch and folder (collisions, containment, deletion only inside tasks_dir), the migration on a real-shaped database copy, split writes plan steps and makes no task.
+
+Review fixes: incidents are never ideas; the agent names its task through `status` (unpublished branches follow); a resume takes a running place like a start.
+
+Left for the next steps: no Start now control in the UI yet (the command takes `now` for the owner; the console of step 3 has the key); the Ideas list and Needs you wording are step 3; `project-busy` is in the gate's type for step 2.

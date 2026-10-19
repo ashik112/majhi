@@ -180,7 +180,12 @@ export function summaryIsFresh(day: string, now: number): boolean {
 
 // Tasks ---------------------------------------------------------------------
 
-export const PRIORITY_WORD: Record<TaskPriority, string> = { high: "High", normal: "Normal", low: "Low" };
+export const PRIORITY_WORD: Record<TaskPriority, string> = {
+  urgent: "Urgent",
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
 
 /** The local calendar day of `now`, `YYYY-MM-DD`. */
 export function localDay(now: number): string {

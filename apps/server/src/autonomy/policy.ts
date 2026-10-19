@@ -54,7 +54,7 @@ export type AutonomyVerdict =
 /** Calls that start agents working: they wait while a cap or a floor holds the work. */
 export function startsWork(command: string, input: Record<string, unknown>): boolean {
   if (command === "tasks.start" || command === "team.add" || command === "tasks.addAgent") return true;
-  return (command === "tasks.create" || command === "tasks.split") && input.start === true;
+  return command === "tasks.create" && input.start === true;
 }
 
 /** What the owner alone decides: which repos, folders and branches agents reach. */
@@ -95,7 +95,7 @@ const GIT_ACCESS: ReadonlySet<string> = new Set([
 ]);
 
 /** `orgs.update` fields that change identity, git accounts, where merges land, or what agents may do alone. */
-const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "lead_start", "base"] as const;
+const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "base"] as const;
 
 /** Automations that start tasks or run commands later, outside the run gate and the caps. */
 const AUTOMATION_EDITS: ReadonlySet<string> = new Set([

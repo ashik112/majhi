@@ -166,6 +166,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       attachments: [],
       start: false,
       provenance: { kind: "ref" as const, origin, workspace: input.org },
+      gate: "incident" as const,
       typing: { type: "incident" as const, by: "captain" as const },
     };
     try {

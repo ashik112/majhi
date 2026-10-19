@@ -68,6 +68,7 @@ describe("attachment errors", () => {
     const res = await asBoss("majhi_uploads_create", { path: "attachments/big.log" });
     expect(res.isError).toBe(true);
     const task = await asBoss("majhi_tasks_create", {
+      name: "Test task",
       text: "fix the bug in api",
       repos: [{ project: "acme-api" }],
       attachments: ["attachments/big.log"],
@@ -95,6 +96,7 @@ describe("attachment errors", () => {
 
     // A file from an Acme task cannot go to a task with no org.
     const local = await inAcme("majhi_tasks_create", {
+      name: "Test task",
       text: "chat about it",
       kind: "chat",
       attachments: ["attachments/image.png"],

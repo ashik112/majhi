@@ -12,6 +12,7 @@ export const NoticeKindSchema = z.enum([
   "decision",
   "client-message",
   "client-reply",
+  "task-started",
   "task-review",
   "task-done",
   "task-paused",

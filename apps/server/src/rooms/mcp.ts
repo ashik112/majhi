@@ -3,11 +3,12 @@ import {
   type CommandName,
   canWorkIn,
   commands,
-  DEFAULT_LEAD_START,
   type DiagramSpec,
   DiagramSpecSchema,
   isAutonomyChat,
   TaskDockerRequestSchema,
+  TaskLineSchema,
+  TaskNameSchema,
   type TeamPlan,
   TeamPlanSchema,
 } from "@majhi/shared";
@@ -41,7 +42,6 @@ import type { RoomService } from "../room/service.ts";
 import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
 import { reachFromChat } from "../tasks/chat-link.ts";
-import { leadMayStart } from "../tasks/lead-start.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   CONNECTIONS_PATH,
@@ -128,7 +128,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "uploads_create",
     description:
-      "Turn a file in your own task folder (like attachments/image.png) into an upload id. Pass the id in the attachments of tasks_create or tasks_split, or give the file path itself there. Copies the file; the original stays. Allowed: images, pdf, text files, zip, up to 20 MB. The id is kept for 24 hours and can be used once.",
+      "Turn a file in your own task folder (like attachments/image.png) into an upload id. Pass the id in the attachments of tasks_create, or give the file path itself there. Copies the file; the original stays. Allowed: images, pdf, text files, zip, up to 20 MB. The id is kept for 24 hours and can be used once.",
     input: z.object({ path: z.string().trim().min(1).max(1000) }),
   },
   {
@@ -160,13 +160,13 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Called from a chat with the owner, it turns THIS chat into the task by default: the same conversation and room, now with the repos, a branch and a lifecycle, so the owner keeps one chat. Set separate true only when the owner asked for a second task or the work is clearly a side job; a separate task you made, or one the owner names in the chat, you can then steer with tell, add_repo, remove_repo, look and read_room. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent (your own task only), it becomes a subtask that holds the parent open. Work found in a task that can wait or ship apart (a fix, a later improvement) is a follow-up: set followUpOf to that task, never parent, so the source closes without it. With dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Give it a short name (2 to 4 words, like Login redirect): it is what the owner reads, and its branch and folder come from it. A task you make is an idea: it is filed for the owner and never starts until the owner starts it, whatever you pass in start. Called from a chat with the owner, it turns THIS chat into the task by default: the same conversation and room, now with the repos, a branch and a lifecycle, so the owner keeps one chat. Set separate true only when the owner asked for a second task or the work is clearly a side job; a separate task you made, or one the owner names in the chat, you can then steer with tell, add_repo, remove_repo, look and read_room. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent (your own task only), it becomes a subtask that holds the parent open. Work found in a task that can wait or ship apart (a fix, a later improvement) is a follow-up: set followUpOf to that task, never parent, so the source closes without it. With dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. To start it later, use start (only the owner starts a task you made).",
   },
   {
     name: "split",
     command: "tasks.split",
     description:
-      "Split a task into subtasks, in order. Each subtask lists in repos only the projects it will change; names in its text attach nothing. A subtask can get files in its attachments (a path in your task folder, like attachments/image.png, or an upload id). A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
+      "Split your task into steps, in order: the steps are written into the task's plan, which the owner sees, and no other task is made. Give each step in what, and who does it when it is not you. Use it to plan a big task, then work through the steps in this one task and keep Now and Next current with status.",
   },
   {
     name: "uploads_create",
@@ -178,7 +178,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "start",
     command: "tasks.start",
     description:
-      "Start a task: create its worktrees and wake its agent. Your org's setting says which tasks you may start without asking the owner (by default your subtasks); for any other, the owner gets an approval card. A fix task (made with followUpOf) always gets the approval card. A task that waits on an unfinished dependency does not start early: it starts by itself when they are done.",
+      "Start your own task: create its worktrees and wake its agent. You cannot start another task; the owner starts the tasks you file. A task that waits on an unfinished dependency does not start early: it starts by itself when they are done, and when tasks are already running at the limit it waits its turn.",
   },
   {
     name: "update",
@@ -270,6 +270,18 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
 }));
 
 /** `read_room`: the room of a task this chat made or the owner named, read-only. Not a command: it reads the room as the coordinator does. */
+const STATUS_TOOL: Tool = {
+  name: "status",
+  description:
+    "Keep the owner's three lines on your own task current, and name the task. name: 2 to 4 words that say what it is, like Login redirect; set it in your first turn with doneWhen (the branch follows the name until it is pushed). doneWhen: how the owner will know the task is finished; set it in your first turn. now: what you are doing; next: what comes after; set both at each step. Each is one line of at most 120 characters. A line you leave out stays as it was. This is not a message: it changes no one's turn.",
+  input: z.object({
+    name: TaskNameSchema.optional(),
+    now: TaskLineSchema.optional(),
+    next: TaskLineSchema.optional(),
+    doneWhen: TaskLineSchema.optional(),
+  }),
+};
+
 const READ_ROOM_TOOL: Tool = {
   name: "read_room",
   description:
@@ -590,13 +602,24 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           ),
           true,
         ),
-        ...listed([READ_ROOM_TOOL], false),
+        ...listed([READ_ROOM_TOOL, STATUS_TOOL], false),
       ],
     };
   });
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     if (request.params.name === READ_ROOM_TOOL.name)
       return readOtherRoom(caller, deps, request.params.arguments);
+    // The agent's own lines on its own task: no card, no id to name.
+    if (request.params.name === STATUS_TOOL.name) {
+      const parsed = STATUS_TOOL.input.safeParse(request.params.arguments ?? {});
+      if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);
+      try {
+        await deps.tasks.setStatusLines(caller.task, parsed.data);
+        return ok("Updated.");
+      } catch (err) {
+        return fail(errorMessage(err));
+      }
+    }
     const tool = TASK_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
     const args = { ...(request.params.arguments ?? {}) } as Record<string, unknown>;
@@ -633,6 +656,7 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           .slice(0, LIST_MAX)
           .map((t) => ({
             id: t.id,
+            name: t.name,
             title: t.title,
             status: t.status,
             org: t.org,
@@ -642,22 +666,26 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         // In a captain lane, only the lane's workspace (5.18).
         return ok(JSON.stringify(await deps.admin.narrowForLane(caller.task, rows), null, 2));
       }
-      // A fix task follows the Start line of its workspace: with Start on Captain it starts, with Start on You it waits for the owner's click.
-      let confirm = false;
-      if (tool.command === "tasks.start") {
-        confirm = isFixTask(deps, args.id) && !(await deps.captainStarts(orgOfTask(deps, caller.task)));
-        if (!confirm) {
-          const started = await leadStart(deps, caller, args);
-          if (started !== undefined) return started;
+      // An agent starts its own task and splits its own plan; anything else is the owner's or the captain's.
+      const captain = await isCaptain();
+      const confirm = false;
+      if (tool.command === "tasks.start" && !captain) {
+        if (args.id !== caller.task) {
+          return fail("You can start only your own task. Tasks you filed are ideas: the owner starts them.");
         }
+        const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+        const done = await deps.admin.runAllowed(caller, "tasks.start", { id: caller.task }, { reason });
+        return done.isError ? fail(done.text) : ok(done.text);
       }
-      if (
-        tool.command === "tasks.create" &&
-        typeof args.followUpOf === "string" &&
-        !(await deps.captainStarts(orgOfTask(deps, caller.task)))
-      ) {
-        args.start = false;
+      if (tool.command === "tasks.split" && !captain) {
+        if (args.task !== caller.task)
+          return fail("You can split only your own task, into steps of its plan.");
+        const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+        const done = await deps.admin.runAllowed(caller, "tasks.split", args, { reason });
+        return done.isError ? fail(done.text) : ok(done.text);
       }
+      // An agent's task is an idea: it never starts, so it is never asked to.
+      if (tool.command === "tasks.create" && !captain) args.start = false;
       const result = await deps.admin.call(caller, toolName(tool.command), args, { confirm });
       return result.isError ? fail(result.text) : ok(result.text);
     } catch (err) {
@@ -688,74 +716,6 @@ async function readOtherRoom(caller: ToolCaller, deps: RoomMcpDeps, raw: unknown
 
 function orgOfTask(deps: RoomMcpDeps, task: string): string | undefined {
   return deps.store.tasks.get(task)?.org;
-}
-
-/** A task made as the follow-up of another (an ops task's fix task): it holds a `follow-up` link. */
-function isFixTask(deps: RoomMcpDeps, id: unknown): boolean {
-  const task = typeof id === "string" ? deps.store.tasks.get(id) : undefined;
-  return task?.links.some((l) => l.type === "follow-up") === true;
-}
-
-/**
- * A lead starting a task. When the org's `lead_start` allows it, the task starts at once with an
- * `applied` card, a row in the audit, and a note in the target's room. Undefined means the call
- * goes the normal way, to an approval card; another org is refused here.
- */
-async function leadStart(
-  deps: RoomMcpDeps,
-  caller: ToolCaller,
-  args: Record<string, unknown>,
-): Promise<Result | undefined> {
-  const id = typeof args.id === "string" ? args.id : undefined;
-  const callerTask = deps.store.tasks.get(caller.task);
-  const target = id === undefined ? undefined : deps.store.tasks.get(id);
-  if (id === undefined || callerTask === undefined || target === undefined) return undefined;
-  const sections = await deps.config.sections();
-  const check = leadMayStart({
-    callerTask,
-    callerAgent: caller.agent,
-    target: { ...target, parent: target.links.find((l) => l.type === "parent")?.task },
-    setting:
-      (callerTask.org === undefined ? undefined : sections.orgs[callerTask.org]?.lead_start) ??
-      DEFAULT_LEAD_START,
-  });
-  if (!check.ok) return check.hard ? fail(check.why) : undefined;
-  if ("running" in check) return ok(`${id} is already running.`);
-
-  const waiting = deps.store.tasks.unmetDependencies(id);
-  const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
-  const result = await deps.admin.runAllowed(
-    caller,
-    "tasks.start",
-    { id },
-    {
-      reason,
-      accept: (e) => waiting.length > 0 && e.startsWith("Waiting on"),
-      accepted: `Waiting on ${waiting.join(", ")}. It starts by itself when they are done.`,
-    },
-  );
-  // Held by a dependency or not, the owner can see that a lead did this.
-  const title =
-    waiting.length === 0
-      ? `Started by @${caller.agent} from ${caller.task}`
-      : `@${caller.agent} started it from ${caller.task}; waiting on ${waiting.join(", ")}`;
-  if (!result.isError) {
-    deps.store.permissions.log({
-      task: id,
-      agent: caller.agent,
-      kind: "tasks.start",
-      title,
-      decision: "allow",
-      by: "lead",
-      at: new Date().toISOString(),
-    });
-    deps.room.post(id as never, `info:${crypto.randomUUID()}`, {
-      type: "system",
-      level: "info",
-      text: title,
-    });
-  }
-  return result.isError ? fail(result.text) : ok(result.text);
 }
 
 async function frontmatter(agents: AgentStore, id: string): Promise<AgentFrontmatter | undefined> {

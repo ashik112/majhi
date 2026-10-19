@@ -115,6 +115,9 @@ export type Brief = z.infer<typeof BriefSchema>;
 export const AgendaWatchTaskSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** The task's short name and first project: what `taskLabel` shows instead of the id. */
+  name: z.string().optional(),
+  project: z.string().optional(),
   org: z.string().optional(),
   orgName: z.string().optional(),
   since: z.string().optional(),

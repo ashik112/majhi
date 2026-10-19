@@ -416,6 +416,7 @@ import {
   SkillSetManyInputSchema,
   SkillUpdateInputSchema,
 } from "./skills.ts";
+import { TaskNameSchema } from "./task-name.ts";
 import { TaskAreasSchema, TaskDetailSchema } from "./task-trail.ts";
 import { TaskFieldsInputSchema, TaskTypeSchema } from "./task-type.ts";
 import {
@@ -425,6 +426,8 @@ import {
   ChangeBranchResultSchema,
   CiStateSchema,
   MergeMethodSchema,
+  PLAN_STEPS_MAX,
+  PlanStepSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
   QueuedMergeSchema,
@@ -1785,7 +1788,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, the memory limit of pre-ship checks, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, the memory limit of pre-ship checks, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -1809,10 +1812,6 @@ export const commands = {
       turns: OrgConfigSchema.shape.turns.nullable().optional(),
       /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
-      /** The default team for new tasks, lead first. null lets the decision provider pick. */
-      team: OrgConfigSchema.shape.team.nullable().optional(),
-      /** Which tasks a lead may start without asking. null goes back to `children`. */
-      lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
       git_accounts: OrgConfigSchema.shape.git_accounts.nullable().optional(),
       dismissed_logins: OrgConfigSchema.shape.dismissed_logins.nullable().optional(),
@@ -2259,6 +2258,14 @@ export const commands = {
       repos: TaskReposSchema.optional(),
       /** A short title. Without it, the first line of `text` is the title and the rest the description. */
       title: z.string().trim().min(1).max(120).optional(),
+      /**
+       * What the task is called: 2 to 4 words, at most 32 characters, like "Login redirect". It is what the owner
+       * reads, and its branch and folder come from it. The captain and agents must give one; for the owner's
+       * sentence, left out, it is the first four meaningful words of the title.
+       */
+      name: TaskNameSchema.optional(),
+      /** Urgent, high, normal or low. Default normal. An agent may only set normal or low. */
+      priority: TaskPrioritySchema.optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /**
@@ -2313,7 +2320,7 @@ export const commands = {
       dependsOn: z.array(TaskIdSchema).max(20).default([]),
       /**
        * Makes the new task a fix task of this one: it gets a `follow-up` link to it (5.15). A fix
-       * task starts only when the owner approves, whatever the org's `lead_start` says.
+       * task made by an agent is an idea: it starts only when the owner starts it.
        */
       followUpOf: TaskIdSchema.optional(),
       /**
@@ -2363,6 +2370,8 @@ export const commands = {
       id: TaskIdSchema,
       /** The owner's words, delivered to the agent as it starts. */
       message: z.string().trim().min(1).max(4000).optional(),
+      /** The owner starts it now, past the limit on tasks running at once. Ignored from anyone else. */
+      now: z.boolean().optional(),
     }),
     output: TaskSchema,
   },
@@ -2386,6 +2395,8 @@ export const commands = {
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
+      /** Renames the task (2 to 4 words). Its branch and folder keep the names they have. */
+      name: TaskNameSchema.optional(),
       brief: z.string().max(100_000).optional(),
       /**
        * The branch the task's worktree is cut from and ships into. Refused when the repo has no such
@@ -2408,37 +2419,14 @@ export const commands = {
   "tasks.split": {
     risk: "change",
     summary:
-      "Split a task into child tasks. Each child can wait for earlier children (dependsOn: their positions in the list, from 0). Children start when the owner starts them, or with start",
+      "Split a task into steps: writes the steps into the task's plan (the plan of the task, shown in its room) and makes no other task. Steps are not tasks",
     input: z.object({
       task: TaskIdSchema,
-      children: z
-        .array(
-          z.object({
-            /** Task box text for the child: what to do. */
-            text: z.string().trim().min(1).max(20_000),
-            /** The repos the child changes. Default: none. */
-            repos: TaskReposSchema.optional(),
-            /** Positions of earlier children this one waits for. */
-            dependsOn: z.array(z.number().int().min(0).max(19)).max(20).default([]),
-            /** When a dependency counts as met. `ready` stacks this child's branch on the dependency's. */
-            when: z.enum(["merged", "ready"]).optional(),
-            agent: IdSchema.optional(),
-            /** Upload ids, or paths of files in your own task folder (like attachments/image.png). */
-            attachments: z
-              .array(z.string())
-              .max(20)
-              .default([])
-              .describe(
-                "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png",
-              ),
-          }),
-        )
-        .min(1)
-        .max(20),
-      /** Start the children that do not wait, and let the others start when they are free. */
-      start: z.boolean().default(false),
+      steps: z.array(PlanStepSchema).min(1).max(PLAN_STEPS_MAX),
+      /** Why this order, in a line or two. Default: "Split into steps." */
+      why: z.string().trim().min(1).max(600).optional(),
     }),
-    output: z.object({ children: z.array(TaskSchema) }),
+    output: z.object({ task: TaskIdSchema, steps: z.number().int().positive() }),
   },
 
   // Teams (5.3) ---------------------------------------------------------------

@@ -97,6 +97,10 @@ export interface SettingsForm {
   runsTotal: string;
   perAccount: string;
   perTask: string;
+  /** Tasks running at once across every workspace. */
+  tasksRunning: string;
+  /** Open tasks per workspace that the owner did not make. */
+  openByOthers: string;
   idleTimeout: string;
   resumeAuto: boolean;
   resumeHandoff: boolean;
@@ -136,6 +140,8 @@ export function formFromSettings(s: Settings): SettingsForm {
     runsTotal: s.limits.runs_total === undefined ? "" : String(s.limits.runs_total),
     perAccount: String(s.limits.per_account),
     perTask: String(s.limits.per_task),
+    tasksRunning: String(s.limits.tasks_running),
+    openByOthers: String(s.limits.open_by_others),
     idleTimeout: s.limits.idle_timeout,
     resumeAuto: s.resume.auto,
     resumeHandoff: s.resume.handoff,
@@ -158,6 +164,8 @@ export type SettingsPatch = {
     runs_total?: number;
     per_account?: number;
     per_task?: number;
+    tasks_running?: number;
+    open_by_others?: number;
     idle_timeout?: string;
   };
   resume?: { auto?: boolean; handoff?: boolean };
@@ -206,6 +214,8 @@ export function patchFromForm(
   const runsTotal = form.runsTotal.trim() === "" ? {} : whole(form.runsTotal, 1, 64, "Runs on this computer");
   const account = whole(form.perAccount, 1, 16, "Per account");
   const task = whole(form.perTask, 1, 16, "Per task");
+  const tasksRunning = whole(form.tasksRunning, 1, 64, "Tasks running at once");
+  const openByOthers = whole(form.openByOthers, 0, 100, "Open tasks from others");
   const agentTurns = whole(form.maxAgentTurns, 1, 200, "Agent turns without you");
   const rounds = whole(form.reviewRounds, 1, 50, "Review rounds");
   if (agentTurns.error) errors.maxAgentTurns = agentTurns.error;
@@ -218,6 +228,8 @@ export function patchFromForm(
   if (runsTotal.error) errors.runsTotal = runsTotal.error;
   if (account.error) errors.perAccount = account.error;
   if (task.error) errors.perTask = task.error;
+  if (tasksRunning.error) errors.tasksRunning = tasksRunning.error;
+  if (openByOthers.error) errors.openByOthers = openByOthers.error;
   if (at.value !== undefined && target.value !== undefined && target.value >= at.value) {
     errors.compactTarget = "The target must be lower than the compact level";
   }
@@ -239,6 +251,10 @@ export function patchFromForm(
     limits.per_account = account.value;
   }
   if (task.value !== undefined && task.value !== current.limits.per_task) limits.per_task = task.value;
+  if (tasksRunning.value !== undefined && tasksRunning.value !== current.limits.tasks_running)
+    limits.tasks_running = tasksRunning.value;
+  if (openByOthers.value !== undefined && openByOthers.value !== current.limits.open_by_others)
+    limits.open_by_others = openByOthers.value;
   if (!errors.idleTimeout && idle !== current.limits.idle_timeout) limits.idle_timeout = idle;
   if (Object.keys(context).length > 0) patch.context = context;
   if (Object.keys(limits).length > 0) patch.limits = limits;

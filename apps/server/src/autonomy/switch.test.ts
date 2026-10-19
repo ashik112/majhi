@@ -44,7 +44,7 @@ describe("the Autonomous switch is On or Off", () => {
     for (const [tool, args] of [
       ["majhi_autonomy_note", { text: "hello" }],
       ["majhi_autonomy_answer", { task: "ACME-1", item: "ask:1", option: "a" }],
-      ["majhi_tasks_create", { text: "x", repos: [{ project: "acme-api" }], start: true }],
+      ["majhi_tasks_create", { name: "Test task", text: "x", repos: [{ project: "acme-api" }], start: true }],
     ] as const) {
       const out = await call(tool, args);
       expect(out.isError).toBe(true);
@@ -57,6 +57,7 @@ describe("the Autonomous switch is On or Off", () => {
     await h.cmd("autonomy.start");
     const chat = await services.autonomy.laneChat("acme");
     const made = await services.admin.call({ task: chat ?? "", agent: "boss" }, "majhi_tasks_create", {
+      name: "Test task",
       reason: "test",
       text: "fix the api",
       repos: [{ project: "acme-api" }],

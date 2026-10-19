@@ -3,6 +3,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
+import { useTaskLabel } from "@/lib/task-label";
 import { DueChip } from "../tasks/schedule-chips";
 import { AreaChips } from "../tasks-ui/area-chips";
 import { OriginMark } from "../tasks-ui/origin-mark";
@@ -43,6 +44,7 @@ interface CardProps {
  */
 export const TaskCard = memo(function TaskCard({ entry, focused, selected, ctx, place }: CardProps) {
   const { handlers, now } = ctx;
+  const labelOf = useTaskLabel();
   const line = lineOf(entry, ctx.line);
   const task = taskOfEntry(entry, ctx.tasks);
   const rel = ctx.relations.get(entry.key);
@@ -91,7 +93,9 @@ export const TaskCard = memo(function TaskCard({ entry, focused, selected, ctx, 
           <span className="w-3 shrink-0 text-right font-mono text-xs font-medium text-fg-faint">{place}</span>
         )}
         {task !== undefined && task.chat !== true && <TypeTag typing={task.typing} />}
-        <span className="shrink-0 font-mono text-xs text-fg-muted">{line.id ?? ""}</span>
+        <span title={line.id} className="min-w-0 truncate font-mono text-xs text-fg-muted">
+          {task === undefined ? (line.id ?? "") : labelOf(task)}
+        </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <OriginMark origin={task?.origin} named={task?.origin?.kind === "finding"} />
           <span className="font-mono text-xs text-fg-faint">{line.age}</span>
@@ -135,12 +139,20 @@ export const TaskCard = memo(function TaskCard({ entry, focused, selected, ctx, 
               )}
             >
               {line.cardText ?? line.text}
-              {queued?.priority === "high" && <span className="text-fg-muted">, high priority</span>}
+              {(queued?.priority === "high" || queued?.priority === "urgent") && (
+                <span className="text-fg-muted">, {queued.priority} priority</span>
+              )}
             </span>
           </div>
         )
       )}
       {line.why !== undefined && <p className="m-0 text-sm leading-[17px] text-fg-muted">{line.why}</p>}
+      {task?.next !== undefined && (
+        <p className="m-0 text-sm leading-[17px] text-fg-muted wrap-anywhere">Next: {task.next}</p>
+      )}
+      {task?.doneWhen !== undefined && (
+        <p className="m-0 text-sm leading-[17px] text-fg-muted wrap-anywhere">Done when: {task.doneWhen}</p>
+      )}
       {progress !== undefined && (
         <div className="flex items-center gap-2">
           <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-line-strong">

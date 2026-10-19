@@ -17,6 +17,7 @@ import { badgeLetters, formatAgo } from "@/lib/format";
 import { useLaneRedirect } from "@/lib/lane-link";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
+import { useTaskLabel } from "@/lib/task-label";
 import { useTask, useTasks } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { TaskRef } from "./task-ref";
@@ -48,6 +49,7 @@ export function TaskDrawer({ id }: { id: string }) {
 
 function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const task = useTask(id);
+  const labelOf = useTaskLabel();
   useLaneRedirect(task.data);
   const list = useTasks().data ?? [];
   const summary = list.find((t) => t.id === id);
@@ -57,7 +59,9 @@ function Details({ id, onClose }: { id: string; onClose: () => void }) {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 flex-col gap-1.5 border-b border-line-strong px-5 pt-3.5 pb-3">
         <div className="flex items-center gap-2.5 text-sm">
-          <span className="font-mono text-fg-muted">{id}</span>
+          <span title={id} className="font-mono text-fg-muted">
+            {task.data === undefined ? id : labelOf(task.data)}
+          </span>
           {task.data && <Status task={task.data} summary={summary} />}
           {task.data && <Org task={task.data} />}
           <span className="flex-1" />

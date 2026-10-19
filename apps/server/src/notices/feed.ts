@@ -12,6 +12,7 @@ import {
   type OwnerDecision,
   PRIVATE,
   signInDecisionId,
+  taskLabel,
   type UpdateStatus,
 } from "@majhi/shared";
 import { z } from "zod";
@@ -242,7 +243,23 @@ function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string
       link: { kind: "task" as const, id: row.id },
     };
     const id = `task:${row.id}:${row.event}`;
-    if (row.status === "review") {
+    if (row.status === "running") {
+      // A task the owner did not start has begun: its name, and how it ends.
+      const label = taskLabel({
+        id: row.id,
+        title: row.title,
+        ...(row.name === null ? {} : { name: row.name }),
+        repos: row.project === null ? [] : [{ project: row.project }],
+        org: orgOfTask(row.org),
+      });
+      out.push({
+        ...base,
+        id,
+        kind: "task-started",
+        subject: oneLine(`${label} started`, 160),
+        detail: oneLine(row.doneWhen ?? row.title),
+      });
+    } else if (row.status === "review") {
       // A ready-to-ship decision says it, with the button.
       if (waiting.has(`ship:${row.id}`)) continue;
       out.push({ ...base, id, kind: "task-review", subject: `${row.id} ready for review` });

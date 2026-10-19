@@ -62,11 +62,6 @@ export const OrgIdSchema = z
 export const MrHostSchema = z.enum(["github", "gitlab", "bitbucket"]);
 export type MrHost = z.infer<typeof MrHostSchema>;
 
-/** Which tasks a lead may start on its own: its subtasks, any task of the org, or none (5.4a). */
-export const LeadStartSchema = z.enum(["children", "org", "off"]);
-export type LeadStart = z.infer<typeof LeadStartSchema>;
-export const DEFAULT_LEAD_START: LeadStart = "children";
-
 /** Agent CLIs majhi drives over ACP. Adding a tool is one entry here plus one in `packages/acp` tools. */
 export const ToolIdSchema = z.enum(["claude", "codex"]);
 export type ToolId = z.infer<typeof ToolIdSchema>;
@@ -220,10 +215,6 @@ export const OrgConfigSchema = z.looseObject({
   turns: TurnsPatchSchema.optional(),
   /** Overrides the model and effort tiers of `decisions.tiers` for this org's agents (5.12). */
   tiers: TiersPatchSchema.optional(),
-  /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
-  team: z.array(IdSchema).optional(),
-  /** Which tasks a lead may start without asking the owner. Absent: `children`. */
-  lead_start: LeadStartSchema.optional(),
   /** Credentials for opening and merging MRs, one secret per host. A project remote's own `token` wins. */
   mr_tokens: z.partialRecord(MrHostSchema, SecretRefSchema).optional(),
   /** The git accounts of this org per host. They decide the push key, token and commit identity. */
@@ -516,10 +507,6 @@ export const OrgViewSchema = z.object({
   turns: OrgConfigSchema.shape.turns,
   /** This org's own fallback tiers, when it overrides majhi's. */
   tiers: OrgConfigSchema.shape.tiers,
-  /** The default team for new tasks, when set. */
-  team: OrgConfigSchema.shape.team,
-  /** The lead-start setting in force: the org's `lead_start`, else `children`. */
-  leadStart: LeadStartSchema,
   /** Secret references (never values) for the MR hosts, when set. */
   mrTokens: OrgConfigSchema.shape.mr_tokens,
   gitAccounts: OrgConfigSchema.shape.git_accounts,

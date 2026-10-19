@@ -1,4 +1,11 @@
-import { BRANCH_TYPE_OF, BRANCH_TYPES, type BranchType, type TaskTyping } from "@majhi/shared";
+import {
+  BRANCH_TYPE_OF,
+  BRANCH_TYPES,
+  type BranchType,
+  DANGLING_WORDS,
+  slugOfName,
+  type TaskTyping,
+} from "@majhi/shared";
 import { git } from "../git/git.ts";
 
 /**
@@ -124,31 +131,10 @@ export function shortSlug(title: string): string {
   return out === "" ? slug.slice(0, MAX_SLUG).replace(/-+$/, "") : endOnWord(out);
 }
 
-const DANGLING = new Set([
-  "a",
-  "an",
-  "the",
-  "of",
-  "to",
-  "on",
-  "in",
-  "at",
-  "by",
-  "for",
-  "and",
-  "or",
-  "with",
-  "when",
-  "is",
-  "are",
-  "if",
-  "as",
-]);
-
 /** Drops words that cannot end a name ("when", "the"), keeping at least one word. */
 function endOnWord(slug: string): string {
   const words = slug.split("-");
-  while (words.length > 1 && DANGLING.has(words[words.length - 1] ?? "")) words.pop();
+  while (words.length > 1 && DANGLING_WORDS.has(words[words.length - 1] ?? "")) words.pop();
   return words.join("-");
 }
 
@@ -167,6 +153,8 @@ function usable(name: string): boolean {
 export interface BranchRequest {
   id: string;
   title: string;
+  /** The task's short name: `{slug}` is its slug when given, else the title's. */
+  name?: string | undefined;
   type: BranchType;
   /** `{type}/{slug}` by default. */
   pattern?: string | undefined;
@@ -176,12 +164,18 @@ export interface BranchRequest {
 
 /** `feat/add-login`. A pattern that renders to something git would refuse falls back to the default. */
 export function branchName(req: BranchRequest): string {
+  const typeWord = req.typeWords?.[req.type] ?? req.type;
+  // `fix/login-redirect`, not `fix/fix-login-redirect`: the type already says it.
+  const nameSlug = (name: string): string => {
+    const slug = slugOfName(name);
+    return slug.startsWith(`${typeWord}-`) ? slug.slice(typeWord.length + 1) : slug;
+  };
   const render = (pattern: string): string =>
     pattern
-      .replace(/\{type\}/g, req.typeWords?.[req.type] ?? req.type)
+      .replace(/\{type\}/g, typeWord)
       .replace(/\{id\}/g, req.id.toLowerCase())
       .replace(/\{ID\}/g, req.id.toUpperCase())
-      .replace(/\{slug\}/g, shortSlug(req.title) || "task")
+      .replace(/\{slug\}/g, (req.name === undefined ? shortSlug(req.title) : nameSlug(req.name)) || "task")
       .replace(/[-_.]+$/, "")
       .replace(/\/[-_.]+/g, "/");
   const own = render(req.pattern ?? DEFAULT_BRANCH_PATTERN);

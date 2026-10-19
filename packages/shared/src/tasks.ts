@@ -18,6 +18,7 @@ import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./
 import { CommitsPatchSchema } from "./settings.ts";
 import { SkillNameSchema } from "./skills.ts";
 import { HoldViewSchema } from "./task-hold.ts";
+import { TaskLineSchema, TaskNameSchema } from "./task-name.ts";
 import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
 import { TrailSchema } from "./task-trail.ts";
 import { TaskFieldsSchema, TaskTypingSchema } from "./task-type.ts";
@@ -145,9 +146,34 @@ export type TaskKind = z.infer<typeof TaskKindSchema>;
 export const TaskStatusSchema = z.enum(["inbox", "ready", "running", "paused", "review", "mr", "done"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
-/** The owner's priority for a task (PRV-74). Absent means normal. Autonomous mode takes high first. */
-export const TaskPrioritySchema = z.enum(["high", "normal", "low"]);
+/**
+ * A task's priority, most urgent first: this order is the one rank everything uses (the line of
+ * waiting starts, autonomous mode's backlog, the board). Absent means normal. A severity-high incident
+ * is made `urgent`. Only the owner and the captain set `urgent` or `high`.
+ */
+export const TASK_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
+export const TaskPrioritySchema = z.enum(TASK_PRIORITIES);
 export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
+
+/** 0 is the most urgent. */
+export function priorityRank(priority: TaskPriority | undefined): number {
+  return TASK_PRIORITIES.indexOf(priority ?? "normal");
+}
+
+/**
+ * The order waiting starts take their places: priority first, then the oldest wish. When a place
+ * frees, the first of this order starts. No running task is stopped for a more urgent one.
+ */
+export function lineOrder<T extends { priority?: TaskPriority | undefined; updatedAt: string; id: string }>(
+  waiting: readonly T[],
+): T[] {
+  return [...waiting].sort(
+    (a, b) =>
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      a.updatedAt.localeCompare(b.updatedAt) ||
+      a.id.localeCompare(b.id),
+  );
+}
 
 /**
  * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in
@@ -350,10 +376,29 @@ export const ReadMountSchema = z.object({
 });
 export type ReadMount = z.infer<typeof ReadMountSchema>;
 
+/**
+ * Why a task is an idea: filed, not started, and never started except by the owner (workflow reset,
+ * Step 1). `agent-made`: an agent, a scan or a finding made it. `open-cap`: its workspace already
+ * had `limits.open_by_others` open tasks the owner did not start.
+ */
+export const IdeaReasonSchema = z.enum(["agent-made", "open-cap"]);
+export type IdeaReason = z.infer<typeof IdeaReasonSchema>;
+
 export const TaskSchema = z.object({
   id: TaskIdSchema,
   /** One line, from the first line of the brief. */
   title: z.string(),
+  /**
+   * 2 to 4 words, at most 32 characters: what the owner sees, as `project · Name`. Absent on tasks
+   * made before names; readers use `taskNameOf`.
+   */
+  name: TaskNameSchema.optional(),
+  /** The three lines the task's agent keeps current (`majhi-tasks.status`). Absent until it sets them. */
+  now: TaskLineSchema.optional(),
+  next: TaskLineSchema.optional(),
+  doneWhen: TaskLineSchema.optional(),
+  /** Set while the task is an idea: an inbox task only the owner starts. Cleared when the owner starts it. */
+  idea: IdeaReasonSchema.optional(),
   /** What the owner typed, verbatim. */
   brief: z.string(),
   kind: TaskKindSchema,
@@ -548,6 +593,11 @@ export function chatTitleFrom(text: string): string | undefined {
 export const TaskSummarySchema = TaskSchema.pick({
   id: true,
   title: true,
+  name: true,
+  now: true,
+  next: true,
+  doneWhen: true,
+  idea: true,
   kind: true,
   typing: true,
   org: true,
@@ -684,13 +734,20 @@ export const PermissionOptionSchema = z.object({
 export const PlanHowSchema = z.enum(["alone", "builders", "reviewer", "children", "parallel"]);
 export type PlanHow = z.infer<typeof PlanHowSchema>;
 
+/** The most steps a task's plan has (a split of a big task into steps). */
+export const PLAN_STEPS_MAX = 20;
+
+/** One step of a plan: who does it ("me", an @agent) and what. */
+export const PlanStepSchema = z.strictObject({
+  /** `me` unless a teammate does it. Default `me`. */
+  who: z.string().trim().min(1).max(80).default("me"),
+  what: z.string().trim().min(1).max(300),
+});
+
 /** The lead's plan for a task: who does what, in order, and why that is cheaper or faster. */
 export const TeamPlanSchema = z.strictObject({
-  /** In order. `who` is an @agent, "me", or "child tasks". */
-  steps: z
-    .array(z.strictObject({ who: z.string().trim().min(1).max(80), what: z.string().trim().min(1).max(300) }))
-    .min(1)
-    .max(8),
+  /** In order. `who` is an @agent or "me". */
+  steps: z.array(PlanStepSchema).min(1).max(PLAN_STEPS_MAX),
   /** Why this is cheaper or faster, in a line or two. */
   why: z.string().trim().min(1).max(600),
   how: z.array(PlanHowSchema).min(1).max(5),

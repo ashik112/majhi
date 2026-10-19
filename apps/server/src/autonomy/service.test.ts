@@ -74,6 +74,7 @@ async function world() {
       const chat = await h.majhi.services.autonomy.laneChat("acme");
       if (chat === undefined) throw new Error("no lane for Acme");
       const made = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
+        name: "Fix api",
         text: "fix the api",
         repos: [{ project: "acme-api" }],
         start: true,

@@ -12,6 +12,7 @@ import {
   type OriginKind,
   type OwnerDecision,
   PRIVATE,
+  priorityRank,
   type TaskPriority,
   type TaskSummary,
   type TaskType,
@@ -238,9 +239,6 @@ export type HomeTotals = Record<SectionId, number> & {
   /** Agents in a turn now, plus the background work that runs. */
   working: number;
 };
-
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
-const priorityRank = (p: TaskPriority | undefined) => PRIORITY_RANK[p ?? "normal"];
 
 /** The open tasks that wait for each task to finish. */
 export function waitersOf(tasks: readonly TaskSummary[]): Map<string, string[]> {

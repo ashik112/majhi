@@ -2031,6 +2031,21 @@ ALTER TABLE room_items ADD COLUMN outcome_task TEXT GENERATED ALWAYS AS (
 CREATE INDEX room_items_outcome_task ON room_items (outcome_task, at) WHERE outcome_task IS NOT NULL;
 `,
   },
+  {
+    // Workflow reset, Step 1: a task has a short name, three lines its agent keeps current (Now, Next, Done when)
+    // and, while it is an idea, why. All NULL for every task made before; readers derive a name from the title.
+    id: 191,
+    name: "task names, status lines and ideas",
+    sql: `
+ALTER TABLE tasks ADD COLUMN name TEXT;
+ALTER TABLE tasks ADD COLUMN now TEXT;
+ALTER TABLE tasks ADD COLUMN next TEXT;
+ALTER TABLE tasks ADD COLUMN done_when TEXT;
+ALTER TABLE tasks ADD COLUMN idea TEXT;
+-- The gate counts the open tasks the owner did not make, per workspace, on every create.
+CREATE INDEX tasks_open_by_others ON tasks (org) WHERE status != 'done' AND kind != 'chat' AND idea IS NULL;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

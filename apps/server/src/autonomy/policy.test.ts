@@ -336,9 +336,6 @@ describe("hardLimit", () => {
     expect(limit("tasks.addAgent", { id: "ACM-1", agent: "globex-root" })).toContain(glx);
     expect(limit("tasks.update", { id: "ACM-1", agent: "globex-root" })).toContain(glx);
     expect(limit("tasks.create", { text: "x", team: ["acme-builder", "globex-root"] })).toContain(glx);
-    expect(
-      limit("tasks.split", { task: "ACM-1", children: [{ text: "y", agent: "globex-root" }] }),
-    ).toContain(glx);
     expect(limit("team.swap", { task: "ACM-1", agent: "acme-builder", with: "globex-root" })).toContain(glx);
     expect(limit("team.add", { task: "GLX-1", agent: "globex-root" }, world("globex"))).toBe(undefined);
     // A private account is the owner's own: the captain may join any task, whatever connections it lists.
@@ -351,9 +348,6 @@ describe("hardLimit", () => {
     expect(limit("tasks.create", { text: `use ${key} to call the API` })).toContain(
       "text holds what looks like a secret",
     );
-    expect(
-      limit("tasks.split", { task: "ACM-1", children: [{ text: `token=${"x7Kp2Lq9Zr4Vt8Wm"}` }] }),
-    ).toContain("children.0.text");
     expect(limit("autonomy.note", { text: "fine" }, world(), `the key is ${key}`)).toContain("reason holds");
     expect(
       limit("autonomy.plan", {
