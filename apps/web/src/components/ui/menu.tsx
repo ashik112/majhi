@@ -107,7 +107,7 @@ export function Menu({
             aria-label={label}
             style={style}
             className={cn(
-              "z-50 flex min-w-40 max-w-72 flex-col overflow-y-auto rounded-lg p-1",
+              "z-[var(--z-float)] flex min-w-40 max-w-72 flex-col overflow-y-auto rounded-lg p-1",
               GLASS_STRONG,
             )}
           >

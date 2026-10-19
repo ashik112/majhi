@@ -105,7 +105,7 @@ export function SchedulePanel({
         close();
         anchor.current?.querySelector<HTMLElement>("button")?.focus();
       }}
-      className={cn("z-50 flex w-[276px] flex-col gap-3 rounded-lg p-3", GLASS_STRONG)}
+      className={cn("z-[var(--z-float)] flex w-[276px] flex-col gap-3 rounded-lg p-3", GLASS_STRONG)}
     >
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-fg-faint">Priority</span>

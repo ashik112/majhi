@@ -580,7 +580,7 @@ function ShipPanel({
       role="dialog"
       aria-label={`Ship ${task.id}`}
       style={place}
-      className="z-50 flex flex-col gap-3 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
+      className="z-[var(--z-float)] flex flex-col gap-3 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
     >
       {!others ? null : perRepo ? (
         <ul className="m-0 flex list-none flex-col gap-1 p-0">

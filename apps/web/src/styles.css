@@ -20,6 +20,17 @@
  *   idle     dim    inbox, ready, nobody on it
  */
 
+/*
+ * Stacking, defined once. The panes sit at auto. A pane that slides over the others (Chat under
+ * 1240px) is --z-pane-over. Everything that floats (menus, popovers, the undo toast, overlays) is
+ * --z-float and renders in a portal on <body>, because a glass pane forms its own stacking context
+ * and would paint over a layer rendered inside an earlier one.
+ */
+:root {
+  --z-pane-over: 30;
+  --z-float: 100;
+}
+
 :root,
 :root[data-theme="mission"][data-mode="dark"] {
   color-scheme: dark;

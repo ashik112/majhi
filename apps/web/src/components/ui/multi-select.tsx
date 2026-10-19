@@ -111,7 +111,10 @@ export function MultiSelect({
             role="menu"
             aria-label={label}
             style={style}
-            className={cn("z-50 flex min-w-56 flex-col overflow-y-auto rounded-lg p-1", GLASS_STRONG)}
+            className={cn(
+              "z-[var(--z-float)] flex min-w-56 flex-col overflow-y-auto rounded-lg p-1",
+              GLASS_STRONG,
+            )}
           >
             {[...options, ...unknown.map((v) => ({ value: v, label: `${v} (not offered)`, mono: true }))].map(
               (option) => {
