@@ -89,6 +89,9 @@ function sweep() {
     docker("network", "rm", `majhi-${task.toLowerCase()}`);
   }
   docker("network", "rm", runners);
+  // The workspace builder the test made: its container and state volume go with it.
+  docker("rm", "-f", "-v", "buildx_buildkit_majhi-build-acme0");
+  docker("volume", "rm", "-f", "buildx_buildkit_majhi-build-acme0_state");
 }
 
 beforeAll(() => {
