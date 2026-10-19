@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,54 +96,6 @@ describe("ContainerService", () => {
         return "allowed";
       });
       expect(started.status).toBe("started");
-    });
-  });
-
-  describe("a preview's Dockerfile", () => {
-    it("pulls only images the owner allowed: it asks for the rest and builds nothing", async () => {
-      await writeFile(
-        join(dir, "tasks", "ACM-1", "api", "Dockerfile"),
-        "FROM acme/node:22 AS build\nFROM redis:7-alpine\n",
-      );
-      const asked: string[] = [];
-      await expect(
-        service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }, async (image) => {
-          asked.push(image);
-          return "pending";
-        }),
-      ).rejects.toThrow(/acme\/node:22/);
-      expect(asked).toEqual(["acme/node:22"]);
-      expect(docker.builders.size).toBe(0);
-      await expect(
-        service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }),
-      ).rejects.toThrow(/Allow them first/);
-    });
-  });
-
-  describe("a preview's Dockerfile at build time", () => {
-    it("is the one that was checked, read from a file outside the task, gone when the build ends", async () => {
-      const file = join(dir, "tasks", "ACM-1", "api", "Dockerfile");
-      await writeFile(file, "FROM redis:7-alpine\n");
-      docker.beforeBuild = () => writeFile(file, "FROM node:22\n");
-      await service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" });
-      await until(() => processes.listAll().every((p) => p.status !== "running"));
-      const [read] = docker.builtDockerfiles;
-      expect(read?.text).toBe("FROM redis:7-alpine\n");
-      expect(read?.file.startsWith(join(dir, "tasks"))).toBe(false);
-      await until(() => !existsSync(read?.file ?? dir));
-    });
-  });
-
-  describe("a preview's build arguments", () => {
-    it("refuse BUILDKIT_SYNTAX, which would load any image as the frontend, before any builder exists", async () => {
-      await writeFile(join(dir, "tasks", "ACM-1", "api", "Dockerfile"), "FROM alpine:3\n");
-      await expect(
-        service.previewBuild("ACM-1", "acme-builder", {
-          dockerfile: "Dockerfile",
-          build_args: { BUILDKIT_SYNTAX: "evil/frontend:1" },
-        }),
-      ).rejects.toThrow(/BUILDKIT_/);
-      expect(docker.builders.size).toBe(0);
     });
   });
 

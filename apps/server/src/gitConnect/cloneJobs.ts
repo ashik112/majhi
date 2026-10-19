@@ -9,7 +9,7 @@ import {
   MrHostSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
-import { isInside } from "./paths.ts";
+import { isInside } from "../fs.ts";
 
 /** Ended jobs are listed this long. */
 export const LIST_ENDED_MS = 60 * 60_000;
@@ -199,8 +199,8 @@ export class CloneRepo {
       }
       this.failed(row.id, RESTARTED);
       const temp = cloneTempPath(row.path, row.id);
-      if (isInside(row.root, temp) && temp !== row.root) await rm(temp, { recursive: true, force: true });
-      if (row.created_folder === 1 && isInside(row.root, row.path) && row.path !== row.root) {
+      if (isInside(temp, row.root) && temp !== row.root) await rm(temp, { recursive: true, force: true });
+      if (row.created_folder === 1 && isInside(row.path, row.root) && row.path !== row.root) {
         await rm(row.path, { recursive: true, force: true });
       }
     }

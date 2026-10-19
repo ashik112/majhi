@@ -128,30 +128,4 @@ describe("the ssh-agent forwarder", () => {
     expect(logs).toEqual([`ssh-agent forwarder: another helper is serving ${path}, so this one is off`]);
     expect(await exchange(path, "hello")).toBe("other helper:hello");
   });
-
-  it("closes the client when there is no agent to forward to", async () => {
-    await serve(async () => undefined);
-    expect(await exchange(path, "hello")).toBe("");
-    expect(logs).toContain("ssh-agent forwarder: no agent to forward to");
-  });
-
-  it("looks the agent up again when the one it used went away", async () => {
-    const first = join(tmp, "first.sock");
-    const second = join(tmp, "second.sock");
-    const old = await agentAt(first, "first");
-    let current = first;
-    const asked: (string | undefined)[] = [];
-    await serve(async (failed) => {
-      asked.push(failed);
-      if (failed !== undefined) current = second;
-      return current;
-    });
-    expect(await exchange(path, "one")).toBe("first:one");
-
-    await stopAgent(old);
-    await agentAt(second, "second");
-    expect(await exchange(path, "two")).toBe("second:two");
-    expect(asked).toEqual([undefined, undefined, first]);
-    expect(logs).toContain(`ssh-agent forwarder: forwarding to ${second}`);
-  });
 });

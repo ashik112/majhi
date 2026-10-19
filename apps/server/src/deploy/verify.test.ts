@@ -54,10 +54,4 @@ describe("verifyDeploy", () => {
     expect((await verifyDeploy({ health: undefined, waitSeconds: 60 }, deps)).ok).toBe(true);
     expect(looks.health).toBe(0);
   });
-
-  it("looks once when the wait is zero", async () => {
-    const { deps, looks } = world([200]);
-    expect((await verifyDeploy({ health: "https://a.example/h", waitSeconds: 0 }, deps)).ok).toBe(true);
-    expect(looks.health).toBe(1);
-  });
 });

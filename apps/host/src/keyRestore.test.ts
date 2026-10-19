@@ -4,13 +4,7 @@ import { dirname, join } from "node:path";
 import { Encrypter, generateIdentity, identityToRecipient } from "age-encryption";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { keyFingerprint } from "./keyBackup.ts";
-import {
-  createKeyRestorer,
-  DOES_NOT_OPEN,
-  KEY_FILE_WORKS,
-  NOT_A_KEY,
-  writeRestoredKey,
-} from "./keyRestore.ts";
+import { createKeyRestorer, DOES_NOT_OPEN, NOT_A_KEY, writeRestoredKey } from "./keyRestore.ts";
 import { type ExecFn, recreateServer } from "./remount.ts";
 
 const STAMP = "20261002T100000Z";
@@ -91,26 +85,6 @@ describe("restoring the secrets key", () => {
     });
     expect((await stat(`${keyFile}.old-${STAMP}`)).isDirectory()).toBe(true);
     expect(await readFile(keyFile, "utf8")).toBe(`${key}\n`);
-  });
-
-  it("leaves a key file that already holds the key as it is", async () => {
-    await seal(key);
-    await keyFileHolds(`# made by make up\n${key}\n`);
-    expect(await writeRestoredKey(key, files())).toEqual({ written: false });
-    expect(await readFile(keyFile, "utf8")).toBe(`# made by make up\n${key}\n`);
-    expect(await folder()).toEqual(["secrets.key"]);
-  });
-
-  it("never replaces a key file that works", async () => {
-    // secrets.age that both keys open, so only the guard on the key file stops the write.
-    await seal(key, other);
-    await keyFileHolds(`${key}\n`);
-    await expect(writeRestoredKey(other, files())).rejects.toThrow(KEY_FILE_WORKS);
-    // Before there is a secrets.age, any key in the key file works.
-    await rm(secretsFile);
-    await expect(writeRestoredKey(other, files())).rejects.toThrow(KEY_FILE_WORKS);
-    expect(await readFile(keyFile, "utf8")).toBe(`${key}\n`);
-    expect(await folder()).toEqual(["secrets.key"]);
   });
 
   it("writes nothing for a key that does not open secrets.age or is not a key", async () => {

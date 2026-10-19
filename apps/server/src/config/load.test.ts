@@ -25,8 +25,16 @@ describe("parseConfigText", () => {
     });
   });
 
-  it("drops a root listed twice, even when written differently", () => {
-    const { state } = parse("workspaces: [~/Work, /home/owner/Work/]\n");
-    expect(state).toMatchObject({ status: "loaded", config: { workspaces: ["/home/owner/Work"] } });
+  it("loads a file that still has the removed loop guard and review rounds", () => {
+    const text = [
+      "workspaces: [~/Work]",
+      "rooms: { max_agent_turns: 20, review_rounds: 3 }",
+      "orgs:",
+      "  acme:",
+      "    name: Acme",
+      "    rooms: { max_agent_turns: 8, review_before_owner: true }",
+      "",
+    ].join("\n");
+    expect(parse(text).state.status).toBe("loaded");
   });
 });

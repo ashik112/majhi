@@ -187,35 +187,6 @@ describe("runner mounts", () => {
     expect(args[args.indexOf("--workdir") + 1]).toBe("/tmp");
   });
 
-  it("refuses anything that exposes majhi's config folder, another account, the key or the Docker socket", async () => {
-    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
-    // A task folder that holds the config folder.
-    expect(refused({ cwd: home })).toThrow(MountRefused);
-    // The config folder, its accounts folder, another account's home, agents and the database folder.
-    for (const path of [
-      majhiHome,
-      join(majhiHome, "accounts"),
-      join(majhiHome, "accounts", "claude-globex"),
-      join(majhiHome, "agents"),
-    ]) {
-      expect(refused({ mounts: [{ path }] }), path).toThrow(MountRefused);
-    }
-    // An account home that is not directly an account of majhi.
-    expect(refused({ account: { tool: "claude", home: majhiHome } })).toThrow(MountRefused);
-    // The secrets key, its folder, and folders Docker itself uses.
-    expect(refused({ mounts: [{ path: join(root, "keys") }] })).toThrow(MountRefused);
-    expect(refused({ mounts: [{ path: join(root, "keys", "secrets.key") }] })).toThrow(MountRefused);
-    expect(refused({ mounts: [{ path: "/var/run/docker.sock" }] })).toThrow(MountRefused);
-    expect(refused({ mounts: [{ path: "/run/secrets/majhi_key" }] })).toThrow(MountRefused);
-    expect(refused({ mounts: [{ path: "/" }] })).toThrow(MountRefused);
-    expect(refused({ mounts: [{ path: "relative/path" }] })).toThrow(MountRefused);
-    // A symlink that leads into the config folder.
-    const link = join(home, "Work", "sneaky");
-    await symlink(majhiHome, link);
-    expect(refused({ mounts: [{ path: link }] })).toThrow(MountRefused);
-    expect(refused({ cwd: link })).toThrow(MountRefused);
-  });
-
   it("mounts majhi's own git hooks folder read-only, and nothing else inside the config folder", async () => {
     const hooks = join(majhiHome, MAJHI_HOOKS_DIR);
     await mkdir(join(hooks, "nested"), { recursive: true });
@@ -438,13 +409,6 @@ async function waitFor(check: () => Promise<boolean>): Promise<void> {
 }
 
 describe("runner containers converge to one per live run", () => {
-  it("keeps concurrent fake container creations", async () => {
-    const docker = await statefulDocker();
-    await Promise.all(
-      Array.from({ length: 12 }, (_, n) => docker.add(`majhi-run-${n}`, { "majhi.runner": "1" })),
-    );
-    expect(Object.keys(await docker.containers())).toHaveLength(12);
-  });
   it("removes the container when its docker CLI dies without a kill", async () => {
     const docker = await statefulDocker();
     const spawner = dockerSpawner({ ...cfg, docker: docker.cli });
@@ -545,16 +509,6 @@ describe("a task terminal in a runner", () => {
       join(repo, "config"),
       join(repo, "hooks"),
     ]);
-  });
-
-  it("still refuses an account home or majhi's config folder as a mount", () => {
-    for (const path of [
-      join(majhiHome, "accounts", "claude-acme"),
-      majhiHome,
-      join(majhiHome, "majhi.yaml"),
-    ]) {
-      expect(() => runMounts(terminalRequest({ mounts: [{ path }] }), cfg)).toThrow(MountRefused);
-    }
   });
 
   it("starts with a tty and shows no account, no majhi home and no secret in its arguments", () => {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostReply } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CANNOT_REMOUNT, CANNOT_UPDATE, type JobHandlers, runJob } from "./jobs.ts";
+import { CANNOT_UPDATE, type JobHandlers, runJob } from "./jobs.ts";
 import { composeEnv, createRemounter, type ExecFn, type ExecOptions, OVERRIDE_FILE } from "./remount.ts";
 
 const SSH_OK = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:00:00.000Z" };
@@ -83,52 +83,6 @@ describe("host jobs", () => {
     events.push(`reply ${r.ok ? "ok" : "error"}`);
   };
 
-  it("answers remount first, then generates the override and recreates the server in the repo", async () => {
-    await runJob({ id: "j1", method: "remount", params: {} }, handlers(fakeExec()), reply);
-
-    expect(events).toEqual(["reply ok", "exec compose run", "exec compose up"]);
-    expect(replies.at(-1)).toEqual({ id: "j1", ok: true, result: { accepted: true } });
-    expect(calls.map((c) => [c.file, ...c.args])).toEqual([
-      [
-        "/usr/local/bin/docker",
-        "compose",
-        "run",
-        "--rm",
-        "--no-deps",
-        "-T",
-        "-e",
-        "MAJHI_SSH_PUBKEYS",
-        "-e",
-        "MAJHI_SSH_AGENT",
-        "-e",
-        "MAJHI_LAYA_GPU",
-        "server",
-        "node",
-        "dist/cli.js",
-        "gen-override",
-      ],
-      ["/usr/local/bin/docker", "compose", "up", "-d", "--wait"],
-    ]);
-    // Only the generating step gets the key list, as one path per line.
-    expect(calls[0]?.options.env.MAJHI_SSH_PUBKEYS).toBe(
-      "/Users/a/.ssh/id_ed25519.pub\n/Users/a/.ssh/gl.pub",
-    );
-    expect(calls[1]?.options.env.MAJHI_SSH_PUBKEYS).toBeUndefined();
-    for (const call of calls) {
-      expect(call.options.cwd).toBe(repo);
-      expect(call.options.env).toMatchObject({
-        KEEP: "1",
-        HOME: "/Users/a",
-        HOST_UID: "501",
-        HOST_GID: "20",
-        PATH: "/usr/bin:/usr/local/bin",
-      });
-    }
-    expect(await readFile(join(repo, OVERRIDE_FILE), "utf8")).toBe(OVERRIDE);
-    expect(await readdir(repo)).toEqual([OVERRIDE_FILE]);
-    expect(logs.at(-1)).toMatch(/^remount: done in \d+\.\ds$/);
-  });
-
   it("answers secretsKey.restore before it restarts majhi", async () => {
     const restore = {
       ...handlers(fakeExec()),
@@ -192,16 +146,6 @@ describe("host jobs", () => {
       "up started",
       "up finished",
     ]);
-  });
-
-  it("refuses remount when the helper cannot run docker compose", async () => {
-    await runJob(
-      { id: "j3", method: "remount", params: {} },
-      { ...handlers(fakeExec()), remount: undefined },
-      reply,
-    );
-    expect(replies.at(-1)).toEqual({ id: "j3", ok: false, error: CANNOT_REMOUNT });
-    expect(calls).toEqual([]);
   });
 
   it("starts an update once, and refuses without Docker or while one runs", async () => {

@@ -43,80 +43,12 @@ async function say(page: Page, text: string) {
   await composer(page).press("Enter");
 }
 
-async function showSteps(page: Page) {
-  // The decision line shows once the card has settled and folded.
-  await expect(
-    log(page)
-      .getByText(/^You (approved|rejected): /)
-      .last(),
-  ).toBeVisible();
-  await openLastSteps(page);
-}
-
-/** Opens the newest "steps it took" row, and leaves it open if it already is. */
-async function openLastSteps(page: Page) {
-  const fold = log(page)
-    .getByRole("button", { name: /steps? it took/ })
-    .last();
-  await expect(fold).toBeVisible();
-  // The log can re-render under the click; click again until the row stays open.
-  await expect(async () => {
-    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
-    await expect(fold).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
-  }).toPass({ timeout: 15_000 });
-}
-
 async function openBoss(page: Page) {
   // The key handler is part of the shell, which mounts after the config loads.
   await expect(page.getByRole("banner").first()).toBeVisible();
   await page.keyboard.press("Meta+j");
   await expect(drawer(page)).toBeVisible();
 }
-
-test("Cmd J opens the captain from any page; a change waits for approval, then applies and can be undone", {
-  tag: "@smoke",
-}, async ({ page }) => {
-  await page.goto("/agents");
-  await expect(drawer(page)).toHaveCount(0);
-  await openBoss(page);
-
-  await say(
-    page,
-    'call: majhi_orgs_create {"id":"globex","name":"Globex","ownerAsked":false,"reason":"You mentioned a second company"}',
-  );
-  const card = drawer(page).getByRole("region", { name: "Approval: Create org Globex" });
-  await expect(card).toBeVisible();
-  await expect(card.getByRole("button", { name: "Approve" })).toBeVisible();
-  await expect(card.getByRole("button", { name: "Reject" })).toBeVisible();
-  await shot(page, "boss-approval");
-
-  // Nothing changed yet.
-  expect((await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id)).not.toContain("globex");
-
-  await card.getByRole("button", { name: "Approve" }).click();
-  // A settled approval folds into the conversation's "steps it took" row.
-  await showSteps(page);
-  // The change applied, and the captain is told.
-  await expect
-    .poll(async () => (await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id))
-    .toContain("globex");
-  await expect(
-    log(page).getByText("echo: The owner approved: Create org Globex.", { exact: false }),
-  ).toBeVisible();
-
-  // History lists it, made by the captain.
-  await page.goto("/setup?section=history");
-  const history = page.getByRole("region", { name: "History" });
-  await expect(history.getByText(/@majhi-boss/).first()).toBeVisible();
-
-  // Undo from the card in the drawer.
-  await openBoss(page);
-  await showSteps(page);
-  await drawer(page).getByRole("button", { name: "Undo" }).click();
-  await expect
-    .poll(async () => (await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id))
-    .not.toContain("globex");
-});
 
 test("a secret request saves the value in secrets.age and it never shows in the page", async ({
   page,

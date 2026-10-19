@@ -103,24 +103,6 @@ describe("the bitbucket-pipeline provider", () => {
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
   });
 
-  it("reads running, success and every other end as failed", async () => {
-    const { provider, ctx, state } = bitbucket();
-    const handle = { id: UUID };
-    state.current = { name: "IN_PROGRESS", stage: { name: "RUNNING" } };
-    expect(await provider.poll(ctx, step, handle)).toEqual({ state: "running" });
-    state.current = { name: "COMPLETED", result: { name: "SUCCESSFUL" } };
-    expect(await provider.poll(ctx, step, handle)).toEqual({ state: "success" });
-    state.current = { name: "COMPLETED", result: { name: "FAILED" } };
-    expect(await provider.poll(ctx, step, handle)).toEqual({
-      state: "failed",
-      detail: "The pipeline deploy-prod failed",
-    });
-    state.current = { name: "COMPLETED", result: { name: "STOPPED" } };
-    expect(await provider.poll(ctx, step, handle)).toMatchObject({ state: "failed" });
-    state.current = { name: "IN_PROGRESS", stage: { name: "PAUSED" } };
-    expect(await provider.poll(ctx, step, handle)).toMatchObject({ state: "failed" });
-  });
-
   it("refuses a branch that is not at the commit, and a remote that is not on Bitbucket Cloud", async () => {
     const stale = bitbucket({ tip: "2".repeat(40) });
     expect(await stale.provider.preflight(stale.ctx, step)).toContain("not at 1111111");

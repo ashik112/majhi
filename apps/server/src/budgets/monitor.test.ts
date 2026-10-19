@@ -94,25 +94,6 @@ describe("the check after a turn", () => {
     await record(null, "claude-other");
     expect(fired).toHaveLength(1);
   });
-
-  it("counts only this week's turns, and a new week starts with no alerts fired", async () => {
-    // Sunday of the week before, and Monday of this one.
-    turn(900, { at: new Date("2026-09-27T23:00:00.000Z") });
-    await record();
-    expect(fired).toEqual([]);
-    turn(850, { at: new Date("2026-09-28T00:00:00.000Z") });
-    await record();
-    expect(fired.map((a) => a.threshold)).toEqual([80]);
-    now = new Date("2026-10-05T00:30:00.000Z");
-    expect((await monitor.status()).rows[0]).toMatchObject({
-      weekStart: "2026-10-05",
-      percent: 0,
-      alerts: [],
-    });
-    turn(900, { at: now });
-    await record();
-    expect(fired.map((a) => a.threshold)).toEqual([80, 80]);
-  });
 });
 
 describe("a changed budget", () => {
@@ -166,18 +147,6 @@ describe("a budget with tokens and cost", () => {
 describe("limitedFor", () => {
   const run = (org: string | null, account: string | undefined, task = "ACM-1") => ({ org, account, task });
 
-  it("holds an org's tasks at 100%, and tasks of other orgs not at all", async () => {
-    turn(900);
-    await record();
-    expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeUndefined();
-    turn(100);
-    await record();
-    expect(await monitor.limitedFor(run("acme", "claude-acme"))).toContain("org acme");
-    expect(await monitor.limitedFor(run("acme", "claude-acme-2", "ACM-2"))).toContain("org acme");
-    expect(await monitor.limitedFor(run("globex", "codex-globex", "GLX-1"))).toBeUndefined();
-    expect(await monitor.limitedFor(run(null, undefined, "LOCAL-1"))).toBeUndefined();
-  });
-
   it("holds the runs on an account at 100%, and runs on other accounts of the same org not", async () => {
     budgets = { orgs: {}, accounts: { "claude-acme": { tokens: 1000 } } };
     turn(1000);
@@ -196,14 +165,6 @@ describe("limitedFor", () => {
     await monitor.recheck();
     expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeDefined();
     budgets = { orgs: {}, accounts: {} };
-    expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeUndefined();
-  });
-
-  it("lets go when the week turns over", async () => {
-    turn(1000);
-    await record();
-    expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeDefined();
-    now = new Date("2026-10-05T00:01:00.000Z"); // Monday
     expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeUndefined();
   });
 

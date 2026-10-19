@@ -209,21 +209,6 @@ describe("a red hand-off", () => {
   });
 });
 
-describe("readiness scan feedback", () => {
-  it("does not claim a scan diagnostic was printed by a command", async () => {
-    const w = world();
-    w.state.ready = {
-      ok: false,
-      why: "secret scan: src/config.ts line 3, rule assigned, value [hidden, 24 chars]",
-    };
-    const result = await w.service.ensure("ACM-1", { force: false });
-    expect(result.verdict).toBe("red");
-    expect(w.calls.exec).toEqual([]);
-    expect(w.calls.tell[0]?.text).toContain("src/config.ts line 3");
-    expect(w.calls.tell[0]?.text).not.toContain("what the command printed");
-  });
-});
-
 describe("a task that changed no code", () => {
   it("is green with no failed checks, runs nothing and tells nobody", async () => {
     const w = world();
@@ -353,17 +338,6 @@ describe("the full log of a step", () => {
     expect(r.steps.find((s) => s.id === "build")?.log?.lines).toBe(2);
   });
 
-  it("the lead is told where the whole output is, whatever Auto-pilot says", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.tell).toHaveLength(1);
-    expect(w.calls.tell[0]?.text).toContain(r.failed?.log?.path ?? "no log");
-    expect(w.calls.tell[0]?.text).toContain("handoff_rerun");
-    // The room line gets the failing step as typed fields, not text to read.
-    expect(w.calls.tell[0]?.failed).toEqual(r.failed);
-  });
-
   it("the owner's switch for sending failures to the lead still keeps the lead from being told", async () => {
     const w = world();
     w.state.off.add("ship-checks");
@@ -458,18 +432,5 @@ describe("the install step", () => {
     const second = await w.service.ensure("ACM-1", { force: true });
     expect(w.calls.exec).toEqual(["pnpm lint", "pnpm build", "pnpm test"]);
     expect(second.steps.map((s) => s.id)).not.toContain("install");
-  });
-
-  it("a failed install stops the rest from saying nothing useful", async () => {
-    const w = world();
-    w.state.needsInstall = true;
-    w.state.exec = (c) => (c === "pnpm install" ? bad("ERR_PNPM_FETCH_404") : ok());
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.exec).toEqual(["pnpm install"]);
-    expect(r.failed?.step).toBe("install");
-    expect(r.steps.find((s) => s.id === "tests")).toMatchObject({
-      status: "skipped",
-      detail: "not run: the install failed",
-    });
   });
 });

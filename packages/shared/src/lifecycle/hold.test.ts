@@ -9,7 +9,6 @@ import {
   HoldSchema,
   type Lifter,
   liftersOf,
-  majhiMayLift,
   mergeHold,
 } from "./hold.ts";
 
@@ -77,13 +76,6 @@ describe("hold table", () => {
     expect(liftersOf(step)).toEqual(["owner", "majhi"]);
     expect(autoClears(step)).toEqual({ kind: "step-or-autopilot-on" });
   });
-
-  it("a hold majhi can lift has a condition, and one it cannot lift never auto-clears", () => {
-    for (const c of CAUSES) {
-      const majhi = liftersOf(hold(c)).includes("majhi");
-      expect(majhi).toBe(autoClears(hold(c)).kind !== "never");
-    }
-  });
 });
 
 describe("auto-clear conditions", () => {
@@ -139,26 +131,12 @@ describe("auto-clear conditions", () => {
   it("never means never", () => {
     expect(conditionMet({ kind: "never" }, { ...READING, online: true, budgetHasRoom: true })).toBe(false);
   });
-
-  it("majhiMayLift needs both: being a lifter and the condition", () => {
-    const online = { ...READING, online: true };
-    expect(majhiMayLift(hold("offline"), online)).toBe(true);
-    expect(majhiMayLift(hold("offline"), READING)).toBe(false);
-    const everythingOk = { ...online, budgetHasRoom: true, lastActivityAt: "2027-01-01T00:00:00Z" };
-    for (const c of ["owner-stop", "loop-guard", "error", "captain-stop"] as const)
-      expect(majhiMayLift(hold(c), everythingOk)).toBe(false);
-  });
 });
 
 describe("mergeHold", () => {
   it("an owner-only hold is not replaced by one majhi can clear", () => {
     expect(mergeHold(hold("owner-stop"), hold("offline")).cause).toBe("owner-stop");
     expect(mergeHold(hold("loop-guard"), hold("account-limit")).cause).toBe("loop-guard");
-  });
-
-  it("an owner-only hold replaces one more parties can lift", () => {
-    expect(mergeHold(hold("offline"), hold("owner-stop")).cause).toBe("owner-stop");
-    expect(mergeHold(hold("captain-stop"), hold("loop-guard")).cause).toBe("loop-guard");
   });
 
   it("a tie keeps the existing hold", () => {

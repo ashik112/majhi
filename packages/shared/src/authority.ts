@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OrgIdSchema } from "./ids.ts";
 import {
   type AuthorityLevel,
   AuthorityLevelSchema,
@@ -313,7 +314,7 @@ export function carriedOver(
 /** `authority.set`: the level and the two incident switches of one workspace. The owner's alone. */
 export const AuthoritySetInputSchema = z
   .strictObject({
-    org: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+    org: OrgIdSchema,
     level: AuthorityLevelSchema.optional(),
     /** Who merges and deploys an incident's fix after its checks pass. */
     fix: z.enum(["ask", "ships"]).optional(),

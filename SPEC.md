@@ -400,7 +400,7 @@ projects:
 - Owner messages go to the mentioned agent, or to the team's lead if nobody is mentioned.
 - Agents can also post through the `majhi-room` MCP tool (`post`, `read_recent`, `record_plan`, `step_done`, `send_back`).
 - Parallel builders on different repos of the same task are allowed, by the plan: one step at a time.
-- A task kept from before: the pipeline and the build and review loop are gone; a task that used them reads and runs as lead and workers (migration 192). The loop guard (`rooms.max_agent_turns`) and `rooms.review_rounds` have nothing to count any more and are left in the settings schema until the settings screen drops them.
+- A task kept from before: the pipeline and the build and review loop are gone; a task that used them reads and runs as lead and workers (migration 192). The loop guard (`rooms.max_agent_turns`) and `rooms.review_rounds` are removed from the settings; an old file that still has them loads and the keys are ignored.
 
 ### 5.4 Tasks, briefs, branches, attachments
 

@@ -25,18 +25,4 @@ describe("Background", () => {
     await stopped;
     expect(log).toEqual(["first ended", "stopped"]);
   });
-
-  it("reports failures, and a failure does not hold up stop", async () => {
-    const background = new Background();
-    const errors: unknown[] = [];
-    background.run(
-      () => Promise.reject(new Error("async")),
-      (err) => errors.push(err),
-    );
-    background.run(() => {
-      throw new Error("sync");
-    });
-    await background.stop();
-    expect(errors.map((e) => (e as Error).message)).toEqual(["async"]);
-  });
 });

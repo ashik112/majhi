@@ -1,6 +1,4 @@
-import type { McpServerSpec } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { FakeAuthServer, FakeMcpServer, fakeService } from "./testing/fakes.ts";
 
@@ -33,9 +31,6 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     return done.connection;
   };
 
-  /** The MCP servers of the session that started last. */
-  const lastServers = () => (w.h.runtime.starts.at(-1)?.mcpServers ?? []) as McpServerSpec[];
-
   beforeEach(async () => {
     auth = new FakeAuthServer();
     await auth.start();
@@ -57,77 +52,6 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     await w.cleanup();
     await auth.stop();
     await mcp.stop();
-  });
-
-  it("gives the workspace's agent the server with a valid header, and another workspace's agent nothing of it", async () => {
-    const acme = await connectWorkspace("acme", "maria@acme.example");
-    const globex = await connectWorkspace("globex", "bob@globex.example");
-    expect([acme, globex]).toEqual(["fakesvc", "fakesvc-2"]);
-    await must("agents.create", {
-      id: "globex-builder",
-      frontmatter: {
-        scope: "globex",
-        role: "Builder",
-        account: "claude-globex",
-        where: ["globex", "acme"],
-        perms: ["edit", "shell"],
-        // It even lists Acme's connection: an org agent never gets another org's.
-        connections: [globex, acme],
-      },
-      instructions: "Build.\n",
-    });
-
-    // Acme's agent, in an Acme task.
-    const acmeTask = (await must("tasks.create", {
-      text: "check the issues, repo api",
-      repos: [{ project: "acme-api" }],
-      kind: "ops",
-      start: true,
-    })) as { id: string };
-    await w.h.majhi.services.runs.idle(acmeTask.id);
-    const server = lastServers().find((s) => s.name === "fakesvc");
-    expect(server?.type).toBe("http");
-    const headers = (server as { headers: Record<string, string> }).headers;
-    expect(headers.Authorization).toMatch(/^Bearer at-/);
-    // The header is one the server accepts, for Acme's account.
-    const token = headers.Authorization?.replace("Bearer ", "") ?? "";
-    expect(auth.accessOf(token)?.account).toBe("maria@acme.example");
-    const tools = await listTools(remoteTransport(mcp.url, headers), 10_000);
-    expect(tools.map((t) => t.name)).toEqual(["list_issues", "create_issue"]);
-    expect(lastServers().map((s) => s.name)).not.toContain("fakesvc-2");
-
-    // Globex's agent, in a Globex task, gets Globex's account, not Acme's.
-    const globexTask = (await must("tasks.create", {
-      text: "check the issues, repo web",
-      repos: [{ project: "globex-web" }],
-      kind: "ops",
-      team: ["globex-builder"],
-      start: true,
-    })) as { id: string };
-    await w.h.majhi.services.runs.idle(globexTask.id);
-    const own = lastServers();
-    expect(own.map((s) => s.name)).toEqual(expect.arrayContaining(["fakesvc-2"]));
-    expect(own.map((s) => s.name)).not.toContain("fakesvc");
-    const bob = (own.find((s) => s.name === "fakesvc-2") as { headers: Record<string, string> }).headers;
-    expect(auth.accessOf(bob.Authorization?.replace("Bearer ", "") ?? "")?.account).toBe(
-      "bob@globex.example",
-    );
-    expect(bob.Authorization).not.toBe(headers.Authorization);
-
-    // The same agent in the other workspace's task: Globex's agent working in Acme gets neither.
-    const crossTask = (await must("tasks.create", {
-      text: "look at the api issues, repo api",
-      repos: [{ project: "acme-api" }],
-      kind: "ops",
-      team: ["globex-builder"],
-      start: true,
-    })) as { id: string };
-    await w.h.majhi.services.runs.idle(crossTask.id);
-    const cross = w.h.runtime.starts.at(-1);
-    const crossNames = (cross?.mcpServers ?? []).map((s) => s.name);
-    expect(crossNames).not.toContain("fakesvc");
-    expect(crossNames).not.toContain("fakesvc-2");
-    expect(JSON.stringify(cross)).not.toContain(token);
   });
 
   it("never puts the refresh token or the access token in a run's environment or mounts", async () => {

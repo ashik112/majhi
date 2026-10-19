@@ -4,7 +4,7 @@ import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } fr
 import { ContainerMemorySchema } from "./containers.ts";
 import { ConversationEventSchema } from "./conversations.ts";
 import { EmojiSchema } from "./emoji.ts";
-import { IdSchema, SecretRefSchema } from "./ids.ts";
+import { IdSchema, OrgIdSchema, PRIVATE, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
 import {
   CommitsPatchSchema,
@@ -27,37 +27,23 @@ import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
  */
 
 // In their own module so connections.ts can use them without importing this file.
-export { IdSchema, type SecretRef, SecretRefSchema } from "./ids.ts";
+export {
+  currentOrgId,
+  IdSchema,
+  isId,
+  LEGACY_PERSONAL,
+  OrgIdSchema,
+  PRIVATE,
+  type SecretRef,
+  SecretRefSchema,
+} from "./ids.ts";
 
-/**
- * The built-in org for the owner's own accounts and projects. It always exists, even
- * without an entry in `orgs`, and cannot be removed or reused as a new org id.
- */
-export const PRIVATE = "private";
 /** Display name of the built-in org. */
 export const PRIVATE_NAME = "Private";
 /** Default task key prefix of the built-in org. */
 export const PRIVATE_KEY = "PRV";
 /** Neutral dot color of the built-in org. */
 export const PRIVATE_COLOR = "#8a8f98";
-/** The old id of the built-in org. Still read as `private`, and rewritten by the startup migration. */
-export const LEGACY_PERSONAL = "personal";
-
-/** Reads the old `personal` org id as `private`. Every other id is unchanged. */
-export function currentOrgId(id: string): string {
-  return id === LEGACY_PERSONAL ? PRIVATE : id;
-}
-
-/** An org id as written in a file. An old `personal` reads as `private`. */
-export const OrgIdSchema = z
-  .string()
-  .trim()
-  .regex(
-    /^[a-z0-9][a-z0-9-]{0,62}$/,
-    "Use lowercase letters, digits and dashes, starting with a letter or digit",
-  )
-  .transform(currentOrgId);
-
 /** Git hosts majhi can open and merge MRs on (5.5). Other hosts get a push and no MR. */
 export const MrHostSchema = z.enum(["github", "gitlab", "bitbucket"]);
 export type MrHost = z.infer<typeof MrHostSchema>;

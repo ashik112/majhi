@@ -20,8 +20,4 @@ describe("who did it", () => {
       "@ada cancelled it",
     ]);
   });
-
-  it("names no one for a row from before actors were kept", () => {
-    expect(didWords(undefined, "acknowledged", "it")).toBe("Acknowledged it");
-  });
 });

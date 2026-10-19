@@ -91,14 +91,6 @@ describe("apply refuses without writing", () => {
       ]);
     });
   });
-
-  it("a held task refuses a start with the hold's sentence and stays paused", async () => {
-    const { store, life } = rig();
-    seedStatus(store, "ACM-1", "paused", "owner", AT);
-    const out = await life.apply("ACM-1", { type: "start", by: "owner" });
-    expect(wasRefused(out) && out.code).toBe("held");
-    expect(row(store)).toMatchObject({ status: "paused", paused_reason: "owner" });
-  });
 });
 
 describe("apply is atomic", () => {

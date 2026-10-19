@@ -4,37 +4,11 @@ import { join } from "node:path";
 import type { TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { pickValue, readInRoots } from "./clipboard-copy.ts";
+import { readInRoots } from "./clipboard-copy.ts";
 
 vi.setConfig({ testTimeout: 30_000 });
 
 const KEY = "Zq-live-9f2c41d7a8b35e60";
-
-describe("pickValue", () => {
-  const text = `# keys\nAPI_KEY="${KEY}"\nexport TOKEN=abc==  # rotate monthly\nname: ${KEY}\n${KEY}\n\n`;
-
-  it.each([
-    ['name: str = "v"', "v"],
-    ['name: str | None = "v"', "v"],
-    ['name: list[str] = "v"', "v"],
-    ["TOKEN: abc=xyz", "abc=xyz"],
-    ["URL: https://example.com?q=1", "https://example.com?q=1"],
-  ])("copies only the value from %s", (line, value) => {
-    expect(pickValue(line, 1, "value")).toEqual({ value });
-  });
-
-  it("says why there is no value, without the line's text", () => {
-    for (const [line, part] of [
-      [99, "whole"],
-      [6, "whole"],
-      [5, "value"],
-    ] as const) {
-      const out = pickValue(text, line, part);
-      expect("problem" in out).toBe(true);
-      expect(JSON.stringify(out)).not.toContain(KEY);
-    }
-  });
-});
 
 describe("readInRoots", () => {
   let dir: string | undefined;

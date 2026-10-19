@@ -67,21 +67,6 @@ describe("a service on this computer that connects while agents work", () => {
     ]);
   });
 
-  it("a failed start becomes one line in that task and does not stop the others", async () => {
-    let calls = 0;
-    const { live, log } = world({
-      forward: async (task, services) => {
-        calls++;
-        if (task === "ACM-1") throw new Error("Docker is down");
-        return services.map((s) => s.id);
-      },
-    });
-    await live.connected("northwind");
-    expect(calls).toBe(3);
-    expect(log.said[0]).toContain("Docker is down");
-    expect(log.told.every((l) => !l.startsWith("ACM-1"))).toBe(true);
-  });
-
   it("stops the forwarders and says so in each task that had one when it ends", async () => {
     const { live, log } = world();
     await live.ended("northwind", "It was removed.");

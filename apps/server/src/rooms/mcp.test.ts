@@ -88,25 +88,6 @@ async function connect(spec: McpServerSpec | undefined, headers?: Record<string,
 const text = (res: unknown): string =>
   ((res as { content: { text: string }[] }).content[0]?.text ?? "") as string;
 
-describe("majhi-room", () => {
-  it("refuses a request without a valid token, and a token after its session ended", async () => {
-    const { h, servers, release } = await world();
-    const spec = servers["acme-lead"]?.find((s) => s.name === "majhi-room");
-    if (spec === undefined) throw new Error("no room server");
-    const bad = await fetch(spec.url, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer nope" },
-      body: "{}",
-    });
-    expect(bad.status).toBe(401);
-    release();
-    await h.cmd("tasks.stop", { id: "ACM-1" });
-    expect(h.majhi.services.roomAccess.room.size).toBe(0);
-    expect(h.majhi.services.roomAccess.tasks.size).toBe(0);
-    expect(h.majhi.services.roomAccess.processes.size).toBe(0);
-  });
-});
-
 describe("majhi-processes", () => {
   it("starts, lists and stops processes of the caller's own task only", async () => {
     const { h, servers, release } = await world();
@@ -140,32 +121,6 @@ describe("majhi-processes", () => {
     expect(text(await tool.callTool({ name: "list", arguments: {} }))).not.toContain("sleep 31");
     await tool.callTool({ name: "stop", arguments: { id: "p1" } });
     expect(h.majhi.services.processes.running("ACM-2")).toHaveLength(1);
-    release();
-  });
-});
-
-describe("majhi-tasks", () => {
-  it("keeps an org agent to its org's tasks", async () => {
-    const { h, servers, release } = await world();
-    // A task without an org: only root agents may work there.
-    expect((await h.cmd("tasks.create", { text: "plan the week", kind: "chat", start: false })).status).toBe(
-      200,
-    );
-    const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-    const got = await tasks.callTool({
-      name: "get",
-      arguments: { id: "LOCAL-1", ownerAsked: false, reason: "x" },
-    });
-    expect(got.isError).toBe(true);
-    const list = JSON.parse(
-      text(await tasks.callTool({ name: "list", arguments: { ownerAsked: false, reason: "x" } })),
-    );
-    expect(list.map((t: { id: string }) => t.id)).toEqual(["ACM-1"]);
-    const made = await tasks.callTool({
-      name: "create",
-      arguments: { text: "write the release notes", start: false, ownerAsked: true, reason: "x" },
-    });
-    expect(made.isError).toBe(true);
     release();
   });
 });

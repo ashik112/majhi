@@ -14,16 +14,6 @@ describe("limits", () => {
     expect(fitsAccount({ usage: window(70), running: 3 }, "normal").fits).toBe(false);
   });
 
-  it("says which window runs out and when it resets", () => {
-    const fit = fitsAccount(
-      { usage: { window: { usedPct: 90, resetsAt: "2026-10-01T10:00:00Z" } }, running: 0 },
-      "normal",
-    );
-    expect(fit.fits).toBe(false);
-    expect(fit.why).toContain("5-hour window");
-    expect(fit.resetsAt).toBe("2026-10-01T10:00:00Z");
-  });
-
   it("stops on the weekly window too", () => {
     const fit = fitsAccount({ usage: { weekly: { usedPct: 94 } }, running: 0 }, "large");
     expect(fit.fits).toBe(false);

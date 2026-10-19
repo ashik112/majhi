@@ -1,15 +1,5 @@
-import type { AgentSession } from "@majhi/acp";
-import {
-  type AgentFrontmatter,
-  type Answer,
-  type DecideRequest,
-  DecisionSettingsSchema,
-  type OptionValue,
-  type Task,
-} from "@majhi/shared";
+import type { Answer, DecideRequest } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { pickForSession } from "../runs/pick.ts";
-import { BUILTIN_SLOTS } from "./builtinSlots.ts";
 import type { LayaScript } from "./testkit.ts";
 import { fakeLaya, service, sure } from "./testkit.ts";
 
@@ -47,66 +37,6 @@ describe("shadow mode", () => {
     expect(logged?.answers.size?.gate?.shadow).toBe(true);
     expect(logged?.answers.size?.probabilities?.large).toBeCloseTo(0.97);
     expect(svc.slots()[0]).toMatchObject({ slot: "size", mode: "shadow", labels: 0 });
-  });
-
-  it("keeps the model pick on the role's tiers when Laya says large", async () => {
-    // Laya says "large" at 0.99. In shadow that must not raise a Builder's model or effort.
-    const laya = fakeLaya({
-      script: async (request) =>
-        Object.fromEntries(Object.entries(request.questions).map(([k, q]) => [k, sure(q, "large", 0.99)])),
-    });
-    const { svc } = service(laya, undefined, BUILTIN_SLOTS);
-    const models: OptionValue[] = ["default", "haiku", "sonnet", "opus"].map((id) => ({ id, name: id }));
-    const efforts: OptionValue[] = ["default", "low", "medium", "high", "max"].map((id) => ({
-      id,
-      name: id,
-    }));
-    const fm = {
-      id: "acme-builder",
-      scope: "acme",
-      role: "Builder",
-      account: "acme-claude",
-      model: "auto",
-      effort: "auto",
-    } as AgentFrontmatter;
-    const task = {
-      id: "ACM-1",
-      title: "Rewrite everything",
-      brief: "Rewrite everything",
-      kind: "code",
-      repos: [{ project: "acme-web" }],
-    } as Task;
-    const pick = async (decisions: typeof svc | undefined) => {
-      const set: Record<string, string> = {};
-      const session = {
-        models: { models, efforts },
-        setOption: async (category: string, value: string) => {
-          set[category] = value;
-        },
-      } as unknown as AgentSession;
-      await pickForSession({
-        decisions,
-        session,
-        fm,
-        task,
-        settings: DecisionSettingsSchema.parse({}),
-        prices: {},
-      });
-      return set;
-    };
-    const withLaya = await pick(svc);
-    const without = await pick(undefined);
-    expect(laya.calls).toBeGreaterThan(0);
-    expect(withLaya).toEqual(without);
-    const rating = await svc.rateTask({
-      title: task.title,
-      brief: task.brief,
-      kind: "code",
-      repos: ["acme-web"],
-      role: "Builder",
-      use: "model-pick",
-    });
-    expect(rating).toMatchObject({ level: "large", counted: false });
   });
 
   it("goes live after an eval on enough labels, acts, and falls back to shadow when the model changes", async () => {

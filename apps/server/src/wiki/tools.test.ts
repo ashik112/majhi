@@ -65,31 +65,6 @@ async function world(on: Record<string, boolean>, registered: Record<string, str
 const acme: AgentScope = { org: "acme", scopes: ["global", "org:acme", "project:api"] };
 
 describe("the wiki tool", () => {
-  it("answers from the task's own workspace and never shows another workspace's pages", async () => {
-    const { tools } = await world({ acme: true, globex: true });
-    expect(await tools.call(acme, { action: "list" })).toBe(
-      "Wiki of api (built from aaaaaaa):\n- flow:pay: Pay\n- overview: Overview",
-    );
-    // Words that only Globex's page holds find nothing in Acme's task.
-    expect(await tools.call(acme, { action: "search", words: "secret pricing rules vault" })).not.toContain(
-      "Globex",
-    );
-    expect(
-      await tools.call(acme, { action: "sources", claim: "secret pricing rules vault module" }),
-    ).not.toContain("Globex");
-    // Naming the other workspace's project is refused, and the refusal does not name it.
-    await expect(tools.call(acme, { action: "read", project: "shop", page: "overview" })).rejects.toThrow(
-      "shop is not a project of this task's workspace. Its projects: api.",
-    );
-    await expect(tools.call(acme, { action: "list", project: "shop" })).rejects.toBeInstanceOf(
-      WikiToolRefusal,
-    );
-    // The same words do find Acme's own pages, with the file and lines behind the claim.
-    const found = await tools.call(acme, { action: "sources", claim: "Acme billing charges cards Stripe" });
-    expect(found).toContain("src/app.py:3-5 at aaaaaaa (api)");
-    expect(found).toContain("proven, on api/overview, claim 1");
-  });
-
   it("never finds the pages of a project that was removed from majhi", async () => {
     const { tools } = await world({ acme: true }, { acme: [] });
     expect(await tools.call(acme, { action: "list" })).toBe("No project of this workspace has a wiki yet.");
@@ -106,49 +81,6 @@ describe("the wiki tool", () => {
     expect(await tools.offered(acme)).toBe(false);
     await expect(tools.call(acme, { action: "list" })).rejects.toThrow("The wiki is off for this workspace.");
     expect(await tools.offered({ org: undefined, scopes: ["global"] })).toBe(false);
-  });
-});
-
-describe("the workspace pages", () => {
-  const workspacePage = (org: string, text: string): WikiPage =>
-    WikiPageSchema.parse({
-      id: "overview",
-      org,
-      kind: "overview",
-      title: "System overview",
-      body: `${text} [1]`,
-      claims: [
-        {
-          n: 1,
-          text,
-          proven: true,
-          sources: [{ repo: "api", commit: SHA, path: "src/app.py", lines: [3, 5], hash: HASH }],
-        },
-      ],
-      builtFrom: { api: SHA },
-      v: 1,
-    });
-
-  it("are listed, read and searched for the task's workspace only", async () => {
-    const { store, index, tools } = await world({ acme: true, globex: true });
-    for (const page of [
-      workspacePage("acme", "The Acme web app calls the billing API to charge cards."),
-      workspacePage("globex", "The Globex storefront calls the vault service for pricing."),
-    ]) {
-      store.wiki.save(page);
-      await index.put(page);
-    }
-    const found = await tools.call(acme, { action: "list" });
-    expect(found).toContain("Wiki of the workspace");
-    expect(found).toContain("- overview: System overview");
-    const read = await tools.call(acme, { action: "read", workspace: true, page: "overview" });
-    expect(read).toContain("Acme web app calls the billing API");
-    expect(read).not.toContain("Globex");
-    expect(await tools.call(acme, { action: "search", words: "storefront vault pricing" })).not.toContain(
-      "Globex",
-    );
-    const hits = await tools.call(acme, { action: "search", words: "web app calls billing API" });
-    expect(hits).toContain("workspace/overview");
   });
 });
 

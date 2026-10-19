@@ -55,7 +55,6 @@ const SECTION_ICON: Record<SetupSection, LucideIcon> = {
   ssh: KeyRound,
   memory: BookMarked,
   wiki: BookText,
-  teams: Users,
   turns: Repeat,
   context: Gauge,
   approvals: ShieldCheck,

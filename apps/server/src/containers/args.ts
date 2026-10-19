@@ -3,12 +3,12 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runMounts } from "@majhi/acp";
 import {
   BuildTargetSchema,
-  type ContainerKind,
   ContainerNameSchema,
   ContainerPathSchema,
   hostPortsIssue,
   IdSchema,
   ImageRefSchema,
+  isId,
   MAJHI_OWN_PORTS,
   reservedNameReason,
   type TaskDockerErrorCode,
@@ -321,7 +321,6 @@ export const HOST_FORWARD_SCRIPT = "/usr/local/lib/majhi/portforward.mjs";
 /** Where a script run sees the programs majhi installed and checked for its workspace. */
 export const TOOLS_TARGET = "/majhi-tools";
 const TOOLS_MOUNT = /^type=bind,source=([^,]+),target=\/majhi-tools,readonly$/;
-const TOOLS_ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** True for the one bind mount a check may have: `<majhi home>/tool-installs/<org>/bin`, read-only. */
 function isToolsMount(mount: string, s: Safety): boolean {
@@ -330,7 +329,7 @@ function isToolsMount(mount: string, s: Safety): boolean {
   const prefix = `${join(s.majhiHome, "tool-installs")}${sep}`;
   if (!source.startsWith(prefix) || !source.endsWith(`${sep}bin`)) return false;
   const org = source.slice(prefix.length, source.length - `${sep}bin`.length);
-  return TOOLS_ORG.test(org);
+  return isId(org);
 }
 
 function checkRun(parts: DockerParts, s: Safety): void {

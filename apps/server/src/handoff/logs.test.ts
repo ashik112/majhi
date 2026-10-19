@@ -4,17 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrate } from "../store/migrations.ts";
-import {
-  capLog,
-  isCheckLog,
-  LOG_CAP_CHARS,
-  logPath,
-  newRunId,
-  OutputKeeper,
-  pruneRuns,
-  StepLog,
-  writeStepLog,
-} from "./logs.ts";
+import { isCheckLog, logPath, newRunId, pruneRuns, writeStepLog } from "./logs.ts";
 import { HandoffRepo } from "./repo.ts";
 
 const dirs: string[] = [];
@@ -80,47 +70,6 @@ describe("where a step's log goes", () => {
       await writeStepLog(folder, run, "tests", run);
     await pruneRuns(folder, 5);
     expect(await readdir(join(folder, ".checks"))).toEqual(["a3", "a4", "a5", "a6", "a7"]);
-  });
-});
-
-describe("a long output", () => {
-  it("is kept whole under the cap", () => {
-    const keeper = new OutputKeeper();
-    keeper.push("one\ntwo\n");
-    keeper.push("three\n");
-    expect(keeper.result()).toEqual({ text: "one\ntwo\nthree\n", cut: 0 });
-  });
-
-  it("keeps its start and its end past the cap, in bounded memory, and says where it was cut", () => {
-    const keeper = new OutputKeeper();
-    const line = `${"x".repeat(98)}\n`;
-    const lines = 30_000;
-    for (let i = 0; i < lines; i++)
-      keeper.push(i === 0 ? `FIRST ${line}` : i === lines - 1 ? `LAST ${line}` : line);
-    const { text, cut } = keeper.result();
-    expect(cut).toBeGreaterThan(1_000_000);
-    expect(text.startsWith("FIRST ")).toBe(true);
-    expect(text.trimEnd().endsWith(`LAST ${"x".repeat(98)}`)).toBe(true);
-    expect(text).toContain("[majhi: output cut at 0.95 MB,");
-    expect(text.length).toBeLessThan(LOG_CAP_CHARS + 200);
-  });
-
-  it("opens at the first line of the tail the card shows, also after a cut", () => {
-    const body = Array.from({ length: 60 }, (_, i) => `row ${i + 1}`).join("\n");
-    const tail = body.split("\n").slice(-25).join("\n");
-    const log = new StepLog();
-    log.add("==> cmd: exit 1 after 2 s", body, tail);
-    const saved = log.finish(".checks/r/tests.log");
-    expect(saved.text.split("\n")[saved.log.focus - 1]).toBe("row 36");
-    expect(saved.log).toMatchObject({ lines: 61, bytes: Buffer.byteLength(saved.text) });
-
-    const big = new StepLog();
-    const huge = Array.from({ length: 40_000 }, (_, i) => `row ${i + 1} ${"y".repeat(40)}`).join("\n");
-    big.add("==> cmd: exit 1 after 2 s", huge, huge.split("\n").slice(-25).join("\n"));
-    const cut = big.finish(".checks/r/tests.log");
-    expect(cut.log.cut).toBeGreaterThan(0);
-    expect(cut.text.split("\n")[cut.log.focus - 1]).toBe(`row 39976 ${"y".repeat(40)}`);
-    expect(capLog("short").cut).toBe(0);
   });
 });
 

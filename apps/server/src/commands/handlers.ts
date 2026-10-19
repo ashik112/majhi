@@ -1451,7 +1451,6 @@ export function createHandlers({
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.commits === undefined ? {} : { commits: input.commits }),
         ...(input.wiki === undefined ? {} : { wiki: input.wiki }),
-        ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),

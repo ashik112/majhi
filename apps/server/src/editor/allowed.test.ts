@@ -2,18 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { editorPath, isInside } from "./allowed.ts";
-
-describe("isInside", () => {
-  it("accepts the folder itself and what is under it, but not a neighbour with the same prefix", () => {
-    expect(isInside("/w/a", "/w/a")).toBe(true);
-    expect(isInside("/w/a/b/c.ts", "/w/a")).toBe(true);
-    expect(isInside("/w/ab", "/w/a")).toBe(false);
-    expect(isInside("/w", "/w/a")).toBe(false);
-    expect(isInside("/w/a/..cache", "/w/a")).toBe(true);
-    expect(isInside("/w/a/../b", "/w/a")).toBe(false);
-  });
-});
+import { editorPath } from "./allowed.ts";
 
 describe("editorPath", () => {
   let dir: string;

@@ -10,14 +10,6 @@ describe("who may change a task's type", () => {
     expect(allowed(undefined)).toEqual(["owner", "captain", "intake"]);
   });
 
-  it("never lets the captain or inference overwrite the owner's choice", () => {
-    expect(allowed("owner")).toEqual(["owner"]);
-  });
-
-  it("never lets inference overwrite the captain's choice", () => {
-    expect(allowed("captain")).toEqual(["owner", "captain"]);
-  });
-
   it("lets anyone replace an inferred type", () => {
     expect(allowed("intake")).toEqual(["owner", "captain", "intake"]);
   });

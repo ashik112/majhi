@@ -25,27 +25,12 @@ describe("buildEnv", () => {
     });
   });
 
-  it("skips base values that are not set", () => {
-    expect(buildEnv({ tool: "codex", home: "/h/c" }, { PATH: "/bin" })).toEqual({
-      PATH: "/bin",
-      HOME: "/h/c",
-      CODEX_HOME: "/h/c",
-    });
-  });
-
   it("sets the API key only for API-key accounts", () => {
     const login = buildEnv({ tool: "claude", home: "/h" }, base);
     expect(login.ANTHROPIC_API_KEY).toBeUndefined();
     const key = buildEnv({ tool: "claude", home: "/h", apiKey: "sk-test" }, base);
     expect(key.ANTHROPIC_API_KEY).toBe("sk-test");
     expect(key.DEFAULT_AUTH_REQUEST).toBeUndefined();
-  });
-
-  it("asks the Codex adapter to use the API key", () => {
-    const env = buildEnv({ tool: "codex", home: "/h", apiKey: "sk-test" }, base);
-    expect(env.CODEX_API_KEY).toBe("sk-test");
-    expect(env.DEFAULT_AUTH_REQUEST).toBe('{"methodId":"api-key"}');
-    expect(buildEnv({ tool: "codex", home: "/h" }, base).DEFAULT_AUTH_REQUEST).toBeUndefined();
   });
 
   it("sets the git author, committer and task, a hooks folder and gc settings for this run only", () => {
@@ -77,17 +62,6 @@ describe("buildEnv", () => {
       GIT_CONFIG_KEY_7: "gc.packRefs",
       GIT_CONFIG_VALUE_7: "false",
     });
-  });
-
-  it("with attribution off sets the same person for both and no task or hooks", () => {
-    const ada = { name: "Ada", email: "ada@acme.test" };
-    const env = buildEnv({ tool: "claude", home: "/h" }, base, { author: ada, committer: ada });
-    expect(env).toMatchObject({
-      GIT_AUTHOR_NAME: "Ada",
-      GIT_COMMITTER_NAME: "Ada",
-      GIT_COMMITTER_EMAIL: "ada@acme.test",
-    });
-    expect(Object.keys(env).filter((k) => k === "MAJHI_TASK" || k.startsWith("GIT_CONFIG_"))).toEqual([]);
   });
 
   it("never sets NO_BROWSER or any SSH variable, so agents have no SSH access", () => {

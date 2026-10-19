@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { type ContentHash, ContentHashSchema, RepoPathSchema } from "@majhi/shared";
-import { isInside } from "../editor/allowed.ts";
+import { isInside } from "../fs.ts";
 
 /** A file larger than this is not cited: it is data or generated code, and reading it whole costs more than it shows. */
 export const MAX_CITED_FILE_BYTES = 5_000_000;

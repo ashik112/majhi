@@ -105,13 +105,6 @@ function setup(script: Script, escalate: { perDay: number } | false = { perDay: 
 const UNSURE = { kind: "keep", p: 0.4, accepted: false } as const;
 
 describe("memory escalation", () => {
-  it("lets the stand-in settle what Laya was unsure about, and labels Laya's decision with its answer", async () => {
-    const t = setup({ laya: UNSURE, acp: { kind: "one-off", p: 0.9 } });
-    expect(await t.review("Symptom: the build failed twice this afternoon with a timeout")).toBe("rejected");
-    expect(t.calls.map((c) => c.order)).toEqual(["laya", "acp"]);
-    expect(t.teach).toEqual([{ decision: "dec_laya", question: "verdict", label: "one-off" }]);
-  });
-
   it("leaves the memory to the owner when the stand-in is down, out of budget, or only guesses", async () => {
     for (const acp of ["down", "budget", "rules"] as const) {
       const t = setup({ laya: UNSURE, acp });

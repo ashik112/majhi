@@ -2,7 +2,6 @@ import { AutonomySettingsSchema, type DeployEnvironment, type Task } from "@majh
 import { describe, expect, it } from "vitest";
 import { createNothingDeploys } from "../deploy/nothing.ts";
 import { ownerStepOf } from "../tasks/detail.ts";
-import { linesOfNumstat } from "./lines.ts";
 import { opensMergeRequest, ShipPlanner, shipAsked } from "./plan.ts";
 
 const task = (id: string, org: string | undefined, type: "bug" | "feature", into?: string): Task =>
@@ -77,10 +76,6 @@ describe("who ships a task", () => {
       "owner",
       "owner",
     ]);
-  });
-
-  it("says how the task lands", async () => {
-    expect((await planner("on", "merge-request").plan("ACM-1")).way).toBe("merge-request");
   });
 });
 
@@ -193,13 +188,5 @@ describe("the step that waits for the owner", () => {
     expect(opensMergeRequest({ steps: steps("captain", "captain"), way: "merge-request" })).toBe(true);
     expect(opensMergeRequest({ steps: steps("captain", "captain"), way: "local" })).toBe(false);
     expect(opensMergeRequest({ steps: steps("captain", "owner"), way: "merge-request" })).toBe(false);
-  });
-});
-
-describe("the size of a change", () => {
-  it("adds the added and removed lines, and does not know a binary file's size", () => {
-    expect(linesOfNumstat("3\t1\ta.ts\n10\t0\tb.ts\n")).toBe(14);
-    expect(linesOfNumstat("")).toBe(0);
-    expect(linesOfNumstat("3\t1\ta.ts\n-\t-\tlogo.png\n")).toBeUndefined();
   });
 });

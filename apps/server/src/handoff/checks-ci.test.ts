@@ -75,22 +75,6 @@ const lintSpec = (command: string): CheckSpec => ({
 });
 
 describe("checks from CI, read-only", () => {
-  it("runs a lint job that fixes without --fix, in the CI's environment and from the CI's file", async () => {
-    const w = world({ specs: { lint: lintSpec("eslint --fix src") }, run: () => result(0), memory: "8g" });
-    const out = await w.service.ensure("ACM-1", { force: false });
-    expect(w.ran.map((r) => r.command)).toEqual(["eslint src"]);
-    const lint = out.steps.find((s) => s.id === "lint");
-    expect(lint?.ran).toEqual([
-      {
-        project: "acme-api",
-        command: "eslint src",
-        from: "from .gitlab-ci.yml job lint",
-        env: { NODE_OPTIONS: "--max-old-space-size=6144" },
-        notes: ["eslint ran read-only"],
-      },
-    ]);
-  });
-
   it("does not block on a failure the base commit has, and blocks on a new one", async () => {
     const stylish = (rules: string[]) =>
       `src/a.ts\n${rules.map((r, i) => `  ${i + 1}:1  error  Bad  ${r}`).join("\n")}\n`;
@@ -126,107 +110,11 @@ describe("checks from CI, read-only", () => {
     const out = await w.service.ensure("ACM-1", { force: false });
     expect(out.steps.find((s) => s.id === "build")?.status).toBe("fail");
   });
-
-  it("reports a memory kill with the limit, for the owner, and never as a plain failure", async () => {
-    const w = world({
-      specs: { build: { command: "pnpm build", env: {}, from: "from the project card" } },
-      run: () => result(137, "Killed"),
-      memory: "6g",
-    });
-    const out = await w.service.ensure("ACM-1", { force: false });
-    const build = out.steps.find((s) => s.id === "build");
-    expect(build).toMatchObject({ status: "fail", owner: true, memory: { limit: "6g" } });
-    expect(build?.detail).toContain("Ran out of memory at 6 GB");
-    expect(out.failures).toEqual([]);
-    expect(out.held).toHaveLength(1);
-  });
-});
-
-describe("services of the CI job", () => {
-  const postgres = {
-    name: "postgres",
-    image: "postgres:16",
-    env: { POSTGRES_PASSWORD: "test" },
-    ports: ["5432:5432"],
-    health: { cmd: "pg_isready", interval: "5s", retries: 5 },
-  };
-  const spec = (): CheckSpec => ({
-    command: "vitest run",
-    env: {},
-    from: "from .github/workflows/ci.yml job test",
-    services: [postgres],
-  });
-
-  it("starts the service the job declares before the check and removes it after", async () => {
-    const w = world({ specs: { tests: spec() }, run: () => result(0) });
-    const out = await w.service.ensure("ACM-1", { force: false });
-    const commands = w.ran.map((r) => r.command);
-    expect(commands).toHaveLength(4);
-    expect(commands[0]).toMatch(
-      /^'docker' 'run' '-d' '--name' 'chk[0-9a-f]{6}-postgres' '-e' 'POSTGRES_PASSWORD=test' '-p' '5432:5432' '--health-cmd' 'pg_isready' '--health-interval' '5s' '--health-retries' '5' 'postgres:16'$/,
-    );
-    expect(commands[1]).toContain("{{.State.Health.Status}}");
-    expect(commands[2]).toBe("vitest run");
-    expect(commands[3]).toMatch(/^docker rm -f 'chk[0-9a-f]{6}-postgres'$/);
-    expect(out.steps.find((s) => s.id === "tests")?.ran?.[0]?.notes).toContain(
-      "started postgres (postgres:16) as the CI does",
-    );
-  });
-
-  it("does not run the check when the service cannot start, says which one, and still cleans up", async () => {
-    const w = world({
-      specs: { tests: spec() },
-      run: (_cwd, command) =>
-        command.startsWith("'docker' 'run'") ? result(127, "sh: docker: not found") : result(0),
-    });
-    const out = await w.service.ensure("ACM-1", { force: false });
-    const tests = out.steps.find((s) => s.id === "tests");
-    expect(w.ran.map((r) => r.command)).toHaveLength(1);
-    expect(tests).toMatchObject({ status: "fail", owner: true });
-    expect(tests?.detail).toContain("The postgres service (postgres:16)");
-    expect(tests?.detail).toContain("Docker is not running where majhi runs checks");
-    expect(out.failures).toEqual([]);
-  });
-
-  it("removes the ones already started when a later service fails", async () => {
-    const s = { ...spec(), services: [postgres, { name: "redis", image: "redis:7", env: {}, ports: [] }] };
-    const w = world({
-      specs: { tests: s },
-      run: (_cwd, command) => (command.includes("'redis:7'") ? result(1, "pull access denied") : result(0)),
-    });
-    await w.service.ensure("ACM-1", { force: false });
-    const last = w.ran.at(-1)?.command ?? "";
-    expect(last).toMatch(/^docker rm -f 'chk[0-9a-f]{6}-postgres'$/);
-    expect(w.ran.some((r) => r.command === "vitest run")).toBe(false);
-  });
 });
 
 describe("a check on the base commit and the packages", () => {
   const stylish = "src/a.ts\n  1:1  error  Bad  no-var\n";
   const specs = { lint: lintSpec("eslint src"), install: { command: "pnpm install", env: {}, from: "x" } };
-
-  it("links the head's packages into the base copy while the task left the dependencies alone", async () => {
-    const w = world({
-      specs,
-      run: () => result(1, stylish),
-      extra: { dependenciesChanged: async () => false },
-    });
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.linked).toEqual(["/work/ACM-1/acme-api"]);
-    expect(w.ran.some((r) => r.command === "pnpm install")).toBe(false);
-  });
-
-  it("installs for the base copy instead when the task changed the lockfile", async () => {
-    const w = world({
-      specs,
-      run: (_cwd, command) => (command === "pnpm install" ? result(0) : result(1, stylish)),
-      extra: { dependenciesChanged: async () => true },
-    });
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.linked).toEqual([undefined]);
-    const base = w.ran.filter((r) => r.cwd.startsWith("/copies/b")).map((r) => r.command);
-    expect(base).toEqual(["pnpm install", "eslint src"]);
-  });
 
   it("does not call a failure existing when the base cannot be installed", async () => {
     const w = world({

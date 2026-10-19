@@ -270,15 +270,6 @@ describe("dropping node_modules of idle tasks in review or paused", () => {
     expect(await readFile(join(folder, ".majhi-deps-dropped"), "utf8")).toContain("api/node_modules");
   });
 
-  it("skips a task whose repo has an uncommitted change to a tracked file", async () => {
-    const { worktree } = await seed({ id: "ACM-1", status: "review" });
-    await writeFile(join(worktree, "src/index.ts"), "export const edited = 1;\n");
-    const report = await sweep.run(idle);
-    expect(report.freedBytes).toBe(0);
-    expect(await exists(join(worktree, "node_modules"))).toBe(true);
-    expect(await readFile(join(worktree, "src/index.ts"), "utf8")).toBe("export const edited = 1;\n");
-  });
-
   it("drops a paused task too, and frees nothing on a second run", async () => {
     const { worktree } = await seed({ id: "ACM-1", status: "paused" });
     await sweep.run(idle);

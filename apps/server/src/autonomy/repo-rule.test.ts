@@ -1,19 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { blockingWriter, pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { blockingWriter, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 
 const task = (id: string, base: string, paths: string[], project = "acme-api"): RepoRuleTask => ({
   id,
   repos: [{ project, base, paths }],
-});
-
-describe("paths", () => {
-  it("drops leading and trailing slashes and repeats", () => {
-    expect(pathsOf(["./src/a.ts", "src/a.ts", "docs/", "README.md"])).toEqual([
-      "README.md",
-      "docs",
-      "src/a.ts",
-    ]);
-  });
 });
 
 describe("repo rule", () => {

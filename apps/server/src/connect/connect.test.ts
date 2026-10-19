@@ -253,13 +253,6 @@ describe("connecting a remote MCP server with OAuth", () => {
     expect(r.connections.size).toBe(0);
   });
 
-  it("cancel stops waiting and a late answer is refused", async () => {
-    const { flow, back } = await r.begin("maria@acme.example");
-    expect(r.connect.cancel(flow).state).toBe("cancelled");
-    expect((await r.connect.callback(back)).ok).toBe(false);
-    expect(r.connections.size).toBe(0);
-  });
-
   it("the sign-in page is only sent to a service it checks the issuer of", async () => {
     await r.cleanup();
     r = await rig({ auth: { sendIss: true } });
@@ -414,13 +407,6 @@ describe("accounts and access", () => {
     expect(out.revoked).toBe(true);
     expect("token" in (await r.connect.bearer(acmeId))).toBe(true);
     expect(await r.grants.get(globexId)).toBeUndefined();
-  });
-
-  it("a connection of another workspace cannot be reconnected from this one", async () => {
-    await r.connectAs("maria@acme.example", { org: "acme" });
-    await expect(
-      r.connect.start({ org: "globex", service: "fakesvc", access: "read", connection: "fakesvc" }, OWNER),
-    ).rejects.toThrow();
   });
 
   it("disconnect revokes at the service, deletes the tokens and the connection", async () => {

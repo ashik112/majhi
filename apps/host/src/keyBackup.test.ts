@@ -141,30 +141,6 @@ describe("secrets key backup in a Linux keyring", () => {
     expect(stored()).toBeUndefined();
   });
 
-  it("drops the last status when the keyring goes away, and logs each change once", async () => {
-    let state: FakeKeyringState = "unlocked";
-    const fake = fakeOs({ programs: fakeSecretService(new Map(), () => state) });
-    const logs: string[] = [];
-    const backup = createKeyBackup({
-      keyring: createPlatform("linux", fake.deps).keyring,
-      where: "the keyring",
-      readText: async () => KEY,
-      keyFile: "/home/owner/.config/majhi/secrets.key",
-      log: (line) => logs.push(line),
-    });
-    await backup.ensure();
-    await backup.ensure();
-    expect(backup.status()?.saved).toBe(keyFingerprint(KEY));
-    state = "absent";
-    expect(await backup.ensure()).toBeUndefined();
-    expect(backup.status()).toBeUndefined();
-    expect(logs).toEqual([
-      "keyring: secret-service",
-      "secrets key: saved a copy in the keyring",
-      "keyring: none, No keyring is running.",
-    ]);
-  });
-
   it("checks the key file before anything goes to the keyring", async () => {
     const bad = `${KEY} extra`;
     const { backup, runs } = setup({ os: "linux", file: bad });

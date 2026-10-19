@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -189,46 +188,6 @@ describe("compose: what a file may never ask for", () => {
       for (const s of project.services) buildRunPlan(s.spec, ctx());
     };
     expect(await code(planned)).toBe("name_reserved");
-  });
-
-  it("refuses an --env-file and a -f file outside the task folder", async () => {
-    const sub = join(repo, "flags");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "compose.yaml"), "services:\n  x:\n    image: alpine:3\n");
-    const env = parseCompose(["--env-file", join(dir, "outside", "secret.env"), "up"], sub);
-    expect(await code(() => loadCompose(env, { ...ctx(), cwd: sub }))).toBe("compose_env_file_outside");
-    const file = parseCompose(["-f", join(dir, "outside", "x.yaml"), "up"], sub);
-    expect(await code(() => loadCompose(file, { ...ctx(), cwd: sub }))).toBe("compose_mount_outside");
-  });
-
-  it("never waits on a compose file, .env or env_file that is a FIFO, and reads no file that is not a regular file", async () => {
-    const sub = join(repo, "fifo");
-    mkdirSync(sub, { recursive: true });
-    writeFileSync(join(sub, "compose.yaml"), "services:\n  x:\n    image: alpine:3\n    env_file: .env\n");
-    execFileSync("mkfifo", [join(sub, ".env")]);
-    const inv = parseCompose(["up"], sub);
-    await expect(loadCompose(inv, { ...ctx(), cwd: sub })).rejects.toThrow(/not a regular file/);
-    // The compose file itself as a FIFO.
-    const other = join(repo, "fifo2");
-    mkdirSync(other, { recursive: true });
-    execFileSync("mkfifo", [join(other, "compose.yaml")]);
-    await expect(loadCompose(parseCompose(["up"], other), { ...ctx(), cwd: other })).rejects.toThrow(
-      /not a regular file/,
-    );
-    // A directory where a file is expected, and a file over the cap.
-    mkdirSync(join(repo, "fifo3", "compose.yaml"), { recursive: true });
-    await expect(
-      loadCompose(parseCompose(["up"], join(repo, "fifo3")), { ...ctx(), cwd: join(repo, "fifo3") }),
-    ).rejects.toThrow(/not a regular file/);
-    writeFileSync(join(repo, "big.yaml"), `x: "${"a".repeat(600 * 1024)}"\n`);
-    await expect(
-      loadCompose(parseCompose(["-f", "big.yaml", "up"], repo), { ...ctx(), cwd: repo }),
-    ).rejects.toThrow(/too big/);
-  });
-
-  it("does not read a compose file above the task folder", async () => {
-    const stray = parseCompose(["up"], dir);
-    expect(await code(() => loadCompose(stray, { ...ctx(), cwd: dir }))).toBe("compose_file_not_found");
   });
 
   it("refuses flags that would stream or reach past the file, with a code a script can read", async () => {

@@ -105,8 +105,6 @@ export interface SettingsForm {
   resumeAuto: boolean;
   resumeHandoff: boolean;
   commitsAttribution: boolean;
-  maxAgentTurns: string;
-  reviewRounds: string;
   /** Turn limits (PRV-96): each on or off, with its value kept while off. */
   turnLengthOn: boolean;
   turnLength: string;
@@ -146,8 +144,6 @@ export function formFromSettings(s: Settings): SettingsForm {
     resumeAuto: s.resume.auto,
     resumeHandoff: s.resume.handoff,
     commitsAttribution: s.commits.attribution,
-    maxAgentTurns: String(s.rooms.max_agent_turns),
-    reviewRounds: String(s.rooms.review_rounds),
     turnLengthOn: s.turns.max_length !== "off",
     turnLength: s.turns.max_length === "off" ? TURN_DEFAULTS.length : s.turns.max_length,
     turnIdleOn: s.turns.idle !== "off",
@@ -170,7 +166,6 @@ export type SettingsPatch = {
   };
   resume?: { auto?: boolean; handoff?: boolean };
   commits?: { attribution?: boolean };
-  rooms?: { max_agent_turns?: number; review_rounds?: number };
   turns?: { max_length?: string; idle?: string; max_tool_calls?: number };
 };
 
@@ -216,10 +211,6 @@ export function patchFromForm(
   const task = whole(form.perTask, 1, 16, "Per task");
   const tasksRunning = whole(form.tasksRunning, 1, 64, "Tasks running at once");
   const openByOthers = whole(form.openByOthers, 0, 100, "Open tasks from others");
-  const agentTurns = whole(form.maxAgentTurns, 1, 200, "Agent turns without you");
-  const rounds = whole(form.reviewRounds, 1, 50, "Review rounds");
-  if (agentTurns.error) errors.maxAgentTurns = agentTurns.error;
-  if (rounds.error) errors.reviewRounds = rounds.error;
   if (cap.error) errors.contextCap = cap.error;
   if (at.error) errors.compactAt = at.error;
   if (target.error) errors.compactTarget = target.error;
@@ -264,13 +255,6 @@ export function patchFromForm(
   if (Object.keys(resume).length > 0) patch.resume = resume;
   if (form.commitsAttribution !== current.commits.attribution)
     patch.commits = { attribution: form.commitsAttribution };
-  const rooms: NonNullable<SettingsPatch["rooms"]> = {};
-  if (agentTurns.value !== undefined && agentTurns.value !== current.rooms.max_agent_turns) {
-    rooms.max_agent_turns = agentTurns.value;
-  }
-  if (rounds.value !== undefined && rounds.value !== current.rooms.review_rounds)
-    rooms.review_rounds = rounds.value;
-  if (Object.keys(rooms).length > 0) patch.rooms = rooms;
 
   const turnsPatch: NonNullable<SettingsPatch["turns"]> = {};
   const duration = /^[1-9][0-9]*(s|m|h)$/;

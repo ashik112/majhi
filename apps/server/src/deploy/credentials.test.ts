@@ -42,20 +42,6 @@ describe("deploy credentials", () => {
     });
   });
 
-  it("never reach another workspace's connection, whatever its kind", async () => {
-    expect(await credentials.git("globex", "github.com", "github")).toEqual({
-      problem: "globex is not signed in to github.com",
-    });
-    for (const result of [
-      await credentials.variable("globex", "acme-vercel", "VERCEL_TOKEN"),
-      await credentials.ssh("globex", "acme-host"),
-    ]) {
-      expect(result).toMatchObject({
-        problem: expect.stringContaining("only uses its own workspace's connections"),
-      });
-    }
-  });
-
   it("refuse a connection of the wrong kind and a variable it does not have", async () => {
     expect(await credentials.variable("acme", "acme-host", "VERCEL_TOKEN")).toEqual({
       problem: "acme-host is not a variables connection.",

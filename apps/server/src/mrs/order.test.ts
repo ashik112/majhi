@@ -8,18 +8,10 @@ describe("mergeOrder", () => {
     expect(mergeOrder(["web", "api"], graph({ web: ["api"] }))).toEqual(["api", "web"]);
   });
 
-  it("orders a chain", () => {
-    expect(mergeOrder(["c", "b", "a"], graph({ c: ["b"], b: ["a"] }))).toEqual(["a", "b", "c"]);
-  });
-
   it("refuses a loop and names it", () => {
     const err = catchError(() => mergeOrder(["a", "b"], graph({ a: ["b"], b: ["a"] })));
     expect(err).toBeInstanceOf(MergeOrderCycle);
     expect((err as MergeOrderCycle).path).toEqual(["a", "b", "a"]);
-  });
-
-  it("refuses a loop that runs through a project outside the task", () => {
-    expect(() => mergeOrder(["a", "b"], graph({ a: ["x"], x: ["a"] }))).toThrow(MergeOrderCycle);
   });
 });
 

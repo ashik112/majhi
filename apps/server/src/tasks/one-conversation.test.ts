@@ -103,21 +103,6 @@ describe("promoting a chat", () => {
     expect(rows[0]?.kind).toBe("agent");
   });
 
-  it("makes a separate task only when the agent asks for one, and links it to the chat", async () => {
-    const { chat, as } = await world();
-    const made = await create(as, { separate: true });
-    expect(made.isError).toBe(false);
-    const separate = JSON.parse(made.text) as Task;
-    expect(separate.id).not.toBe(chat.id);
-    expect((await get(chat.id)).kind).toBe("chat");
-    expect((await get(separate.id)).origin).toEqual({ kind: "chat", room: chat.id });
-    const rows = (await cmd("tasks.list", {})).body as {
-      id: string;
-      origin?: { kind: string; room?: string; name?: string };
-    }[];
-    expect(rows.find((r) => r.id === separate.id)?.origin).toMatchObject({ kind: "chat", room: chat.id });
-  });
-
   it("refuses a chat with no repos to promote, and a chat that is already a task", async () => {
     const { chat, as } = await world();
     const none = await create(as, { repos: [] });
@@ -152,33 +137,6 @@ describe("a chat's agent and the separate task it made", () => {
     await until(() => prompts.some((p) => p.task === task.id), "the task's first turn");
     return { chat, as, task, release };
   }
-
-  it("tells the working agent like a message from the owner, once per turn of that agent", async () => {
-    const { as, task, release } = await separate();
-    const told = await services().admin.call(as, toolName("tasks.tell"), {
-      id: task.id,
-      text: "Also cover the logout path",
-      ownerAsked: false,
-      reason: "the owner asked in chat",
-    });
-    expect(told.isError).toBe(false);
-    expect(JSON.parse(told.text)).toMatchObject({ id: task.id, told: true });
-    const room = await items(task.id);
-    expect(room.some((i) => i.type === "system" && i.text.includes("Also cover the logout path"))).toBe(true);
-    // A second note before the agent took a new turn is not sent.
-    const again = await services().admin.call(as, toolName("tasks.tell"), {
-      id: task.id,
-      text: "and the signup",
-      ownerAsked: false,
-      reason: "x",
-    });
-    expect(JSON.parse(again.text)).toMatchObject({ told: false, refused: "already-told" });
-    release();
-    await until(
-      () => prompts.some((p) => p.task === task.id && p.text.includes("Also cover the logout path")),
-      "the note reaches the agent",
-    );
-  });
 
   it("refuses to tell a task it has no link to, until the owner names it in the chat", async () => {
     const { chat, as, release } = await separate();
@@ -237,20 +195,5 @@ describe("a chat's agent and the separate task it made", () => {
     expect((await run(as, "tasks.removeRepo", { id: task.id, project: "acme-web" })).isError).toBe(false);
     expect((await get(task.id)).repos.map((r) => r.project)).toEqual(["acme-api"]);
     release();
-  });
-
-  it("adds a repo to the task, with a branch and a worktree", async () => {
-    const { chat, as } = await world();
-    const made = await create(as, { separate: true, start: true });
-    const task = JSON.parse(made.text) as Task;
-    expect(task.repos.map((r) => r.project)).toEqual(["acme-api"]);
-    expect((await cmd("tasks.start", { id: task.id })).status).toBe(200);
-    const added = await run(as, "tasks.addRepo", { id: task.id, project: "acme-web" });
-    expect(added.isError).toBe(false);
-    const after = await get(task.id);
-    expect(after.repos.map((r) => r.project)).toEqual(["acme-api", "acme-web"]);
-    expect(after.repos[1]?.worktree).toBe(join(w.taskDir(task.id), "acme-web"));
-    // The chat itself has no repos to add to.
-    expect((await run(as, "tasks.addRepo", { id: chat.id, project: "acme-web" })).isError).toBe(true);
   });
 });

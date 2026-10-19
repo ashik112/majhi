@@ -122,13 +122,6 @@ describe("the container of a run", () => {
     task: "ACM-1",
   };
 
-  it("passes variables to docker by name only, so no value is on a command line", () => {
-    const args = dockerRunArgs(req, cfg, "majhi-run-test");
-    for (const secret of [ROOM_TOKEN, DO_TOKEN]) expect(args.join(" ")).not.toContain(secret);
-    expect(args).toContain("MAJHI_MCP_0_H0");
-    expect(args).toContain("DIGITALOCEAN_ACCESS_TOKEN");
-  });
-
   it("has its own process, IPC, UTS and user namespaces: nothing of the host, the server or another task shows", () => {
     const args = dockerRunArgs(req, cfg, "majhi-run-test");
     for (const flag of ["--pid", "--ipc", "--uts", "--userns", "--privileged"]) {

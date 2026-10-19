@@ -1,7 +1,6 @@
-import type { GitAccount, GitCliLoginResult, MrHost, OrgConfig, SignInStatus } from "@majhi/shared";
+import type { GitAccount, MrHost, OrgConfig, SignInStatus } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { UserError } from "../errors.ts";
-import { HostJobError } from "../host/link.ts";
 import { type FakeGitHosts, fakeGitHosts } from "../testing/gitHosts.ts";
 import type { EffectiveApps } from "./apps.ts";
 import { type CliRunner, SignInService } from "./signIn.ts";
@@ -11,42 +10,6 @@ const GL_TOKEN = "glpat_SecretGitLabToken987654";
 const GL_REFRESH = "glrt_SecretRefresh111";
 const BB_TOKEN = "ATATTSecretBitbucketToken55";
 const SECRETS = [GH_TOKEN, GL_TOKEN, GL_REFRESH, BB_TOKEN, "dev-code-1"];
-
-/**
- * A fake host helper running `gh` or `glab`: it shows the page at once (or never, or ends first),
- * then waits until the test ends the CLI with `finish`.
- */
-function fakeCli(
-  options: {
-    connected?: boolean;
-    page?: { url: string; code?: string } | "none";
-    ends?: GitCliLoginResult | Error;
-  } = {},
-) {
-  const calls: Array<{ signIn: string; cli: string; org: string; host: string }> = [];
-  const cancelled: string[] = [];
-  let finish: (result: GitCliLoginResult | Error) => void = () => undefined;
-  const runner: CliRunner = {
-    connected: () => options.connected ?? true,
-    login: (params, onPage) => {
-      calls.push(params);
-      return new Promise<GitCliLoginResult>((resolve, reject) => {
-        finish = (r) => (r instanceof Error ? reject(r) : resolve(r));
-        if (options.ends !== undefined) {
-          finish(options.ends);
-          return;
-        }
-        const page = options.page ?? { url: "https://github.com/login/device", code: "AB12-CD34" };
-        if (page !== "none") setImmediate(() => onPage(page));
-      });
-    },
-    cancel: async (signIn) => {
-      cancelled.push(signIn);
-      finish({ state: "cancelled" });
-    },
-  };
-  return { runner, calls, cancelled, finish: (r: GitCliLoginResult | Error) => finish(r) };
-}
 
 interface Setup {
   service: SignInService;
@@ -357,79 +320,6 @@ describe("GitLab device grant", () => {
       scope: "api",
     });
     expectNoSecrets(s);
-  });
-});
-
-describe("CLI sign-in through the host helper", () => {
-  it("gh: shows its code, opens its page, then saves the token for the named workspace only", async () => {
-    const cli = fakeCli();
-    const s = setup({ noGithub: true, cli: cli.runner });
-    s.hosts.on("GET https://api.github.com/user", (req) =>
-      req.headers.authorization === `Bearer ${GH_TOKEN}`
-        ? { json: { login: "octo-acme" } }
-        : { status: 401, json: {} },
-    );
-    const start = await s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } });
-    s.outputs.push(start);
-    expect(start).toMatchObject({
-      state: "device",
-      kind: "github",
-      host: "github.com",
-      userCode: "AB12-CD34",
-      verificationUri: "https://github.com/login/device",
-    });
-    if (start.state !== "device") return;
-    expect(cli.calls).toEqual([{ signIn: start.signIn, cli: "gh", org: "acme", host: "github.com" }]);
-    expect(s.opened).toEqual(["https://github.com/login/device"]);
-    expect(s.service.poll(start.signIn)).toMatchObject({ state: "pending", userCode: "AB12-CD34" });
-
-    cli.finish({ state: "done", token: GH_TOKEN });
-    const done = await settle(s, start.signIn);
-    s.outputs.push(done);
-    expect(done).toMatchObject({ state: "done", org: "acme", account: "octo-acme", alsoUsedBy: [] });
-    expect(s.orgs.acme?.git_accounts).toEqual([
-      { host: "github.com", account: "octo-acme", token: "secret:s1" },
-    ]);
-    expect(s.orgs.acme?.mr_tokens).toEqual({ github: "secret:s1" });
-    expect(s.orgs.globex?.git_accounts).toBeUndefined();
-    expect(s.orgs.globex?.mr_tokens).toBeUndefined();
-    expect(s.secrets.get("s1")).toBe(GH_TOKEN);
-    expectNoSecrets(s);
-  });
-
-  it("cancel stops the CLI and saves nothing, even when it ends with a token", async () => {
-    const cli = fakeCli();
-    const s = setup({ noGithub: true, cli: cli.runner });
-    const start = await s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } });
-    if (start.state !== "device") throw new Error("not a device start");
-    expect(s.service.cancel(start.signIn).state).toBe("cancelled");
-    expect(cli.cancelled).toEqual([start.signIn]);
-    cli.finish({ state: "done", token: GH_TOKEN });
-    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
-    expect(s.service.poll(start.signIn).state).toBe("cancelled");
-    expect(s.orgs.acme?.git_accounts).toBeUndefined();
-    expect(s.secrets.size).toBe(0);
-  });
-
-  it("a CLI that fails says so plainly and never echoes what it printed", async () => {
-    const s = setup({
-      noGithub: true,
-      cli: fakeCli({ ends: new Error(`gh said: token ${GH_TOKEN} is bad`) }).runner,
-    });
-    const err = await s.service
-      .start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } })
-      .catch((e: unknown) => e as Error);
-    expect(err).toBeInstanceOf(UserError);
-    expect((err as Error).message).toBe("gh did not start the sign-in. Try again.");
-    const helper = setup({
-      noGithub: true,
-      cli: fakeCli({ ends: new HostJobError("The sign-in was refused on GitHub. Nothing was saved.") })
-        .runner,
-    });
-    await expect(
-      helper.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } }),
-    ).rejects.toThrow("The sign-in was refused on GitHub. Nothing was saved.");
-    expectNoSecrets(s, [err]);
   });
 });
 

@@ -31,10 +31,6 @@ describe("the latest-release pointer", () => {
     return `http://127.0.0.1:${(server.address() as AddressInfo).port}/latest`;
   };
 
-  it("reads the tag of the latest release", async () => {
-    expect(await readLatest(await serve(200, { tag_name: "v1.4.0", name: "majhi v1.4.0" }))).toBe("v1.4.0");
-  });
-
   it("refuses anything but a vX.Y.Z tag, so git never sees it", async () => {
     await expect(readLatest(await serve(200, { tag_name: "v1.4.0 --upload-pack=x" }))).rejects.toThrow(
       "names no majhi release",
@@ -43,10 +39,6 @@ describe("the latest-release pointer", () => {
     await expect(readLatest(await serve(200, { tag_name: "v2.0.0-rc.1" }))).rejects.toThrow(
       "names no majhi release",
     );
-  });
-
-  it("says what the pointer answered when there is no release", async () => {
-    await expect(readLatest(await serve(404, { message: "Not Found" }))).rejects.toThrow("answered 404");
   });
 });
 

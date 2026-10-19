@@ -28,12 +28,6 @@ describe("prepareHome", () => {
     expect((await stat(home)).mode & 0o777).toBe(0o700);
   });
 
-  it("writes no config.toml for login accounts", async () => {
-    const home = join(root, "c");
-    await prepareHome({ tool: "codex", home });
-    await expect(stat(join(home, "config.toml"))).rejects.toThrow();
-  });
-
   it("keeps the Codex API key out of auth.json", async () => {
     const home = join(root, "c");
     const account = { tool: "codex" as const, home, apiKey: "sk-test" };

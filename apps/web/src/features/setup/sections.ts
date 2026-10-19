@@ -10,7 +10,6 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   wiki: "Architecture pages for each project, built from the code with the file and line behind every claim.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
   turns: "How long one agent turn may run, stay idle or call tools before it continues in a fresh session.",
-  teams: "How long agents in a room may pass work around without you.",
   approvals: "What agents may do without asking you, and what they asked for lately.",
   notifications:
     "A desktop banner and a browser notification when an agent needs you: approvals, questions, stops.",

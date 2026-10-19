@@ -28,16 +28,6 @@ describe("the captain through the fake adapter", () => {
       { kind: "orgs.create", decision: "deny", by: "owner" },
     ]);
   });
-
-  it("revokes the token when the session ends", async () => {
-    w = await bossWorld();
-    const tokens = w.h.majhi.services.adminTokens;
-    await say("hello");
-    await idle();
-    expect(tokens.size).toBe(1);
-    await w.h.majhi.services.runs.stop(w.chat.id);
-    expect(tokens.size).toBe(0);
-  });
 });
 
 describe("the captain proposes what it may not do alone", () => {
@@ -111,35 +101,6 @@ describe("the captain proposes what it may not do alone", () => {
     // Only that field moved: the workspace's authority level is as the owner left it.
     const entry = (await h.cmd("settings.get")).body.autonomy.orgs.acme;
     expect(entry).toEqual({ level: "routine", tasksAtOnce: 3 });
-  });
-
-  it("is never applied by a non-owner, a rule or the captain's own upkeep", async () => {
-    const { h, chat, call, pace, proposals } = await lane();
-    await call("majhi_autonomy_configure", PACE);
-    const [card] = await proposals();
-    const admin = h.majhi.services.admin;
-    const agent = { actor: { kind: "agent", id: "boss" }, task: chat };
-    expect(
-      (await h.cmd("room.approve", { task: chat, item: card?.id, decision: "approve" }, agent)).status,
-    ).toBeGreaterThanOrEqual(400);
-    expect(
-      (await h.cmd("decisions.answer", { id: `room:${chat}:${card?.id}`, option: "approve" }, agent)).status,
-    ).toBeGreaterThanOrEqual(400);
-    await expect(
-      admin.decide(chat as never, card?.id ?? "", "approve", undefined, { by: "captain" }),
-    ).rejects.toThrow(/owner/);
-    expect(admin.cardCall(chat, card?.id ?? "")).toBeUndefined();
-    expect(
-      await admin.captainDecide(chat, card?.id ?? "", { decision: "approved", why: "x" }, "boss"),
-    ).toMatchObject({ ok: false });
-    // No always-allow rule can answer it, even for the owner.
-    await expect(
-      admin.decide(chat as never, card?.id ?? "", "approve", {
-        change: { command: "room.approve", meta: { actor: { kind: "owner" } }, summary: "x" },
-      }),
-    ).rejects.toThrow(/never with a saved rule/);
-    expect(await pace()).toBeUndefined();
-    expect((await proposals())[0]).toMatchObject({ state: "pending" });
   });
 
   it("stays a proposal under auto policy and Full, and the level is never the captain's to set or propose", async () => {

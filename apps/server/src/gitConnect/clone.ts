@@ -13,10 +13,11 @@ import {
 } from "@majhi/shared";
 import type { z } from "zod";
 import { UserError } from "../errors.ts";
+import { isInside } from "../fs.ts";
 import type { RegisterInput } from "../projects/service.ts";
 import { type CloneRepo, newCloneId } from "./cloneJobs.ts";
 import { remoteKey, repoKeyOf } from "./here.ts";
-import { checkPlace, isInside, projectIdFor, projectPlace } from "./paths.ts";
+import { checkPlace, projectIdFor, projectPlace } from "./paths.ts";
 import { type GitTokens, tokenAuth } from "./tokens.ts";
 
 /** Progress is written and announced at most this often per job. */
@@ -175,7 +176,7 @@ export class CloneService {
         if (token === undefined) throw new UserError("The workspace's token is missing. Sign in again.");
         auth = tokenAuth(job.kind, token);
       }
-      if (!isInside(job.root, job.register.path))
+      if (!isInside(job.register.path, job.root))
         throw new UserError("That folder is outside the project folder.");
       let last = 0;
       const result = await this.deps.hostClone(
@@ -196,7 +197,7 @@ export class CloneService {
       this.deps.changed(true);
     } catch (err) {
       // A clone that could not be registered is removed, so a failed job leaves no folder behind.
-      if (cloned && job.createdFolder && isInside(job.root, job.register.path)) {
+      if (cloned && job.createdFolder && isInside(job.register.path, job.root)) {
         await rm(job.register.path, { recursive: true, force: true }).catch(() => undefined);
       }
       this.deps.repo.failed(clone, cloneFailure(err));

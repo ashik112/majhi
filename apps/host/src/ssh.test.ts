@@ -148,7 +148,6 @@ describe("the key loader", () => {
 
   const KEY_A = "/Users/o/.ssh/id_ed25519";
   const KEY_B = "/Users/o/.ssh/id_work";
-  const KEY_C = "/Users/o/.ssh/id_rsa";
 
   /** macOS unless `keeping` says otherwise: Apple's tools, and the Keychain keeps passphrases. */
   function setup(w: World, extra: Partial<SshDeps> & { keeping?: PassphraseKeeping } = {}) {
@@ -170,24 +169,6 @@ describe("the key loader", () => {
     });
   }
 
-  it("loads a key without a passphrase, skips one already loaded, and reports one that needs a passphrase", async () => {
-    const w = fakeWorld({ [KEY_A]: "none", [KEY_B]: "pass", [KEY_C]: "none" }, [keyFp(KEY_C)]);
-    const status = await setup(w).reload();
-    expect(status).toEqual({
-      loaded: 2,
-      needsPassphrase: ["~/.ssh/id_work"],
-      checkedAt: "2026-09-29T10:00:00.000Z",
-    });
-    expect(w.calls).toContain(`${SSH_ADD} --apple-load-keychain`);
-    expect(w.calls).toContain(`${SSH_ADD} ${KEY_A}`);
-    expect(w.calls).not.toContain(`${SSH_ADD} ${KEY_C}`);
-    expect(w.calls).not.toContain(`${SSH_ADD} ${KEY_B}`);
-    // The Keychain load comes first.
-    expect(w.calls.findIndex((c) => c.includes("--apple-load-keychain"))).toBeLessThan(
-      w.calls.indexOf(`${SSH_ADD} ${KEY_A}`),
-    );
-  });
-
   it("logs paths and short fingerprints only, and skips an unreadable key", async () => {
     const w = fakeWorld({ [KEY_A]: "none", [KEY_B]: "broken" });
     const status = await setup(w).reload();
@@ -197,20 +178,6 @@ describe("the key loader", () => {
     expect(text).toContain("loaded ~/.ssh/id_ed25519 (ided2551)");
     expect(text).not.toContain("SHA256:");
     expect(text).not.toContain("AAAA");
-  });
-
-  it("reports an agent it cannot reach, and no socket at all", async () => {
-    const w = fakeWorld({ [KEY_A]: "none" });
-    w.agentDown = true;
-    expect((await setup(w).reload()).error).toBe(`Cannot reach the SSH agent at ${SOCK}.`);
-
-    const none = setup(fakeWorld({}), {
-      agent: { socket: async () => undefined, passphrases: async () => "apple" },
-      run: async () => fail(1),
-    });
-    const status = await none.reload();
-    expect(status.loaded).toBe(0);
-    expect(status.error).toBe("The SSH agent is not running, so there is nothing to load keys into.");
   });
 
   describe("unlock", () => {

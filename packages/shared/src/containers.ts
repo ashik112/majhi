@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OrgIdSchema } from "./ids.ts";
 import { isOfficialImage } from "./risk-kinds.ts";
 
 /**
@@ -46,10 +47,7 @@ export function imageAllowed(image: string, allowed: readonly string[]): boolean
  */
 export const ContainerImageScopeSchema = z.object({
   image: ImageRefSchema,
-  org: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
-    .optional(),
+  org: OrgIdSchema.optional(),
   service: z.string().max(60).optional(),
 });
 export type ContainerImageScope = z.infer<typeof ContainerImageScopeSchema>;

@@ -1,7 +1,8 @@
 import { mkdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 import { slugOfName } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import { isBelow } from "../fs.ts";
 
 /**
  * Where a new task lives: `<tasks_dir>/<project>/<name-slug>`, the first project of the task or the
@@ -33,12 +34,6 @@ export function isPlainFolderName(part: string): boolean {
   );
 }
 
-/** Whether `path` is strictly inside `root`: not `root` itself, not outside it, not through `..`. */
-export function isInside(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-}
-
 /**
  * The folder wanted for a task: `<tasks_dir>/<scope>/<slug>`, refused when either part is not one
  * plain folder name or the result would not stay under `tasks_dir`.
@@ -48,7 +43,7 @@ export function wantedFolder(tasksDir: string, scope: string, slug: string): str
   const bad = parts.find((p) => !isPlainFolderName(p));
   if (bad !== undefined) throw new UserError(`"${bad}" cannot be a folder name.`, 409);
   const path = join(tasksDir, scope, slug);
-  if (!isInside(tasksDir, path)) throw new UserError(`${path} is outside the tasks folder.`, 409);
+  if (!isBelow(path, tasksDir)) throw new UserError(`${path} is outside the tasks folder.`, 409);
   return path;
 }
 
@@ -80,5 +75,5 @@ export async function removableFolder(tasksDir: string, folder: string): Promise
   const root = await realpath(tasksDir).catch(() => undefined);
   const real = await realpath(folder).catch(() => undefined);
   if (root === undefined || real === undefined) return undefined;
-  return isInside(root, real) ? real : undefined;
+  return isBelow(real, root) ? real : undefined;
 }

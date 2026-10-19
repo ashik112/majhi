@@ -1,4 +1,3 @@
-import { isAbsolute, relative } from "node:path";
 import type {
   CommandMeta,
   CommitsPatch,
@@ -13,6 +12,7 @@ import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { removeProjectEntry, writeProject } from "../config/write.ts";
 import { UserError } from "../errors.ts";
+import { isInside } from "../fs.ts";
 import { defaultBranch, isGitRepo } from "../git/git.ts";
 import { MergeOrderCycle, type ProjectGraph, pathBetween } from "../mrs/order.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
@@ -153,7 +153,7 @@ export class ProjectService {
     }
     const path = resolvePath(input.path, this.config.paths.hostHome);
     const roots = loaded.state.config.workspaces;
-    if (!roots.some((root) => isInside(root, path))) {
+    if (!roots.some((root) => isInside(path, root))) {
       throw new UserError(`${path} is not inside a workspace root (${roots.join(", ")}).`);
     }
     if (!(await isGitRepo(path))) {
@@ -331,11 +331,6 @@ function checkLinks(
 
 function dedupe(items: readonly string[]): string[] {
   return [...new Set(items)];
-}
-
-function isInside(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 /** Aliases must be unique across projects and never another project's id; an id never another's alias. */

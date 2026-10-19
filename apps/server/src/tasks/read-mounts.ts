@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { isInside } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
+import { isInside } from "../fs.ts";
 
 /** Who may read what, for one agent. */
 export interface ReadPolicy {

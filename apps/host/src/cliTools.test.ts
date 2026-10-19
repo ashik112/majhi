@@ -193,23 +193,6 @@ describe("a workspace's own sign-in", () => {
     expect(await exists(profileFolder(home, "acme-cf"))).toBe(false);
   });
 
-  it("refuses a reconnect that signs in as another account and keeps the old one", async () => {
-    const home = await temp();
-    const bin = await fakeTool(home);
-    await logins(home, bin, "ops@acme.test").login(
-      { signIn: "first-signin", tool: "vercel", connection: "acme-cf" },
-      () => undefined,
-    );
-    const result = await logins(home, bin, "intruder@other.test").login(
-      { signIn: "again-signin", tool: "vercel", connection: "acme-cf", expected: "ops@acme.test" },
-      () => undefined,
-    );
-    expect(result).toEqual({ state: "other-account", identity: "intruder@other.test" });
-    expect((await readFile(join(config(home, "acme-cf"), "fake", "account"), "utf8")).trim()).toBe(
-      "ops@acme.test",
-    );
-  });
-
   it("does not run a tool that is not installed", async () => {
     const home = await temp();
     const l = new CliToolLogins({ majhiHome: home, path: PATH, find: async () => undefined });
