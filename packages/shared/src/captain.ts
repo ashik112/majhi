@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
 import { IdSchema } from "./ids.ts";
+import { AuthorityLevelSchema } from "./risk-kinds.ts";
 import { AutonomyOrgSchema, BudgetSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
 
@@ -157,7 +158,9 @@ export type CaptainBlocker = z.infer<typeof CaptainBlockerSchema>;
 export const CaptainOrgSchema = z.object({
   org: z.string(),
   name: z.string(),
-  /** Who decides each row, defaults applied and old settings carried over. */
+  /** The workspace's one authority level, set by the owner alone. */
+  level: AuthorityLevelSchema,
+  /** Who decides each row: derived from the level, never stored. */
   authority: AuthoritySchema,
   /** The settings as saved, for "More rules". */
   rules: AutonomyOrgSchema,

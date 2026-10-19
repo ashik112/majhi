@@ -46,13 +46,13 @@ describe("commands the captain does through the owner's approval", () => {
   });
 });
 
-describe("full access for the captain", () => {
-  it("runs the captain's change at once, but a permission change or a destructive one still waits", async () => {
+describe("the Full level for the captain", () => {
+  it("leaves a permission change or a destructive one for the owner, whatever the level", async () => {
     w = await bossWorld({ real: false });
     const { admin } = w.h.majhi.services;
-    const on = await w.h.cmd("autonomy.configure", { orgs: { acme: { fullAccess: true } } });
+    const on = await w.h.cmd("authority.set", { org: "acme", level: "full" });
     expect(on.status).toBe(200);
-    // The captain's thread of Acme: full access is per workspace.
+    // The captain's thread of Acme: the level is per workspace.
     const lane = await w.h.cmd("autonomy.guide", {
       text: "Tidy the uptime playbook.",
       keep: false,
@@ -82,10 +82,11 @@ describe("full access for the captain", () => {
     expect(remove.text).toContain("owner");
   });
 
-  it("only the owner turns it on", async () => {
+  it("only the owner sets it", async () => {
     w = await bossWorld({ real: false });
     const agent = { actor: { kind: "agent", id: "boss" } };
-    const res = await w.h.cmd("autonomy.configure", { orgs: { acme: { fullAccess: true } } }, agent);
-    expect(res.status).not.toBe(200);
+    const res = await w.h.cmd("authority.set", { org: "acme", level: "full" }, agent);
+    expect(res.status).toBe(409);
+    expect((await w.h.cmd("settings.get")).body.autonomy.orgs.acme?.level).not.toBe("full");
   });
 });

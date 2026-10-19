@@ -1,47 +1,35 @@
-import { type AllowRule, commandLabel, isDestructiveCommand, type Settings } from "@majhi/shared";
-import { Badge } from "@/components/ui/badge";
+import { type AllowRule, currentRules, RISK_LABEL, type Settings } from "@majhi/shared";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { describeError } from "@/lib/errors";
 import { useAllowances, useRemoveRule, useRevokeAllowance } from "@/lib/rule-queries";
 
-/** Where a rule applies, in words. */
-export function scopeLabel(rule: AllowRule): string {
-  return rule.task === undefined ? `every task in ${rule.org}` : `task ${rule.task}`;
+/** A rule in words: the kind of action and the workspace it holds in. */
+export function ruleLabel(rule: AllowRule): string {
+  return `${RISK_LABEL[rule.kind]} in ${rule.org}`;
 }
 
-/**
- * Saved always-allow rules, each with Remove. On an agent's page `agent` narrows the list to its
- * rules and leaves out the handle; in Hub setup it shows them all.
- */
-export function RulesList({ settings, agent, label }: { settings: Settings; agent?: string; label: string }) {
+/** Saved Always rules, one per workspace and kind of action, each with Remove. */
+export function RulesList({ settings, label }: { settings: Settings; label: string }) {
   const toast = useToast();
   const remove = useRemoveRule();
-  const rules = settings.policy.rules.filter((rule) => agent === undefined || rule.agent === agent);
+  const rules = currentRules(settings.policy);
   if (rules.length === 0) return <p className="text-sm text-fg-faint">No rules yet.</p>;
   return (
     <ul aria-label={label} className="-mx-1.5 flex flex-col">
       {rules.map((rule) => (
         <li
-          key={`${rule.agent} ${rule.command} ${rule.task ?? rule.org}`}
+          key={`${rule.org} ${rule.kind}`}
           className="flex min-h-8 min-w-0 items-center gap-2 px-1.5 text-sm"
         >
           <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-            {agent === undefined && <span className="font-mono text-fg-soft">@{rule.agent}</span>}
-            <span className="text-fg">{commandLabel(rule.command)}</span>
-            <span className="font-mono text-xs text-fg-faint">{rule.command}</span>
-            <span className="text-fg-muted">{scopeLabel(rule)}</span>
+            <span className="text-fg">{ruleLabel(rule)}</span>
           </span>
-          {isDestructiveCommand(rule.command) && (
-            <Badge tone="amber" title="Deletes and removals always ask you, so this rule does not apply">
-              Off
-            </Badge>
-          )}
           <Button
             size="sm"
             variant="ghost"
             disabled={remove.isPending}
-            aria-label={`Remove the rule for @${rule.agent} to run ${rule.command}, ${scopeLabel(rule)}`}
+            aria-label={`Remove the rule: ${ruleLabel(rule)}`}
             onClick={() =>
               remove.mutate(rule, {
                 onSuccess: () => toast("Rule removed"),

@@ -205,5 +205,6 @@ export function permissionPayload(
     ...(item.toolCallId === undefined ? {} : { toolCallId: item.toolCallId }),
     ...(chosen === undefined ? {} : { chosen }),
     ...(item.connection === undefined ? {} : { connection: item.connection }),
+    ...(item.risk === undefined ? {} : { risk: item.risk }),
   };
 }

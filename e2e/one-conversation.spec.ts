@@ -39,13 +39,27 @@ async function approve(page: Page) {
   await button.click();
 }
 
-/** A change the owner already asked for runs by itself; one that is not waits for the click. */
-async function approveIfAsked(page: Page) {
-  const button = page.getByRole("button", { name: "Approve" }).last();
-  await button.waitFor({ state: "visible", timeout: 3_000 }).then(
-    () => button.click(),
-    () => undefined,
-  );
+/**
+ * Waits until the chat's agent has finished its turn: the composer offers Send, not Stop. Call it after the
+ * effect of the agent's tool call was seen, so the turn has certainly begun. A tool call returns when its work
+ * is done, so this is the state to wait for when the work fetches from a remote first, whatever that takes.
+ */
+const chatIdle = (page: Page) =>
+  expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0, { timeout: 30_000 });
+
+/**
+ * Waits for what a tool call of the chat's agent changes, clicking Approve when its card asks. A change the
+ * owner already asked for runs by itself, one that is not waits for the click, so each look at the state
+ * first clicks a card that is there: no window of seconds to guess when the card shows.
+ */
+async function changed<T>(page: Page, read: () => Promise<T>, expected: T) {
+  await expect
+    .poll(async () => {
+      const approve = page.getByRole("button", { name: "Approve" });
+      if ((await approve.count()) > 0) await approve.last().click();
+      return read();
+    })
+    .toEqual(expected);
 }
 
 /** The fake agent ends every turn the same way: n turns are done when its closing line shows n times. */
@@ -173,17 +187,16 @@ test("a separate task: the chat's agent tells it, adds a repo, and takes it off 
     page,
     call("add_repo", { id: taskId, project: "web", ownerAsked: true, reason: "The fix reaches the web app" }),
   );
-  await approveIfAsked(page);
-  await expect
-    .poll(async () =>
-      (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos.map((r) => r.project),
-    )
-    .toEqual(["api", "web"]);
-  // The repo is listed a moment before its worktree exists.
-  await expect
-    .poll(async () => (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos[1]?.worktree)
-    .toBeTruthy();
+  await changed(
+    page,
+    async () => (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos.map((r) => r.project),
+    ["api", "web"],
+  );
+  // The repo is listed before its worktree exists: majhi fetches the base first, which can take a while. The
+  // agent's tool call returns when the worktree is made, so the end of its turn is the state to wait for.
+  await chatIdle(page);
   const web = (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos[1]?.worktree ?? "";
+  expect(web).not.toBe("");
   writeFileSync(join(web, "draft.ts"), "export const a = 1;\n");
   await say(
     page,
@@ -194,12 +207,14 @@ test("a separate task: the chat's agent tells it, adds a repo, and takes it off 
       reason: "The web app is not needed",
     }),
   );
-  await approveIfAsked(page);
-  await expect(
-    log(page)
-      .getByText(/uncommitted changes/)
-      .first(),
-  ).toBeVisible();
+  await changed(
+    page,
+    async () =>
+      (await log(page)
+        .getByText(/uncommitted changes/)
+        .count()) > 0,
+    true,
+  );
   expect((await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos).toHaveLength(2);
   await shot(page, "one-conversation-refused");
 

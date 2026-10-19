@@ -37,23 +37,11 @@ function commitRule(g: CommitGuide): string {
   return `- Write commit messages${where} as Conventional Commits, \`type(scope): summary\`, like \`${g.type}(api): add the health endpoint\`. The type here is \`${g.type}\`; use another when a commit is only a fix, docs or a chore.`;
 }
 
-/** What the agent may do beyond its worktree, from its permissions. Without one, the owner does it. */
-export function outboundRules(perms: readonly string[]): string[] {
-  const may = (p: string) => perms.includes(p);
-  const lines: string[] = [];
-  lines.push(may("push") ? "- You may push the task branch." : "- Never push. The owner does that.");
-  lines.push(
-    may("mr") ? "- You may open a merge request for the task branch." : "- Never open a merge request.",
-  );
-  lines.push(
-    may("merge")
-      ? "- When the checks pass, merge with the majhi-tasks merge tool: into the base branch, or the branch the owner names. Never merge or move branches with git yourself: your container has the repo's history but not the project's files, so a git merge from here leaves the owner's checkout behind."
-      : "- Never merge. The owner does that.",
-  );
-  lines.push(
-    "- Do not run git push and do not ask to merge. Your container has no sign-in to the host. When the work is done and the checks pass, say so in your final report: majhi pushes and opens the merge request, or merges, by the workspace's rules.",
-  );
-  return lines;
+/** What the agent may do beyond its worktree: nothing on its own. The workspace's level says what majhi does for it. */
+export function outboundRules(): string[] {
+  return [
+    "- Pushing, opening a merge request and merging follow the workspace's authority level, which only the owner sets. Do not run git push, and never merge or move branches with git yourself: your container has no sign-in to the host, and a git merge from here leaves the owner's checkout behind. A lead merges a finished subtask with the majhi-tasks merge tool; the level says whether it goes ahead or waits for the owner. When the work is done and the checks pass, say so in your final report: majhi pushes and opens the merge request, or merges, by the workspace's level.",
+  ];
 }
 
 /**
@@ -150,7 +138,7 @@ export function renderTaskMd(
     ...(commits === undefined ? [] : [commitRule(commits)]),
     "- To change another task's branch, use the majhi-tasks change_task_branch tool. Never commit, update-ref or reset there with git: majhi refuses it, and that task's worktree would not follow.",
     // In a team the rules hold for everyone, so only what every member may do is allowed.
-    ...outboundRules(multi ? sharedPerms(members) : (agent?.perms ?? [])),
+    ...outboundRules(),
     multi
       ? "- Your turn ends when you reply. It then waits for the agent you address, or for the owner."
       : "- Your turn ends when you reply, and the task then waits for the owner.",
@@ -266,11 +254,6 @@ function rememberLines(): string[] {
     "",
     'When the owner says to remember or note something ("remember this", "note that", "keep in mind"), save it right away with the majhi-memory propose tool: one short fact in plain words, in the narrowest scope that holds (a project, the org, or global only when it is true everywhere). Then say in one line that you saved it. Never save a secret or personal data. majhi also reads quiet chats for lasting facts, which wait for the owner to review.',
   ];
-}
-
-function sharedPerms(members: readonly BriefAgent[]): string[] {
-  const [first, ...rest] = members;
-  return (first?.perms ?? []).filter((p) => rest.every((m) => (m.perms ?? []).includes(p)));
 }
 
 function teamLines(task: Task, members: readonly BriefAgent[]): string[] {

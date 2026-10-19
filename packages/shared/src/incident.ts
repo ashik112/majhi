@@ -26,6 +26,10 @@ export const IncidentSettingsSchema = z.strictObject({
   soakMin: z.number().int().min(1).max(240).optional(),
   /** While an incident is open, each client room hears from us at most this often. */
   cadenceMin: z.number().int().min(5).max(480).optional(),
+  /** Who merges and deploys an incident's fix after its checks pass: `ask` (the owner, default) or `ships` (the captain). Owner-set only. */
+  fix: z.enum(["ask", "ships"]).optional(),
+  /** Who sends the client update: `ask` (the owner, default) or `sends` (the captain). Owner-set only. */
+  clientUpdate: z.enum(["ask", "sends"]).optional(),
 });
 export type IncidentSettings = z.infer<typeof IncidentSettingsSchema>;
 

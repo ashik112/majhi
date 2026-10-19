@@ -1,6 +1,5 @@
 import type { AccountStatus, PausedBy, PausedReason, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { resumeRefusal } from "./resume.ts";
 
@@ -54,7 +53,7 @@ describe("which paused tasks the captain may resume", () => {
 async function on() {
   w = await bossWorld({ real: false });
   const { h } = w;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await h.majhi.services.autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
@@ -90,7 +89,7 @@ describe("the captain resuming paused tasks", () => {
     const t = await on();
     expect((await t.call("majhi_tasks_start", { id: t.id })).isError).toBe(false);
     expect((await t.call("majhi_tasks_stop", { id: t.id })).isError).toBe(false);
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
     const res = await t.call("majhi_tasks_start", { id: t.id });
     expect(res.isError).toBe(true);
     expect(res.text).toMatch(/^Refused: /);

@@ -81,6 +81,8 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.guide",
   "autonomy.forget",
   "autonomy.exclude",
+  // The authority level is the org policy for push, merge and outbound messages: only the owner sets it, and it is never even a proposal.
+  "authority.set",
   // The captain never stops or resumes itself, undoes its own log or turns its chores back on.
   "captain.stop",
   "captain.resume",
@@ -516,6 +518,7 @@ export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
   "autonomy.stop",
   "autonomy.configure",
   "autonomy.exclude",
+  "authority.set",
   "captain.stop",
   "captain.resume",
   "captain.choreOn",

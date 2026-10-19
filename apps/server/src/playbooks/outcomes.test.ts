@@ -14,7 +14,7 @@ function ship(merge: "decide" | "ask", off: string[]) {
   const repo = new CaptainRepo(store.raw);
   const calls = { merged: 0, asked: 0 };
   // Only the ports the ship chore reads; the rest is never called by it.
-  const authority: Authority = { ...RUNS, merge };
+  const authority: Authority = { ...RUNS, push: "ask", merge };
   const ports = {
     typing: () => false,
     shipPlan: async () => planOf(authority),

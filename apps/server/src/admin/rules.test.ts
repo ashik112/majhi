@@ -29,7 +29,7 @@ describe("always-allow rules on approval cards", () => {
       task: task.id,
       item: card?.id,
       decision: "approve",
-      always: { scope: "task" },
+      always: true,
     });
     expect(refused.status).toBe(409);
     expect((await cards())[0]).toMatchObject({ state: "pending" });

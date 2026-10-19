@@ -5,6 +5,8 @@ import {
   type Actor,
   type Authority,
   type AuthorityRow,
+  type AuthoritySetInput,
+  type AuthoritySetResult,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
   type AutonomyBacklogItem,
@@ -69,8 +71,6 @@ import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
-import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
-import { answerFor, coveredForTask, permissionVerdict, widenedNote } from "../captain/permission-rules.ts";
 import { captainPolicyOf } from "../captain/policy.ts";
 import { typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
@@ -91,6 +91,7 @@ import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
 import { addDays, dayStart, localDay, validZone, zoneOr } from "../usage/ranges.ts";
+import { setAuthority } from "./authority-set.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
 import {
@@ -179,8 +180,6 @@ export interface AutonomyDeps {
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
   typing?: (task: string) => boolean;
-  /** Projects the owner protects: Own work never approves a change in one of them. */
-  protectedProjects?: () => Promise<ReadonlySet<string>>;
   /**
    * Why the one monthly ceiling holds new starts now, or undefined. Read where something would start;
    * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
@@ -2219,6 +2218,16 @@ export class AutonomyService {
     return this.status();
   }
 
+  /** `authority.set`: the workspace's level and incident switches. The owner's alone (`authority-set.ts`). */
+  async setAuthority(
+    input: AuthoritySetInput,
+    change: { command: string; meta: CommandMeta },
+  ): Promise<AuthoritySetResult> {
+    const done = await setAuthority(this.deps.config, input, change);
+    this.deps.events.emit(["autonomy", "captain"]);
+    return done;
+  }
+
   /**
    * The owner's message to the captain, in any mode: it goes to a workspace's lane as the owner's
    * message, which wakes the captain there (default: the first workspace where the captain starts work). With
@@ -2580,9 +2589,9 @@ export class AutonomyService {
 
   /**
    * The captain answers a card through the owner's own paths, in an autonomous task or in any task of
-   * the lane's workspace. Which row governs it: "Answer agents' questions" for questions and choices,
-   * "Answer routine approval cards" for permission prompts. On "Ask me" it waits for the owner. Never in
-   * a task the owner is in.
+   * the lane's workspace. "Answer agents' questions" governs questions and choices; on "Ask me" they wait
+   * for the owner. A permission prompt is never the captain's: it exists because the level does not cover
+   * the action. Never in a task the owner is in.
    */
   private async answer(
     caller: AdminCaller,
@@ -2599,17 +2608,16 @@ export class AutonomyService {
     }
     const item = this.deps.room.get(input.task, input.item);
     if (item === undefined) return fail(`There is no card ${input.item} in ${input.task}.`);
-    const row: AuthorityRow = item.type === "permission" ? "approvals" : "questions";
-    const answerable = ["permission", "choice", "ask", "owner-question"].includes(item.type);
-    // Own work lets the captain allow a routine request of a task it started, whatever the Approvals row says.
-    const viaOwn =
-      authority !== undefined &&
-      item.type === "permission" &&
-      authority[row] !== "decide" &&
-      authority.own === "decide" &&
-      inLane &&
-      this.repo.isAutonomous(input.task);
-    if (authority !== undefined && answerable && authority[row] !== "decide" && !viaOwn) {
+    // A permission card is there because the workspace's level does not cover the action: the owner decides it.
+    if (item.type === "permission") {
+      const names = orgNames(await this.deps.config.sections());
+      return fail(
+        `Refused: this is above the level of ${orgName(lane ?? PRIVATE, names)}, so only the owner answers it. Leave it to the owner.`,
+      );
+    }
+    const row: AuthorityRow = "questions";
+    const answerable = ["choice", "ask", "owner-question"].includes(item.type);
+    if (authority !== undefined && answerable && authority[row] !== "decide") {
       const names = orgNames(await this.deps.config.sections());
       return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
     }
@@ -2617,51 +2625,10 @@ export class AutonomyService {
     if (waiting !== undefined) {
       return fail(`${waiting}. The captain tries again when you send or leave.`);
     }
-    let option = input.option;
-    let widened: string | undefined;
-    // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
-    if (item.type === "permission") {
-      const rule = permissionVerdict(item.title);
-      const kind = item.options.find((o) => o.id === option)?.kind;
-      if (rule.decision === "unreadable") return fail(`Refused: ${rule.why}. Leave it to the owner.`);
-      if (viaOwn) {
-        const task = this.deps.store.tasks.get(input.task);
-        const scope =
-          task === undefined || task.noAutonomy === true
-            ? undefined
-            : scopeOfTask(task, (await this.deps.protectedProjects?.()) ?? new Set<string>());
-        const verdict = scope === undefined ? undefined : classifyOwnWork(item.title, scope);
-        if (kind !== "allow_once" || verdict?.decision !== "approve") {
-          const why =
-            verdict?.decision === "owner"
-              ? verdict.why
-              : "only an Allow once of a routine request is its to give";
-          return fail(`Refused: Own work does not cover it: ${why}. Leave it to the owner.`);
-        }
-      }
-      if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
-        return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
-      }
-      // Allow for this task is for a tool a rule covers; any other tool is a judgment call, once.
-      if (kind === "allow_always" && !coveredForTask(item.title)) {
-        return fail("Refused: Allow for this task is only for a tool a rule covers. Use Allow once.");
-      }
-      // A rule covers the tool for the whole task: the next call must not ask again.
-      // Said in the room line and the result, so the captain knows why the card shows another option.
-      if (option !== undefined) {
-        const chosen = option;
-        option = answerFor(item.title, item.options, chosen);
-        widened = widenedNote(item.title, chosen, option);
-      }
-    }
+    const option = input.option;
     let answered: RoomItem;
     try {
       switch (item.type) {
-        case "permission":
-          if (item.connection !== undefined) return fail("A write through a connection needs the owner.");
-          if (option === undefined) return fail("Give option: the id of one of the prompt's options.");
-          answered = this.deps.tasks.answerPermission(input.task, item.id, option, caller.agent);
-          break;
         case "choice":
           if (option === undefined) return fail("Give option: the id of one of the choices.");
           answered = await this.deps.tasks.answerChoice(input.task, item.id, option, caller.agent);
@@ -2689,9 +2656,7 @@ export class AutonomyService {
     this.deps.room.post(input.task as TaskId, `autonomy:${randomUUID()}`, {
       type: "system",
       level: "info",
-      text: redactText(
-        `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
-      ),
+      text: redactText(captainAnsweredLine(answered, reason)),
     });
     this.event({
       kind: "answer",
@@ -2702,7 +2667,7 @@ export class AutonomyService {
       item: item.id,
       ...this.orgOfTask(input.task),
     });
-    return ok({ item: answered, ...(widened === undefined ? {} : { note: widened }) });
+    return ok({ item: answered });
   }
 
   // ---------------------------------------------------------------------------

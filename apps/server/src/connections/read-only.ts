@@ -392,7 +392,9 @@ function realOf(path: string): string {
   }
 }
 
-function insideRoots(word: string, scope: ReadScope): boolean {
+/** Whether a path word, read from `scope.cwd`, stays inside the task's folders. `~`, variables and unreadable words do not. */
+export function insideRoots(word: string, scope: Pick<ReadScope, "roots" | "cwd">): boolean {
+  if (word.includes("$") || word.includes("`")) return false;
   if (word === "-" || word === "") return true;
   if (word.startsWith("~")) return false;
   const full = realOf(isAbsolute(word) ? resolve(word) : resolve(scope.cwd, word));

@@ -16,7 +16,13 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import { IdSchema, PRIVATE, reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
+import {
+  IdSchema,
+  imageAllowed,
+  PRIVATE,
+  reservedNameReason,
+  type TaskDockerErrorCode,
+} from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
@@ -549,7 +555,7 @@ export class ContainerService {
     const docker = this.need();
     const t = this.task(task);
     let settings = await this.deps.settings();
-    if (!this.allowed(task, settings).some((image) => sameImage(image, input.image))) {
+    if (!imageAllowed(input.image, this.allowed(task, settings))) {
       if (ask === undefined) {
         throw new UserError(
           `${input.image} is not allowed yet. Allow it first with containers.images.allow, then start the service.`,
@@ -557,7 +563,7 @@ export class ContainerService {
       }
       if ((await ask(input.image, input.name)) === "pending") return { status: "asked" };
       settings = await this.deps.settings();
-      if (!this.allowed(task, settings).some((image) => sameImage(image, input.image))) {
+      if (!imageAllowed(input.image, this.allowed(task, settings))) {
         throw new UserError(`${input.image} is not allowed.`);
       }
     }
@@ -1256,7 +1262,7 @@ export class ContainerService {
     const allowed = this.allowed(task, settings);
     const missing = dockerfileImages(text, args).filter((ref) => {
       const local = localImage(safety, ref);
-      return !(local !== undefined && built.has(local)) && !allowed.some((image) => sameImage(image, ref));
+      return !(local !== undefined && built.has(local)) && !imageAllowed(ref, allowed);
     });
     const [first, ...more] = missing;
     if (first !== undefined) throw new ImageNotAllowed(first, undefined, more);

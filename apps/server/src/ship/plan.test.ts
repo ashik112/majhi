@@ -1,24 +1,9 @@
-import {
-  ALL_ASK,
-  AutonomySettingsSchema,
-  type DeployEnvironment,
-  type ShipRule,
-  type Task,
-} from "@majhi/shared";
+import { AutonomySettingsSchema, type DeployEnvironment, type Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { createNothingDeploys } from "../deploy/nothing.ts";
 import { ownerStepOf } from "../tasks/detail.ts";
 import { linesOfNumstat } from "./lines.ts";
 import { opensMergeRequest, ShipPlanner, shipAsked } from "./plan.ts";
-
-const rule: ShipRule = {
-  id: "aaaaaaaa",
-  when: { types: ["bug"] },
-  merge: "decide",
-  deployStaging: "ask",
-  deployProduction: "ask",
-  tell: "ask",
-};
 
 const task = (id: string, org: string | undefined, type: "bug" | "feature", into?: string): Task =>
   ({
@@ -28,6 +13,11 @@ const task = (id: string, org: string | undefined, type: "bug" | "feature", into
     repos: into === undefined ? [] : [{ project: "storefront", base: into, branch: "task/x" }],
     typing: { type, by: "owner" },
   }) as unknown as Task;
+
+/** Acme is at Full and Globex at Routine, the two levels that differ in what the captain ships. */
+const SETTINGS = AutonomySettingsSchema.parse({
+  orgs: { acme: { level: "full" }, globex: { level: "routine" } },
+});
 
 function planner(
   mode: "on" | "off",
@@ -44,18 +34,11 @@ function planner(
   ]);
   return new ShipPlanner({
     tasks: { get: (id) => tasks.get(id) },
-    settings: async () =>
-      AutonomySettingsSchema.parse({
-        orgs: {
-          acme: { authority: { ...ALL_ASK }, ships: [rule] },
-          globex: { authority: { ...ALL_ASK } },
-        },
-      }),
+    settings: async () => SETTINGS,
     mode: () => mode,
     halted: () => over.halted === true,
     backlog: () => over.backlog === true,
     incident: () => false,
-    areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
     environments: async () => environments,
     needsDeployPlan: async () => needsPlan,
     viaMergeRequests: async () => way === "merge-request",
@@ -64,13 +47,13 @@ function planner(
 }
 
 describe("who ships a task", () => {
-  it("applies a workspace's rules to its own tasks only", async () => {
+  it("applies a workspace's level to its own tasks only", async () => {
     const p = planner("on");
     expect((await p.plan("ACM-1")).steps.merge).toBe("captain");
-    // Another workspace's bug is not covered by Acme's rule.
-    expect((await p.plan("GLX-1")).steps.merge).toBe("owner");
-    // Neither is a task of Acme the rule does not name.
-    expect((await p.plan("ACM-2")).steps.merge).toBe("owner");
+    expect((await p.plan("ACM-2")).steps.merge).toBe("captain");
+    // Globex is at Routine: it pushes the task's branch and leaves the merge to the owner.
+    const globex = (await p.plan("GLX-1")).steps;
+    expect([globex.merge, globex.push]).toEqual(["owner", "captain"]);
   });
 
   it("ships a task the owner started by its own line while Auto-pilot is off", async () => {
@@ -96,10 +79,8 @@ describe("who ships a task", () => {
     ]);
   });
 
-  it("says how the task lands, and names the rule that decided", async () => {
-    const plan = await planner("on", "merge-request").plan("ACM-1");
-    expect(plan.way).toBe("merge-request");
-    expect(plan.ruleSubject).toBe("A bug");
+  it("says how the task lands", async () => {
+    expect((await planner("on", "merge-request").plan("ACM-1")).way).toBe("merge-request");
   });
 });
 
@@ -109,10 +90,11 @@ describe("a merge into the branch of an environment", () => {
   ];
 
   it("takes the stricter of Merge and the tier's Deploy cell, so the owner's Deploy production keeps the merge", async () => {
-    // The rule gives the captain the merge and leaves both Deploy cells to the owner.
+    // Full gives the captain the merge and leaves Deploy production to the owner. Opening a merge request
+    // from the task's own branch deploys nothing, so Push stays the captain's.
     const plan = await planner("on", "local", deployOnMain("production"), "main").plan("ACM-1");
     expect(plan.steps.merge).toBe("owner");
-    expect(plan.steps.push).toBe("owner");
+    expect(plan.steps.push).toBe("captain");
     expect(plan.gated).toEqual({ project: "storefront", env: "production", tier: "production" });
   });
 
@@ -120,16 +102,13 @@ describe("a merge into the branch of an environment", () => {
     expect(
       (await planner("on", "local", deployOnMain("production"), "develop").plan("ACM-1")).steps.merge,
     ).toBe("captain");
-    const open: ShipRule = { ...rule, deployStaging: "decide" };
     const p = new ShipPlanner({
       tasks: { get: () => task("ACM-1", "acme", "bug", "main") },
-      settings: async () =>
-        AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...ALL_ASK }, ships: [open] } } }),
+      settings: async () => SETTINGS,
       mode: () => "on",
       halted: () => false,
       backlog: () => false,
       incident: () => false,
-      areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
       environments: async () => deployOnMain("staging"),
       needsDeployPlan: async () => false,
       viaMergeRequests: async () => false,
@@ -190,7 +169,6 @@ describe("the step that waits for the owner", () => {
       deployStaging: "owner",
       deployProduction: "owner",
       tell: "owner",
-      rule: undefined,
     }) as const;
 
   it("is the merge when it is the owner's, unless the captain opens a merge request first", () => {

@@ -1,5 +1,4 @@
 import { afterEach, expect, it } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { captainScript } from "../testing/captainScript.ts";
 import { CONN, envelope } from "./testing/world.ts";
@@ -18,7 +17,7 @@ afterEach(async () => {
 it("a problem report with no watch firing leads the captain to open an incident and reply with what it checked", async () => {
   w = await bossWorld();
   const { h } = w;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   const lane = await h.majhi.services.autonomy.laneChat("acme");
   if (lane === undefined) throw new Error("no lane for Acme");
   const { chatParts } = h.majhi.services;

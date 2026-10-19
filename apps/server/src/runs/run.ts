@@ -5,6 +5,7 @@ import type {
   AuthMode,
   Perm,
   ProcessInfo,
+  RiskKind,
   Task,
   ToolId,
   TurnsPatch,
@@ -50,8 +51,8 @@ export interface Pending {
   resolve: (option: string | undefined) => void;
   /** Connection writes the prompt is for (5.14), each logged with the owner's answer. */
   writes?: readonly GateWrite[] | undefined;
-  /** An MCP tool's allow key: the prompt also offers "Allow in this task" and "Always allow this tool" for it. */
-  alwaysKey?: string | undefined;
+  /** What kind of action the prompt is for: the kind "Allow in this task" and "Always" are kept under. */
+  risk?: RiskKind | undefined;
 }
 
 /**

@@ -1,113 +1,77 @@
 import type { PermissionAsk } from "@majhi/acp";
-import type { Perm } from "@majhi/shared";
 import { classifyCommand, classifyTool, type GateConnection, type GateVerdict } from "../connections/gate.ts";
 
-/** Any `git ... push`, including ones inside `sh -c "..."` or a longer command line. Errs toward asking. */
-const GIT_PUSH = /\bgit\b[^;&|\n]*?\bpush\b/i;
-/** Opening or merging a merge request from the command line. */
-const MR_CLI = /\b(?:gh\s+pr|glab\s+mr)\b/i;
-
-/** What an ACP tool kind needs, by DECISIONS: nothing for reads, `edit`, `shell`, `push` or `mr`. */
-export type Need = "none" | Perm | "unknown";
-
-/** The permission a request needs. `execute` needs `shell`, or `push` or `mr` for those commands. */
-export function neededPerm(ask: Pick<PermissionAsk, "kind" | "command" | "title">): Need {
-  switch (ask.kind) {
-    case "read":
-    case "search":
-    case "fetch":
-    case "think":
-      return "none";
-    case "edit":
-    case "delete":
-    case "move":
-      return "edit";
-    case "execute": {
-      const command = ask.command ?? ask.title;
-      if (GIT_PUSH.test(command)) return "push";
-      if (MR_CLI.test(command)) return "mr";
-      return "shell";
-    }
-    default:
-      return "unknown";
-  }
-}
-
-export type Decision = { action: "allow"; option: string; via: "perms" | "task" } | { action: "ask" };
-
-export interface DecideContext {
-  perms: readonly Perm[];
-  /** True when the owner chose "allow for this task" for this kind before. */
-  rememberedFor: (kind: string) => boolean;
-}
-
 /**
- * Decides a permission request without the owner (DECISIONS): allowed when the agent's perms
- * cover it, or when the owner already allowed this kind for the task. Pushes and merge
- * requests are never covered by a remembered choice. Everything else asks.
+ * The parts of an agent's permission request that are read by name. What a request is worth (its risk kind)
+ * is decided in `request-risk.ts`; this file reads tool names, the keys a task's "Allow for this task" is
+ * kept under and the connection gate's view of a request.
  */
-export function decidePermission(ask: PermissionAsk, ctx: DecideContext): Decision {
-  const option =
-    ask.options.find((o) => o.kind === "allow_once") ?? ask.options.find((o) => o.kind === "allow_always");
-  if (option === undefined) return { action: "ask" };
-  // majhi's own MCP tools are gated by majhi's approval policy (cards with Undo), so the CLI's
-  // extra "may I call this tool" prompt is only noise. Anything else still follows the rules below.
-  if (isMajhiTool(ask.title)) return { action: "allow", option: option.id, via: "perms" };
-  // Background processes run commands, so they need what a shell command needs.
-  if (isProcessTool(ask.title)) {
-    return ctx.perms.includes("shell")
-      ? { action: "allow", option: option.id, via: "perms" }
-      : { action: "ask" };
-  }
-  const need = neededPerm(ask);
-  if (need === "none") return { action: "allow", option: option.id, via: "perms" };
-  if (need !== "unknown" && ctx.perms.includes(need))
-    return { action: "allow", option: option.id, via: "perms" };
-  const guarded = need === "push" || need === "mr";
-  // The captain's "Allow for this task" on a tool a rule covers is kept for that one tool.
-  if (ctx.rememberedFor(toolAllowKey(ask.title))) return { action: "allow", option: option.id, via: "task" };
-  if (!guarded && ctx.rememberedFor(ask.kind ?? "other")) {
-    return { action: "allow", option: option.id, via: "task" };
-  }
-  return { action: "ask" };
-}
+
+/** majhi's own MCP servers, as a CLI names them in `mcp__<server>__<tool>`. */
+const MAJHI_SERVERS: ReadonlySet<string> = new Set([
+  "majhi-admin",
+  "majhi-decide",
+  "majhi-room",
+  "majhi-tasks",
+  "majhi-memory",
+  "majhi-connections",
+  "majhi-containers",
+]);
 
 /** A call to majhi's background process server, which runs commands. */
 export function isProcessTool(title: string): boolean {
-  return /^mcp__majhi-processes__[a-z0-9_]+$/.test(title.trim());
+  return mcpToolOf(title)?.server === "majhi-processes";
 }
 
 /** A call to one of majhi's own MCP servers, as the CLIs name it: `mcp__majhi-admin__<tool>`. */
 export function isMajhiTool(title: string): boolean {
-  return /^mcp__majhi-(admin|decide|room|tasks|memory|connections|containers)__[a-z0-9_]+$/.test(
-    title.trim(),
-  );
+  const server = mcpToolOf(title)?.server;
+  return server !== undefined && MAJHI_SERVERS.has(server);
+}
+
+/** The key an "Allow for this task" on a kind of action is kept under, for one task. */
+export function riskAllowKey(kind: string): string {
+  return `risk:${kind}`;
 }
 
 /**
- * The key a per-tool "Allow for this task" is kept under: the captain's answer on a tool a rule
- * covers allows that tool for the task, not every tool of its kind.
- */
-export function toolAllowKey(title: string): string {
-  const tool = mcpToolOf(title);
-  return tool === undefined ? `tool:${title.trim()}` : `tool:${tool.server}.${tool.tool}`;
-}
-
-/**
- * The key an "Allow in this task" on a connection's MCP tool is kept under. It is not the key of
- * `toolAllowKey`: that one is the captain's for tools a rule covers, and never covers a connection write.
+ * The key an "Allow in this task" on a connection's MCP tool is kept under: that connection and tool in
+ * this task only, never a connection write by another tool.
  */
 export function connectionToolKey(connection: string, tool: string): string {
   return `connection-tool:${connection}.${tool}`;
 }
 
+/** A name of an MCP server or tool: letters, digits, `_`, `-` and, in a tool, `.`. */
+function nameChars(text: string, dots: boolean): boolean {
+  if (text === "") return false;
+  for (const ch of text) {
+    const word = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9");
+    if (!word && ch !== "_" && ch !== "-" && !(dots && ch === ".")) return false;
+  }
+  return true;
+}
+
 /** The server and tool of an MCP call: Claude names it `mcp__<server>__<tool>`, Codex `mcp.<server>.<tool>`. */
 export function mcpToolOf(title: string | undefined): { server: string; tool: string } | undefined {
   const text = (title ?? "").trim();
-  const claude = /^mcp__([A-Za-z0-9_-]+?)__([A-Za-z0-9_.-]+)$/.exec(text);
-  if (claude?.[1] !== undefined && claude[2] !== undefined) return { server: claude[1], tool: claude[2] };
-  const codex = /^mcp\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.-]+)$/.exec(text);
-  if (codex?.[1] !== undefined && codex[2] !== undefined) return { server: codex[1], tool: codex[2] };
+  if (text.startsWith("mcp__")) {
+    const rest = text.slice("mcp__".length);
+    // The server's name ends at the first double underscore after at least one character.
+    const cut = rest.indexOf("__", 1);
+    if (cut === -1) return undefined;
+    const server = rest.slice(0, cut);
+    const tool = rest.slice(cut + 2);
+    return nameChars(server, false) && nameChars(tool, true) ? { server, tool } : undefined;
+  }
+  if (text.startsWith("mcp.")) {
+    const rest = text.slice("mcp.".length);
+    const cut = rest.indexOf(".");
+    if (cut < 1) return undefined;
+    const server = rest.slice(0, cut);
+    const tool = rest.slice(cut + 1);
+    return nameChars(server, false) && nameChars(tool, true) ? { server, tool } : undefined;
+  }
   return undefined;
 }
 
@@ -136,5 +100,11 @@ export function connectionVerdict(
  * in those modes the CLI stops asking, so majhi would no longer see a connection write.
  */
 export function withoutUnaskedModes(options: PermissionAsk["options"]): PermissionAsk["options"] {
-  return options.filter((o) => !/^exit-plan-(?:clear-)?(?:auto|bypass)$/.test(o.id));
+  const unasked = new Set([
+    "exit-plan-auto",
+    "exit-plan-bypass",
+    "exit-plan-clear-auto",
+    "exit-plan-clear-bypass",
+  ]);
+  return options.filter((o) => !unasked.has(o.id));
 }

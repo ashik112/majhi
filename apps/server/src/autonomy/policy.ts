@@ -6,7 +6,7 @@ import {
   isDestructiveCommand,
   shipSteps,
 } from "@majhi/shared";
-import { askedSentence, authorityOf, shipRulesOf } from "../captain/levels.ts";
+import { askedSentence, authorityOf, incidentShipsOf, levelOf } from "../captain/levels.ts";
 import { type ShipPlan, shipAsked } from "../ship/plan.ts";
 import { holdCovering } from "./spend.ts";
 
@@ -34,7 +34,7 @@ export interface PolicyContext {
    * For a call that ships a task: who does each step of shipping it and how it lands, read now by the one
    * ship decision (`ShipPlanner`). Absent: the workspace's rows decide.
    */
-  ship?: Pick<ShipPlan, "steps" | "way" | "ruleSubject" | "gated"> | undefined;
+  ship?: Pick<ShipPlan, "steps" | "way" | "gated"> | undefined;
   holds: readonly AutonomyHold[];
   /** The accounts of the agents that would do the work. */
   accounts: readonly string[];
@@ -123,9 +123,12 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   const name = ctx.orgName ?? call.org;
   const authority = authorityOf(ctx.settings, call.org);
   const plan = ctx.ship ?? {
-    steps: shipSteps(authority, shipRulesOf(ctx.settings, call.org), { projects: [] }, true),
+    steps: shipSteps(
+      levelOf(ctx.settings, call.org),
+      { incident: incidentShipsOf(ctx.settings, call.org) },
+      true,
+    ),
     way: "local" as const,
-    ruleSubject: undefined,
   };
   if (call.confirm) return left("A fix task starts only when the owner approves it");
   if (risk === "destructive" || isDestructiveCommand(command)) return left("Only the owner removes things");

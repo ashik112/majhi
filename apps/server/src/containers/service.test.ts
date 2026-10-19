@@ -80,7 +80,7 @@ const db = { name: "db", image: "postgres:16-alpine", port: 5432 };
 describe("ContainerService", () => {
   describe("images", () => {
     it("refuses an image the owner has not allowed, and asks through a card when it can", async () => {
-      const input = { ...db, image: "mysql:8" };
+      const input = { ...db, image: "acme/mysql:8" };
       await expect(service.serviceStart("ACM-1", "acme-builder", input)).rejects.toThrow();
       const asked: string[] = [];
       const pending = await service.serviceStart("ACM-1", "acme-builder", input, async (image) => {
@@ -88,7 +88,7 @@ describe("ContainerService", () => {
         return "pending";
       });
       expect(pending).toEqual({ status: "asked" });
-      expect(asked).toEqual(["mysql:8"]);
+      expect(asked).toEqual(["acme/mysql:8"]);
       expect(docker.networks.size).toBe(0);
       expect(docker.containers.size).toBe(0);
       // A rule or an auto mode runs the card at once: the image is allowed when the call returns.
@@ -104,7 +104,7 @@ describe("ContainerService", () => {
     it("pulls only images the owner allowed: it asks for the rest and builds nothing", async () => {
       await writeFile(
         join(dir, "tasks", "ACM-1", "api", "Dockerfile"),
-        "FROM node:22 AS build\nFROM redis:7-alpine\n",
+        "FROM acme/node:22 AS build\nFROM redis:7-alpine\n",
       );
       const asked: string[] = [];
       await expect(
@@ -112,8 +112,8 @@ describe("ContainerService", () => {
           asked.push(image);
           return "pending";
         }),
-      ).rejects.toThrow(/node:22/);
-      expect(asked).toEqual(["node:22"]);
+      ).rejects.toThrow(/acme\/node:22/);
+      expect(asked).toEqual(["acme/node:22"]);
       expect(docker.builders.size).toBe(0);
       await expect(
         service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }),

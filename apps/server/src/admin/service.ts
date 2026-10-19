@@ -1,42 +1,53 @@
 import { randomUUID } from "node:crypto";
 import {
-  type AllowRule,
   AUTONOMY_BOSS_COMMANDS,
   type AutonomyMode,
+  type AutonomySettings,
   actorOfName,
   CAPTAIN_PROPOSALS,
   CHAT_BRIEF,
   type CommandMeta,
   type CommandName,
   type ConnectionTestResult,
+  commandRisk,
   commands,
+  currentRules,
   didWords,
   effectiveMode,
   IdSchema,
+  isAlwaysKind,
   isDestructiveCommand,
   McpInstallResultSchema,
   OWNER,
   PERMISSION_COMMANDS,
+  type PolicySettings,
   PRIVATE,
+  RISK_LABEL,
+  type RiskKind,
   type RoomItem,
+  riskVerdict,
+  ruleCovers,
   type ShipFix,
   scriptProblem,
   type TaskId,
   TaskIdSchema,
+  withRule,
 } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
-import { authorityOf, keptRowOf } from "../captain/levels.ts";
+import { incidentShipsOf, levelOf } from "../captain/levels.ts";
 import { isRootChat } from "../captain/tell.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
+import { isIncidentTask } from "../incident/engine.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
 import type { RoomService } from "../room/service.ts";
+import { SandboxLog } from "../runs/sandbox-log.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
@@ -56,7 +67,7 @@ import {
   WITHDRAW_SECRET_TOOL,
   WithdrawSecretInputSchema,
 } from "./fetch-secret.ts";
-import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
+import { decide as decideMode, redact, redactOutput, redactText } from "./policy.ts";
 import {
   mergeProposalInput,
   PROPOSED_TEXT,
@@ -227,7 +238,12 @@ export class AdminService {
   private proposals: ProposalWorld | undefined;
   private captainLog: ((entry: AppliedEntry) => void) | undefined;
 
-  constructor(private readonly deps: AdminDeps) {}
+  /** Sandbox actions that went ahead, one row per kind per task per minute. */
+  private readonly sandbox: SandboxLog;
+
+  constructor(private readonly deps: AdminDeps) {
+    this.sandbox = new SandboxLog((row) => deps.store.permissions.log(row));
+  }
 
   /** The dispatcher is built after the handlers, which need this service. */
   bind(dispatch: Dispatch): void {
@@ -622,16 +638,27 @@ export class AdminService {
   }
 
   /**
-   * Whether the owner gave the captain full access in the workspace of the caller's task, for this
-   * command: merging and pushing still follow their own row.
+   * Whether the caller's workspace lets this command through without a card: its risk kind read against the
+   * workspace's one level, its incident switches and its saved Always rules (docs/briefs/workflow-reset.md,
+   * step 1b). Commands the owner's own settings govern (`other`, permissions) are never let through here.
    */
-  private async fullAccess(caller: AdminCaller, command: string): Promise<boolean> {
-    const org = this.deps.store.tasks.get(caller.task)?.org;
-    if (org === undefined) return false;
-    const { autonomy } = await this.deps.config.settings();
-    if (autonomy.orgs[org]?.fullAccess !== true) return false;
-    const row = keptRowOf(command);
-    return row === undefined || authorityOf(autonomy, org)[row] === "decide";
+  private levelVerdict(
+    caller: AdminCaller,
+    command: CommandName,
+    parsed: Record<string, unknown>,
+    settings: { policy: PolicySettings; autonomy: AutonomySettings },
+  ): { kind: RiskKind; go: boolean; by?: "level" | "rule" } {
+    const kind = commandRisk(command, parsed);
+    if (kind === "other" || PERMISSION_COMMANDS.has(command)) return { kind, go: false };
+    const task = this.deps.store.tasks.get(caller.task);
+    const org = task?.org ?? PRIVATE;
+    const verdict = riskVerdict(levelOf(settings.autonomy, org), currentRules(settings.policy), org, kind, {
+      incident: incidentShipsOf(settings.autonomy, org),
+      incidentFix: task !== undefined && isIncidentTask(task),
+    });
+    return verdict.go
+      ? { kind, go: true, by: verdict.by === "rule" ? "rule" : "level" }
+      : { kind, go: false };
   }
 
   private async callCommand(
@@ -679,52 +706,57 @@ export class AdminService {
       const staffed = await autonomy.staffCall(caller, command, input);
       if (staffed !== undefined && staffed !== input) return this.callCommand(caller, command, staffed, ask);
     }
-    const { policy } = await this.deps.config.settings();
+    const settings = await this.deps.config.settings();
+    const { policy } = settings;
     const mode = ask.confirm === true ? "confirm" : effectiveMode(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
     // An agent's word that the owner asked counts only for low-risk changes, and for nothing in
     // autonomous mode: the owner is away.
     const ownerAsked = auto === undefined && ask.ownerAsked && !this.alwaysAsks(command, checked.data);
-    // Full access in the caller's workspace: the captain's calls run without a card, except a change to
-    // anyone's permissions and anything destructive, which follow the policy as always.
-    const full =
-      auto === "boss" &&
-      ask.confirm !== true &&
-      mode !== "confirm" &&
-      !PERMISSION_COMMANDS.has(command) &&
-      !isDestructiveCommand(command) &&
-      (await this.fullAccess(caller, command));
-    // A saved rule turns a card that would wait into a run. It is looked up only then.
-    const decision = full ? "run" : decideMode(mode, ownerAsked);
-    const rule =
-      decision === "run" || ask.confirm === true
-        ? undefined
-        : matchRule(policy, {
-            agent: caller.agent,
-            command,
-            task: caller.task,
-            org: this.deps.store.tasks.get(caller.task)?.org,
-          });
-    if (decision === "run" || rule !== undefined) {
-      // The owner's rule or `auto` mode runs it, but no cap or floor of autonomous mode is skipped.
+    // The workspace's level decides first (step 1b): what is inside the task never asks; push, merge and the
+    // rest go ahead only where the level or the owner's Always for that kind says so. The captain's and an
+    // autonomous task's own ships follow the same level through `decideAutonomously`, which also holds the
+    // ship guards, so only the sandbox short-circuits for them.
+    // Not for a command that reaches repos, folders or accounts (`alwaysAsks`), nor one the owner set to
+    // confirm by name: those stay the owner's click whatever the level says.
+    const reaches = this.alwaysAsks(command, checked.data) || policy.commands[command] === "confirm";
+    const level =
+      ask.confirm === true || reaches ? undefined : this.levelVerdict(caller, command, parsed, settings);
+    const goes = level?.go === true && (level.kind === "sandbox" || auto === undefined);
+    const decision = goes ? "run" : decideMode(mode, ownerAsked);
+    if (decision === "run") {
+      // The level or `auto` mode runs it, but no cap or floor of autonomous mode is skipped.
       const held =
         auto === undefined || autonomy === undefined
           ? undefined
           : await autonomy.heldStart(caller, command, parsed, input);
       if (held !== undefined) return error(held);
       const done = await this.execute(command, input, meta);
-      if (def.risk !== "read" && rule !== undefined) {
-        this.log(
-          caller.task,
-          caller.agent,
-          command,
-          summarize(command, input),
-          "allow",
-          "rule",
-          done.ok ? undefined : done.error,
-        );
+      // The captain's own sandbox work stays in its History, which is a log, not a card.
+      const quiet = goes && level?.kind === "sandbox" && auto !== "boss";
+      if (def.risk !== "read" && goes) {
+        const how = level?.by === "rule" ? "Always" : "level";
+        if (quiet) {
+          this.sandbox.note({
+            task: caller.task,
+            agent: caller.agent,
+            kind: "command",
+            title: summarize(command, input),
+            detail: auditDetail(done.ok ? how : `${how}. Failed: ${done.error}`),
+          });
+        } else {
+          this.log(
+            caller.task,
+            caller.agent,
+            command,
+            summarize(command, input),
+            "allow",
+            "rule",
+            done.ok ? how : `${how}. Failed: ${done.error}`,
+          );
+        }
       }
-      if (def.risk !== "read") {
+      if (def.risk !== "read" && !quiet) {
         const result = done.ok ? lineOf(done.output) : done.error;
         this.appliedAlone(
           caller,
@@ -732,9 +764,7 @@ export class AdminService {
           {
             ...cardOf(caller.agent, command, input, ask.reason),
             alone: true,
-            ...(rule === undefined
-              ? {}
-              : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
+            ...(goes && level?.by === "rule" ? { rule: "org" as const } : {}),
             state: done.ok ? "applied" : "failed",
             ...(done.commit === undefined ? {} : { commit: done.commit }),
             result,
@@ -1089,7 +1119,7 @@ export class AdminService {
     taskId: TaskId,
     itemId: string,
     decision: "approve" | "reject",
-    always?: { scope: "task" | "org"; change: ChangeRecord },
+    always?: { change: ChangeRecord },
     dismissal: Dismissal = { by: "owner" },
   ): Promise<RoomItem> {
     const item = this.deps.room.get(taskId, itemId);
@@ -1123,7 +1153,7 @@ export class AdminService {
         );
       }
       const input = this.inputOf(item);
-      if (always !== undefined) await this.saveRule(item, always.scope, always.change);
+      if (always !== undefined) await this.saveRule(item, always.change);
       const done = await this.execute(item.command as CommandName, input, this.metaOf(item));
       this.pending.delete(item.id);
       this.ownerCards.delete(item.id);
@@ -1293,28 +1323,24 @@ export class AdminService {
   }
 
   /**
-   * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
-   * destructive command, which only the owner's click approves, and for an org rule on a task with
-   * no org. Runs before the command, so a refusal leaves the card pending.
+   * Saves "Always" for the kind of action this card is, in the task's workspace, as a config commit: one rule
+   * per workspace and kind, never per agent, command or task. Refused for a kind that always asks (deleting,
+   * secrets, a client's server) and for a destructive command, which only the owner's click approves. Runs
+   * before the command, so a refusal leaves the card pending.
    */
-  private async saveRule(item: ApprovalItem, scope: "task" | "org", change: ChangeRecord): Promise<void> {
+  private async saveRule(item: ApprovalItem, change: ChangeRecord): Promise<void> {
+    const input = this.inputOf(item) as Record<string, unknown>;
+    const kind = commandRisk(item.command, input);
+    if (isDestructiveCommand(item.command) || !isAlwaysKind(kind)) {
+      throw new UserError("This kind of action asks every time. Only you can approve it, each time.", 409);
+    }
+    const org = this.deps.store.tasks.get(item.task)?.org ?? PRIVATE;
     const { policy } = await this.deps.config.settings();
-    if (isDestructiveCommand(item.command)) {
-      throw new UserError("This deletes or removes something. Only you can approve it, each time.", 409);
-    }
-    let rule: AllowRule = { agent: item.agent, command: item.command, task: item.task };
-    if (scope === "org") {
-      const org = this.deps.store.tasks.get(item.task)?.org;
-      if (org === undefined) throw new UserError("This task has no org, so it has no org to allow in.", 409);
-      rule = { agent: item.agent, command: item.command, org };
-    }
-    if (policy.rules.some((r) => sameRule(r, rule))) return;
+    const rules = currentRules(policy);
+    if (ruleCovers(rules, org, kind)) return;
     await this.deps.config.setSettings(
-      { policy: { rules: [...policy.rules, rule] } },
-      {
-        ...change,
-        summary: `always allow @${rule.agent} to run ${rule.command} for ${rule.task ?? `org ${rule.org}`}`,
-      },
+      { policy: { rules: withRule(rules, { org, kind }) } },
+      { ...change, summary: `always ${RISK_LABEL[kind]} in ${org}` },
     );
   }
 

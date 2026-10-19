@@ -1,7 +1,5 @@
 import type { AutonomyEvent, RoomItem, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { WAITING_TEXT } from "../admin/service.ts";
-import { ASK, RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { UsageRepo } from "../usage/repo.ts";
 
@@ -18,7 +16,7 @@ async function on() {
   w = await bossWorld({ real: false });
   const world = w;
   const { h } = w;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await h.majhi.services.autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
@@ -66,24 +64,23 @@ describe("autonomous mode deciding the cards that would wait", () => {
     expect(t.h.majhi.services.store.tasks.get(id)).toBeUndefined();
   });
 
-  it("pushes only where the org lets it", async () => {
+  it("pushes only where the org's level lets it", async () => {
     const t = await on();
     const id = await t.acmeTask();
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
     const before = await t.call("majhi_tasks_push", { id });
     expect(before.text).toBe(
       "Left for the owner: In Acme you decide when work is pushed, so the captain does not push it.",
     );
-    const turnedOn = await t.h.cmd("autonomy.configure", {
-      orgs: { acme: { authority: { push: "decide" } } },
-    });
+    const turnedOn = await t.h.cmd("authority.set", { org: "acme", level: "routine" });
     expect(turnedOn.status).toBe(200);
-    expect(turnedOn.body.settings.orgs.acme).toEqual({ authority: { ...RUNS, push: "decide" } });
-    await t.call("majhi_tasks_push", { id });
+    expect(turnedOn.body).toEqual({ org: "acme", level: "routine", fix: "ask", clientUpdate: "ask" });
+    expect((await t.call("majhi_tasks_push", { id })).text).not.toContain("Left for the owner");
     const pushes = (await t.cards()).filter((c) => c.command === "tasks.push");
     // The call it ran needed no click: it is a History entry, not a card in the thread.
     expect(pushes.map((c) => c.autonomy?.decision)).toEqual(["left"]);
     // The setting is a config commit, like every change of the owner's.
-    expect((await t.h.log())[0]).toContain("autonomy.configure");
+    expect((await t.h.log())[0]).toContain("authority.set");
   });
 
   it("refuses what breaks a hard limit, in every mode, with no card", async () => {
@@ -233,7 +230,7 @@ describe("the captain's own tools", () => {
       questions: [{ id: "q1", question: "Go?", options: [{ id: "y", label: "Yes" }], freeText: false }],
       state: "pending",
     });
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
     expect(
       (await t.call("majhi_autonomy_answer", { task: mine, item: "ask:mine", answers: { q1: "y" } })).text,
     ).toContain("Refused: in Acme you decide how agents' questions are answered");

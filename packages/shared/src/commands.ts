@@ -44,6 +44,7 @@ import {
 } from "./app-setup.ts";
 import { ApprovalStatsSchema } from "./approval-stats.ts";
 import { AuditListInputSchema, AuditListSchema } from "./audit.ts";
+import { AuthoritySetInputSchema, AuthoritySetResultSchema } from "./authority.ts";
 import {
   AutomationRunSchema,
   ScheduleCreateInputSchema,
@@ -374,6 +375,7 @@ import {
   RemoteReposInputSchema,
   RemoteReposSchema,
 } from "./remote-repos.ts";
+import { AllowRuleSchema } from "./risk-kinds.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   MoneySetInputSchema,
@@ -385,7 +387,6 @@ import {
   TrustUnmuteInputSchema,
 } from "./scorecard.ts";
 import {
-  AllowRuleSchema,
   AutonomyPatchSchema,
   BudgetsPatchSchema,
   CleanupPatchSchema,
@@ -3075,12 +3076,12 @@ export const commands = {
   "room.approve": {
     risk: "change",
     summary:
-      "Approve or reject a command an agent proposed. With always, approving also saves a rule that lets this agent run the same command without asking, for this task or for every task in its org",
+      "Approve or reject a command an agent proposed. With always, approving also saves one rule that lets this kind of action (push the task branch, merge, deploy to staging) run without asking in the task workspace. Kinds that always ask refuse it",
     input: z.object({
       task: TaskIdSchema,
       item: z.string(),
       decision: z.enum(["approve", "reject"]),
-      always: z.object({ scope: z.enum(["task", "org"]) }).optional(),
+      always: z.literal(true).optional(),
       /** Rejecting a secret request: the one line the asking agent is told. */
       reason: z.string().max(300).optional(),
     }),
@@ -3589,7 +3590,7 @@ export const commands = {
   "policy.removeRule": {
     risk: "change",
     summary:
-      "Remove one saved always-allow rule, named by its agent, command and scope (task or org). Its commands ask again",
+      "Remove one saved Always rule, named by its workspace and kind of action. That kind asks again there",
     input: AllowRuleSchema,
     output: SettingsSchema,
   },
@@ -4213,9 +4214,16 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only; the captain's call is a proposal the owner applies",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: its daily budget (cap) and the More rules (hours, freeze, tz, branches, providers, account). The authority level is not here: authority.set. null clears a field. Owner only; the captain's call is a proposal the owner applies",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
+  },
+  "authority.set": {
+    risk: "change",
+    summary:
+      "Set a workspace's one authority level (ask, routine or full) and its incident switches (fix: ask or ships, clientUpdate: ask or sends). Owner only: no agent and no captain can call it, and it is never a proposal",
+    input: AuthoritySetInputSchema,
+    output: AuthoritySetResultSchema,
   },
   "autonomy.guide": {
     risk: "change",

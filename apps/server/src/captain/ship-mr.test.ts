@@ -1,4 +1,4 @@
-import type { Authority, ShipFacts, ShipRule } from "@majhi/shared";
+import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { planOf, RUNS } from "./authority-fixtures.ts";
@@ -18,8 +18,6 @@ function setup(
   over: {
     check?: () => unknown;
     heads?: () => string;
-    rules?: ShipRule[];
-    facts?: ShipFacts;
     way?: "local" | "merge-request";
   } = {},
 ) {
@@ -29,7 +27,7 @@ function setup(
     typing: () => false,
     answerTasks: async () => answers,
     reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: over.heads?.() ?? "abc" }],
-    shipPlan: async () => planOf(authority, { rules: over.rules ?? [], facts: over.facts, way: over.way }),
+    shipPlan: async () => planOf(authority, { way: over.way }),
     shipCheck: async () =>
       over.check?.() ?? {
         ready: true,
@@ -60,7 +58,7 @@ function setup(
     name: "Acme",
     mode: "on",
     authority,
-    rules: over.rules === undefined ? undefined : { ships: over.rules },
+    rules: undefined,
     tz: "UTC",
     day: "2026-10-04",
     rulesOff: new Set(),

@@ -46,6 +46,7 @@ import { gitAttribution } from "./attribution.ts";
 import type { ContextBudget } from "./context.ts";
 import { packageCache } from "./package-cache.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
+import { riskScopeOfTask, shellRisk } from "./shell-risk.ts";
 import { prepareRunSkills } from "./skills.ts";
 import { toolsFolder } from "./tools-folder.ts";
 
@@ -484,6 +485,8 @@ export async function processLaunch(
     }),
     account,
     mounts: [...mounts, ...(held?.mounts ?? []), ...(packages?.mounts ?? []), ...(tools?.mounts ?? [])],
+    // What a command of this process would do, read the way a command of the agent's own shell is.
+    risk: (command) => shellRisk(command, riskScopeOfTask(task)),
     ...(held === undefined
       ? {}
       : { cleanup: () => removeRunFiles(held.dir), secrets: held.secrets, gate: held.gate }),

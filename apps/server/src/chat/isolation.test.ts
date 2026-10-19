@@ -1,7 +1,6 @@
 import { AGENT_BLOCKED_COMMANDS } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { toolName } from "../admin/tools.ts";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { CONN, envelope } from "./testing/world.ts";
 
@@ -27,7 +26,7 @@ describe("a client room of another workspace", () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     await must(h.cmd("orgs.create", { id: "globex", name: "Globex", key: "GLX" }));
-    await must(h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } }));
+    await must(h.cmd("authority.set", { org: "acme", level: "routine" }));
     const services = h.majhi.services;
     const parts = services.chatParts;
     const conn = { ...CONN, org: "globex" };
@@ -83,33 +82,27 @@ describe("a client room of another workspace", () => {
     }));
     expect(blocked.isError).toBe(true);
     // Its proposal for another workspace is refused too.
-    const proposal = await call("autonomy.configure", {
-      orgs: { globex: { authority: { tell: "decide" } } },
-    });
+    const proposal = await call("autonomy.configure", { orgs: { globex: { tasksAtOnce: 2 } } });
     expect(proposal.isError).toBe(true);
     expect(proposal.text).toMatch(/Refused|own workspace/);
   });
 
-  it("is not changed by the captain's own proposal about Tell: a card waits, and only the owner's click applies it", async () => {
+  it("is not changed by the captain: the client update switch is the owner's alone", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const services = h.majhi.services;
     const lane = (await services.lanes.ensure("acme")).id;
     const call = (command: string, input: Record<string, unknown>) =>
       services.admin.call({ task: lane, agent: "boss" }, toolName(command), { reason: "reading", ...input });
-    const res = await call("autonomy.configure", { orgs: { acme: { authority: { tell: "decide" } } } });
-    expect(res.isError).toBe(false);
-    const cards = (await w.items(lane)).filter((i) => i.type === "approval");
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({ type: "approval", command: "autonomy.configure", state: "pending" });
-    const settings = await must(h.cmd("settings.get"));
-    expect(JSON.stringify(settings)).not.toContain('"tell":"decide"');
-    const approved = await h.cmd("room.approve", {
-      task: lane,
-      item: cards[0]?.id ?? "",
-      decision: "approve",
-    });
-    expect(approved.status).toBe(200);
-    expect(JSON.stringify(await must(h.cmd("settings.get")))).toContain('"tell":"decide"');
+    // Neither a proposal nor a tool: autonomy.configure does not take the switch, and authority.set is no tool.
+    const res = await call("autonomy.configure", { orgs: { acme: { incident: { clientUpdate: "sends" } } } });
+    expect(res.isError).toBe(true);
+    const direct = await call("authority.set", { org: "acme", clientUpdate: "sends" });
+    expect(direct).toEqual({ text: "Unknown tool: majhi_authority_set", isError: true });
+    expect((await w.items(lane)).filter((i) => i.type === "approval")).toHaveLength(0);
+    expect(JSON.stringify(await must(h.cmd("settings.get")))).not.toContain("clientUpdate");
+    // The owner's own command sets it.
+    expect((await h.cmd("authority.set", { org: "acme", clientUpdate: "sends" })).status).toBe(200);
+    expect(JSON.stringify(await must(h.cmd("settings.get")))).toContain('"clientUpdate":"sends"');
   });
 });

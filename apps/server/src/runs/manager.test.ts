@@ -89,21 +89,31 @@ describe("permissions", () => {
     ).toBe(409);
   });
 
-  it("allows nothing beyond reads for an agent with no perms", async () => {
+  it("never asks for what stays inside the task, and asks for what leaves it", async () => {
     w = await taskWorld({ agent: { perms: [] } });
     const answers: (string | undefined)[] = [];
+    const inside = [
+      { kind: "read", title: "Read", command: undefined },
+      { kind: "edit", title: "Edit a.ts", command: undefined },
+      { kind: "execute", title: "cd api && pnpm test", command: "cd api && pnpm test" },
+      { kind: "execute", title: "docker pull postgres:16-alpine", command: "docker pull postgres:16-alpine" },
+    ];
     w.h.runtime.onSession = (s) => {
       s.script = async (turn) => {
-        answers.push(await turn.ask(ask({ kind: "read", title: "Read", command: undefined })));
-        answers.push(
-          await turn.ask(ask({ kind: "edit", title: "Edit a.ts", command: undefined, toolCallId: "t2" })),
-        );
+        for (const [n, one] of inside.entries())
+          answers.push(await turn.ask(ask({ ...one, toolCallId: `t${n}` })));
+        answers.push(await turn.ask(ask({ title: "git push origin main", command: "git push origin main" })));
         return "end_turn";
       };
     };
     await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
-    await until(() => live()?.status === "waiting", "edit prompt");
-    expect(answers).toEqual(["allow"]);
+    await until(() => live()?.status === "waiting", "the push prompt");
+    expect(answers).toEqual(["allow", "allow", "allow", "allow"]);
+    // Only the push is a card: the four before it left no room item at all.
+    const cards = (await items()).filter((i) => i.type === "permission");
+    expect(cards.map((c) => [c.type === "permission" ? c.title : "", c.state])).toEqual([
+      ["git push origin main", "pending"],
+    ]);
     await w.h.cmd("room.cancel", { task: "ACM-1" });
   });
 });

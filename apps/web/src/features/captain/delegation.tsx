@@ -1,18 +1,12 @@
 import {
-  type Authority,
-  type AuthorityChoice,
-  type AuthorityRow,
   type AutonomyStatus,
   type CaptainOrg,
   type CaptainStatus,
   CHORE_LABEL,
-  FULL_ACCESS_KEEPS,
-  FULL_ACCESS_NEVER,
-  PRIVATE,
   TASKS_AT_ONCE,
   type TaskSizeLimit,
 } from "@majhi/shared";
-import { Check, ChevronRight, MoreHorizontal, X } from "lucide-react";
+import { ChevronRight, MoreHorizontal, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,10 +27,8 @@ import { useCaptainCommand, useCaptainRules } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useAccounts } from "@/lib/studio-queries";
-import { AUTHORITY_PRESETS, AUTHORITY_ROW_TEXT, AUTHORITY_ROWS_ORDER } from "./model";
 import { MoreRules } from "./more-rules";
 import { useStartReview } from "./review-now";
-import { ShipRules } from "./ship-rules";
 
 const FIRST_COLUMN = "w-[184px] shrink-0";
 const COLUMN = "w-[116px] shrink-0";
@@ -52,39 +44,6 @@ const SIZE_HELP: Record<TaskSizeLimit, string> = {
   medium: "Features and fixes across several files, not big designs or hunts.",
   any: "Large tasks too. The captain splits them when that helps.",
 };
-
-/** One choice in the grid: filled when the captain decides, hollow when you do. */
-export function Cell({
-  checked,
-  label,
-  disabled,
-  onToggle,
-}: {
-  checked: boolean;
-  label: string;
-  disabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={checked}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onToggle}
-      className={cn(
-        "flex h-8 w-[88px] cursor-pointer items-center justify-center gap-1.5 rounded-md border text-sm transition-colors disabled:cursor-wait disabled:opacity-60",
-        checked
-          ? "border-accent-line bg-accent-wash font-medium text-fg"
-          : "border-dashed border-line-control text-fg-muted hover:border-line-hover hover:text-fg",
-      )}
-    >
-      {checked && <Check aria-hidden="true" className="size-3.5 text-accent-text" strokeWidth={2.5} />}
-      {checked ? "Captain" : "You"}
-    </button>
-  );
-}
 
 /** The daily budget of one workspace: an amount, or empty to share the Auto-pilot budget. */
 function BudgetCell({ org }: { org: CaptainOrg }) {
@@ -177,7 +136,7 @@ function AtOnceCell({ org }: { org: CaptainOrg }) {
   );
 }
 
-/** The workspaces as columns, the six decisions and the daily budget as rows. */
+/** The workspaces as columns, the tasks at once and the daily budget as rows. */
 function Grid({
   orgs,
   mode,
@@ -187,39 +146,16 @@ function Grid({
   mode: string;
   onMore: (org: string) => void;
 }) {
-  const toast = useToast();
-  const save = useCaptainRules();
-  const change = (org: CaptainOrg, patch: Partial<Authority>, done: string) =>
-    save.mutate(
-      {
-        input: { orgs: { [org.org]: { authority: patch } } },
-        reason: `Owner changed who decides what in ${org.name}`,
-      },
-      {
-        onSuccess: () => toast(done),
-        onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }),
-      },
-    );
-  const setRow = (org: CaptainOrg, row: AuthorityRow, value: AuthorityChoice) =>
-    change(
-      org,
-      { [row]: value },
-      `${org.name}: ${AUTHORITY_ROW_TEXT[row].label} is ${value === "decide" ? "the captain's" : "yours"}`,
-    );
-  // Full access gives every row but Merge and Push, which keep their own switch, and the rows that leave for a
-  // server or a client, which are only ever the owner's choice.
-  const covered = (org: CaptainOrg, row: AuthorityRow) =>
-    org.rules.fullAccess === true && !FULL_ACCESS_KEEPS.includes(row) && !FULL_ACCESS_NEVER.includes(row);
   const review = useStartReview();
   const sticky = "sticky left-0 z-10 bg-glass-strong";
   return (
     <fieldset
-      aria-label="Who decides what"
+      aria-label="Captain limits per workspace"
       className="m-0 -mx-1 min-w-0 overflow-x-auto border-0 px-1 pt-0 pb-1"
     >
       <div className="flex w-max min-w-full flex-col">
         <div className="flex items-end gap-2 border-b border-line pb-2">
-          <div className={cn(FIRST_COLUMN, sticky, "pr-2 text-xs text-fg-faint")}>Who decides</div>
+          <div className={cn(FIRST_COLUMN, sticky, "pr-2 text-xs text-fg-faint")}>Workspace</div>
           {orgs.map((org) => (
             <div key={org.org} className={cn(COLUMN, "flex items-center justify-between gap-1")}>
               <span className="min-w-0 truncate text-sm font-medium text-fg" title={org.name}>
@@ -229,10 +165,6 @@ function Grid({
                 label={`Options for ${org.name}`}
                 icon={<MoreHorizontal aria-hidden="true" />}
                 items={[
-                  ...AUTHORITY_PRESETS.map((preset) => ({
-                    label: preset.label,
-                    onSelect: () => change(org, preset.rows, `${org.name}: ${preset.label}`),
-                  })),
                   { label: "Hours, freezes and more", onSelect: () => onMore(org.org) },
                   {
                     label: "Review memories now",
@@ -247,68 +179,6 @@ function Grid({
                     onSelect: () => review.start(org.org, "cleanup", 0),
                   },
                 ]}
-              />
-            </div>
-          ))}
-        </div>
-        {AUTHORITY_ROWS_ORDER.map((row) => (
-          <div key={row} className="flex items-center gap-2 border-b border-line py-1.5">
-            <div
-              className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
-              title={AUTHORITY_ROW_TEXT[row].detail}
-            >
-              <span className="flex items-center gap-1.5 text-base text-fg">
-                {AUTHORITY_ROW_TEXT[row].label}
-                {AUTHORITY_ROW_TEXT[row].isNew === true && (
-                  <span className="rounded-[4px] border border-accent-line px-1 py-px font-mono text-[10px] font-medium tracking-[0.06em] text-accent-text uppercase">
-                    new
-                  </span>
-                )}
-              </span>
-              <span className="text-xs text-fg-faint">{AUTHORITY_ROW_TEXT[row].hint}</span>
-            </div>
-            {orgs.map((org) => (
-              <div key={org.org} className={COLUMN}>
-                <Cell
-                  checked={org.authority[row] === "decide"}
-                  label={`${AUTHORITY_ROW_TEXT[row].label} in ${org.name}: ${org.authority[row] === "decide" ? "the captain decides" : "you decide"}${covered(org, row) ? ", by full access" : ""}`}
-                  disabled={save.isPending || covered(org, row)}
-                  onToggle={() => setRow(org, row, org.authority[row] === "decide" ? "ask" : "decide")}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
-        <div className="flex items-center gap-2 border-b border-line py-1.5">
-          <div
-            className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
-            title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions, before anything destructive, and before merging or pushing when those rows are yours."
-          >
-            <span className="text-base text-fg">Full access</span>
-            <span className="text-xs text-fg-faint">
-              No cards, except permissions, deletes, and Merge or Push when they are yours
-            </span>
-          </div>
-          {orgs.map((org) => (
-            <div key={org.org} className={COLUMN}>
-              <Cell
-                checked={org.rules.fullAccess === true}
-                label={`Full access in ${org.name}: ${org.rules.fullAccess === true ? "on" : "off"}`}
-                disabled={save.isPending}
-                onToggle={() =>
-                  save.mutate(
-                    {
-                      input: { orgs: { [org.org]: { fullAccess: org.rules.fullAccess !== true } } },
-                      reason: `Owner turned full access ${org.rules.fullAccess === true ? "off" : "on"} in ${org.name}`,
-                    },
-                    {
-                      onSuccess: () =>
-                        toast(`${org.name}: full access ${org.rules.fullAccess === true ? "off" : "on"}`),
-                      onError: (error) =>
-                        toast("Could not change it", { detail: describeError(error), tone: "error" }),
-                    },
-                  )
-                }
               />
             </div>
           ))}
@@ -347,33 +217,7 @@ function Grid({
             </p>
           )),
       )}
-      {orgs.some((o) => o.org === PRIVATE) && (
-        <p className="mt-2 text-xs text-fg-faint text-pretty">
-          Private is your own workspace, so Answer questions and Approvals start as Captain there. Other
-          workspaces start as You.
-        </p>
-      )}
-      <p className="mt-2 text-xs text-fg-faint text-pretty">
-        The lines apply always. Auto-pilot only controls backlog work.
-      </p>
     </fieldset>
-  );
-}
-
-function Legend() {
-  return (
-    <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-faint">
-      <span className="flex items-center gap-1.5">
-        <span className="flex h-5 w-8 items-center justify-center rounded-sm border border-accent-line bg-accent-wash">
-          <Check aria-hidden="true" className="size-3 text-accent-text" strokeWidth={2.5} />
-        </span>
-        The captain decides
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="h-5 w-8 rounded-sm border border-dashed border-line-control" />
-        You decide
-      </span>
-    </p>
   );
 }
 
@@ -574,7 +418,7 @@ export function DelegationSheet({
   return (
     <Sheet
       title="Permissions"
-      subtitle="Who decides what, per workspace"
+      subtitle="Each workspace's authority level is set in its settings"
       wide
       onClose={onClose}
       actions={
@@ -591,10 +435,8 @@ export function DelegationSheet({
             There is no captain yet. Choose one on the Agents page. Until then nothing here runs.
           </p>
         )}
-        <Legend />
         <Grid orgs={captain.orgs} mode={captain.autonomy} onMore={setMore} />
         <OffChores orgs={captain.orgs} />
-        <ShipRules orgs={captain.orgs} />
         {autonomy && (
           <>
             <SizeLimit status={autonomy} />

@@ -49,7 +49,7 @@ const plan = (argv: string[], extra: Partial<TaskDockerContext> = {}) =>
 
 describe("docker in a task: what a script may run", () => {
   it("asks for an image that is neither built here nor allowed", () => {
-    expect(() => plan(["run", "redis:7"])).toThrow(ImageNotAllowed);
+    expect(() => plan(["run", "acme/redis:7"])).toThrow(ImageNotAllowed);
     expect(() => plan(["run", "acme/voice:test"])).toThrow(ImageNotAllowed);
   });
 
@@ -337,7 +337,7 @@ describe("docker in a task: the allow list is checked again on the call itself",
     ],
     ["an image of another task", (a) => [...a.slice(0, -1), "majhi-acm-2-img-x:latest"]],
     ["the preview image", (a) => [...a.slice(0, -1), "majhi-preview-acm-1"]],
-    ["an image the owner did not allow", (a) => [...a.slice(0, -1), "redis:7"]],
+    ["an image the owner did not allow", (a) => [...a.slice(0, -1), "acme/redis:7"]],
     ["a published port", (a) => ["run", "--publish", "80:80", ...a.slice(1)]],
     ["an unknown label", (a) => ["run", "--label", "majhi.runner=1", ...a.slice(1)]],
     ["a platform that is a flag", (a) => ["run", "--platform", "--privileged", ...a.slice(1)]],

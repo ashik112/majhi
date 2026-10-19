@@ -40,8 +40,6 @@ import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
-import { scopeOfTask } from "./own-work.ts";
-import { answerFor, widenedNote } from "./permission-rules.ts";
 import type { ApprovalCard, CaptainPorts, DeployPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import type { UpkeepPorts } from "./upkeep-ports.ts";
@@ -84,8 +82,6 @@ export interface WorldDeps {
   typing: (task: string) => boolean;
   /** Alias suggestions for a repo, from its folder and package names (the project card's scan). */
   aliasesOf: (path: string, id: string) => Promise<string[]>;
-  /** Projects the owner protects: Own work never approves a change in one of them. */
-  protectedProjects: () => Promise<ReadonlySet<string>>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
   /** Who does each step of shipping a task: the one decision the chore, the lane and the poller read. */
@@ -480,34 +476,15 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
-    async ownScope(org, task) {
-      const found = store.tasks.get(task);
-      if (found === undefined || (found.org ?? PRIVATE) !== org || found.noAutonomy === true)
-        return undefined;
-      // Only what the captain created or started: the tasks autonomous mode runs.
-      if (!deps.autonomy.isAutonomous(task)) return undefined;
-      return scopeOfTask(found, await deps.protectedProjects());
-    },
-
     async answer(_org, card, option, reason) {
       // Recorded as the captain's answer, never the owner's (5.18). One answer per card.
       const captain = (await deps.lanes.boss()) ?? "captain";
       return answerOnce(deps.repo, new Date(), card, async () => {
         let answered: RoomItem;
-        let widened: string | undefined;
         switch (card.kind) {
-          case "permission": {
-            // A tool a rule covers is allowed for the task, so its next call does not ask again.
-            const item = deps.room.get(card.task, card.item);
-            // A connection write is never widened: its extra options are majhi's, not a rule's.
-            const chosen =
-              item?.type === "permission" && item.connection === undefined
-                ? answerFor(item.title, item.options, option)
-                : option;
-            if (item?.type === "permission") widened = widenedNote(item.title, option, chosen);
-            answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
-            break;
-          }
+          case "permission":
+            // The level did not cover it: only the owner answers a permission prompt.
+            throw new Error("A permission prompt is the owner's to answer");
           case "choice":
             answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
             break;
@@ -526,7 +503,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
           type: "system",
           level: "info",
-          text: `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
+          text: captainAnsweredLine(answered, reason),
         });
       });
     },

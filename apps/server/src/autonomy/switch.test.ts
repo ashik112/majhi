@@ -1,6 +1,5 @@
 import type { CaptainStatus } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 let w: BossWorld | undefined;
@@ -13,7 +12,7 @@ afterEach(async () => {
 async function world() {
   w = await bossWorld({ real: false });
   const { h } = w;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   return { h, services: h.majhi.services };
 }
 

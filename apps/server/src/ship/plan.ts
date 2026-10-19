@@ -6,22 +6,19 @@ import {
   mayWork,
   PRIVATE,
   restOf,
-  type ShipFacts,
   type ShipSteps,
-  shipRuleSubject,
   shipSteps,
   type Task,
 } from "@majhi/shared";
-import { authorityOf, askedSentence as rowSentence, shipRulesOf } from "../captain/levels.ts";
+import { incidentShipsOf, levelOf, askedSentence as rowSentence } from "../captain/levels.ts";
 import { captainPolicyOf } from "../captain/policy.ts";
-import type { AreasReader } from "../tasks/areas.ts";
 import { changedLinesOfTask } from "./lines.ts";
 
 /**
  * Who does each step of shipping one task, read the same way by everything that ships (SPEC 5.18,
  * "One way to ship"): the captain's ship chore, its lane, the lead's merge card, and the merge request
- * poller. The answer is the workspace's authority rows refined by its ship rules (`shipSteps`), for
- * facts read now. Nothing here is stored, so there is no second copy to disagree.
+ * poller. The answer is the workspace's one authority level read for this task (`shipSteps`), plus the two
+ * incident switches for an incident's own fix. Nothing here is stored, so there is no second copy to disagree.
  */
 
 export const WAITS_FOR_PLAN = "Waits for the deploy plan";
@@ -29,13 +26,19 @@ export const WAITS_FOR_PLAN = "Waits for the deploy plan";
 /** How a task lands: a local merge of the branch, or the merge request its project works through. */
 export type ShipWay = "local" | "merge-request";
 
+/** What the plan knows about the task's work now. */
+export interface ShipFacts {
+  /** The projects the task changes. */
+  projects: readonly string[];
+  /** Added plus removed lines against the merge base. Absent: not known (a binary file, or the diff could not be read). */
+  changedLines?: number | undefined;
+}
+
 export interface ShipPlan {
   org: string;
   steps: ShipSteps;
   way: ShipWay;
   facts: ShipFacts;
-  /** In words, what the rule that decided covers: "A bug up to 200 lines". Absent when the rows decided. */
-  ruleSubject?: string | undefined;
   /** Why the captain rests in the workspace now (working hours, a freeze), or undefined. */
   rest?: string | undefined;
   /**
@@ -62,7 +65,6 @@ export interface ShipPlannerDeps {
   backlog(task: string): boolean;
   /** An incident's own task: working hours do not hold it. */
   incident(task: Task): boolean;
-  areas: Pick<AreasReader, "of" | "forget">;
   /** The environments of a project. A merge or push into the branch of one is a deploy of it. */
   environments(project: string): Promise<readonly DeployEnvironment[]>;
   /** Whether the task changes a project with environments and its deploy has no plan yet (not even "nothing deploys"). */
@@ -75,19 +77,10 @@ export interface ShipPlannerDeps {
 export class ShipPlanner {
   constructor(private readonly deps: ShipPlannerDeps) {}
 
-  /** The facts a rule reads, from the task and its diff now. */
+  /** The facts of the task's work, from its diff now. */
   async facts(task: Task): Promise<ShipFacts> {
-    // The areas are cached for the board; a ship decision reads them again, for this head.
-    this.deps.areas.forget(task.id);
-    const [areas, changedLines] = await Promise.all([
-      this.deps.areas.of(task).catch(() => undefined),
-      changedLinesOfTask(task.repos).catch(() => undefined),
-    ]);
+    const changedLines = await changedLinesOfTask(task.repos).catch(() => undefined);
     return {
-      ...(task.typing === undefined ? {} : { type: task.typing.type }),
-      ...(areas === undefined
-        ? {}
-        : { areas: [...new Set(areas.areas.map((a) => a.component))], unmapped: areas.unmapped }),
       ...(changedLines === undefined ? {} : { changedLines }),
       projects: task.repos.filter((r) => r.writes !== false).map((r) => r.project),
     };
@@ -108,11 +101,14 @@ export class ShipPlanner {
     });
     const acts =
       task.noAutonomy !== true && mayWork(policy, this.deps.backlog(task.id) ? "backlog" : "reacting").ok;
-    const base = shipSteps(authorityOf(settings, org), shipRulesOf(settings, org), facts, acts);
+    const base = shipSteps(
+      levelOf(settings, org),
+      { incident: incidentShipsOf(settings, org), incidentFix: this.deps.incident(task) },
+      acts,
+    );
     const gate = await this.gate(task, base);
     const { gated } = gate;
     const { steps, waits } = await this.holdForPlan(task, gate.steps);
-    const rule = shipRulesOf(settings, org).find((r) => r.id === steps.rule);
     const rest = this.deps.incident(task) ? undefined : restOf(policy, this.deps.now());
     const way: ShipWay = (await this.deps.viaMergeRequests(task).catch(() => false))
       ? "merge-request"
@@ -122,7 +118,6 @@ export class ShipPlanner {
       steps,
       way,
       facts,
-      ...(rule === undefined ? {} : { ruleSubject: shipRuleSubject(rule.when) }),
       ...(rest === undefined ? {} : { rest }),
       ...(gated === undefined ? {} : { gated }),
       ...(waits === undefined ? {} : { waits }),
@@ -157,8 +152,9 @@ export class ShipPlanner {
 }
 
 /**
- * Pure. For each environment the work deploys by landing in its branch, Merge and Push become the stricter of
- * their own answer and that tier's Deploy cell (the owner's wins). Never loosens: a step the owner keeps stays.
+ * Pure. For each environment the work deploys by landing in its branch, the captain's Merge (and the push that
+ * goes with it) becomes the stricter of its own answer and that tier's Deploy cell (the owner's wins). Never
+ * loosens: a step the owner keeps stays. Pushing the task's own branch to open a merge request is not a deploy.
  */
 export function tightenForBranchDeploys(
   steps: ShipSteps,
@@ -169,8 +165,9 @@ export function tightenForBranchDeploys(
   for (const hit of hits) {
     const cell = out[deployStepOf(hit.env.tier)];
     if (cell !== "owner") continue;
-    if (out.merge === "captain" || out.push === "captain") {
-      out = { ...out, merge: "owner", push: "owner" };
+    // Pushing the task's own branch to open a merge request deploys nothing; landing in the environment's branch does.
+    if (out.merge === "captain") {
+      out = { ...out, merge: "owner" };
       gated ??= { project: hit.project, env: hit.env.env, tier: hit.env.tier };
     }
   }
@@ -193,7 +190,7 @@ export function opensMergeRequest(plan: Pick<ShipPlan, "steps" | "way">): boolea
 export function shipAsked(
   row: "merge" | "push",
   name: string,
-  plan?: Pick<ShipPlan, "ruleSubject" | "gated" | "waits">,
+  plan?: Pick<ShipPlan, "gated" | "waits">,
 ): string {
   if (plan?.waits !== undefined) {
     return `In ${name} ${row === "merge" ? "the merge" : "the push"} waits for the deploy plan of this task`;
@@ -202,7 +199,5 @@ export function shipAsked(
     const { env, tier } = plan.gated;
     return `In ${name} ${env} is deployed when its branch is ${row === "merge" ? "merged" : "pushed"}, and deploying ${tier} is the owner's`;
   }
-  if (plan?.ruleSubject === undefined) return rowSentence(row, name);
-  const what = row === "merge" ? "the merge" : "the push";
-  return `In ${name} the rule for ${plan.ruleSubject.charAt(0).toLowerCase()}${plan.ruleSubject.slice(1)} leaves ${what} to you`;
+  return rowSentence(row, name);
 }

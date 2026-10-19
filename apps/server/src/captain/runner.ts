@@ -256,7 +256,7 @@ export class ChoreRun {
   private async recheck(a: ActInput): Promise<string | undefined> {
     if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
     const now = await this.deps.workspace(this.org);
-    if (now === undefined || !choresNow(now.authority, now, now.rules?.ships).includes(this.chore)) {
+    if (now === undefined || !choresNow(now.authority, now).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
     if (now.rest !== undefined && restHolds(this.chore)) throw new RunEnd("rested", now.rest);
@@ -349,7 +349,7 @@ export class ChoreRunner {
     try {
       const ws = await deps.workspace(org);
       if (ws === undefined) return no("There is no such workspace, or no captain yet.");
-      if (!choresNow(ws.authority, ws, ws.rules?.ships).includes(chore)) {
+      if (!choresNow(ws.authority, ws).includes(chore)) {
         return no(`${CHORE_LABEL[chore]} is not on in ${ws.name}. Turn upkeep on in Delegation.`);
       }
       if (deps.enabled?.(org, chore) === false) {

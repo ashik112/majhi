@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { pickValue, readInRoots } from "./clipboard-copy.ts";
 
@@ -78,7 +77,7 @@ describe("the captain copying to the owner's clipboard", () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const { admin, secrets } = h.majhi.services;
-    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+    expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await h.majhi.services.autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");

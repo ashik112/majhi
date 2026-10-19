@@ -1,7 +1,14 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { AccountRuntime, RunMount, Spawned, Spawner } from "@majhi/acp";
-import { type ProcessContainer, type ProcessInfo, processHost, type StoppedBy } from "@majhi/shared";
+import {
+  type ProcessContainer,
+  type ProcessInfo,
+  processHost,
+  RISK_LABEL,
+  type RiskKind,
+  type StoppedBy,
+} from "@majhi/shared";
 import { classifyCommand, type GateConnection } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -29,6 +36,8 @@ export interface ProcessLaunch {
   cleanup?: (() => Promise<void>) | undefined;
   /** The secret values of its connections, kept out of its output (5.14). */
   secrets?: readonly { name: string; value: string }[] | undefined;
+  /** What a command would do, as a risk kind: anything above `sandbox` is refused here and run in the agent's own shell. */
+  risk?: ((command: string) => RiskKind) | undefined;
   /** What the gate checks a command against: the connections the process holds (5.14). */
   gate?: readonly GateConnection[] | undefined;
 }
@@ -52,6 +61,20 @@ function refuseConnectionWrite(command: string, launch: ProcessLaunch | undefine
   const write = verdict.writes[0];
   throw new UserError(
     `This changes ${write?.connection ?? "a connection"} (${write?.why ?? "a write"}). Run it in your own shell instead, so the owner can approve it.`,
+    409,
+  );
+}
+
+/**
+ * A background process runs without the CLI's permission prompt, so one that would leave the task (push, merge,
+ * deploy, message, delete outside) is refused: run in the agent's own shell, the workspace's level or the owner
+ * decides it.
+ */
+function refuseAboveSandbox(command: string, launch: ProcessLaunch | undefined): void {
+  const kind = launch?.risk?.(command);
+  if (kind === undefined || kind === "sandbox") return;
+  throw new UserError(
+    `This would ${RISK_LABEL[kind]}. Run it in your own shell instead, so the workspace's authority level or the owner can decide it.`,
     409,
   );
 }
@@ -195,6 +218,7 @@ export class ProcessManager {
     const launch = managed === undefined ? await this.deps.launch(input.task, input.agent) : undefined;
     try {
       refuseConnectionWrite(input.command, launch);
+      refuseAboveSandbox(input.command, launch);
     } catch (err) {
       await launch?.cleanup?.().catch(() => undefined);
       throw err;
@@ -274,6 +298,7 @@ export class ProcessManager {
     const launch = proc.managed === undefined ? await this.deps.launch(task, agent) : undefined;
     try {
       refuseConnectionWrite(proc.info.command, launch);
+      refuseAboveSandbox(proc.info.command, launch);
     } catch (err) {
       await launch?.cleanup?.().catch(() => undefined);
       throw err;

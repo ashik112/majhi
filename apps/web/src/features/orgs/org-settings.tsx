@@ -10,6 +10,7 @@ import { ORG_COLORS, orgColorName } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useRenameOrg, useUpdateOrg } from "@/lib/studio-queries";
+import { AuthorityLevelField } from "./authority-level";
 import { checkOrgDraft, draftFromOrg, type OrgDraft, type OrgErrors } from "./model";
 
 /**
@@ -122,6 +123,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
         }}
         className="flex flex-col gap-5"
       >
+        <AuthorityLevelField org={org} />
         <div className="grid gap-3 @[560px]:grid-cols-2">
           <Field label="Name" error={errors.name}>
             {(p) => <Input {...p} value={draft.name} onChange={(e) => set({ name: e.target.value })} />}

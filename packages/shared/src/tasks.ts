@@ -14,6 +14,7 @@ import { TaskIdSchema } from "./ids.ts";
 import { IncidentEventSchema, ReportSentSchema, ReportTextSchema } from "./incident.ts";
 import { CiStateSchema, MrStateSchema } from "./mr-state.ts";
 import { ProcessInfoSchema } from "./processes.ts";
+import { RiskKindSchema } from "./risk-kinds.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
 import { SkillNameSchema } from "./skills.ts";
@@ -903,8 +904,10 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     toolCallId: z.string().optional(),
     options: z.array(PermissionOptionSchema),
     state: z.enum(["pending", "answered", "auto", "cancelled"]),
-    /** The option picked, by the owner (`answered`) or by the agent's permissions (`auto`). */
+    /** The option picked, by the owner (`answered`) or by the workspace's level (`auto`). */
     chosen: z.string().optional(),
+    /** What kind of action it asks for (docs/briefs/workflow-reset.md, step 1b). Older items lack it. */
+    risk: RiskKindSchema.optional(),
     /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
     by: CaptainBySchema.optional(),
     /**
