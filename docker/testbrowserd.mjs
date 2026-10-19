@@ -116,10 +116,14 @@ function main() {
         );
         await run("node", [cli, "install", "chromium"], env, "/tmp");
       }
-      entry.proc = spawn("node", [cli, "run-server", "--port", String(entry.port), "--host", "127.0.0.1", "--path", SERVER_PATH], {
-        env,
-        stdio: "ignore",
-      });
+      entry.proc = spawn(
+        "node",
+        [cli, "run-server", "--port", String(entry.port), "--host", "127.0.0.1", "--path", SERVER_PATH],
+        {
+          env,
+          stdio: "ignore",
+        },
+      );
       entry.proc.once("exit", () => {
         if (servers.get(version) === entry) servers.delete(version);
       });
@@ -170,7 +174,9 @@ function main() {
       const lines = [`${req.method} ${SERVER_PATH}${query} HTTP/1.1`];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const name = req.rawHeaders[i];
-        lines.push(`${name}: ${name.toLowerCase() === "host" ? `127.0.0.1:${entry.port}` : req.rawHeaders[i + 1]}`);
+        lines.push(
+          `${name}: ${name.toLowerCase() === "host" ? `127.0.0.1:${entry.port}` : req.rawHeaders[i + 1]}`,
+        );
       }
       upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
       if (head.length > 0) upstream.write(head);
