@@ -618,6 +618,8 @@ export class TaskService {
     }
 
     const asked = this.askedTeam({ input, parsed, agents, org });
+    if (asked !== undefined && asked.length > WORKERS_MAX + 1)
+      throw new UserError(`A task has its lead and at most ${WORKERS_MAX} workers.`, 409);
     const views = asked === undefined ? await this.deps.accounts.list() : [];
     const accountStatus = new Map(views.map((v) => [v.id, v.status]));
     const held = asked === undefined ? await this.heldAccounts(views) : undefined;
