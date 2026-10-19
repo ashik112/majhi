@@ -56,7 +56,8 @@ describe("the Autonomous switch is On or Off", () => {
     const { h, services } = await world();
     await h.cmd("autonomy.start");
     const chat = await services.autonomy.laneChat("acme");
-    const made = await services.admin.call({ task: chat ?? "", agent: "boss" }, "majhi_tasks_create", { name: "Test task",
+    const made = await services.admin.call({ task: chat ?? "", agent: "boss" }, "majhi_tasks_create", {
+      name: "Test task",
       reason: "test",
       text: "fix the api",
       repos: [{ project: "acme-api" }],

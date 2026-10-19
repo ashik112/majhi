@@ -2042,6 +2042,8 @@ ALTER TABLE tasks ADD COLUMN now TEXT;
 ALTER TABLE tasks ADD COLUMN next TEXT;
 ALTER TABLE tasks ADD COLUMN done_when TEXT;
 ALTER TABLE tasks ADD COLUMN idea TEXT;
+-- The gate counts the open tasks the owner did not make, per workspace, on every create.
+CREATE INDEX tasks_open_by_others ON tasks (org) WHERE status != 'done' AND kind != 'chat' AND idea IS NULL;
 `,
   },
 ];

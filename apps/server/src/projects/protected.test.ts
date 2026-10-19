@@ -61,7 +61,12 @@ describe("protected projects", () => {
     await world();
     const res = await cmd(
       "tasks.create",
-      { name: "Update api", text: "update api and ops", repos: [{ project: "acme-api" }, { project: "acme-ops" }], start: false },
+      {
+        name: "Update api",
+        text: "update api and ops",
+        repos: [{ project: "acme-api" }, { project: "acme-ops" }],
+        start: false,
+      },
       AGENT,
     );
     expect(res.status).toBe(200);

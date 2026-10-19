@@ -120,7 +120,9 @@ describe("the workspace's choice and the lane", () => {
       "Refused: this lane works in Acme only, and the call is about Private. Each workspace has its own lane.";
     expect(await t.call("majhi_tasks_start", { id: own })).toEqual({ isError: true, text: lane });
     expect(await t.call("majhi_tasks_get", { id: own })).toEqual({ isError: true, text: lane });
-    expect(await t.call("majhi_tasks_create", { name: "Test task", text: "Write the notes", start: false })).toEqual({
+    expect(
+      await t.call("majhi_tasks_create", { name: "Test task", text: "Write the notes", start: false }),
+    ).toEqual({
       isError: true,
       text: lane,
     });
@@ -131,7 +133,8 @@ describe("the workspace's choice and the lane", () => {
     // Putting a task in the backlog is not starting it.
     expect(
       (
-        await t.call("majhi_tasks_create", { name: "Test task",
+        await t.call("majhi_tasks_create", {
+          name: "Test task",
           text: "Add a health check",
           repos: [{ project: "acme-api" }],
           start: false,
@@ -140,7 +143,8 @@ describe("the workspace's choice and the lane", () => {
     ).toBe(false);
     expect(
       (
-        await t.call("majhi_tasks_create", { name: "Test task",
+        await t.call("majhi_tasks_create", {
+          name: "Test task",
           text: "Add a probe",
           repos: [{ project: "acme-api" }],
           start: true,
@@ -187,7 +191,14 @@ describe("tasks marked Not for autonomous mode", () => {
       isError: true,
       text: why,
     });
-    expect(await t.call("majhi_tasks_create", { name: "Test task", text: "A child of it", parent: id, start: false })).toEqual({
+    expect(
+      await t.call("majhi_tasks_create", {
+        name: "Test task",
+        text: "A child of it",
+        parent: id,
+        start: false,
+      }),
+    ).toEqual({
       isError: true,
       text: why,
     });

@@ -1,11 +1,5 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
-import {
-  GLOBAL_CONNECTIONS,
-  LEGACY_PERSONAL,
-  type OrgConfig,
-  type OrgView,
-  PRIVATE,
-} from "@majhi/shared";
+import { GLOBAL_CONNECTIONS, LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { renameOrgInConfig, writeOrg } from "../config/write.ts";

@@ -6,8 +6,8 @@ import {
   type DiagramSpec,
   DiagramSpecSchema,
   isAutonomyChat,
-  TaskLineSchema,
   TaskDockerRequestSchema,
+  TaskLineSchema,
   type TeamPlan,
   TeamPlanSchema,
 } from "@majhi/shared";
@@ -666,19 +666,18 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
       }
       // An agent starts its own task and splits its own plan; anything else is the owner's or the captain's.
       const captain = await isCaptain();
-      let confirm = false;
+      const confirm = false;
       if (tool.command === "tasks.start" && !captain) {
         if (args.id !== caller.task) {
-          return fail(
-            "You can start only your own task. Tasks you filed are ideas: the owner starts them.",
-          );
+          return fail("You can start only your own task. Tasks you filed are ideas: the owner starts them.");
         }
         const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
         const done = await deps.admin.runAllowed(caller, "tasks.start", { id: caller.task }, { reason });
         return done.isError ? fail(done.text) : ok(done.text);
       }
       if (tool.command === "tasks.split" && !captain) {
-        if (args.task !== caller.task) return fail("You can split only your own task, into steps of its plan.");
+        if (args.task !== caller.task)
+          return fail("You can split only your own task, into steps of its plan.");
         const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
         const done = await deps.admin.runAllowed(caller, "tasks.split", args, { reason });
         return done.isError ? fail(done.text) : ok(done.text);
@@ -716,7 +715,6 @@ async function readOtherRoom(caller: ToolCaller, deps: RoomMcpDeps, raw: unknown
 function orgOfTask(deps: RoomMcpDeps, task: string): string | undefined {
   return deps.store.tasks.get(task)?.org;
 }
-
 
 async function frontmatter(agents: AgentStore, id: string): Promise<AgentFrontmatter | undefined> {
   const stored = await agents.get(id);

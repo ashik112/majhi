@@ -1647,13 +1647,7 @@ const ALWAYS_ASK: ReadonlySet<CommandName> = new Set<CommandName>([
 ]);
 
 /** Fields of `orgs.update` that change git accounts, tokens, identity or what agents may do alone. */
-const SENSITIVE_ORG_FIELDS = [
-  "identity",
-  "commits",
-  "mr_tokens",
-  "git_accounts",
-  "merge",
-] as const;
+const SENSITIVE_ORG_FIELDS = ["identity", "commits", "mr_tokens", "git_accounts", "merge"] as const;
 
 /**
  * Why an agent may not make this call at all, or undefined. Agents never push: the owner pushes from

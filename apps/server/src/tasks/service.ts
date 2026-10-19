@@ -149,7 +149,7 @@ import {
 } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
-import { type Admission, admit, admitRunning, type GateCounts, type GateLimits } from "./gate.ts";
+import { type Admission, admit, admitRunning, type GateLimits } from "./gate.ts";
 import { handoverNote } from "./handover.ts";
 import { holdViewOf } from "./hold-view.ts";
 import {
@@ -979,7 +979,13 @@ export class TaskService {
    */
   private async admission(origin: GateOrigin, org: string, wantsStart: boolean): Promise<Admission> {
     const limits = await this.gateLimits();
-    return admit({ origin, org, wantsStart, counts: this.gateCounts(undefined), limits });
+    return admit({
+      origin,
+      org,
+      wantsStart,
+      counts: { running: this.runningCount(undefined), openByOthers: this.deps.store.tasks.openByOthers() },
+      limits,
+    });
   }
 
   private async gateLimits(): Promise<GateLimits> {
@@ -987,12 +993,16 @@ export class TaskService {
     return { tasks_running: limits.tasks_running, open_by_others: limits.open_by_others };
   }
 
-  /** What the gate counts now. `except`: a task that is about to start counts once, not twice. */
-  private gateCounts(except: string | undefined): GateCounts {
+  /**
+   * Tasks running now, chats left out, and the ones inside `start` that have no run yet. `except`: a task
+   * that is about to start counts once, not twice. One indexed read (`tasks_status`); the open count is
+   * read only when a task is made.
+   */
+  private runningCount(except: string | undefined): number {
     const running = new Set(this.deps.store.tasks.runningIds());
     for (const id of this.starting) running.add(id);
     if (except !== undefined) running.delete(except);
-    return { running: running.size, openByOthers: this.deps.store.tasks.openByOthers() };
+    return running.size;
   }
 
   /** Where in the line of waiting starts a task stands (1 is next), for the room's line. */
@@ -1156,7 +1166,7 @@ export class TaskService {
       fresh && task.kind !== "chat" && options.now !== true ? await this.gateLimits() : undefined;
     // No await from the count to `starting.add`: two starts at once cannot both take the last place.
     if (limits !== undefined) {
-      const full = admitRunning({ running: this.gateCounts(id).running }, limits);
+      const full = admitRunning({ running: this.runningCount(id) }, limits);
       if (full.kind === "queue") return this.queueStart(task, limits.tasks_running);
     }
     this.starting.add(id);
@@ -1188,7 +1198,7 @@ export class TaskService {
 
   /** Why a start waits: how many run and the limit. */
   private fullLine(id: string, cap: number): string {
-    const running = this.gateCounts(id).running;
+    const running = this.runningCount(id);
     return `${running} ${running === 1 ? "task is" : "tasks are"} running (limit ${cap}), so this one waits its turn.`;
   }
 
@@ -1198,7 +1208,7 @@ export class TaskService {
    */
   async noRoom(id: string): Promise<string | undefined> {
     const limits = await this.gateLimits();
-    if (admitRunning({ running: this.gateCounts(id).running }, limits).kind === "start") return undefined;
+    if (admitRunning({ running: this.runningCount(id) }, limits).kind === "start") return undefined;
     return `${this.fullLine(id, limits.tasks_running)} Place ${this.placeInLine(id)} in line.`;
   }
 
