@@ -1280,9 +1280,11 @@ The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomo
 - **Checked:** typecheck, `pnpm exec tsc -p e2e`, and the shot spec `playwright.captain.config.ts` (port 7201, `MAJHI_E2E_SEED=ui`) at 1440 and 1100, dark and light. No server change, so no new unit tests.
 - **Left:** the notify service still names `/autonomous` as a link path (the redirect covers it); the Today line "N things need you" links to the board until the Decisions inbox lands.
 
-## Phase 11: Trackers (built)
+## Phase 11: Trackers (built, then removed in D2)
 
-**Status.** Built on `task/prv-26-phase-11-trackers`, from `main`. The three adapters came from PRV-112. DECISIONS has its rows (2026-10-03). SPEC 5.11.
+**Status.** Removed from `main` on 2026-10-05 by the owner's decision D2 (`chore(trackers): remove tracker sync`, see "D2 to D5 and D8: unused features removed" above). The code below no longer exists; this section is kept as history. Its owner-only checks will not be done: PRV-154 closed them with no change, along with the threads from PRV-22, PRV-26 and PRV-112.
+
+Built on `task/prv-26-phase-11-trackers`, from `main`. The three adapters came from PRV-112. DECISIONS has its rows (2026-10-03). SPEC 5.11.
 
 ### What works
 
@@ -1309,7 +1311,7 @@ The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomo
 
 ### Owner-only checks
 
-- Real Jira Cloud, ClickUp and GitHub accounts and tokens: Test, a pull, a push, and status names on a real workflow.
+- No longer needed: tracker sync was removed in D2. It was: real Jira Cloud, ClickUp and GitHub accounts and tokens: Test, a pull, a push, and status names on a real workflow.
 
 ### Left and known issues
 
