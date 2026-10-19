@@ -8,6 +8,7 @@ import {
   isAutonomyChat,
   TaskDockerRequestSchema,
   TaskLineSchema,
+  TaskNameSchema,
   type TeamPlan,
   TeamPlanSchema,
 } from "@majhi/shared";
@@ -272,8 +273,9 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
 const STATUS_TOOL: Tool = {
   name: "status",
   description:
-    "Keep the owner's three lines on your own task current. doneWhen: how the owner will know the task is finished; set it in your first turn. now: what you are doing; next: what comes after; set both at each step. Each is one line of at most 120 characters. A line you leave out stays as it was. This is not a message: it changes no one's turn.",
+    "Keep the owner's three lines on your own task current, and name the task. name: 2 to 4 words that say what it is, like Login redirect; set it in your first turn with doneWhen (the branch follows the name until it is pushed). doneWhen: how the owner will know the task is finished; set it in your first turn. now: what you are doing; next: what comes after; set both at each step. Each is one line of at most 120 characters. A line you leave out stays as it was. This is not a message: it changes no one's turn.",
   input: z.object({
+    name: TaskNameSchema.optional(),
     now: TaskLineSchema.optional(),
     next: TaskLineSchema.optional(),
     doneWhen: TaskLineSchema.optional(),
@@ -612,7 +614,7 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
       const parsed = STATUS_TOOL.input.safeParse(request.params.arguments ?? {});
       if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);
       try {
-        deps.tasks.setStatusLines(caller.task, parsed.data);
+        await deps.tasks.setStatusLines(caller.task, parsed.data);
         return ok("Updated.");
       } catch (err) {
         return fail(errorMessage(err));

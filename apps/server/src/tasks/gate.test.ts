@@ -1,6 +1,6 @@
 import { type GateOrigin, GateOriginSchema, LimitsSettingsSchema, lineOrder } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { type Admission, admit, type GateCounts } from "./gate.ts";
+import { type Admission, admit, admitRunning, type GateCounts } from "./gate.ts";
 
 // The defaults come from the schema, not from numbers repeated here.
 const limits = LimitsSettingsSchema.parse({});
@@ -40,8 +40,8 @@ describe("the task gate", () => {
     }
   });
 
-  it("files the captain's, incidents', client chats' and schedules' tasks as ideas at the open cap, never the owner's", () => {
-    for (const origin of others.filter((o) => o !== "owner")) {
+  it("files the captain's, client chats' and schedules' tasks as ideas at the open cap, never the owner's or an incident's", () => {
+    for (const origin of others.filter((o) => o !== "owner" && o !== "incident")) {
       expect(run(origin, counts(0, limits.open_by_others - 1)), `${origin} under`).toEqual({ kind: "start" });
       expect(run(origin, counts(0, limits.open_by_others)), `${origin} at`).toEqual({
         kind: "idea",
@@ -52,6 +52,12 @@ describe("the task gate", () => {
         reason: "open-cap",
       });
     }
+    // An incident is reacting work: over the open cap it still starts, and at the running cap it queues.
+    expect(run("incident", counts(0, limits.open_by_others + 50))).toEqual({ kind: "start" });
+    expect(run("incident", counts(limits.tasks_running, limits.open_by_others + 50))).toEqual({
+      kind: "queue",
+      reason: "running-cap",
+    });
     expect(run("owner", counts(0, limits.open_by_others + 50))).toEqual({ kind: "start" });
     expect(run("owner", counts(limits.tasks_running, limits.open_by_others + 50))).toEqual({
       kind: "queue",
@@ -72,6 +78,14 @@ describe("the task gate", () => {
     expect(line.map((t) => t.id)).toEqual(["ACM-2", "ACM-1", "ACM-3"]);
     expect(run("owner", counts(limits.tasks_running - 1, 0))).toEqual({ kind: "start" });
     expect(run("owner", counts(limits.tasks_running, 0))).toEqual({ kind: "queue", reason: "running-cap" });
+  });
+
+  it("makes a resume wait in line like a start when the cap is full", () => {
+    expect(admitRunning({ running: limits.tasks_running }, limits)).toEqual({
+      kind: "queue",
+      reason: "running-cap",
+    });
+    expect(admitRunning({ running: limits.tasks_running - 1 }, limits)).toEqual({ kind: "start" });
   });
 
   it("counts the open tasks of the task's own workspace only", () => {

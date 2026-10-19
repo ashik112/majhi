@@ -2812,4 +2812,6 @@ Measured (480 seeded tasks, the perf seed): `tasks.list` store read p50/p95 1.72
 
 Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2723 tests passed; `pnpm build` and `pnpm exec playwright test` 10 passed. New tests: gate admissions per origin at and over each cap (and the urgent task first when a place frees), names to branch and folder (collisions, containment, deletion only inside tasks_dir), the migration on a real-shaped database copy, split writes plan steps and makes no task.
 
+Review fixes: incidents are never ideas; the agent names its task through `status` (unpublished branches follow); a resume takes a running place like a start.
+
 Left for the next steps: no Start now control in the UI yet (the command takes `now` for the owner; the console of step 3 has the key); the Ideas list and Needs you wording are step 3; `project-busy` is in the gate's type for step 2.

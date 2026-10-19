@@ -340,6 +340,8 @@ export class TaskService {
   private readonly starting = new Set<string>();
   /** Tasks the room was told wait for a free place, so it is said once. */
   private readonly lineNoted = new Set<string>();
+  /** Who asked for a resume that waits in line, so the line lifts the hold as that one may. */
+  private readonly resumeBy = new Map<string, string>();
   private readonly startStopped = new Set<string>();
   /** Lead orchestration: the check before a waiting task starts, and the lead's side of a parent. */
   private readonly orchestrator: Orchestrator;
@@ -404,7 +406,7 @@ export class TaskService {
       runs: deps.runs,
       planner: this.planner,
       host: {
-        start: (id) => this.start(id),
+        start: (id) => this.startWaiting(id),
         noRoom: (id) => this.noRoom(id),
         swap: (id, agent, replacement) => this.swapInTeam(id, agent, replacement),
         linksChanged: (ids) => this.linksChanged(ids),
@@ -834,13 +836,26 @@ export class TaskService {
   }
 
   /** The lines the task's agent keeps current (Now, Next, Done when). A line left out stays as it was. */
-  setStatusLines(
+  async setStatusLines(
     id: string,
-    lines: { now?: string | undefined; next?: string | undefined; doneWhen?: string | undefined },
-  ): Task {
+    lines: {
+      name?: string | undefined;
+      now?: string | undefined;
+      next?: string | undefined;
+      doneWhen?: string | undefined;
+    },
+  ): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") throw new UserError(`${id} is done.`, 409);
-    this.deps.store.tasks.setStatusLines(id, lines, this.now().toISOString());
+    const { name, ...rest } = lines;
+    this.deps.store.tasks.setStatusLines(id, rest, this.now().toISOString());
+    if (name !== undefined && name !== taskNameOf(task)) {
+      // The agent's name replaces the first words of the title; the branch follows while it is private.
+      this.deps.store.tasks.setName(id, this.nameFor(name, task.title), this.now().toISOString());
+      const failed: string[] = [];
+      await this.renameUnpublished(this.get(id), "to-name", failed);
+      for (const line of failed) this.warn(id, line);
+    }
     return this.fieldsChanged(id);
   }
 
@@ -1159,9 +1174,10 @@ export class TaskService {
 
   /**
    * Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. Two
-   * rules of the gate sit here: an idea starts only when the owner starts it, and a task that has not
-   * run yet waits in line when `limits.tasks_running` tasks already run (the owner's `now` starts it
-   * anyway). A task that waits is returned as it is, `ready`; the line starts it when there is room.
+   * rules of the gate sit here: an idea starts only when the owner starts it, and a task that is not
+   * running (not run yet, or paused and resumed) waits in line when `limits.tasks_running` tasks already
+   * run (the owner's `now` goes anyway). A task that waits is returned as it is, `ready` or `paused`;
+   * the line starts it when there is room.
    */
   async start(
     id: string,
@@ -1175,13 +1191,13 @@ export class TaskService {
         throw new UserError(`${taskNameOf(task)} is an idea: only the owner starts it.`, 409);
       this.deps.store.tasks.clearIdea(id);
     }
-    const fresh = task.status === "inbox" || task.status === "ready";
+    const fresh = task.status === "inbox" || task.status === "ready" || task.status === "paused";
     const limits =
       fresh && task.kind !== "chat" && options.now !== true ? await this.gateLimits() : undefined;
     // No await from the count to `starting.add`: two starts at once cannot both take the last place.
     if (limits !== undefined) {
       const full = admitRunning({ running: this.runningCount(id) }, limits);
-      if (full.kind === "queue") return this.queueStart(task, limits.tasks_running);
+      if (full.kind === "queue") return this.queueStart(task, limits.tasks_running, by);
     }
     this.starting.add(id);
     try {
@@ -1190,17 +1206,33 @@ export class TaskService {
       this.starting.delete(id);
       this.startStopped.delete(id);
       this.lineNoted.delete(id);
+      this.resumeBy.delete(id);
     }
   }
 
-  /** The task waits for a free place: it stays `ready` with the wish to start, and the line takes it in turn. */
-  private async queueStart(task: Task, cap: number): Promise<Task> {
-    const out = await this.lifecycle.apply(
-      task.id,
-      { type: "wishStart" },
-      { ctx: { by: "owner" }, skip: ["publishTask"] },
-    );
-    if (!wasRefused(out)) {
+  /**
+   * The task waits for a free place and the line takes it in turn. A task not run yet stays `ready` with
+   * the wish to start. A paused one stays paused with the wish, and who asked is kept (only in memory:
+   * after a restart the wish is dropped, never turned into a lift by someone else).
+   */
+  private async queueStart(task: Task, cap: number, by: string): Promise<Task> {
+    let queued = false;
+    if (task.status === "paused") {
+      const hold = this.lifecycle.state(task.id)?.hold;
+      if (hold !== undefined && this.liftEvent(hold, by) === undefined)
+        throw new UserError(lifecycle.sentenceOf(hold), 409);
+      this.deps.store.tasks.setStartWhenReady(task.id, true);
+      this.resumeBy.set(task.id, by);
+      queued = true;
+    } else {
+      const out = await this.lifecycle.apply(
+        task.id,
+        { type: "wishStart" },
+        { ctx: { by: "owner" }, skip: ["publishTask"] },
+      );
+      queued = !wasRefused(out);
+    }
+    if (queued) {
       this.deps.room.publishTask(this.get(task.id));
       if (!this.lineNoted.has(task.id)) {
         this.lineNoted.add(task.id);
@@ -1208,6 +1240,18 @@ export class TaskService {
       }
     }
     return this.get(task.id);
+  }
+
+  /** The line starts a waiting task: a paused one is resumed as the one who asked, or not at all. */
+  private async startWaiting(id: string): Promise<Task> {
+    const task = this.get(id);
+    if (task.status !== "paused") return this.start(id);
+    const by = this.resumeBy.get(id);
+    if (by === undefined) {
+      this.deps.store.tasks.setStartWhenReady(id, false);
+      return task;
+    }
+    return this.start(id, by);
   }
 
   /** Why a start waits: how many run and the limit. */
@@ -2045,35 +2089,38 @@ export class TaskService {
   }
 
   /**
-   * Gets a task's branches ready to leave majhi (a first push, or a merge into the base here): a
-   * branch that was never published and carries the task id in its name is renamed to the clean
-   * name, and the commits not yet published lose the checkpoints and `Majhi-Task` trailers (see
-   * `cleanOutgoing`). Nothing the remote has is rewritten. Safe to repeat. Call with no agent working.
+   * Renames the task's branches that were never published, the one path for both reasons: `clean-id` drops
+   * the majhi id a branch carries before it leaves majhi, `to-name` follows a new task name
+   * (`{type}/{slug of the name}`, in the project's pattern or the repo's style). A branch that was pushed or
+   * has a remote copy is never renamed, nor is the task's folder. One number for every repo, as at creation.
+   * True when a branch changed; a failure is added to `failed`.
    */
-  async cleanForShip(id: string): Promise<Task> {
-    const task = this.get(id);
+  private async renameUnpublished(
+    task: Task,
+    mode: "clean-id" | "to-name",
+    failed: string[],
+  ): Promise<boolean> {
     const projects = await this.deps.projects.infos();
-    const published = async (repo: TaskRepo): Promise<string | undefined> =>
-      trackingRefOf(repo.source, repo.branch);
     const renames: { repo: TaskRepo; wanted: string }[] = [];
-    const failed: string[] = [];
     for (const repo of task.repos) {
       if (!repo.createdBranch || !(await localBranchExists(repo.source, repo.branch))) continue;
-      if (repo.pushedAt !== undefined || (await published(repo)) !== undefined) continue;
-      if (!carriesTaskId(repo.branch, task.id)) continue;
+      if (repo.pushedAt !== undefined || (await trackingRefOf(repo.source, repo.branch)) !== undefined)
+        continue;
+      if (mode === "clean-id" && !carriesTaskId(repo.branch, task.id)) continue;
       const project = projects.find((p) => p.id === repo.project);
       const pattern = project?.branchPattern;
-      if (pattern?.includes("{id}") === true || pattern?.includes("{ID}") === true) continue;
+      if (mode === "clean-id" && (pattern?.includes("{id}") === true || pattern?.includes("{ID}") === true))
+        continue;
       const style = pattern === undefined ? await readRepoStyle(repo.source) : undefined;
-      renames.push({
-        repo,
-        wanted: branchName({
-          id: task.id,
-          title: task.title,
-          type: typeOfBranch(repo.branch) ?? taskBranchType(task),
-          ...(pattern === undefined ? styleOptions(style?.branches ?? { kind: "default" }) : { pattern }),
-        }),
+      const wanted = branchName({
+        id: task.id,
+        title: task.title,
+        ...(mode === "to-name" ? { name: taskNameOf(task) } : {}),
+        type: typeOfBranch(repo.branch) ?? taskBranchType(task),
+        ...(pattern === undefined ? styleOptions(style?.branches ?? { kind: "default" }) : { pattern }),
       });
+      if (wanted === repo.branch) continue;
+      renames.push({ repo, wanted });
     }
     const names = await freeBranchesTogether(
       renames.map((r) => r.wanted),
@@ -2083,13 +2130,33 @@ export class TaskService {
       const to = names[i] ?? repo.branch;
       try {
         await git(repo.source, ["branch", "--move", repo.branch, to]);
-        this.deps.store.tasks.setBranch(id, repo.project, to);
-        this.note(id, `${repo.project}: the branch is now ${to}, so no majhi id reaches the remote.`);
+        this.deps.store.tasks.setBranch(task.id, repo.project, to);
+        this.note(
+          task.id,
+          mode === "clean-id"
+            ? `${repo.project}: the branch is now ${to}, so no majhi id reaches the remote.`
+            : `${repo.project}: the branch is now ${to}, after the task's new name.`,
+        );
       } catch (err) {
         failed.push(`${repo.project}: could not rename ${repo.branch} to ${to}: ${errorMessage(err)}`);
       }
     }
-    if (renames.length > 0) await this.refreshBriefs([id]);
+    if (renames.length > 0) await this.refreshBriefs([task.id]);
+    return renames.length > 0;
+  }
+
+  /**
+   * Gets a task's branches ready to leave majhi (a first push, or a merge into the base here): a
+   * branch that was never published and carries the task id in its name is renamed to the clean
+   * name, and the commits not yet published lose the checkpoints and `Majhi-Task` trailers (see
+   * `cleanOutgoing`). Nothing the remote has is rewritten. Safe to repeat. Call with no agent working.
+   */
+  async cleanForShip(id: string): Promise<Task> {
+    const task = this.get(id);
+    const published = async (repo: TaskRepo): Promise<string | undefined> =>
+      trackingRefOf(repo.source, repo.branch);
+    const failed: string[] = [];
+    await this.renameUnpublished(task, "clean-id", failed);
     const identity =
       (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
     const now = this.get(id);

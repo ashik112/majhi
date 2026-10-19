@@ -179,6 +179,10 @@ test("a separate task: the chat's agent tells it, adds a repo, and takes it off 
       (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos.map((r) => r.project),
     )
     .toEqual(["api", "web"]);
+  // The repo is listed a moment before its worktree exists.
+  await expect
+    .poll(async () => (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos[1]?.worktree)
+    .toBeTruthy();
   const web = (await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).repos[1]?.worktree ?? "";
   writeFileSync(join(web, "draft.ts"), "export const a = 1;\n");
   await say(

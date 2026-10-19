@@ -5,9 +5,9 @@
  *  - The owner's own tasks are never ideas. They start, or wait in line when `tasks_running` tasks run.
  *  - A task an agent or a finding makes is always an idea: it exists, shows under Ideas, and starts only
  *    when the owner starts it.
- *  - The captain, incidents, client chats and schedules are capped: past `open_by_others` open tasks the
- *    owner did not start, in one workspace, a new one is an idea; under it they start or wait like the
- *    owner's.
+ *  - The captain, client chats and schedules are capped: past `open_by_others` open tasks the owner did
+ *    not start, in one workspace, a new one is an idea; under it they start or wait like the owner's.
+ *  - An incident is never an idea (an outage must not wait in Ideas); it only waits for a running place.
  *  - Chat tasks (one agent, a conversation, the captain's lanes) are not tasks of this gate at all.
  */
 
@@ -52,7 +52,12 @@ export function admit(input: {
 }): Admission {
   const { origin, org, wantsStart, counts, limits } = input;
   if (origin === "agent" || origin === "finding") return { kind: "idea", reason: "agent-made" };
-  if (origin !== "owner" && (counts.openByOthers[org] ?? 0) >= limits.open_by_others) {
+  // An incident is reacting work: it is never an idea. It still waits for a running place, urgent first.
+  if (
+    origin !== "owner" &&
+    origin !== "incident" &&
+    (counts.openByOthers[org] ?? 0) >= limits.open_by_others
+  ) {
     return { kind: "idea", reason: "open-cap" };
   }
   return wantsStart ? admitRunning(counts, limits) : { kind: "file" };

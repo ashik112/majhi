@@ -1400,7 +1400,7 @@ function taskStatements(db: Db) {
     waitingIds: db
       .select({ id: tasks.id })
       .from(tasks)
-      .where(and(inArray(tasks.status, ["inbox", "ready"]), sql`start_when_ready = 1`))
+      .where(and(inArray(tasks.status, ["inbox", "ready", "paused"]), sql`start_when_ready = 1`))
       .orderBy(asc(tasks.updatedAt), asc(tasks.id))
       .prepare(),
     runningIds: db
