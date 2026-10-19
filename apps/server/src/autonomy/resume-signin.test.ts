@@ -1,6 +1,5 @@
 import type { AccountStatus, Task } from "@majhi/shared";
 import { afterEach, expect, it, vi } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { seedStatus } from "../testing/status.ts";
 
@@ -20,7 +19,7 @@ it("the captain resumes a task paused on a sign-in once the account is healthy a
       return "cancelled";
     };
   };
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");

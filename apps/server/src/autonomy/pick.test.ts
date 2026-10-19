@@ -1,6 +1,5 @@
 import type { AutonomyEvent, AutonomyStatus, Task, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
@@ -34,7 +33,7 @@ async function on() {
     const level = (["large", "medium", "small"] as const).find((l) => t.brief.includes(l));
     return level === undefined ? undefined : rated(level);
   });
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
@@ -127,7 +126,7 @@ describe("the workspace's choice and the lane", () => {
       text: lane,
     });
     // Acme set to Keeps things tidy: the captain no longer starts or changes work there.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: TIDY } } })).status).toBe(200);
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
     const tidy = "Refused: in Acme you decide when work starts, so the captain does not start it.";
     expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({ isError: true, text: tidy });
     // Putting a task in the backlog is not starting it.
@@ -152,10 +151,10 @@ describe("the workspace's choice and the lane", () => {
       ).text,
     ).toBe(tidy);
     // Runs it again, but only on Codex: work on Acme's Claude account does not start.
-    expect(
-      (await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS, providers: ["codex"] } } }))
-        .status,
-    ).toBe(200);
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { providers: ["codex"] } } })).status).toBe(
+      200,
+    );
     expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({
       isError: true,
       text: "Refused: Acme lets the captain start work on codex only, and this would run on claude.",
@@ -169,9 +168,7 @@ describe("the workspace's choice and the lane", () => {
       "Refused: Auto-pilot is off, so the captain takes no backlog work.",
     );
     // A workspace that does not exist is refused.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { authority: RUNS } } })).status).toBe(
-      404,
-    );
+    expect((await t.h.cmd("authority.set", { org: "nowhere", level: "routine" })).status).toBe(404);
   });
 });
 

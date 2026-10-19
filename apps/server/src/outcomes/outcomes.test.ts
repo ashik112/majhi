@@ -1,4 +1,4 @@
-import { ALL_ASK, type Authority, type AuthorityRow, type Cadence } from "@majhi/shared";
+import { ALL_ASK, type Authority, type Cadence } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { CaptainRepo } from "../captain/repo.ts";
@@ -21,7 +21,6 @@ interface Desk {
   log: CaptainRepo;
   clock: { at: number };
   authority: Authority;
-  authorityCalls: [string, AuthorityRow, string][];
   cadence: { value: Cadence; enabled: boolean };
   cadenceCalls: Cadence[];
   gate: OutboundGate;
@@ -42,7 +41,6 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
   const db = store.raw;
   const clock = { at: T0 };
   const authority: Authority = { ...ALL_ASK, ...over.authority };
-  const authorityCalls: [string, AuthorityRow, string][] = [];
   const cadence = { value: { kind: "daily", at: "00:00" } as Cadence, enabled: true };
   const cadenceCalls: Cadence[] = [];
   const tz = { value: "UTC" };
@@ -62,10 +60,6 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
     orgName: async (org) => (org === "acme" ? "Acme" : "Globex"),
     playbookOfChore: (chore) => (chore === "followups" ? "followups" : undefined),
     authority: async () => ({ ...authority }),
-    setAuthority: async (org, row, choice, reason) => {
-      authority[row] = choice;
-      authorityCalls.push([org, row, reason]);
-    },
     outbound: {
       mode: (org, channel) => gate.mode(org, channel),
       applyLadder: (org, channel, mode) => gate.applyLadder(org, channel, mode),
@@ -88,7 +82,6 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
     log,
     clock,
     authority,
-    authorityCalls,
     cadence,
     cadenceCalls,
     gate,
@@ -192,7 +185,7 @@ describe("outcomes of the captain's actions", () => {
 let seq = 100;
 
 /** Fills a row with judged ship actions: `kept` kept and the rest undone. */
-async function fill(d: Desk, kept: number, undone: number, from = T0 - 100 * HOUR) {
+async function _fill(d: Desk, kept: number, undone: number, from = T0 - 100 * HOUR) {
   for (let k = 0; k < kept + undone; k++) {
     const at = from + k * 60_000;
     const id = d.action(++seq, at);
@@ -202,44 +195,7 @@ async function fill(d: Desk, kept: number, undone: number, from = T0 - 100 * HOU
   await d.svc.sweep();
 }
 
-describe("the trust ladder: demotion", () => {
-  it("drops a line to You and tells the owner when the owner undoes an action the captain took on it", async () => {
-    const clean = desk({ authority: { merge: "decide" } });
-    await fill(clean, 20, 0);
-    expect(clean.authority.merge).toBe("decide");
-    expect(clean.svc.decisions()).toEqual([]);
-
-    const undone = desk({ authority: { merge: "decide" } });
-    await fill(undone, 19, 1);
-    expect(undone.authority.merge).toBe("ask");
-    expect(undone.authorityCalls).toHaveLength(1);
-    const [item] = undone.svc.decisions();
-    expect(item).toMatchObject({ kind: "trust", org: "acme" });
-    expect(item?.title).toContain("Merge is back to You in");
-    expect(item?.title).toContain('you reverted "Shipped ACM-');
-    expect(item?.options.map((o) => o.id)).toEqual(["ok", "restore"]);
-    // No option of it can be taken in a batch.
-    expect(item?.options.every((o) => o.effect === undefined)).toBe(true);
-  });
-
-  it("does not demote again on the same old evidence, and 'Give it back' restores the row with a clean record", async () => {
-    const d = desk({ authority: { merge: "decide" } });
-    await fill(d, 10, 10);
-    expect(d.authority.merge).toBe("ask");
-    await d.svc.sweep();
-    await d.svc.sweep();
-    expect(d.authorityCalls).toHaveLength(1);
-    expect(d.svc.decisions()).toHaveLength(1);
-    const id = d.svc.repo.openNotices()[0]?.id ?? 0;
-    await d.svc.answerNotice(id, "restore");
-    expect(d.authority.merge).toBe("decide");
-    expect(d.svc.decisions()).toEqual([]);
-    // The old bad record is before the restore: it does not demote it a second time.
-    d.clock.at = T0 + HOUR;
-    await d.svc.sweep();
-    expect(d.authority.merge).toBe("decide");
-  });
-
+describe("the trust ladder: demotion of a channel", () => {
   it("an Auto channel goes back to Draft and loses its Auto standing", async () => {
     const d = desk();
     d.gate.applyLadder("acme", "email", "auto");
@@ -255,63 +211,6 @@ describe("the trust ladder: demotion", () => {
 });
 
 describe("the trust ladder: promotion", () => {
-  /** A row on You with 20 recommendations the owner accepted. */
-  function recommended(d: Desk, n: number, againstAt: number[] = []) {
-    for (let i = 0; i < n; i++) {
-      d.clock.at = T0 - 40 * 24 * HOUR + i * HOUR;
-      d.svc.answered(
-        {
-          id: `room:ACM-${i}:a`,
-          kind: "ship",
-          org: "acme",
-          task: `ACM-${i}`,
-          suggestion: { option: "merge", reason: "ok", by: "captain" },
-        },
-        againstAt.includes(i) ? "changes" : "merge",
-      );
-    }
-    d.clock.at = T0;
-  }
-
-  it("only proposes, never changes the row, and changes it when the owner accepts", async () => {
-    const d = desk();
-    recommended(d, 20);
-    await d.svc.sweep();
-    expect(d.authority.merge).toBe("ask");
-    expect(d.authorityCalls).toEqual([]);
-    const [item] = d.svc.decisions();
-    expect(item?.options.map((o) => o.id)).toEqual(["promote", "later"]);
-    // Many sweeps later it is still only a proposal.
-    for (let i = 0; i < 3; i++) await d.svc.sweep();
-    expect(d.authority.merge).toBe("ask");
-    expect(d.svc.decisions()).toHaveLength(1);
-    await d.svc.answerNotice(d.svc.repo.openNotices()[0]?.id ?? 0, "promote");
-    expect(d.authority.merge).toBe("decide");
-  });
-
-  it("does not propose with a single miss, or while the owner overruled something this week", async () => {
-    const miss = desk();
-    recommended(miss, 20, [3]);
-    await miss.svc.sweep();
-    expect(miss.svc.decisions()).toEqual([]);
-
-    const recent = desk();
-    recommended(recent, 19);
-    // The 20th is today and against the captain: not clean, and recent.
-    recent.svc.answered(
-      {
-        id: "room:ACM-99:a",
-        kind: "ship",
-        org: "acme",
-        task: "ACM-99",
-        suggestion: { option: "merge", reason: "ok", by: "captain" },
-      },
-      "changes",
-    );
-    await recent.svc.sweep();
-    expect(recent.svc.decisions()).toEqual([]);
-  });
-
   it("makes Auto selectable for a channel only through an accepted promotion", async () => {
     const d = desk({ window: 5 });
     d.gate.applyLadder("acme", "email", "batch");

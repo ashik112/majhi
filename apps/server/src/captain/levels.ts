@@ -1,131 +1,68 @@
 import {
-  ALL_ASK,
   AUTHORITY_REFUSAL,
   type Authority,
+  type AuthorityLevel,
   type AuthorityRow,
   type AutonomyMode,
-  type AutonomyOrg,
   type AutonomySettings,
+  authorityFromLevel,
   type CaptainChore,
   CaptainChoreSchema,
-  type CaptainLevel,
   choreSwitchWhy,
-  FULL_ACCESS_KEEPS,
-  FULL_ACCESS_NEVER,
+  type IncidentShips,
+  levelOfOrg,
   PRIVATE,
-  type ShipRule,
 } from "@majhi/shared";
 
 /**
- * Who decides what in a workspace (SPEC 5.18). Pure: the authority table with its defaults, the move from
- * the old three levels, what holds while Autonomous is not On, which chores a table runs, and the move from
- * the old pick rule.
+ * Who decides what in a workspace (SPEC 5.18). Each workspace has one authority level, set by the owner; the
+ * nine rows the captain's code reads are derived from it (`authorityFromLevel`), never stored. Pure.
  */
 
-/** Every row `decide` or `ask` as the table of the old three levels read (SPEC 5.18, "Moving today's settings"). */
-function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authority {
-  if (level === "ask") return { ...ALL_ASK };
-  if (level === "tidy") return { ...ALL_ASK, questions: "decide", approvals: "decide", upkeep: "decide" };
-  return {
-    start: "decide",
-    questions: "decide",
-    approvals: "decide",
-    upkeep: "decide",
-    merge: merge ? "decide" : "ask",
-    push: push ? "decide" : "ask",
-    deployStaging: "ask",
-    deployProduction: "ask",
-    tell: "ask",
-    own: "ask",
-  };
+/** The workspace's one authority level, as saved. */
+export function levelOf(settings: Pick<AutonomySettings, "orgs">, org: string): AuthorityLevel {
+  return levelOfOrg(settings.orgs[org], org === PRIVATE);
 }
 
-/**
- * Who decides each row in a workspace, as saved. The saved `authority` wins. Without it the old
- * `level`, `push` and `merge` give it. With nothing saved: Private keeps things tidy, any other
- * workspace asks about everything except upkeep.
- */
-/** Full access: every row is the captain's. */
-const ALL_DECIDE: Authority = {
-  start: "decide",
-  questions: "decide",
-  approvals: "decide",
-  upkeep: "decide",
-  merge: "decide",
-  push: "decide",
-  deployStaging: "decide",
-  deployProduction: "decide",
-  tell: "decide",
-  own: "decide",
-};
+/** The workspace's two incident switches, as saved. */
+export function incidentShipsOf(settings: Pick<AutonomySettings, "orgs">, org: string): IncidentShips {
+  const incident = settings.orgs[org]?.incident;
+  return { fix: incident?.fix, clientUpdate: incident?.clientUpdate };
+}
 
+/** Who decides each row in a workspace: derived from its level and incident switches. */
 export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: string): Authority {
-  const own = settings.orgs[org];
-  if (own?.fullAccess === true) {
-    // Full access gives every row but Merge and Push, which keep the owner's own switch.
-    const saved =
-      own.authority ??
-      (own.level !== undefined ? fromLevel(own.level, own.push === true, own.merge === true) : undefined);
-    const kept: Partial<Authority> = {};
-    for (const row of FULL_ACCESS_KEEPS) if (saved?.[row] === "ask") kept[row] = "ask";
-    // What leaves for a server or a client is never granted by full access: it is the saved choice, else You.
-    for (const row of FULL_ACCESS_NEVER) kept[row] = saved?.[row] ?? "ask";
-    return { ...ALL_DECIDE, ...kept };
-  }
-  if (own?.authority !== undefined) return own.authority;
-  if (own?.level !== undefined) return fromLevel(own.level, own.push === true, own.merge === true);
-  const base: Authority =
-    org === PRIVATE ? fromLevel("tidy", false, false) : { ...ALL_ASK, upkeep: "decide" };
-  // No level was ever chosen, but the owner may have switched merging or pushing on: keep that.
-  return {
-    ...base,
-    ...(own?.merge === true ? { merge: "decide" as const } : {}),
-    ...(own?.push === true ? { push: "decide" as const } : {}),
-  };
-}
-
-/** The workspace's ship rules, in order. None saved: the rows alone decide. */
-export function shipRulesOf(settings: Pick<AutonomySettings, "orgs">, org: string): readonly ShipRule[] {
-  return settings.orgs[org]?.ships ?? [];
+  return authorityFromLevel(levelOf(settings, org), incidentShipsOf(settings, org));
 }
 
 /**
  * The chores that run in a workspace now (`may.ts` decides): none while Stop everything is on; reacting
- * chores (ship, cards, questions, memory, cleanup) whatever Auto-pilot says; the scheduled upkeep only while
- * Auto-pilot is on. Each also needs the row of its own table.
+ * chores (ship, cards, questions, memory, cleanup) whatever Autonomous says; the scheduled upkeep only while
+ * Autonomous is on. Each also needs the row of its own table.
  */
 export function choresNow(
   authority: Authority,
   world: { mode: AutonomyMode; stopped?: boolean | undefined },
-  rules: readonly ShipRule[] = [],
 ): readonly CaptainChore[] {
   const switches = { autopilot: world.mode, stopped: world.stopped === true };
-  return choresOf(authority, rules).filter((chore) => choreSwitchWhy(switches, chore) === undefined);
-}
-
-/** The saved form after a change to some rows: the rows from `authorityOf`, with the change on top. */
-export function withAuthority(current: Authority, change: Partial<Authority>): Authority {
-  return { ...current, ...change };
+  return choresOf(authority).filter((chore) => choreSwitchWhy(switches, chore) === undefined);
 }
 
 /**
  * The chores the captain runs. Each follows the row that governs it: cards `approvals`, questions
- * `questions`, the rest `upkeep`. Shipping runs when the captain merges, pushes, answers or does upkeep, or
- * when a ship rule has it merge: with merge on "Ask me" it only hands the owner a ready-to-ship card.
+ * `questions`, the rest `upkeep`. Shipping runs when the captain merges, pushes, answers or does upkeep.
  */
-export function choresOf(authority: Authority, rules: readonly ShipRule[] = []): readonly CaptainChore[] {
+export function choresOf(authority: Authority): readonly CaptainChore[] {
   return CaptainChoreSchema.options.filter((chore) => {
     switch (chore) {
       case "cards":
         return authority.approvals === "decide";
       case "questions":
-        // Own work also settles permission prompts of tasks the captain started.
-        return authority.questions === "decide" || authority.own === "decide";
+        return authority.questions === "decide";
       case "ship":
         return (
           authority.merge === "decide" ||
           authority.push === "decide" ||
-          rules.some((rule) => rule.merge === "decide") ||
           authority.upkeep === "decide" ||
           authority.questions === "decide"
         );
@@ -150,36 +87,3 @@ export function askedSentence(row: AuthorityRow, name: string): string {
 export function workspaceIds(orgs: Readonly<Record<string, unknown>>): string[] {
   return [PRIVATE, ...Object.keys(orgs).filter((id) => id !== PRIVATE)];
 }
-
-/**
- * The move from the pick rule "workspaces it may work in" (before Phase 13) to the per-workspace
- * choice: each listed workspace becomes "Runs it" unless it already has a choice, and the list goes.
- * Undefined when there is nothing to move. The other workspaces keep their default.
- */
-export function migratePickOrgs(
-  autonomy: Pick<AutonomySettings, "orgs" | "pick">,
-): { orgs: Record<string, AutonomyOrg>; pick: Omit<AutonomySettings["pick"], "orgs"> } | undefined {
-  const listed = autonomy.pick.orgs;
-  if (listed === undefined) return undefined;
-  const orgs: Record<string, AutonomyOrg> = { ...autonomy.orgs };
-  for (const id of new Set(listed)) {
-    const had = orgs[id] ?? {};
-    if (had.level === undefined && had.authority === undefined) orgs[id] = { ...had, level: "runs" };
-  }
-  return { orgs, pick: { size: autonomy.pick.size } };
-}
-
-/** The row a command needs on top of full access: merging and pushing keep their own switch. */
-export function keptRowOf(command: string): AuthorityRow | undefined {
-  if (MERGE_COMMANDS.has(command)) return "merge";
-  if (PUSH_COMMANDS.has(command)) return "push";
-  return undefined;
-}
-
-const MERGE_COMMANDS: ReadonlySet<string> = new Set([
-  "tasks.merge",
-  "tasks.resolveShip",
-  "tasks.mergeMrs",
-  "tasks.markMerged",
-]);
-const PUSH_COMMANDS: ReadonlySet<string> = new Set(["tasks.push", "tasks.openMrs"]);

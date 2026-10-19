@@ -14,12 +14,20 @@ import type {
   SshPublicKey,
   TaskId,
 } from "@majhi/shared";
-import { CHAT_BRIEF, isSystemFolder, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
+import {
+  CHAT_BRIEF,
+  currentRules,
+  isSystemFolder,
+  PRIVATE,
+  RESTART_COMMAND,
+  RISK_LABEL,
+  sameImage,
+  type Task,
+} from "@majhi/shared";
 import type { z } from "zod";
 import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
-import { sameRule } from "../admin/policy.ts";
 import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
@@ -1352,10 +1360,7 @@ export function createHandlers({
           input.decision,
           input.always === undefined
             ? undefined
-            : {
-                scope: input.always.scope,
-                change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
-              },
+            : { change: { command: ctx.command, meta: ctx.meta, summary: "saved an Always rule" } },
           { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
         ),
       ),
@@ -1483,14 +1488,14 @@ export function createHandlers({
       ownerOnlyPolicy(ctx.meta);
       await requireConfigFile(config);
       const { policy } = await config.settings();
-      const rules = policy.rules.filter((r) => !sameRule(r, input));
-      if (rules.length === policy.rules.length) throw new UserError("That rule does not exist.", 404);
+      const rules = currentRules(policy).filter((r) => !(r.org === input.org && r.kind === input.kind));
+      if (rules.length === currentRules(policy).length) throw new UserError("That rule does not exist.", 404);
       await config.setSettings(
         { policy: { rules } },
         {
           command: ctx.command,
           meta: ctx.meta,
-          summary: `removed the rule for @${input.agent} to run ${input.command} for ${input.task ?? `org ${input.org}`}`,
+          summary: `removed the Always rule for ${RISK_LABEL[input.kind]} in ${input.org}`,
         },
       );
       return config.settings();

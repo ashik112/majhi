@@ -3,7 +3,6 @@ import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { ShipPlan } from "../ship/plan.ts";
 import type { AnswerResult } from "./keys.ts";
-import type { OwnWorkScope } from "./own-work.ts";
 import type { UpkeepPorts, WikiPorts } from "./upkeep-ports.ts";
 
 /**
@@ -123,10 +122,8 @@ export interface DeployNext {
   /** The planned record that starts it. */
   record: number;
   commit: string;
-  /** Who does it by the ship rules. */
+  /** Who does it, by the workspace level. */
   who: "captain" | "owner";
-  /** What the rule that decided covers, in words ("A bug up to 200 lines"). Absent when the rows decided. */
-  rule?: string | undefined;
 }
 
 /** A ready task that changes projects with deploy environments and has no deploy plan yet. */
@@ -225,11 +222,6 @@ export interface CaptainPorts {
 
   // Agents' questions
   questions(org: string): QuestionCard[];
-  /**
-   * Where Own work may approve in this task (SPEC 5.18), or undefined when the captain did not start
-   * it, it is the owner's to keep, or it has no worktree.
-   */
-  ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
   /** One answer per card: a second answer to the same card changes nothing and says so. */
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<AnswerResult>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */

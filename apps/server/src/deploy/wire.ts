@@ -4,10 +4,8 @@ import {
   type HomeDeploy,
   PRIVATE,
   type ProjectDeployView,
-  shipRuleSubject,
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
-import { shipRulesOf } from "../captain/levels.ts";
 import type { DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
@@ -249,10 +247,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     for (const id of deps.store.tasks.landedSince(since)) {
       const task = deps.store.tasks.get(id);
       if (task === undefined || (task.org ?? PRIVATE) !== org) continue;
-      const [steps, plan] = await Promise.all([
-        planner.stepsOf(task).catch(() => []),
-        deps.ship.plan(id).catch(() => undefined),
-      ]);
+      const steps = await planner.stepsOf(task).catch(() => []);
       for (const s of steps) {
         if (
           (s.state !== "captain-next" && s.state !== "waits-for-owner") ||
@@ -271,7 +266,6 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
           record: s.record,
           commit: s.commit,
           who: s.who,
-          ...(plan?.ruleSubject === undefined ? {} : { rule: plan.ruleSubject }),
         });
       }
     }
@@ -319,15 +313,11 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
 
   const view = async (id: string): Promise<ProjectDeployView> => {
     const info = await deps.projects.get(id);
-    const rules = shipRulesOf((await deps.config.settings()).autonomy, info.org);
-    // The rule the project's tasks meet first: one that names no project, or this one.
-    const rule = rules.find((r) => r.when.projects === undefined || r.when.projects.includes(info.id));
     return {
       project: info.id,
       environments: info.deploy,
       history: service.history(info.id),
       rollingBack: service.rollingBackIds(),
-      ...(rule === undefined ? {} : { rule: shipRuleSubject(rule.when) }),
     };
   };
 

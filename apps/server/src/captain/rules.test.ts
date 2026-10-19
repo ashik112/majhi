@@ -1,11 +1,9 @@
-import { ALL_ASK, type Authority, AutonomySettingsSchema, restOf } from "@majhi/shared";
+import { ALL_ASK, type Authority, restOf } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { choresNow, choresOf, migratePickOrgs } from "./levels.ts";
+import { choresNow, choresOf } from "./levels.ts";
 import { branchAllowed, providerAllowed } from "./rules.ts";
 
-const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
-
-describe("the authority table per workspace", () => {
+describe("the chores a workspace runs", () => {
   it("runs reacting chores whatever Auto-pilot says, the scheduled upkeep only while it is on, and nothing under Stop everything", () => {
     const all: Authority = {
       ...ALL_ASK,
@@ -15,31 +13,12 @@ describe("the authority table per workspace", () => {
       upkeep: "decide",
       merge: "decide",
       push: "decide",
-      own: "decide",
     };
     expect(choresNow(all, { mode: "on" })).toEqual(choresOf(all));
     for (const mode of ["off", "paused", "stopping"] as const) {
       expect(choresNow(all, { mode })).toEqual(["ship", "cards", "questions", "memory", "cleanup"]);
     }
     expect(choresNow(all, { mode: "on", stopped: true })).toEqual([]);
-  });
-
-  it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {
-    const old = settings({
-      orgs: { acme: { push: true }, globex: { level: "tidy" } },
-      pick: { size: "medium", orgs: ["acme", "globex", "private"] },
-    });
-    expect(migratePickOrgs(old)).toEqual({
-      orgs: {
-        acme: { level: "runs", push: true },
-        // A workspace that already has a choice keeps it: the stricter rule wins.
-        globex: { level: "tidy" },
-        private: { level: "runs" },
-      },
-      pick: { size: "medium" },
-    });
-    // No list: nothing to move, and every other workspace keeps its default.
-    expect(migratePickOrgs(settings({ pick: { size: "small" } }))).toBeUndefined();
   });
 });
 

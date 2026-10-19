@@ -1,67 +1,40 @@
 import type { PermissionAsk } from "@majhi/acp";
 import {
+  type AllowRule,
+  type AuthorityLevel,
   type CommandMeta,
-  isDestructiveCommand,
+  currentRules,
+  DEFAULT_LEVEL,
+  isAlwaysKind,
   MAJHI_OPTION_PREFIX,
   PRIVATE,
+  RISK_LABEL,
+  type RiskKind,
   type RoomItem,
+  riskVerdict,
+  ruleCovers,
+  withRule,
 } from "@majhi/shared";
+import { incidentShipsOf, levelOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { GateWrite } from "../connections/gate.ts";
-import { firstVerb, lineOnlyReads, reachesNetwork } from "../connections/read-only.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { UserError } from "../errors.ts";
+import { isIncidentTask } from "../incident/engine.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import { permissionPayload } from "./items.ts";
-import { knownHosts } from "./known-hosts.ts";
 import type { RunLive } from "./live.ts";
-import {
-  connectionToolKey,
-  connectionVerdict,
-  decidePermission,
-  isMajhiTool,
-  isProcessTool,
-  mcpToolOf,
-  neededPerm,
-  toolAllowKey,
-  withoutUnaskedModes,
-} from "./permissions.ts";
+import { connectionToolKey, connectionVerdict, riskAllowKey, withoutUnaskedModes } from "./permissions.ts";
+import { requestRisk } from "./request-risk.ts";
 import type { AgentRun } from "./run.ts";
+import { SandboxLog } from "./sandbox-log.ts";
+import { riskScopeOfTask } from "./shell-risk.ts";
 
-/** The options majhi adds to the card of a non-destructive MCP tool write, beside the agent's own. */
+/** The options majhi adds to a card, beside the agent's own. */
 const TASK_OPTION = `${MAJHI_OPTION_PREFIX}task`;
 const ALWAYS_OPTION = `${MAJHI_OPTION_PREFIX}always`;
 const READS_OPTION = `${MAJHI_OPTION_PREFIX}reads`;
-
-/**
- * The key an "Always allow this command" is kept under: the exact command line of a plain shell command.
- * A push, a merge request command, a destructive command and a background process are never kept.
- */
-function shellAllowKey(ask: PermissionAsk): string | undefined {
-  if (ask.kind !== "execute" || isProcessTool(ask.title)) return undefined;
-  const command = (ask.command ?? ask.title).trim();
-  if (command === "" || command.length > 300 || neededPerm(ask) !== "shell" || isDestructiveCommand(command))
-    return undefined;
-  return `shell:${command}`;
-}
-
-/**
- * The key an "Always allow this command" on a connection's command write is kept under: the connection and
- * the exact action, in the policy rules of the workspace. Only for one CLI write that is not destructive, and
- * never for a push, a merge request or a deploy: those have their own Permissions lines.
- */
-export function connectionCommandKey(writes: readonly GateWrite[]): string | undefined {
-  const [only] = writes;
-  if (writes.length !== 1 || only === undefined) return undefined;
-  if (only.tool !== undefined || only.connection === undefined || only.destructive) return undefined;
-  const action = only.action;
-  if (action.length > 300 || neededPerm({ kind: "execute", command: action, title: action }) !== "shell")
-    return undefined;
-  const [program, ...args] = action.split(" ");
-  if (program === undefined || firstVerb(args) === "deploy" || args.includes("deploy")) return undefined;
-  return `connection:${only.connection}:${action}`;
-}
 
 /** The part of the connections service a card's "Always allow" and "It only reads" use. */
 export interface ConnectionToolRules {
@@ -69,32 +42,38 @@ export interface ConnectionToolRules {
 }
 
 /**
- * Permission requests from agents (SPEC 5.15): allowed by the agent's perms or an earlier "Allow
- * for this task", else a prompt in the room that waits for the owner. Every decision is logged.
- * For a run that holds connections the gate comes first (5.14): reads of them run, and a write runs
- * only when the connection's `allow` holds it or the owner says so, once. Perms and remembered
- * choices never cover a connection write, and each one is an audit row of kind `connection-write`.
- * The exception is a call of an MCP tool that is not destructive: its card also offers "Allow in this
- * task" (kept for that connection and tool in this task only), and, to the owner alone, "Always allow
- * this tool" (the tool joins the connection's `allow`) and "It only reads" (it joins the connection's
- * read tools). A destructive write is never allowed by `allow` or a remembered choice, its card offers
- * only Allow once and Deny, and the captain cannot approve it: only the owner. The captain may pick
- * Allow once or Allow in this task, never the other two.
+ * Permission requests from agents (SPEC 5.15, docs/briefs/workflow-reset.md step 1b): each request has a risk
+ * kind, read from its typed parts (`request-risk.ts`), and the workspace's one authority level says which
+ * kinds go ahead. What is inside the task never asks and leaves one log row per kind per minute. A kind the
+ * level does not allow waits in the room for the owner, who can allow it once, for this task, or "Always" in
+ * this workspace for the kinds that can be saved. Kinds that always ask (deleting outside the task, secrets, a
+ * client's server) offer Allow once and Deny only.
+ * For a run that holds connections the gate comes first (5.14): reads of them run, and a write runs only
+ * when the connection's `allow` holds it or the owner says so, once. Each is an audit row of kind
+ * `connection-write`. A call of an MCP tool that is not destructive also offers "Allow in this task" (kept for
+ * that connection and tool in this task only), and, to the owner alone, "Always allow this tool" (the tool
+ * joins the connection's `allow`) and "It only reads" (it joins the connection's read tools). A destructive
+ * write is never allowed by `allow` or a remembered choice, its card offers only Allow once and Deny.
+ * The captain answers no permission card: a card exists because the level does not cover it.
  */
 export class PermissionFlow {
+  private readonly sandbox: SandboxLog;
+
   constructor(
     private readonly deps: {
       store: Store;
       room: RoomService;
       connections?: ConnectionToolRules | undefined;
-      /** Where "Always allow this tool" is kept and read: the policy rules, listed on the agent's page. */
+      /** Where the level, the incident switches and the saved Always rules are read, and where Always is saved. */
       config?: ConfigService | undefined;
       /** A card for the owner appeared or went: the captain's status (what a waiting message waits on) is read again. */
       onCardChange?: (() => void) | undefined;
     },
     private readonly live: RunLive,
     private readonly now: () => Date,
-  ) {}
+  ) {
+    this.sandbox = new SandboxLog((row) => deps.store.permissions.log(row), now);
+  }
 
   /** The session's permission handler. Resolves with the option id, or undefined when cancelled. */
   async ask(run: AgentRun, request: PermissionAsk, signal: AbortSignal): Promise<string | undefined> {
@@ -105,80 +84,92 @@ export class PermissionFlow {
     const verdict = connectionVerdict(ask, held, (id) => run.mapper?.toolTitle(id));
     if (verdict.kind === "write") return this.askWrite(run, ask, verdict.writes, signal);
     const once = ask.options.find((o) => o.kind === "allow_once");
-    // An MCP tool of a server that is not majhi's own can be allowed for good, in this workspace.
-    const org = store.tasks.get(run.task)?.org;
-    const mcpKey =
-      mcpToolOf(ask.title) === undefined || isMajhiTool(ask.title) ? undefined : toolAllowKey(ask.title);
-    const alwaysKey = org === undefined || once === undefined ? undefined : (mcpKey ?? shellAllowKey(ask));
-    const saved =
-      alwaysKey !== undefined && org !== undefined && (await this.savedAlways(run.agent, org, alwaysKey));
-    const keptForTask = alwaysKey !== undefined && store.permissions.allowed(run.task, alwaysKey);
-    const reads = verdict.kind === "read" || (await this.onlyReads(run, ask));
-    const decision =
-      (reads || saved || keptForTask) && once !== undefined
-        ? ({ action: "allow", option: once.id, via: "perms" } as const)
-        : decidePermission(ask, {
-            perms: run.perms,
-            rememberedFor: (k) => store.permissions.allowed(run.task, k),
-          });
+    const task = store.tasks.get(run.task);
+    const org = task?.org ?? PRIVATE;
+    const kind = requestRisk(ask, riskScopeOfTask(task));
+    const { level, rules, incident } = await this.policyOf(org);
+    const go = riskVerdict(level, rules, org, kind, {
+      incident,
+      incidentFix: task !== undefined && isIncidentTask(task),
+    });
+    const keptForTask =
+      !go.go && isAlwaysKind(kind) && store.permissions.allowed(run.task, riskAllowKey(kind));
     const id = `perm:${run.runId ?? "x"}:${++run.permSeq}`;
     const base = {
       type: "permission" as const,
       agent: run.agent,
       title: ask.title,
       ...(ask.toolCallId === undefined ? {} : { toolCallId: ask.toolCallId }),
+      risk: kind,
       options: ask.options,
     };
-    if (decision.action === "allow") {
-      room.post(run.task, id, { ...base, state: "auto", chosen: decision.option });
-      this.log(run, ask, "allow", "rule");
-      return Promise.resolve(decision.option);
+    if (once !== undefined && (go.go || keptForTask)) {
+      if (kind === "sandbox") {
+        this.sandbox.note({
+          task: run.task,
+          agent: run.agent,
+          kind: ask.kind ?? "other",
+          title: redactSecrets(ask.title, run.connections?.secrets ?? []),
+          org,
+        });
+      } else {
+        room.post(run.task, id, { ...base, state: "auto", chosen: once.id });
+        this.log(run, ask, "allow", "rule", go.go && go.by === "rule" ? "Always" : "level");
+      }
+      return Promise.resolve(once.id);
     }
-    const options =
-      alwaysKey === undefined || once === undefined
-        ? ask.options
-        : ask.options.flatMap((o) =>
-            o.id === once.id
-              ? [
-                  o,
-                  ...(ask.options.some((x) => x.kind === "allow_always") ? [] : [TASK_CHOICE]),
-                  mcpKey === undefined ? ALWAYS_COMMAND_CHOICE : ALWAYS_CHOICE,
-                ]
-              : [o],
-          );
+    const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
-      run.pending.set(id, {
-        ask: { ...ask, options },
-        resolve,
-        ...(alwaysKey === undefined ? {} : { alwaysKey }),
-      });
+      run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
       signal.addEventListener("abort", () => this.cancelOne(run, id), { once: true });
     });
   }
 
+  /** The workspace's level, its saved Always rules and its incident switches, from the cached settings. */
+  private async policyOf(org: string): Promise<{
+    level: AuthorityLevel;
+    rules: AllowRule[];
+    incident: ReturnType<typeof incidentShipsOf>;
+  }> {
+    const config = this.deps.config;
+    if (config === undefined) return { level: DEFAULT_LEVEL, rules: [], incident: {} };
+    const { autonomy, policy } = await config.settings();
+    return {
+      level: levelOf(autonomy, org),
+      rules: currentRules(policy),
+      incident: incidentShipsOf(autonomy, org),
+    };
+  }
+
   /**
-   * A shell command that only reads runs without a card (rule set 2026-10-08), the one place that is decided:
-   * every stage reads, file readers stay inside the task's folders and network programs reach only hosts
-   * the workspace already knows. Anything else asks as before.
+   * The options of a card for a kind the level does not allow. The kinds that can be saved offer Allow in
+   * this task and Always in this workspace; the others offer the agent's own Allow once and Deny only, because
+   * the agent's own "allow always" would let its CLI stop asking where majhi cannot see.
    */
-  private async onlyReads(run: AgentRun, ask: PermissionAsk): Promise<boolean> {
-    if (ask.kind !== "execute" || isProcessTool(ask.title)) return false;
-    const line = (ask.command ?? ask.title).trim();
-    const task = this.deps.store.tasks.get(run.task);
-    if (line === "" || task === undefined) return false;
-    const roots = [
-      task.folder,
-      ...task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree])),
-      ...(task.readMounts ?? []).map((m) => m.path),
-    ];
-    const sections = reachesNetwork(line)
-      ? await this.deps.config?.sections().catch(() => undefined)
-      : undefined;
-    const hosts = sections === undefined ? new Set<string>() : knownHosts(sections, task.org ?? PRIVATE);
-    return lineOnlyReads(line, { roots, cwd: task.folder, hosts });
+  private cardOptions(
+    own: PermissionAsk["options"],
+    onceId: string | undefined,
+    kind: RiskKind,
+  ): PermissionAsk["options"] {
+    if (onceId === undefined) return own;
+    const kept = own.filter((o) => o.kind !== "allow_always");
+    if (!isAlwaysKind(kind)) return kept;
+    return kept.flatMap((o) =>
+      o.id === onceId
+        ? [
+            o,
+            { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const },
+            {
+              id: ALWAYS_OPTION,
+              name: `Always ${RISK_LABEL[kind]} in this workspace`,
+              kind: "allow_always" as const,
+            },
+          ]
+        : [o],
+    );
   }
 
   /** A connection write: allowed by the connection's `allow`, else a prompt that names the connection. */
@@ -205,15 +196,12 @@ export class PermissionFlow {
       agent: run.agent,
       title: ask.title,
       ...(ask.toolCallId === undefined ? {} : { toolCallId: ask.toolCallId }),
+      risk: "client-server-write" as const,
       connection,
     };
     const tool = toolWriteOf(writes);
     const remembered = tool !== undefined && this.deps.store.permissions.allowed(run.task, toolKey(tool));
-    const commandKey = connectionCommandKey(writes);
-    const org = run.connections?.uses.find((u) => u.id === first?.connection)?.org;
-    const saved =
-      commandKey !== undefined && org !== undefined && (await this.savedAlways(run.agent, org, commandKey));
-    if (once !== undefined && (writes.every((w) => w.allowed) || remembered || saved)) {
+    if (once !== undefined && (writes.every((w) => w.allowed) || remembered)) {
       room.post(run.task, id, { ...base, options: ask.options, state: "auto", chosen: once.id });
       this.logWrites(run, writes, "allow", "rule");
       return Promise.resolve(once.id);
@@ -221,21 +209,15 @@ export class PermissionFlow {
     // The agent's own "allow always" is dropped: it would let the CLI run the call again without asking.
     // A tool write gets majhi's own choices instead, which majhi keeps and enforces.
     const kept = once === undefined ? ask.options : ask.options.filter((o) => o.kind !== "allow_always");
-    const extra = tool !== undefined ? TOOL_OPTIONS : commandKey !== undefined ? [ALWAYS_COMMAND_CHOICE] : [];
     const options =
-      once === undefined || extra.length === 0
+      once === undefined || tool === undefined
         ? kept
-        : kept.flatMap((o) => (o.id === once.id ? [o, ...extra] : [o]));
+        : kept.flatMap((o) => (o.id === once.id ? [o, ...TOOL_OPTIONS] : [o]));
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
-      run.pending.set(id, {
-        ask: { ...ask, options },
-        resolve,
-        writes,
-        ...(commandKey === undefined || tool !== undefined ? {} : { alwaysKey: commandKey }),
-      });
+      run.pending.set(id, { ask: { ...ask, options }, resolve, writes });
       signal.addEventListener("abort", () => this.cancelOne(run, id), { once: true });
     });
   }
@@ -248,6 +230,8 @@ export class PermissionFlow {
     if (run === undefined || pending === undefined || item === undefined || item.type !== "permission") {
       throw new UserError("That prompt is not waiting for an answer any more.", 409);
     }
+    // A card is there because the workspace's level does not cover the action: the owner answers it.
+    if (captain) throw new UserError("This is above the workspace's level. Only the owner answers it.", 409);
     const chosen = pending.ask.options.find((o) => o.id === option);
     if (chosen === undefined) {
       throw new UserError(
@@ -257,45 +241,27 @@ export class PermissionFlow {
     const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
     const mine = chosen.id.startsWith(MAJHI_OPTION_PREFIX);
     const tool = mine ? toolWriteOf(pending.writes ?? []) : undefined;
-    const keyed = mine && pending.alwaysKey !== undefined ? pending.alwaysKey : undefined;
-    // majhi's own choices are only on a tool write or an MCP tool, and the permanent ones are the owner's.
-    if (mine && tool === undefined && keyed === undefined) {
+    const kind = pending.risk;
+    // majhi's own choices are only on a tool write or on a kind that can be saved.
+    if (mine && tool === undefined && (kind === undefined || !isAlwaysKind(kind))) {
       throw new UserError("That choice does not fit this prompt.", 409);
-    }
-    if (mine && captain && chosen.id !== TASK_OPTION) {
-      throw new UserError("Only the owner can make that choice.", 409);
-    }
-    if (captain && allowed && pending.writes?.some((w) => w.destructive) === true) {
-      throw new UserError("This deletes or destroys something. Only the owner can approve it.", 409);
     }
     // majhi's choices all let this one call through: the agent is told the once-option.
     const resolveWith = mine
       ? (pending.ask.options.find((o) => o.kind === "allow_once")?.id ?? chosen.id)
       : chosen.id;
     run.pending.delete(itemId);
-    const by = captain ? "captain" : "owner";
     if (tool !== undefined) this.remember(run, tool, chosen.id);
-    if (keyed !== undefined) {
-      if (pending.writes === undefined) this.log(run, pending.ask, allowed ? "allow" : "deny", by);
-      else this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);
-      store.permissions.allow(task, keyed);
-      if (chosen.id === ALWAYS_OPTION) this.keepAlways(run, keyed);
-    } else if (pending.writes !== undefined) {
-      this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);
+    if (pending.writes !== undefined) {
+      this.logWrites(run, pending.writes, allowed ? "allow" : "deny", "owner");
     } else {
-      this.log(run, pending.ask, allowed ? "allow" : "deny", by);
-      // The captain's Allow for this task covers the one tool it was asked about; the owner's covers its kind.
-      if (chosen.kind === "allow_always") {
-        store.permissions.allow(
-          task,
-          captain ? toolAllowKey(pending.ask.title) : (pending.ask.kind ?? "other"),
-        );
+      this.log(run, pending.ask, allowed ? "allow" : "deny", "owner");
+      if (allowed && kind !== undefined && isAlwaysKind(kind)) {
+        if (chosen.id === ALWAYS_OPTION) this.keepRule(run, kind);
+        else if (chosen.kind === "allow_always") store.permissions.allow(task, riskAllowKey(kind));
       }
     }
-    room.post(item.task, itemId, {
-      ...permissionPayload(item, { state: "answered", chosen: option }),
-      ...(captain ? { by: "captain" as const } : {}),
-    });
+    room.post(item.task, itemId, permissionPayload(item, { state: "answered", chosen: option }));
     pending.resolve(resolveWith);
     this.backToWork(run);
     this.deps.onCardChange?.();
@@ -304,32 +270,25 @@ export class PermissionFlow {
     return updated;
   }
 
-  /** Whether the owner already said "Always allow" for this agent, tool or command and workspace. */
-  private async savedAlways(agent: string, org: string, key: string): Promise<boolean> {
+  /** Saves "Always" for the kind in the task's workspace: one rule per workspace and kind. If it cannot be saved, the next one asks again. */
+  private keepRule(run: AgentRun, kind: RiskKind): void {
     const config = this.deps.config;
-    if (config === undefined) return false;
-    const { policy } = await config.settings().catch(() => ({ policy: { rules: [] } }));
-    return policy.rules.some((r) => r.agent === agent && r.command === key && r.org === org);
-  }
-
-  /** Writes the rule. If it cannot be saved, the call is already let through and the next one asks again. */
-  private keepAlways(run: AgentRun, key: string): void {
-    const config = this.deps.config;
-    const org = this.deps.store.tasks.get(run.task)?.org;
-    if (config === undefined || org === undefined) return;
+    if (config === undefined || !isAlwaysKind(kind)) return;
+    const org = this.deps.store.tasks.get(run.task)?.org ?? PRIVATE;
     void (async () => {
       const { policy } = await config.settings();
-      if (policy.rules.some((r) => r.agent === run.agent && r.command === key && r.org === org)) return;
+      const rules = currentRules(policy);
+      if (ruleCovers(rules, org, kind)) return;
       await config.setSettings(
-        { policy: { rules: [...policy.rules, { agent: run.agent, command: key, org }] } },
+        { policy: { rules: withRule(rules, { org, kind }) } },
         {
           command: "policy.set",
           meta: {
             actor: { kind: "owner" },
-            reason: "Owner chose Always allow this tool on a card",
+            reason: "Owner chose Always on a card",
             task: run.task,
           },
-          summary: `always allow @${run.agent} to use ${key} in ${org}`,
+          summary: `always ${RISK_LABEL[kind]} in ${org}`,
         },
       );
     })().catch(() => undefined);
@@ -417,6 +376,7 @@ export class PermissionFlow {
     ask: PermissionAsk,
     decision: "allow" | "deny" | "cancelled",
     by: "owner" | "rule" | "captain",
+    detail?: string,
   ): void {
     this.deps.store.permissions.log({
       task: run.task,
@@ -426,17 +386,10 @@ export class PermissionFlow {
       decision,
       by,
       at: this.now().toISOString(),
+      ...(detail === undefined ? {} : { detail }),
     });
   }
 }
-
-const TASK_CHOICE = { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const };
-const ALWAYS_COMMAND_CHOICE = {
-  id: ALWAYS_OPTION,
-  name: "Always allow this command",
-  kind: "allow_always" as const,
-};
-const ALWAYS_CHOICE = { id: ALWAYS_OPTION, name: "Always allow this tool", kind: "allow_always" as const };
 
 const TOOL_OPTIONS = [
   { id: TASK_OPTION, name: "Allow in this task", kind: "allow_always" as const },

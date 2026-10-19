@@ -18,7 +18,7 @@ import {
 } from "@majhi/shared";
 import { zoneOr } from "../autonomy/service.ts";
 import type { ConfigService } from "../config/service.ts";
-import { errorMessage, UserError } from "../errors.ts";
+import { UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { type ChorePlaybooks, DefaultChorePlays } from "../playbooks/chore-plays.ts";
 import type { Store } from "../store/index.ts";
@@ -26,7 +26,7 @@ import { localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";
-import { authorityOf, choresNow, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { authorityOf, choresNow, levelOf, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import { captainPolicyOf } from "./policy.ts";
 import type { CaptainPorts } from "./ports.ts";
@@ -39,7 +39,7 @@ import { type Identity, revertMerge } from "./undo.ts";
 /** How often the daily chores, the hourly checks and the daily summary are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
-const HOURLY_MS = 60 * 60_000;
+const _HOURLY_MS = 60 * 60_000;
 /** A low disk starts the tidy chore at most this often. */
 const DISK_TRIGGER_EVERY_MS = 3 * 3_600_000;
 /** A burst of triggers is looked at once. */
@@ -158,35 +158,9 @@ export class CaptainService {
   // ---------------------------------------------------------------------------
   // Lifecycle
 
-  /** After a restart: runs it cut short end as stopped, and an old pick rule moves to the choice. */
-  async boot(): Promise<void> {
+  /** After a restart: runs it cut short end as stopped. */
+  boot(): void {
     this.repo.closeOpenRuns(this.now().toISOString(), "majhi restarted during the run");
-    await this.migratePick().catch((err: unknown) =>
-      console.error(`Could not move the autonomy workspaces to the captain's choice: ${errorMessage(err)}`),
-    );
-  }
-
-  /** The pick rule "workspaces it may work in" becomes "Runs it" for each listed workspace, once. */
-  async migratePick(): Promise<boolean> {
-    const autonomy = (await this.deps.config.settings()).autonomy;
-    const moved = migratePickOrgs(autonomy);
-    if (moved === undefined) return false;
-    const sections = await this.deps.config.sections();
-    const names = (autonomy.pick.orgs ?? []).map((id) =>
-      id === PRIVATE ? "Private" : (sections.orgs[id]?.name ?? id),
-    );
-    await this.deps.config.setSettings(
-      { autonomy: { orgs: moved.orgs, pick: moved.pick } },
-      {
-        command: "config.migrate",
-        meta: { actor: { kind: "agent", id: "majhi" } },
-        summary:
-          names.length === 0
-            ? "moved Auto-pilot's workspace list to the captain's choice per workspace"
-            : `let the captain start work in ${names.join(", ")}, from Auto-pilot's workspace list`,
-      },
-    );
-    return true;
   }
 
   startSweep(): void {
@@ -211,7 +185,7 @@ export class CaptainService {
     for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
       if (ws === undefined) continue;
-      for (const chore of choresNow(ws.authority, ws, ws.rules?.ships)) {
+      for (const chore of choresNow(ws.authority, ws)) {
         if (ws.rest !== undefined && restHolds(chore)) continue;
         if (
           this.runner.running(org, chore) ||
@@ -463,6 +437,7 @@ export class CaptainService {
       orgs.push({
         org,
         name: ws.name,
+        level: levelOf(settings.autonomy, org),
         authority,
         rules: settings.autonomy.orgs[org] ?? {},
         ...(cap === undefined ? {} : { budget: cap }),
@@ -476,11 +451,7 @@ export class CaptainService {
         ...(onCall === undefined ? {} : { onCall }),
         urgent: onCall === undefined ? "idle" : (threadOf?.(onCall, org) ?? "idle"),
         ...blockerOf(paid, asking, [onCall, lane]),
-        chores: choresNow(
-          authority,
-          { mode, stopped: state.stopped },
-          settings.autonomy.orgs[org]?.ships,
-        ).map((chore) => {
+        chores: choresNow(authority, { mode, stopped: state.stopped }).map((chore) => {
           const c = this.repo.chore(org, chore);
           const last = this.repo.lastRun(org, chore);
           return {

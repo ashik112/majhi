@@ -2,11 +2,9 @@ import { createHash } from "node:crypto";
 import {
   AUTHORITY_ROWS,
   type Authority,
-  type AuthorityRow,
   type Cadence,
   type CaptainChore,
   ceilingDecisionId,
-  didWords,
   didWordsInline,
   isOutboundKey,
   type MoneySetInput,
@@ -35,7 +33,7 @@ import type Database from "better-sqlite3";
 import { UserError } from "../errors.ts";
 import { addDays, dayStart, localDay, weekStart } from "../usage/ranges.ts";
 import { deriveAll, KEEP_AFTER_MS } from "./derive.ts";
-import { percent, shouldMute, shouldPropose, windowOf } from "./ladder.ts";
+import { shouldMute, shouldPropose, windowOf } from "./ladder.ts";
 import { monthLine, monthWindow, projectedSpend, raisedCeiling } from "./money.ts";
 import { type Derived, type OutcomeRow, OutcomesRepo, type TrustNotice } from "./repo.ts";
 import { choreTokens, laneSpend, monthSpend, playbookRuns, playbookTokens, startedSpend } from "./spend.ts";
@@ -52,19 +50,6 @@ import { findingsTally, tallyOf, ZERO_TALLY } from "./tally.ts";
  */
 
 const WEEKLY: Cadence = { kind: "weekly", day: 1, at: "08:00" };
-
-const ROW_NAME: Record<AuthorityRow, string> = {
-  start: "Start work",
-  questions: "Answer questions",
-  approvals: "Routine approvals",
-  upkeep: "Upkeep",
-  merge: "Merge",
-  push: "Push",
-  deployStaging: "Deploy to staging",
-  deployProduction: "Deploy to production",
-  tell: "Client replies",
-  own: "Own work",
-};
 
 /** What the owner did, for the line that says why a line dropped. */
 const TAKEN_BACK = {
@@ -86,9 +71,8 @@ export interface OutcomesDeps {
   orgs: () => Promise<string[]>;
   orgName: (org: string) => Promise<string>;
   playbookOfChore?: (chore: CaptainChore) => string | undefined;
-  /** What each authority row is set to now. */
+  /** What each authority row is, derived from the workspace's level. Shown, never moved by the ladder. */
   authority: (org: string) => Promise<Authority>;
-  setAuthority: (org: string, row: AuthorityRow, choice: "decide" | "ask", reason: string) => Promise<void>;
   outbound: {
     mode(org: string, channel: OutboundChannel): OutboundMode;
     /** Moves a channel by the ladder: the one way past the owner's explicit Auto. */
@@ -222,11 +206,8 @@ export class OutcomesService {
   // The ladder
 
   private async runLadder(now: Date): Promise<void> {
+    // Only the outbound channels move by the ladder. The authority level is the owner's alone.
     for (const org of await this.deps.orgs()) {
-      const auth = await this.deps.authority(org);
-      for (const row of AUTHORITY_ROWS) {
-        await this.rung(org, row, auth[row] === "decide" ? "decide" : "ask", now).catch(() => undefined);
-      }
       for (const channel of OUTBOUND_CHANNELS) {
         await this.rung(org, outboundKey(channel), this.deps.outbound.mode(org, channel), now).catch(
           () => undefined,
@@ -289,11 +270,8 @@ export class OutcomesService {
   }
 
   private promoteText(name: string, key: string, up: string, kept: number, judged: number): string {
-    if (isOutboundKey(key)) {
-      const ch = OUTBOUND_CHANNEL_LABEL[key.slice("outbound:".length) as OutboundChannel];
-      return `${name}: ${ch} drafts went out as written, ${kept} of ${judged}. Move ${ch} to ${MODE_NAME[up as OutboundMode]}?`;
-    }
-    return `${name}: ${ROW_NAME[key as AuthorityRow]} has run clean, ${kept} of ${judged} kept. Let the captain decide it?`;
+    const ch = OUTBOUND_CHANNEL_LABEL[key.slice("outbound:".length) as OutboundChannel];
+    return `${name}: ${ch} drafts went out as written, ${kept} of ${judged}. Move ${ch} to ${MODE_NAME[up as OutboundMode]}?`;
   }
 
   private async demote(
@@ -318,19 +296,6 @@ export class OutcomesService {
         text: `${OUTBOUND_CHANNEL_LABEL[channel]} is back to Draft in ${name}: ${what}.`,
         evidence: "Give it back to let it send by itself again.",
         data: { from: setting, to: "draft" },
-        at,
-      });
-    } else {
-      const row = key as AuthorityRow;
-      await this.deps.setAuthority(org, row, "ask", `Trust ladder: ${what}`);
-      this.repo.setTrust(org, key, { since: at });
-      this.repo.addNotice({
-        org,
-        key,
-        kind: "demoted",
-        text: `${ROW_NAME[row]} is back to You in ${name}: ${what}.`,
-        evidence: "Give it back to let the captain do it again.",
-        data: { from: setting, to: "ask" },
         at,
       });
     }
@@ -466,14 +431,14 @@ export class OutcomesService {
       else this.repo.closeNotice(n.id, "accepted", at);
     } else if (n.kind === "demoted") {
       if (option === "restore" && from !== undefined) {
-        await this.apply(n.org, n.key, from, didWords(OWNER, "gave it back after a demotion"));
+        this.apply(n.org, n.key, from);
         this.repo.setTrust(n.org, n.key, { since: at });
         this.repo.closeNotice(n.id, "undone", at);
       } else {
         this.repo.closeNotice(n.id, "accepted", at);
       }
     } else if (option === "promote" && to !== undefined) {
-      await this.apply(n.org, n.key, to, didWords(OWNER, "accepted the captain's proposal"));
+      this.apply(n.org, n.key, to);
       this.repo.setTrust(n.org, n.key, {
         since: at,
         ...(to === "auto" ? { autoOk: true } : {}),
@@ -487,16 +452,17 @@ export class OutcomesService {
     this.deps.changed?.();
   }
 
-  /** Puts a row or channel at a setting, by the owner's word. */
-  private async apply(org: string, key: string, to: string, reason: string): Promise<void> {
+  /**
+   * Puts a channel at a setting, by the owner's word. A proposal saved for an authority row is closed and
+   * not applied: the level is the owner's alone.
+   */
+  private apply(org: string, key: string, to: string): void {
     if (isOutboundKey(key)) {
       this.deps.outbound.applyLadder(
         org,
         key.slice("outbound:".length) as OutboundChannel,
         to as OutboundMode,
       );
-    } else {
-      await this.deps.setAuthority(org, key as AuthorityRow, to === "decide" ? "decide" : "ask", reason);
     }
   }
 

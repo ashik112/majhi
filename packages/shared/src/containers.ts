@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isOfficialImage } from "./risk-kinds.ts";
 
 /**
  * Containers that majhi runs for agents (PRV-53): a preview of the task's own image and service
@@ -6,7 +7,7 @@ import { z } from "zod";
  * MCP tool for this short list of actions. Every value an agent sends is checked here first, then
  * once more by the argument builders (apps/server/src/containers/args.ts) before any docker call.
  *
- * This file imports only zod: settings.ts and processes.ts import it, and accounts.ts imports settings.ts.
+ * This file imports only zod and the leaf risk-kinds.ts: settings.ts and processes.ts import it, and accounts.ts imports settings.ts.
  */
 
 /** An image reference like `postgres:16-alpine`. Starts with a letter or digit, so it is never a flag. */
@@ -29,6 +30,14 @@ export function normalizeImage(image: string): string {
 
 export function sameImage(a: string, b: string): boolean {
   return normalizeImage(a) === normalizeImage(b);
+}
+
+/**
+ * Whether a task's containers may run the image: it is a Docker Official Image, or the workspace's list
+ * (the owner's "Always" for an image, kept per workspace) holds it. Anything else asks the owner once.
+ */
+export function imageAllowed(image: string, allowed: readonly string[]): boolean {
+  return isOfficialImage(image) || allowed.some((a) => sameImage(a, image));
 }
 
 /**

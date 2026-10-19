@@ -1,6 +1,5 @@
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { seedStatus } from "../testing/status.ts";
 
@@ -33,7 +32,7 @@ async function on() {
       return "cancelled";
     };
   };
-  must(await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } }));
+  must(await h.cmd("authority.set", { org: "acme", level: "routine" }));
   must(await h.cmd("autonomy.start"));
   const chat = await services.autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");

@@ -86,7 +86,6 @@ function shipView(plan: ShipPlan): ShipView {
     deployProduction: steps.deployProduction,
     tell: steps.tell,
     way: plan.way,
-    ...(plan.ruleSubject === undefined ? {} : { rule: plan.ruleSubject }),
     ...(plan.waits === undefined ? {} : { waits: plan.waits }),
   };
 }

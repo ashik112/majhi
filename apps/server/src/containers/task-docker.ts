@@ -4,7 +4,7 @@ import {
   ContainerNameSchema,
   ContainerPathSchema,
   ImageRefSchema,
-  sameImage,
+  imageAllowed,
   type TaskDockerErrorCode,
 } from "@majhi/shared";
 import {
@@ -191,7 +191,7 @@ function runImage(ref: string, ctx: TaskDockerContext, service: string | undefin
   if (!matches(ImageRefSchema, ref)) return refuse(`The image ${shown(ref)} is not allowed.`);
   const local = localImage(ctx.safety, ref);
   if (local !== undefined && ctx.builtImages.has(local)) return local;
-  if (ctx.allowedImages.some((image) => sameImage(image, ref))) return ref;
+  if (imageAllowed(ref, ctx.allowedImages)) return ref;
   throw new ImageNotAllowed(ref, service);
 }
 
@@ -1003,7 +1003,7 @@ function checkRun(args: readonly string[], s: Safety, allowedImages: readonly st
   if (image.startsWith("majhi-")) {
     // Only an image this task built. Never another task's, the preview's or majhi's own.
     if (!image.startsWith(names.imagePrefix)) refuse(`The image ${shown(image)} is not this task's.`);
-  } else if (!allowedImages.some((allowed) => sameImage(allowed, image))) {
+  } else if (!imageAllowed(image, allowedImages)) {
     throw new ImageNotAllowed(image, userName);
   }
 }

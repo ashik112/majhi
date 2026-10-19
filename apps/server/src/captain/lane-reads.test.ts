@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { toolName } from "../admin/tools.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { UsageRepo } from "../usage/repo.ts";
-import { RUNS, TIDY } from "./authority-fixtures.ts";
 
 /**
  * A captain lane reads one workspace only (5.18). Globex is filled with a task, a project, an
@@ -60,15 +59,10 @@ async function world() {
     h.cmd("memory.add", { text: "Globex invoices close on the 3rd", scope: "org:globex", pinned: false }),
   );
   await must(h.cmd("memory.add", { text: "Acme deploys on Tuesdays", scope: "org:acme", pinned: false }));
-  await must(
-    h.cmd("autonomy.configure", {
-      orgs: {
-        acme: { authority: RUNS },
-        globex: { authority: TIDY, cap: { cost: 3 } },
-        private: { authority: TIDY },
-      },
-    }),
-  );
+  await must(h.cmd("authority.set", { org: "acme", level: "routine" }));
+  await must(h.cmd("authority.set", { org: "globex", level: "ask" }));
+  await must(h.cmd("authority.set", { org: "private", level: "ask" }));
+  await must(h.cmd("autonomy.configure", { orgs: { globex: { cap: { cost: 3 } } } }));
   const services = h.majhi.services;
   services.store.permissions.log({
     task: glx.id,

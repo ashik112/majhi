@@ -10,6 +10,7 @@ import {
   loadConfig,
   parseConfigText,
 } from "./load.ts";
+import { planLevels } from "./migrate-levels.ts";
 import { foldedOrgs, orgsWithMergeSwitch, removeOrgMergeSwitches } from "./migrate-org-merge.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
 import {
@@ -199,6 +200,39 @@ export class ConfigService {
           this.file,
           found.map((f) => f.id),
         );
+      },
+    );
+    return changed;
+  }
+
+  /**
+   * Startup migration: each workspace's old authority table, ship rules and flags become its one authority
+   * level, and the saved "always allow" rules become one per workspace and kind (see `migrate-levels.ts`).
+   * `orgOfTask` names the workspace of a task a rule was saved for. Returns whether it changed anything; a
+   * second run finds nothing and makes no commit.
+   */
+  async migrateLevels(world: { orgOfTask: (task: string) => string | undefined }): Promise<boolean> {
+    const plan = async () => {
+      const [{ autonomy, policy }, sections] = await Promise.all([readSettings(this.file), this.sections()]);
+      return planLevels({ autonomy, policy, orgs: Object.keys(sections.orgs), orgOfTask: world.orgOfTask });
+    };
+    const first = await plan();
+    if (first === undefined) return false;
+    let changed = false;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: first.summary,
+      },
+      async () => {
+        const now = await plan();
+        if (now === undefined) return;
+        changed = true;
+        await writeSettings(this.file, {
+          autonomy: { orgs: now.orgs, ...(now.pick === undefined ? {} : { pick: now.pick }) },
+          ...(now.rulesChanged ? { policy: { rules: now.rules } } : {}),
+        });
       },
     );
     return changed;

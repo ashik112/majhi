@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { AuthorityPatchSchema, AuthoritySchema } from "./authority.ts";
+import { LegacyAuthoritySchema } from "./authority.ts";
 import { HoldsPatchSchema } from "./chat.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { IncidentSettingsSchema } from "./incident.ts";
 import { NotifyKindSchema } from "./notify.ts";
-import { MAX_SHIP_RULES, ShipRuleSchema } from "./ship-rules.ts";
+import { type AllowRule, AllowRuleSchema, AUTHORITY_LEVELS } from "./risk-kinds.ts";
 
 /**
  * Runtime settings in majhi.yaml that the owner or the captain can change live
@@ -411,11 +411,11 @@ export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
 const RULE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /**
- * "Always allow this agent to run this command", saved when the owner ticks the box on an approval
- * card. It has exactly one scope: a `task` (only that task) or an `org` (every task in that org).
- * It only turns a card that would wait into one that runs, and never blocks anything.
+ * An "Always allow" saved before permissions by risk: one agent, one command line or tool, one task or
+ * workspace. It is read only by the startup migration, which turns it into a workspace-and-kind rule
+ * (`AllowRule`) or drops it.
  */
-export const AllowRuleSchema = z
+export const LegacyAllowRuleSchema = z
   .strictObject({
     agent: z.string().regex(RULE_ID),
     command: z.string().min(1),
@@ -428,7 +428,15 @@ export const AllowRuleSchema = z
   .refine((rule) => (rule.task === undefined) !== (rule.org === undefined), {
     message: "A rule has exactly one of task or org",
   });
-export type AllowRule = z.infer<typeof AllowRuleSchema>;
+export type LegacyAllowRule = z.infer<typeof LegacyAllowRuleSchema>;
+
+const SavedRuleSchema = z.union([AllowRuleSchema, LegacyAllowRuleSchema]);
+export type SavedRule = z.infer<typeof SavedRuleSchema>;
+
+/** The rules in force: one per workspace and kind. Rules not migrated yet are not in force. */
+export function currentRules(policy: { rules: readonly SavedRule[] }): AllowRule[] {
+  return policy.rules.filter((r): r is AllowRule => "kind" in r);
+}
 
 export const PolicySettingsSchema = z.strictObject({
   read: ApprovalModeSchema.default("auto"),
@@ -437,8 +445,8 @@ export const PolicySettingsSchema = z.strictObject({
   outbound: ApprovalModeSchema.default("confirm"),
   /** Per-command overrides, by command name. */
   commands: z.record(z.string(), ApprovalModeSchema).default({}),
-  /** Saved "always allow" choices from approval cards. */
-  rules: z.array(AllowRuleSchema).default([]),
+  /** Saved "Always" choices from cards: one per workspace and kind of action. */
+  rules: z.array(SavedRuleSchema).default([]),
   /**
    * No longer read: a destructive command always waits for the owner's click. Kept so a majhi.yaml
    * that still sets it loads.
@@ -458,6 +466,8 @@ export const PolicyPatchSchema = z
   })
   .partial();
 export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
+/** What majhi.yaml may hold: the same, and the saved rules of before the level, which the startup migration rewrites. */
+export const PolicyFilePatchSchema = PolicyPatchSchema.extend({ rules: z.array(SavedRuleSchema).optional() });
 
 /**
  * Autonomous mode (PRV-74): the caps it spends within, the account floors it keeps, what it may do
@@ -465,13 +475,13 @@ export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
  * is runtime state (`autonomy.status`), not config. Only the owner changes this section.
  */
 /**
- * How much the captain does in a workspace (SPEC 5.18): `ask` answers only when the owner talks to it,
- * `tidy` also does the upkeep chores and asks before shipping, `runs` also picks, runs and ships tasks
- * within the workspace's daily budget while autonomous mode is on. Absent: `tidy` for Private, `ask`
- * for every other workspace.
+ * The workspace's one authority level (SPEC 5.18, docs/briefs/workflow-reset.md step 1b): `ask` (sandbox
+ * only), `routine` (also pushes the task's own branch and opens a draft pull request, the default) or `full`
+ * (also merges into main and deploys to staging). Set by the owner alone. A file saved before the level may
+ * still hold `tidy` or `runs`, the two older names; the startup migration rewrites them and until then
+ * `levelOfOrg` reads them as their nearest level.
  */
-export const CaptainLevelSchema = z.enum(["ask", "tidy", "runs"]);
-export type CaptainLevel = z.infer<typeof CaptainLevelSchema>;
+const StoredLevelSchema = z.enum([...AUTHORITY_LEVELS, "tidy", "runs"]);
 
 const DaySchema = z
   .string()
@@ -497,20 +507,17 @@ const ProviderIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 export const AutonomyOrgSchema = z.strictObject({
-  /** Who decides each row (SPEC 5.18). Absent: derived from `level`, `push` and `merge`, or the defaults. */
-  authority: AuthoritySchema.optional(),
-  /**
-   * Ship rules (ship-rules.ts): an ordered list that refines Merge, Deploy and Tell by what the task is.
-   * The first rule that matches decides; with none, the rows do. Absent: the rows decide.
-   */
-  ships: z.array(ShipRuleSchema).max(MAX_SHIP_RULES).optional(),
-  /** Before the authority table: how much the captain does here. Read only while `authority` is absent. */
-  level: CaptainLevelSchema.optional(),
+  /** The workspace's authority level. Absent: Routine, or the nearest level of the old table below. */
+  level: StoredLevelSchema.optional(),
+  /** Before the level: who decides each row. Read only by `levelOfOrg` and the migration that removes it. */
+  authority: LegacyAuthoritySchema.optional(),
+  /** Before the level: ship rules per task type. Dropped by the migration; the level decides alone. */
+  ships: z.unknown().optional(),
   /** This org's cap per day (the daily budget next to the authority table). Absent: only the overall `day` cap holds it. */
   cap: BudgetSchema.optional(),
-  /** Before the authority table: may push. Read only while `authority` is absent. */
+  /** Before the level: may push. Read only by `levelOfOrg` and the migration that removes it. */
   push: z.boolean().optional(),
-  /** Before the authority table: may merge. Read only while `authority` is absent. */
+  /** Before the level: may merge. Read only by `levelOfOrg` and the migration that removes it. */
   merge: z.boolean().optional(),
   /** "More rules": when the captain may act on its own, in `tz`. Absent: any time. */
   hours: WorkHoursSchema.optional(),
@@ -526,10 +533,7 @@ export const AutonomyOrgSchema = z.strictObject({
   account: z.string().regex(ACCOUNT_ID).optional(),
   /** Removed in D9, kept so old config loads. */
   chores: z.unknown().optional(),
-  /**
-   * Full access: the captain decides every row here and its calls run without a card, except a change
-   * to anyone's permissions and anything destructive. Only the owner sets it.
-   */
+  /** Before the level: full access. Read only by `levelOfOrg` and the migration that removes it. */
   fullAccess: z.boolean().optional(),
   /** How many tasks the captain keeps working at once in this workspace. Absent: 1. */
   tasksAtOnce: z.number().int().min(1).max(10).optional(),
@@ -613,10 +617,6 @@ export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
  */
 export const AutonomyOrgPatchSchema = z
   .strictObject({
-    /** Only the rows that change. Saving writes the new form and drops the old level, push and merge. */
-    authority: AuthorityPatchSchema,
-    /** The whole list, in order. `null` removes every rule. */
-    ships: z.array(ShipRuleSchema).max(MAX_SHIP_RULES).nullable(),
     cap: BudgetSchema.nullable(),
     hours: WorkHoursSchema.nullable(),
     freeze: z.array(FreezeSchema).max(50).nullable(),
@@ -624,12 +624,11 @@ export const AutonomyOrgPatchSchema = z
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
-    fullAccess: z.boolean().nullable(),
     tasksAtOnce: z.number().int().min(1).max(10).nullable(),
     /** Only the classes that change. `null` switches every class back on. */
     holds: HoldsPatchSchema.nullable(),
     /** Only the fields that change. `null` goes back to the defaults. */
-    incident: IncidentSettingsSchema.nullable(),
+    incident: IncidentSettingsSchema.omit({ fix: true, clientUpdate: true }).nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;

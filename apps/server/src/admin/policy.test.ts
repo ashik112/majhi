@@ -1,6 +1,6 @@
-import { type AllowRule, effectiveMode, isDestructiveCommand, PolicySettingsSchema } from "@majhi/shared";
+import { effectiveMode, isDestructiveCommand, PolicySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { decide, matchRule, redact, redactText } from "./policy.ts";
+import { decide, redact, redactText } from "./policy.ts";
 
 describe("approval decision table", () => {
   it("keeps a destructive command on confirm whatever the policy says", () => {
@@ -80,41 +80,6 @@ describe("isDestructiveCommand", () => {
     ["tasks.terminal.open", false],
   ])("%s is %s", (name, expected) => {
     expect(isDestructiveCommand(name)).toBe(expected);
-  });
-});
-
-describe("matchRule", () => {
-  const call = { agent: "acme-builder", command: "tasks.merge", task: "ACM-1", org: "acme" };
-  const taskRule = { agent: "acme-builder", command: "tasks.merge", task: "ACM-1" };
-  const orgRule = { agent: "acme-builder", command: "tasks.merge", org: "acme" };
-  const policy = (rules: AllowRule[], allowDestructive = false) =>
-    PolicySettingsSchema.parse({ rules, allow_destructive_rules: allowDestructive });
-
-  it("needs the same agent and command", () => {
-    expect(matchRule(policy([taskRule]), call)).toEqual(taskRule);
-    expect(matchRule(policy([taskRule]), { ...call, agent: "boss" })).toBeUndefined();
-    expect(matchRule(policy([taskRule]), { ...call, command: "tasks.split" })).toBeUndefined();
-    expect(matchRule(policy([]), call)).toBeUndefined();
-  });
-
-  it("covers a task rule's own task only", () => {
-    expect(matchRule(policy([taskRule]), { ...call, task: "ACM-2" })).toBeUndefined();
-    expect(matchRule(policy([taskRule]), { ...call, task: "GLX-1", org: "globex" })).toBeUndefined();
-  });
-
-  it("covers every task of an org rule's org, and no other org or LOCAL task", () => {
-    expect(matchRule(policy([orgRule]), { ...call, task: "ACM-9" })).toEqual(orgRule);
-    expect(matchRule(policy([orgRule]), { ...call, task: "GLX-1", org: "globex" })).toBeUndefined();
-    expect(matchRule(policy([orgRule]), { ...call, task: "LOCAL-1", org: undefined })).toBeUndefined();
-  });
-
-  it("never covers a destructive command, even with the old toggle on", () => {
-    const rule = { agent: "acme-builder", command: "agents.remove", org: "acme" };
-    const remove = { ...call, command: "agents.remove" };
-    expect(matchRule(policy([rule]), remove)).toBeUndefined();
-    expect(matchRule(policy([rule], true), remove)).toBeUndefined();
-    const soft = { agent: "acme-builder", command: "tasks.remove", task: "ACM-1" };
-    expect(matchRule(policy([soft], true), { ...call, command: "tasks.remove" })).toBeUndefined();
   });
 });
 

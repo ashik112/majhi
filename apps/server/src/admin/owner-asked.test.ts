@@ -36,18 +36,13 @@ describe("an agent saying the owner asked", () => {
     });
     expect(chat.text).not.toBe(WAITING_TEXT);
 
-    // Git accounts, identity, projects, workspace roots, repos attached: the card always shows.
+    // Git accounts, identity, projects, workspace roots: the card always shows.
     const waiting = [
       ["majhi_orgs_update", { id: "acme", identity: { name: "Mallory", email: "m@acme.test" } }],
       ["majhi_orgs_setGitAccount", { id: "acme", host: "github.com", account: "mallory" }],
       ["majhi_projects_update", { id: "acme-api", org: "acme", aliases: ["api"] }],
       ["majhi_projects_remove", { id: "acme-api" }],
       ["majhi_workspaces_set", { workspaces: ["/Users/owner"] }],
-      [
-        "majhi_tasks_create",
-        { name: "Test task", text: "fix the login bug", repos: [{ project: "acme-api" }], start: true },
-      ],
-      ["majhi_tasks_start", { id: task.id }],
     ] as const;
     for (const [tool, input] of waiting) {
       const result = await admin.call(caller, tool, { ...input, ...asked });

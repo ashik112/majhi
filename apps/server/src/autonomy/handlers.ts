@@ -11,6 +11,7 @@ type AutonomyCommand =
   | "autonomy.pause"
   | "autonomy.stop"
   | "autonomy.configure"
+  | "authority.set"
   | "autonomy.guide"
   | "autonomy.forget"
   | "autonomy.exclude"
@@ -59,6 +60,7 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
       ownerOnly(ctx);
       return autonomy.configure(input, ctx);
     },
+    "authority.set": (input, ctx) => autonomy.setAuthority(input, ctx),
     "autonomy.guide": async (input, ctx) => {
       ownerOnly(ctx);
       return autonomy.guide(input, ctx);

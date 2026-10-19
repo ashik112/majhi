@@ -1,11 +1,16 @@
-import { isDestructiveCommand, type RoomItem } from "@majhi/shared";
+import {
+  commandRisk,
+  isAlwaysKind,
+  isDestructiveCommand,
+  RISK_LABEL as KIND_LABEL,
+  type RoomItem,
+} from "@majhi/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, ChevronRight, KeyRound, ShieldCheck, Undo2, Wrench } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
-import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import {
   approvalOutcome,
@@ -23,13 +28,8 @@ import { useTask } from "@/lib/task-queries";
 import { DockBar } from "./dock-bar";
 import { SecretAnswer } from "./secret-answer";
 
-type Scope = "task" | "org";
-
-/** What a card says when a saved rule ran it without asking. */
-const AUTO_LABEL: Record<Scope, string> = {
-  task: "Auto-allowed for this task",
-  org: "Auto-allowed in the workspace",
-};
+/** What a card says when a saved Always rule ran it without asking. */
+const AUTO_LABEL = { task: "Auto-allowed for this task", org: "Auto-allowed in the workspace" } as const;
 
 type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -40,13 +40,13 @@ type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const toast = useToast();
   const client = useQueryClient();
-  const decide = useMutation<unknown, ApiRequestError, { decision: "approve" | "reject"; always?: Scope }>({
+  const decide = useMutation<unknown, ApiRequestError, { decision: "approve" | "reject"; always?: true }>({
     mutationFn: ({ decision, always }) =>
       cmd("room.approve", {
         task: item.task,
         item: item.id,
         decision,
-        ...(always === undefined ? {} : { always: { scope: always } }),
+        ...(always === undefined ? {} : { always }),
       }),
     onSuccess: async (_, { always }) => {
       // A saved rule is a settings change: the agent page and Hub setup list it.
@@ -63,12 +63,16 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const outcome = approvalOutcome(item);
   const [more, setMore] = useState(false);
   const [always, setAlways] = useState(false);
-  const [scope, setScope] = useState<Scope>("task");
   const settings = useSettings();
   const org = useTask(item.task).data?.org;
-  // No checkbox for a destructive command: only the owner's click approves it. It waits for the settings.
+  // Always is one rule for the workspace and the kind of action. Deleting, secrets and a client's server
+  // ask every time, so they get no checkbox. It waits for the settings.
+  const kind = commandRisk(item.command);
   const canAlways =
-    settings.data !== undefined && !isDestructiveCommand(item.command) && item.proposal === undefined;
+    settings.data !== undefined &&
+    !isDestructiveCommand(item.command) &&
+    isAlwaysKind(kind) &&
+    item.proposal === undefined;
 
   if (outcome === undefined) {
     return (
@@ -84,7 +88,9 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
               size="sm"
               variant="primary"
               disabled={decide.isPending}
-              onClick={() => decide.mutate({ decision: "approve", ...(always ? { always: scope } : {}) })}
+              onClick={() =>
+                decide.mutate({ decision: "approve", ...(always ? { always: true as const } : {}) })
+              }
             >
               {item.proposal === undefined ? "Approve" : "Apply"}
             </Button>
@@ -145,22 +151,9 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
                     onChange={(event) => setAlways(event.target.checked)}
                   />
                   <span className="min-w-0 break-words">
-                    Always allow <span className="font-mono text-fg-soft">{item.command}</span> for @
-                    {item.agent}
+                    Always {KIND_LABEL[kind]} in {org ?? "this workspace"}
                   </span>
                 </label>
-                {always && (
-                  <Select
-                    aria-label="Where to always allow it"
-                    value={scope}
-                    disabled={decide.isPending}
-                    onChange={(event) => setScope(event.target.value as Scope)}
-                    className="h-7 w-auto text-sm"
-                  >
-                    <option value="task">In this task</option>
-                    {org !== undefined && <option value="org">Everywhere in {org}</option>}
-                  </Select>
-                )}
               </div>
             )}
           </>

@@ -16,7 +16,7 @@ beforeEach(async () => {
 });
 afterEach(() => w?.cleanup());
 
-const db = { task: "ACM-1", name: "db", image: "postgres:16-alpine", port: 5432 };
+const db = { task: "ACM-1", name: "db", image: "acme/postgres:16-alpine", port: 5432 };
 const volumes = [{ name: "pgdata", path: "/var/lib/postgresql/data" }];
 
 describe("containers commands", () => {

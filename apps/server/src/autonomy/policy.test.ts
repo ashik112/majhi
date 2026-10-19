@@ -1,14 +1,14 @@
 import { type AutonomyHold, AutonomySettingsSchema, type CommandName } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { adminTools } from "../admin/tools.ts";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { hardLimit, type LimitWorld } from "./limits.ts";
 import { type AutonomyCall, decideAutonomously, type PolicyContext, startsWork } from "./policy.ts";
 
 const settings = AutonomySettingsSchema.parse({
   orgs: {
-    acme: { authority: { ...RUNS, push: "decide" } },
-    globex: { authority: { ...RUNS, merge: "decide" } },
+    acme: { level: "routine" },
+    globex: { level: "full" },
+    northwind: { level: "ask" },
   },
 });
 
@@ -61,17 +61,17 @@ describe("decideAutonomously: the table", () => {
     expect(decide(call("room.answerAsk", {}))).toBe("left");
   });
 
-  it("follows each org's push and merge setting", () => {
-    // Acme may push, not merge. Globex may merge, not push.
+  it("follows each org's level", () => {
+    // Acme is Routine: it may push, not merge. Globex is Full: both.
     expect(decide(call("tasks.push", { id: "ACM-1" }))).toBe("approved");
     expect(decide(call("tasks.openMrs", { id: "ACM-1" }))).toBe("approved");
-    expect(decide(call("tasks.push", { id: "GLX-1" }, { org: "globex" }))).toBe("left");
+    expect(decide(call("tasks.push", { id: "GLX-1" }, { org: "globex" }))).toBe("approved");
     expect(decide(call("tasks.merge", { id: "ACM-1" }))).toBe("left");
     expect(decide(call("tasks.merge", { id: "GLX-1" }, { org: "globex" }))).toBe("approved");
     // Merging the merge requests of a task follows the same Merge row.
     expect(decide(call("tasks.mergeMrs", { id: "GLX-1" }, { org: "globex" }))).toBe("approved");
     expect(decide(call("tasks.markMerged", { id: "ACM-1" }))).toBe("left");
-    // An org with no entry may do neither.
+    // An org at Ask me may do neither.
     expect(decide(call("tasks.push", { id: "NW-1" }, { org: "northwind" }))).toBe("left");
     // Any other outbound call waits for the owner.
     expect(decide(call("tasks.resolveShip", { id: "ACM-1" }))).toBe("left");
@@ -411,39 +411,38 @@ describe("hardLimit", () => {
   });
 });
 
-describe("decideAutonomously: the authority rows", () => {
-  const withRows = (rows: Record<string, "decide" | "ask">): PolicyContext =>
-    ctx({ settings: AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...RUNS, ...rows } } } }) });
+describe("decideAutonomously: the authority level", () => {
+  const at = (level: "ask" | "routine" | "full"): PolicyContext =>
+    ctx({ settings: AutonomySettingsSchema.parse({ orgs: { acme: { level } } }) });
 
-  it("starts work only where the captain decides when work starts", () => {
-    expect(decide(call("tasks.start", { id: "ACM-1" }), withRows({ start: "decide" }))).toBe("approved");
-    expect(decideAutonomously(call("tasks.start", { id: "ACM-1" }), withRows({ start: "ask" }))).toEqual({
+  it("starts work above Ask me only", () => {
+    expect(decide(call("tasks.start", { id: "ACM-1" }), at("routine"))).toBe("approved");
+    expect(decide(call("tasks.start", { id: "ACM-1" }), at("full"))).toBe("approved");
+    expect(decideAutonomously(call("tasks.start", { id: "ACM-1" }), at("ask"))).toEqual({
       decision: "left",
       why: "In acme you decide when work starts, so the captain does not start it",
     });
   });
 
-  it("merges only where the captain decides when work is merged", () => {
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "decide" }))).toBe("approved");
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "ask" }))).toBe("left");
-    // A push row on "decide" does not allow a merge, and the other way round.
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ push: "decide", merge: "ask" }))).toBe(
-      "left",
-    );
+  it("merges at Full only", () => {
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("full"))).toBe("approved");
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("routine"))).toBe("left");
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("ask"))).toBe("left");
   });
 
-  it("pushes and opens merge requests only where the captain decides when work is pushed", () => {
+  it("pushes and opens merge requests from Routine up", () => {
     for (const command of ["tasks.push", "tasks.openMrs"] as const) {
-      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "decide" }))).toBe("approved");
-      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "ask", merge: "decide" }))).toBe("left");
+      expect(decide(call(command, { id: "ACM-1" }), at("routine"))).toBe("approved");
+      expect(decide(call(command, { id: "ACM-1" }), at("full"))).toBe("approved");
+      expect(decide(call(command, { id: "ACM-1" }), at("ask"))).toBe("left");
     }
   });
 });
 
-describe("what follows the Merge row and Upkeep for the captain's own calls", () => {
-  it("lets the captain ask the lead to resolve conflicts only where Merge is Captain", () => {
+describe("what follows the level and Upkeep for the captain's own calls", () => {
+  it("lets the captain ask the lead to resolve conflicts only where it merges", () => {
     const resolve = { id: "GLX-1", action: "merge" };
-    // Globex merges; Acme asks.
+    // Globex (Full) merges; Acme (Routine) asks.
     expect(decide(call("tasks.resolveShip", resolve, { org: "globex", boss: true }))).toBe("approved");
     expect(decide(call("tasks.resolveShip", resolve, { org: "acme", boss: true }))).toBe("left");
     // An agent of a task is not the captain: it stays a decision even where Merge is Captain.
@@ -453,16 +452,10 @@ describe("what follows the Merge row and Upkeep for the captain's own calls", ()
     expect(decide(call("tasks.resolveShip", { id: "ACM-1" }, { boss: true }))).toBe("left");
   });
 
-  it("lets the captain register a repo only under Upkeep, and never an agent", () => {
+  it("lets the captain register a repo as upkeep, and never an agent", () => {
     const register = { id: "acme-web", org: "acme", path: "/Users/owner/Work/acme/web" };
     expect(decide(call("projects.register", register, { boss: true }))).toBe("approved");
     expect(decide(call("projects.register", register))).toBe("left");
-    const quiet = AutonomySettingsSchema.parse({
-      orgs: { acme: { authority: { ...RUNS, upkeep: "ask" } } },
-    });
-    expect(decide(call("projects.register", register, { boss: true }), ctx({ settings: quiet }))).toBe(
-      "left",
-    );
     // The rest of what agents reach stays the owner's.
     expect(decide(call("projects.update", { id: "acme-web" }, { boss: true }))).toBe("left");
     expect(decide(call("projects.remove", { id: "acme-web" }, { boss: true }))).toBe("left");

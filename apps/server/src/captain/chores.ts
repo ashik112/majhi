@@ -4,8 +4,6 @@ import { opensMergeRequest, type ShipPlan, shipAsked } from "../ship/plan.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
-import { classifyOwnWork } from "./own-work.ts";
-import { permissionVerdict } from "./permission-rules.ts";
 import type {
   ApprovalCard,
   CaptainPorts,
@@ -46,18 +44,13 @@ export function memoryKey(fact: number): string {
   return `memory:${fact}`;
 }
 
-const lowerFirst = (text: string) => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
 const upperFirst = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
-/** Why the captain opens a merge request: who merges it, and the row or rule that says so. */
+/** Why the captain opens a merge request: who merges it, and the level that says so. */
 function mrReason(workspace: string, plan: ShipPlan, host: string): string {
   return plan.steps.merge === "captain"
     ? `In ${workspace} the captain decides when work is merged and pushed, and the project works through merge requests, so it opens the merge request on ${host} and merges it once it is green`
-    : `${
-        plan.ruleSubject === undefined
-          ? `In ${workspace} the captain decides when work is pushed and you merge`
-          : `In ${workspace} the rule for ${lowerFirst(plan.ruleSubject)} leaves the merge to you and the captain decides when work is pushed`
-      }, so it opens the merge request on ${host}`;
+    : `In ${workspace} the captain decides when work is pushed and you merge, so it opens the merge request on ${host}`;
 }
 
 export function createChores(
@@ -69,53 +62,6 @@ export function createChores(
 
   /** Whether the owner switched an outcome rule of the chore's playbook off. */
   const ruleOff = (run: ChoreRun, id: string): boolean => run.ws.rulesOff?.has(id) === true;
-
-  /**
-   * Own work (SPEC 5.18): allows a permission request of a task the captain started when it is routine
-   * and inside the task's folder, else leaves it for the owner with the reason. True when it acted.
-   * A request that is not routine falls through to the Questions row when that row is Captain: its
-   * rules reject the dangerous ones and never allow what this does not.
-   */
-  const ownWork = async (run: ChoreRun, card: QuestionCard): Promise<boolean> => {
-    const { org, ws } = run;
-    const scope = await ports.ownScope(org, card.task);
-    if (scope === undefined) return false;
-    const verdict = classifyOwnWork(card.text, scope);
-    const key = `own:${card.task}:${card.item}`;
-    const allow = card.options.find((o) => o.effect === "allow");
-    if (verdict.decision === "approve" && allow !== undefined) {
-      if (ruleOff(run, "q-answer")) return true;
-      await run.act({
-        key,
-        text: `Approved in ${card.task}: ${clip(card.text, 80)}`,
-        reason: `Own work: in ${ws.name} the captain approves what it started, and ${verdict.why}`,
-        evidence: `@${card.agent} asked: ${card.text}`,
-        task: card.task,
-        irreversible: true,
-        recheck: async () => away(card.task),
-        do: async () => {
-          const done = await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
-          if (!done.answered) return { repeat: true };
-          return { undoNote: "An answer an agent already read cannot be taken back" };
-        },
-      });
-      return true;
-    }
-    if (ws.authority.questions === "decide" && verdict.decision === "owner") {
-      return false;
-    }
-    if (ruleOff(run, "q-ask")) return true;
-    const base = verdict.decision === "approve" ? "the prompt has no Allow once option" : verdict.why;
-    await run.act({
-      key,
-      text: `Left a request in ${card.task} for you: ${clip(card.text, 80)}`,
-      reason: `Own work does not cover it: ${base}`,
-      evidence: `@${card.agent} asked: ${card.text}`,
-      task: card.task,
-      do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
-    });
-    return true;
-  };
 
   /** Keeps, merges or drops one waiting memory, or leaves it for the owner. */
   const curateOne = async (run: ChoreRun, fact: PendingFact) => {
@@ -389,10 +335,7 @@ export function createChores(
         await run.act({
           key: `${key}:asked`,
           text: `Left the deploy of ${where} for you: ${step.title}`,
-          reason:
-            step.rule === undefined
-              ? `In ${ws.name} ${what} is the owner's`
-              : `In ${ws.name} the rule for ${lowerFirst(step.rule)} leaves ${what} to you`,
+          reason: `In ${ws.name} ${what} is the owner's`,
           task: step.task,
           do: async () => ({ outcome: "asked", undoNote: "A step for you on the task: nothing to undo" }),
         });
@@ -402,10 +345,7 @@ export function createChores(
       await run.act({
         key,
         text: `Started the deploy of ${where}: ${step.title}`,
-        reason:
-          step.rule === undefined
-            ? `In ${ws.name} the captain decides ${what.toLowerCase()}`
-            : `In ${ws.name} the rule for ${lowerFirst(step.rule)} lets the captain ${what.toLowerCase()}`,
+        reason: `In ${ws.name} the captain decides ${what.toLowerCase()}`,
         evidence: `Commit ${step.commit.slice(0, 7)}, merged and checked`,
         task: step.task,
         irreversible: true,
@@ -606,10 +546,7 @@ export function createChores(
           continue;
         }
         const push = plan.steps.push === "captain";
-        const reason =
-          plan.ruleSubject === undefined
-            ? `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`
-            : `In ${ws.name} the rule for ${lowerFirst(plan.ruleSubject)} lets the captain merge${push ? " and push" : ""}`;
+        const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
         await run.act({
           key: `ship:${t.id}:${shipState(t)}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
@@ -716,10 +653,6 @@ export function createChores(
         }
         const key = `question:${card.task}:${card.item}`;
         if (run.done(key) || run.done(`${key}:lane`)) continue;
-        // Own work: a routine request of a task the captain started, read by what it asks for.
-        if (card.kind === "permission" && ws.authority.own === "decide") {
-          if (await ownWork(run, card)) continue;
-        }
         // Everything below is the Questions row: without it the card waits for the owner.
         if (ws.authority.questions !== "decide") continue;
         // Rules first: nothing to pick from is the owner's to answer.
@@ -734,42 +667,8 @@ export function createChores(
           });
           continue;
         }
-        // A permission prompt is settled by the rule table or not at all: no model decides it.
-        if (card.kind === "permission") {
-          const verdict = permissionVerdict(card.text);
-          if (verdict.decision === "unreadable") {
-            if (ruleOff(run, "q-ask")) continue;
-            await run.act({
-              key,
-              text: `Left a permission prompt in ${card.task} for you: ${clip(card.text, 80) || "no text"}`,
-              reason: verdict.why,
-              task: card.task,
-              do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
-            });
-            continue;
-          }
-          if (verdict.decision === "allow" || verdict.decision === "deny") {
-            const pick = card.options.find((o) => o.effect === verdict.decision);
-            if (pick !== undefined) {
-              if (ruleOff(run, "q-answer")) continue;
-              await run.act({
-                key,
-                text: `Answered @${card.agent} in ${card.task}: ${pick.label}`,
-                reason: `By rule: ${verdict.why}`,
-                evidence: card.text,
-                task: card.task,
-                irreversible: true,
-                recheck: async () => away(card.task),
-                do: async () => {
-                  const done = await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
-                  if (!done.answered) return { repeat: true };
-                  return { undoNote: "An answer an agent already read cannot be taken back" };
-                },
-              });
-              continue;
-            }
-          }
-        }
+        // A permission prompt is there because the level does not cover it: the owner answers it, no model does.
+        if (card.kind === "permission") continue;
         // Then a short turn of the captain in this workspace's lane, unless the lane rests.
         if (ruleOff(run, "q-answer")) continue;
         const rest = await ports.laneRest(org);

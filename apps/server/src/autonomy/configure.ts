@@ -1,6 +1,4 @@
 import {
-  AUTHORITY_LABEL,
-  AUTHORITY_ROWS,
   type AutonomyFilePatchSchema,
   type AutonomyOrg,
   AutonomyOrgSchema,
@@ -8,7 +6,6 @@ import {
   type AutonomySettings,
 } from "@majhi/shared";
 import type { z } from "zod";
-import { authorityOf } from "../captain/levels.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import { limitWord } from "./sizes.ts";
 import { capText } from "./spend.ts";
@@ -25,29 +22,22 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
       continue;
     }
     const had: Record<string, unknown> = { ...(orgs[id] ?? {}) };
-    // Some rows changed: write the new form from what holds now, and drop the old level, push and merge.
-    if (change.authority !== undefined) {
-      had.authority = { ...authorityOf(current, id), ...change.authority };
-      delete had.level;
-      delete had.push;
-      delete had.merge;
-    }
     // The Hold list changes class by class: the ones the patch names, the rest as they were.
     if (change.holds !== undefined && change.holds !== null) {
       had.holds = { ...(orgs[id]?.holds ?? {}), ...change.holds };
     }
-    // The incident settings change field by field too.
-    if (change.incident !== undefined && change.incident !== null) {
-      had.incident = { ...(orgs[id]?.incident ?? {}), ...change.incident };
+    // The incident settings change field by field too. "Back to the defaults" keeps the two switches only the
+    // owner sets (`authority.set`): they are not this command's to clear.
+    if (change.incident !== undefined) {
+      const kept = { fix: orgs[id]?.incident?.fix, clientUpdate: orgs[id]?.incident?.clientUpdate };
+      const own = change.incident === null ? kept : { ...(orgs[id]?.incident ?? {}), ...change.incident };
+      const fields = Object.entries(own).filter(([, v]) => v !== undefined);
+      if (fields.length === 0) delete had.incident;
+      else had.incident = Object.fromEntries(fields);
     }
     // Each field: absent keeps it, null clears it, a value sets it.
     for (const [key, value] of Object.entries(change)) {
-      if (
-        value === undefined ||
-        key === "authority" ||
-        ((key === "holds" || key === "incident") && value !== null)
-      )
-        continue;
+      if (value === undefined || key === "incident" || (key === "holds" && value !== null)) continue;
       if (value === null) delete had[key];
       else had[key] = value;
     }
@@ -100,20 +90,12 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
       own.push(`${name} back to the defaults`);
       continue;
     }
-    for (const row of AUTHORITY_ROWS) {
-      const choice = change.authority?.[row];
-      if (choice !== undefined) {
-        own.push(
-          `${name}: "${AUTHORITY_LABEL[row]}" to ${choice === "decide" ? "Captain decides" : "Ask me"}`,
-        );
-      }
-    }
     if (change.holds !== undefined) {
       own.push(change.holds === null ? `${name}: every hold on` : `${name}'s Hold list`);
     }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    const rules = (["ships", "hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
+    const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
       (k) => change[k] !== undefined,
     );
     if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
@@ -130,10 +112,8 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   return lines.length === 0 ? "changed nothing in Auto-pilot" : lines.join("; ");
 }
 
-function ruleWord(key: "ships" | "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
+function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
   switch (key) {
-    case "ships":
-      return "ship rules";
     case "hours":
       return "working hours";
     case "freeze":

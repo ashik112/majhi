@@ -527,10 +527,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     (err) => console.error(`Could not move the Slack connection to chat apps: ${errorMessage(err)}`),
   );
   background.run(
-    () => config.migrateOrgMerge(),
-    (err) => console.error(`Could not fold the merge policies into the Merge row: ${errorMessage(err)}`),
-  );
-  background.run(
     async () => {
       const moved = await config.migrateRemoteRoutes(async (remote) => {
         const ssh = await loadSshConfig(env.hostHome);
@@ -584,6 +580,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
+  // The org's own merge switch folds into its level first, then every workspace gets its one level and the
+  // saved Always rules become one per workspace and kind. Reads meanwhile see the old entries through
+  // `levelOfOrg`, which gives the same level the migration writes.
+  background.run(
+    async () => {
+      await config.migrateOrgMerge();
+      await config.migrateLevels({
+        orgOfTask: (task) => {
+          const found = store.tasks.get(task);
+          return found === undefined ? undefined : (found.org ?? PRIVATE);
+        },
+      });
+    },
+    (err) => console.error(`Could not move the workspaces to authority levels: ${errorMessage(err)}`),
+  );
   logSqliteBaseline(store.baseline);
   const memory = createMemory(env.majhiHome, options.embedder);
   const backup = new BackupService({
@@ -1902,8 +1913,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processWaiting: (task) => processes.waiting(task).length > 0,
     typing: (task) => events.typing.holds(task),
     shipPlan: (task) => shipPlanner.plan(task),
-    protectedProjects: async () =>
-      new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
     upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
     decisions: () => inbox.list(),
     store,
@@ -2268,7 +2277,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     halted: () => captainRepo.isStopped(),
     backlog: (task) => autonomy.isAutonomous(task),
     incident: (task) => isIncidentTask(task),
-    areas: areasReader,
     environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
     needsDeployPlan: async (task) =>
       (await deployWorld.ports.needsPlan(task.org ?? PRIVATE, task.id)) !== undefined,
@@ -2316,12 +2324,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     if (plan.steps.merge !== "captain") {
       return {
         yes: false,
-        why:
-          plan.waits !== undefined
-            ? "it waits for the deploy plan"
-            : plan.ruleSubject === undefined
-              ? "merging is the owner's here"
-              : `the rule for ${plan.ruleSubject.charAt(0).toLowerCase()}${plan.ruleSubject.slice(1)} leaves the merge to the owner`,
+        why: plan.waits !== undefined ? "it waits for the deploy plan" : "merging is the owner's here",
       };
     }
     if (plan.rest !== undefined) return { yes: false, why: plan.rest };
@@ -2375,8 +2378,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
       aliasesOf: (path, id) => suggestRepoAliases(path, id),
-      protectedProjects: async () =>
-        new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
       dispatch: () => captainDispatch,
       handoff: () => handoffService,
       ship: shipPlanner,
@@ -2458,12 +2459,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
     authority: async (org) => authorityOf((await config.settings()).autonomy, org),
-    setAuthority: async (org, row, choice, reason) => {
-      await autonomy.configure(
-        { orgs: { [org]: { authority: { [row]: choice } } } },
-        { command: "trust.ladder", meta: { actor: { kind: "owner" }, reason } },
-      );
-    },
     outbound: {
       mode: (org, channel) => outbound.mode(org, channel),
       applyLadder: (org, channel, mode) => outbound.applyLadder(org, channel, mode),
@@ -2501,10 +2496,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
-  background.run(
-    () => captain.boot(),
-    (err) => console.error(`Could not pick up the captain: ${errorMessage(err)}`),
-  );
+  captain.boot();
   background.run(
     () => autonomy.boot(),
     (err) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`),

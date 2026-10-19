@@ -1,7 +1,4 @@
 import {
-  AUTHORITY_ROWS,
-  AUTHORITY_SHORT,
-  type AuthorityRow,
   type AutonomyMode,
   AutonomyPatchSchema,
   type AutonomySettings,
@@ -14,7 +11,6 @@ import {
   SetEnvironmentsInputSchema,
 } from "@majhi/shared";
 import { mergePatch } from "../autonomy/configure.ts";
-import { authorityOf } from "../captain/levels.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 
 /**
@@ -39,8 +35,6 @@ export type Planned =
 
 export const PROPOSED_TEXT = "Proposed to the owner; nothing changed yet";
 
-const who = (choice: "decide" | "ask"): string => (choice === "decide" ? "Captain" : "You");
-
 /** JSON with sorted keys, so two reads of the same setting compare equal. */
 function canon(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canon).join(",")}]`;
@@ -61,9 +55,7 @@ const FIELD_WORD: Record<string, string> = {
   branches: "Branches",
   providers: "Providers",
   account: "Account",
-  fullAccess: "Full access",
   tasksAtOnce: "Tasks at once",
-  ships: "Ship rules",
 };
 
 function show(value: unknown): string {
@@ -74,36 +66,24 @@ function show(value: unknown): string {
   return text.length > 120 ? `${text.slice(0, 117)}...` : text;
 }
 
-const LEGACY_KEYS = new Set(["authority", "level", "push", "merge"]);
+/** The level and its switches are `authority.set`, never a proposal: these keys do not show as changes. */
+const LEVEL_KEYS = new Set(["authority", "level", "push", "merge", "fullAccess", "ships", "incident"]);
 
 function orgChanges(
   current: AutonomySettings,
   next: AutonomySettings,
   org: string,
-): { rows: { row: AuthorityRow; to: "decide" | "ask" }[]; lines: string[]; other: number } {
-  const before = authorityOf(current, org);
-  const after = authorityOf(next, org);
-  const rows: { row: AuthorityRow; to: "decide" | "ask" }[] = [];
+): { lines: string[]; other: number } {
   const lines: string[] = [];
-  for (const row of AUTHORITY_ROWS) {
-    if (before[row] === after[row]) continue;
-    rows.push({ row, to: after[row] });
-    lines.push(`${rowName(row)}: ${who(before[row])} → ${who(after[row])}`);
-  }
   const was = (current.orgs[org] ?? {}) as Record<string, unknown>;
   const will = (next.orgs[org] ?? {}) as Record<string, unknown>;
   let other = 0;
   for (const key of new Set([...Object.keys(was), ...Object.keys(will)])) {
-    if (LEGACY_KEYS.has(key) || canon(was[key]) === canon(will[key])) continue;
+    if (LEVEL_KEYS.has(key) || canon(was[key]) === canon(will[key])) continue;
     other += 1;
     lines.push(`${FIELD_WORD[key] ?? key}: ${show(was[key])} → ${show(will[key])}`);
   }
-  return { rows, lines, other };
-}
-
-function rowName(row: AuthorityRow): string {
-  const text = AUTHORITY_SHORT[row];
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return { lines, other };
 }
 
 async function planConfigure(world: ProposalWorld, input: unknown, lane: string): Promise<Planned> {
@@ -125,16 +105,12 @@ async function planConfigure(world: ProposalWorld, input: unknown, lane: string)
   } catch {
     return { kind: "refuse", error: "That change is not valid for Auto-pilot's settings." };
   }
-  const { rows, lines, other } = orgChanges(current, next, lane);
+  const { lines, other } = orgChanges(current, next, lane);
   const gone = patch.orgs?.[lane] === null && lines.length === 0 && current.orgs[lane] !== undefined;
   if (lines.length === 0 && !gone) return { kind: "refuse", error: "That would change nothing." };
   const name = await world.orgName(lane);
-  const toCaptain = rows.filter((r) => r.to === "decide").map((r) => AUTHORITY_SHORT[r.row]);
-  const toYou = rows.filter((r) => r.to === "ask").map((r) => AUTHORITY_SHORT[r.row]);
   const parts = [
-    ...(toCaptain.length > 0 ? [`captain decides ${toCaptain.join(", ")}`] : []),
-    ...(toYou.length > 0 ? [`you decide ${toYou.join(", ")}`] : []),
-    ...(other > 0 ? [rows.length === 0 ? "change captain settings" : "more settings"] : []),
+    ...(other > 0 ? ["change captain settings"] : []),
     ...(gone ? ["reset captain settings"] : []),
   ];
   return {

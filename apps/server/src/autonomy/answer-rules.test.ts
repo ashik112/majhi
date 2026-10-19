@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 let w: BossWorld | undefined;
@@ -9,11 +8,11 @@ afterEach(async () => {
 });
 
 describe("autonomy.answer and permission prompts", () => {
-  it("refuses to approve a prompt with no text or a dangerous one, and lets a rejection through", async () => {
+  it("never answers a permission prompt: a card is there because the workspace's level does not cover it", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const { autonomy, room } = h.majhi.services;
-    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
+    expect((await h.cmd("authority.set", { org: "acme", level: "full" })).status).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");
@@ -41,12 +40,10 @@ describe("autonomy.answer and permission prompts", () => {
         item,
         option,
       });
-    prompt("p1", "…");
-    expect((await answer("p1", "once")).text).toContain("no readable tool text");
-    prompt("p2", "Bash: git push --force origin main");
-    expect((await answer("p2", "once")).text).toContain("it force-pushes");
-    // A rejection passes the rule table. (No agent waits on this fake prompt, so majhi says so.)
-    expect((await answer("p2", "no")).text).not.toContain("Refused");
+    prompt("p1", "Bash: git push --force origin main");
+    for (const option of ["once", "no"]) {
+      expect((await answer("p1", option)).text).toContain("only the owner answers it");
+    }
     expect(room.get(task, "p1")).toMatchObject({ state: "pending" });
   });
 });

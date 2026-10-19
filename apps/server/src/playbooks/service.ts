@@ -241,7 +241,7 @@ export class PlaybookService implements ChorePlaybooks {
       looksOnly = READ_ONLY_CHORES.has(chore);
       const switched = choreSwitchWhy(switches, chore);
       if (switched !== undefined) return `${switched}.`;
-      if (!choresNow(ws.authority, ws, ws.rules?.ships).includes(chore)) {
+      if (!choresNow(ws.authority, ws).includes(chore)) {
         return `The Delegation row that governs it is on You in ${ws.name}.`;
       }
       const off = this.deps.captain.repo.chore(org, chore);

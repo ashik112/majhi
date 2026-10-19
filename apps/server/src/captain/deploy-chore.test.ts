@@ -20,7 +20,6 @@ const step = (over: Partial<DeployNext> = {}): DeployNext => ({
   record: 7,
   commit: COMMIT,
   who: "captain",
-  rule: "A bug up to 200 lines",
   ...over,
 });
 
@@ -71,14 +70,14 @@ function setup(
 }
 
 describe("deploying merged work", () => {
-  it("starts the deploy the rules give the captain once, and offers Roll back instead of Undo", async () => {
+  it("starts the deploy the level gives the captain once, and offers Roll back instead of Undo", async () => {
     const t = setup([step()]);
     await t.run();
     await t.run();
     expect(t.started).toEqual(["storefront:staging"]);
     const [action] = t.repo.allActions();
     expect(action?.text).toContain("Started the deploy of storefront to staging");
-    expect(action?.reason).toBe("In Acme the rule for a bug up to 200 lines lets the captain deploy staging");
+    expect(action?.reason).toBe("In Acme the captain decides deploy staging");
     expect(action?.undoData).toEqual({ kind: "rollback", record: 5 });
     expect(action?.undoWord).toBe("roll-back");
   });
@@ -91,9 +90,7 @@ describe("deploying merged work", () => {
     const actions = t.repo.allActions();
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ outcome: "asked" });
-    expect(actions[0]?.reason).toBe(
-      "In Acme the rule for a bug up to 200 lines leaves Deploy production to you",
-    );
+    expect(actions[0]?.reason).toBe("In Acme Deploy production is the owner's");
   });
 
   it("does not deploy when a guard no longer lets it go, read right before the step", async () => {

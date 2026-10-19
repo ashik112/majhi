@@ -215,13 +215,13 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "close",
     command: "tasks.close",
     description:
-      "Mark a subtask done once you reviewed what it delivered and its work is shipped: merged, pushed or in a pull request. Refused while its branch has commits that are not, whatever you pass: merge it first with the merge tool if you have the Merge permission (a push or a pull request needs the owner's approval or an org policy), or leave it in review for the owner to ship or close. The tasks waiting for it can then start, and the parent closes when every subtask is done.",
+      "Mark a subtask done once you reviewed what it delivered and its work is shipped: merged, pushed or in a pull request. Refused while its branch has commits that are not, whatever you pass: merge it first with the merge tool (the workspace's authority level says whether it goes ahead or waits for the owner; a push or a pull request follows the same level), or leave it in review for the owner to ship or close. The tasks waiting for it can then start, and the parent closes when every subtask is done.",
   },
   {
     name: "merge",
     command: "tasks.merge",
     description:
-      "Merge a task's branch into a local branch in the owner's checkout: its base by default, or the branch the owner names (dev, staging). Never pushes. Only for agents with the Merge permission, once the checks pass.",
+      "Merge a task's branch into a local branch in the owner's checkout: its base by default, or the branch the owner names (dev, staging). Never pushes. Once the checks pass. Where the workspace's authority level is Full it goes ahead; below that it waits for the owner's approval.",
   },
   {
     name: "change_task_branch",
@@ -594,21 +594,15 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
 
 function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: TASKS_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
-  // The merge tool is offered only to agents with the Merge permission.
-  const mayMerge = async () =>
-    (await frontmatter(deps.agents, caller.agent))?.perms.includes("merge") === true;
   // Typing a task is the captain's: no other agent is offered the tool.
   const isCaptain = async () => (await deps.config.sections()).boss === caller.agent;
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const merge = await mayMerge();
     const captain = await isCaptain();
     return {
       tools: [
         ...listed(
           TASK_TOOLS.filter(
-            (t) =>
-              (merge || t.command !== "tasks.merge") &&
-              (captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields")),
+            (t) => captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields"),
           ),
           true,
         ),
@@ -636,11 +630,6 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     try {
       const fm = await frontmatter(deps.agents, caller.agent);
       if (fm === undefined) return fail(`@${caller.agent} is not a valid agent any more.`);
-      if (tool.command === "tasks.merge" && !fm.perms.includes("merge")) {
-        return fail(
-          "You do not have the Merge permission. Say in the room that the branch is ready to merge.",
-        );
-      }
       if (tool.command === "tasks.setLead") {
         const target = typeof args.task === "string" ? deps.store.tasks.get(args.task) : undefined;
         if (target === undefined) return fail("Give the id of the task.");

@@ -8,7 +8,6 @@ import {
   type Task,
 } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
 import { decideMerge } from "./merge-gate.ts";
@@ -134,7 +133,7 @@ async function reviewed(testBody: string, withChecks = true) {
   await git(repo, "branch", "-f", "develop", "main");
   await git(repo, "push", "--quiet", "origin", "main", "develop");
   await h.majhi.services.cards.refresh("acme-api");
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
+  expect((await h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
   const made = await h.cmd("tasks.create", {
     text: "Fix it.",
     repos: [{ project: "acme-api" }],

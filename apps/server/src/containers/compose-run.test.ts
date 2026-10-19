@@ -153,12 +153,12 @@ describe("docker compose in a task", () => {
 
   it("asks for each image that is not allowed, naming the service, and starts nothing", async () => {
     const out = await up(
-      "services:\n  web:\n    image: nginx:1.27\n  db:\n    image: postgres:16-alpine\n  jobs:\n    image: mysql:8\n",
+      "services:\n  web:\n    image: acme/nginx:1.27\n  db:\n    image: postgres:16-alpine\n  jobs:\n    image: acme/mysql:8\n",
     );
     expect(out.code).toBe(1);
     expect(out.error?.code).toBe("image_not_allowed");
     expect(out.stderr).toContain("[image_not_allowed]");
-    expect(asked.sort()).toEqual(["jobs mysql:8", "web nginx:1.27"]);
+    expect(asked.sort()).toEqual(["jobs acme/mysql:8", "web acme/nginx:1.27"]);
     expect(docker.containers.size).toBe(0);
     expect(docker.holds).toEqual([]);
   });
@@ -274,10 +274,10 @@ describe("builds in a task", () => {
 
   it("pulls only images the owner allowed or the task built: every FROM, COPY --from, mount and # syntax=", async () => {
     for (const text of [
-      "FROM node:22\n",
-      "FROM alpine:3 AS a\nCOPY --from=nginx:1.27 /x /x\n",
+      "FROM acme/node:22\n",
+      "FROM alpine:3 AS a\nCOPY --from=acme/nginx:1.27 /x /x\n",
       "# syntax=docker/dockerfile:1.7\nFROM alpine:3\n",
-      "ARG BASE=mysql:8\nFROM ${BASE}\n",
+      "ARG BASE=acme/mysql:8\nFROM ${BASE}\n",
     ]) {
       await dockerfile(text);
       const out = await build();
@@ -286,7 +286,7 @@ describe("builds in a task", () => {
     expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
     // Each image asks the owner, once, and the card has no container name.
     expect(asked).toEqual(
-      expect.arrayContaining(["? node:22", "? nginx:1.27", "? docker/dockerfile:1.7", "? mysql:8"]),
+      expect.arrayContaining(["? acme/node:22", "? acme/nginx:1.27", "? docker/dockerfile:1.7", "? acme/mysql:8"]),
     );
   });
 
@@ -299,7 +299,7 @@ describe("builds in a task", () => {
     // A build argument changes what ARG resolves to.
     await dockerfile("ARG BASE=alpine:3\nFROM ${BASE}\n");
     expect((await build()).code).toBe(0);
-    expect((await build("--build-arg", "BASE=node:22")).error?.code).toBe("image_not_allowed");
+    expect((await build("--build-arg", "BASE=acme/node:22")).error?.code).toBe("image_not_allowed");
   });
 
   it("builds the bytes it checked, from a file outside the task, gone after the build", async () => {
@@ -339,10 +339,10 @@ describe("builds in a task", () => {
 
   it("refuses a compose stack whose build pulls an image nobody allowed, naming the service, before any start", async () => {
     await mkdir(join(repo, "app"), { recursive: true });
-    await writeFile(join(repo, "app", "Dockerfile"), "FROM node:22\n");
+    await writeFile(join(repo, "app", "Dockerfile"), "FROM acme/node:22\n");
     const out = await up("services:\n  db:\n    image: postgres:16-alpine\n  app:\n    build: ./app\n");
     expect(out.error?.code).toBe("image_not_allowed");
-    expect(asked).toEqual(["app node:22"]);
+    expect(asked).toEqual(["app acme/node:22"]);
     expect(docker.holds).toEqual([]);
     expect(names()).toEqual([]);
   });
