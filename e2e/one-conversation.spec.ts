@@ -13,6 +13,7 @@ interface TaskView {
   id: string;
   kind: string;
   status: string;
+  idea?: string;
   repos: { project: string; worktree?: string }[];
   origin?: { kind: string; room?: string };
 }
@@ -67,6 +68,7 @@ test("the chat becomes the task: one conversation, one row in the list", async (
   await say(
     page,
     call("create", {
+      name: "Session drop",
       text: "Fix the session drop on api",
       repos: [{ project: "api" }],
       start: true,
@@ -77,8 +79,8 @@ test("the chat becomes the task: one conversation, one row in the list", async (
   await approve(page);
 
   // Same chat: its header now shows the task and its state, and the earlier talk is still above.
-  const header = page.getByRole("banner").or(page.locator("header", { hasText: id }));
-  await expect(header.getByRole("link", { name: id })).toBeVisible();
+  const header = page.getByRole("banner").or(page.locator("header", { hasText: "Session drop" }));
+  await expect(header.getByRole("link", { name: /api · Session drop/ })).toBeVisible();
   await expect(log(page).getByText("The login on api drops the session after an hour")).toBeVisible();
   // The worktree comes a moment after the chat turns into the task.
   await expect
@@ -116,6 +118,7 @@ test("a separate task: the chat's agent tells it, adds a repo, and takes it off 
   await say(
     page,
     call("create", {
+      name: "Session drop",
       text: "Fix the session drop on api",
       repos: [{ project: "api" }],
       start: true,
@@ -128,8 +131,13 @@ test("a separate task: the chat's agent tells it, adds a repo, and takes it off 
 
   const moved = page.getByText("Work moved to");
   await expect(moved).toBeVisible();
-  const taskId = (await moved.getByRole("link").textContent())?.trim() ?? "";
+  // The link reads `project · Name`; the id is in its address.
+  await expect(moved.getByRole("link")).toHaveText("api · Session drop");
+  const taskId = (await moved.getByRole("link").getAttribute("href"))?.split("/").pop() ?? "";
   expect(taskId).not.toBe("");
+  // What an agent files is an idea: it runs when the owner starts it.
+  expect((await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).idea).toBe("agent-made");
+  await cmd(page.request, "tasks.start", { id: taskId });
   expect((await cmd<TaskView>(page.request, "tasks.get", { id: chat })).kind).toBe("chat");
   expect((await cmd<TaskView>(page.request, "tasks.get", { id: taskId })).origin).toEqual({
     kind: "chat",

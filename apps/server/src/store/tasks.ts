@@ -339,6 +339,7 @@ export class TaskRepo {
       tx.update(tasks)
         .set({
           title: task.title,
+          name: task.name ?? null,
           brief: task.brief,
           kind: task.kind,
           type: task.typing?.type ?? null,

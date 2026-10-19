@@ -24,6 +24,7 @@ import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useLaneRedirect } from "@/lib/lane-link";
 import { useOrgs } from "@/lib/studio-queries";
+import { useTaskLabel } from "@/lib/task-label";
 import { useTask, useTaskDetail, useTaskRow, useTasks } from "@/lib/task-queries";
 import { chatTitle } from "./model";
 
@@ -105,6 +106,7 @@ function OpenChat({
   const agent = task.team[0];
   const info = useAgentIndex().get(agent ?? "");
   const org = useOrgs().data?.find((o) => o.id === task.org);
+  const labelOf = useTaskLabel();
   // A chat that became a task keeps this conversation and shows the task's state in its header.
   const promoted = task.kind !== "chat";
   const row = useTaskRow(task.id);
@@ -163,10 +165,10 @@ function OpenChat({
               <Link
                 to="/t/$taskId"
                 params={{ taskId: task.id }}
-                title="Open the task: changes, ship, team"
+                title={`Open the task: changes, ship, team (${task.id})`}
                 className="shrink-0 rounded-xs font-mono text-fg-muted hover:text-fg"
               >
-                {task.id}
+                {labelOf(task)}
               </Link>
               <TaskStatusBadge
                 task={task}
@@ -193,7 +195,7 @@ function OpenChat({
             title={t.title}
             className="rounded-xs font-mono text-fg underline decoration-fg-faint underline-offset-2 hover:decoration-fg"
           >
-            {t.id}
+            {labelOf(t)}
           </Link>
         </p>
       ))}
