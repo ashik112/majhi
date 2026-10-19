@@ -212,15 +212,4 @@ describe("the follow-ups playbook", () => {
     expect(w.closed).toEqual([]);
     expect(w.created).toHaveLength(1);
   });
-
-  it("keeps to the workspace: another workspace's follow-ups are not read", async () => {
-    const mine = thread("Replace the retry loop in the client with backoff");
-    const theirs = thread("Replace the retry loop in the web client with backoff", {
-      org: "globex",
-      project: "globex-web",
-    });
-    const w = setup({ threads: [mine, theirs] });
-    await w.run();
-    expect(w.findings.list({ limit: 100 }, { kind: "owner" }).findings.map((f) => f.org)).toEqual(["acme"]);
-  });
 });

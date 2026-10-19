@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import {
   type InstalledTool,
   InstalledToolSchema,
+  isId,
   type ToolInstallInput,
   type ToolsList,
 } from "@majhi/shared";
@@ -26,7 +27,6 @@ export const MAX_DOWNLOAD_BYTES = 300 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const DOWNLOAD_MS = 5 * 60_000;
 const CHECKSUMS_MAX_BYTES = 1024 * 1024;
-const ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /**
  * Where the checked copies live, `<home>/tool-installs/<org>`: `bin` and the record of what was
  * installed. Runs never mount it, so an agent cannot change what is in it. Watch scripts and secret
@@ -37,7 +37,7 @@ export const VERIFIED_DIR = "tool-installs";
 
 /** The folder of checked programs a script run mounts, read-only. */
 export function verifiedBin(majhiHome: string, org: string): string {
-  if (!ORG.test(org)) throw new UserError(`Not a workspace id: ${org}`, 400);
+  if (!isId(org)) throw new UserError(`Not a workspace id: ${org}`, 400);
   return join(majhiHome, VERIFIED_DIR, org, "bin");
 }
 
@@ -92,7 +92,7 @@ export class ToolInstaller {
 
   /** `<home>/tools/<org>`. The workspace id is checked, so the folder cannot leave `tools`. */
   root(org: string): string {
-    if (!ORG.test(org)) throw new UserError(`Not a workspace id: ${org}`, 400);
+    if (!isId(org)) throw new UserError(`Not a workspace id: ${org}`, 400);
     return join(this.deps.majhiHome, "tools", org);
   }
 

@@ -1,7 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { expandHome, IdSchema } from "@majhi/shared";
 import { errorCode, UserError } from "../errors.ts";
+import { isInside } from "../fs.ts";
 import { isGitRepo } from "../git/git.ts";
 
 /**
@@ -14,12 +15,6 @@ export interface ProjectPlace {
   /** `<root>/<org>`. */
   parent: string;
   path: string;
-}
-
-/** True when `path` is `root` or inside it, after both are resolved. */
-export function isInside(root: string, path: string): boolean {
-  const rel = relative(resolve(root), resolve(path));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 export function projectPlace(input: {
@@ -52,7 +47,7 @@ export function projectPlace(input: {
   }
   const parent = join(root, input.org);
   const path = join(parent, input.folder);
-  if (!isInside(root, path) || resolve(path) === resolve(root) || resolve(path) === resolve(parent)) {
+  if (!isInside(path, root) || resolve(path) === resolve(root) || resolve(path) === resolve(parent)) {
     throw new UserError("That folder is outside the project folder.");
   }
   return { root, parent, path };

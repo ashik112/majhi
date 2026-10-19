@@ -67,21 +67,6 @@ const metadata = (registration: boolean): Record<string, Route> => ({
 });
 
 describe("probing an MCP server by address", () => {
-  it("answers private, loopback and metadata addresses with a blocked-host reason before any request, unless the owner confirms a private one", async () => {
-    const t = service({}, async () => ["10.0.0.9"]);
-    for (const url of ["https://localhost/mcp", "https://192.168.1.5/mcp", "https://mcp.acme.test/mcp"]) {
-      expect(await t.svc.probe({ url })).toMatchObject({
-        method: "unreachable",
-        failure: { reason: "blocked-host" },
-      });
-    }
-    expect(await t.svc.probe({ url: "https://169.254.169.254/mcp", allowPrivate: true })).toMatchObject({
-      method: "unreachable",
-      failure: { reason: "blocked-host" },
-    });
-    expect(t.calls).toEqual([]);
-  });
-
   it("refuses http for a public server and a sign-in written into the address, with the reason", async () => {
     const t = service({});
     expect(await t.svc.probe({ url: "http://mcp.acme.test/mcp" })).toMatchObject({

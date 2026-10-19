@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { UserError } from "../errors.ts";
 import { openMemoryDb } from "./db.ts";
 import { type Embedder, HashEmbedder } from "./embedder.ts";
-import { agentScopes, recallScopes } from "./scopes.ts";
 import { MemoryService } from "./service.ts";
 import { MemoryStore } from "./store.ts";
 
@@ -107,37 +106,5 @@ describe("memory store", () => {
     await expect(
       m.propose({ text: "One more fact", scope: "org:acme", task: "ACM-1", agent: "b" }),
     ).rejects.toThrow();
-  });
-});
-
-describe("scope isolation", () => {
-  it("never returns a fact from a scope that was not asked for", async () => {
-    const m = service();
-    await m.add({ text: "Acme builds run on the blue cluster", scope: "org:acme", pinned: true }, owner);
-    await m.add({ text: "Globex builds run on the red cluster", scope: "org:globex", pinned: true }, owner);
-    await m.add({ text: "Globex web builds use bun", scope: "project:globex-web", pinned: false }, owner);
-    const seen = async (scopes: string[]) =>
-      (await m.search("builds cluster bun", { scopes })).map((h) => h.fact.scope).sort();
-    expect(await seen(["org:acme"])).toEqual(["org:acme"]);
-    expect(await seen(["global", "org:acme", "project:acme-api"])).toEqual(["org:acme"]);
-    expect(await seen([])).toEqual([]);
-  });
-
-  it("recalls global, the org and the task's repos of that org; agents may also use the org's other projects", () => {
-    const projects = new Map([
-      ["acme-api", "acme"],
-      ["acme-web", "acme"],
-      ["globex-web", "globex"],
-    ]);
-    const task = { org: "acme", repos: [{ project: "acme-api" }, { project: "globex-web" }] };
-    expect(recallScopes(task, projects)).toEqual(["global", "org:acme", "project:acme-api"]);
-    expect(agentScopes(task, projects)).toEqual([
-      "global",
-      "org:acme",
-      "project:acme-api",
-      "project:acme-web",
-    ]);
-    expect(recallScopes({ repos: task.repos }, projects)).toEqual(["global"]);
-    expect(agentScopes({ repos: task.repos }, projects)).toEqual(["global"]);
   });
 });

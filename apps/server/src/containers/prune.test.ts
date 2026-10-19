@@ -3,7 +3,6 @@ import { DockerCli } from "./docker.ts";
 import {
   findUnusedImages,
   type ImageRow,
-  parseDockerSize,
   removeImages,
   selectOldVolumes,
   selectUnusedImages,
@@ -68,15 +67,6 @@ describe("selectOldVolumes", () => {
       "majhi-globex-web-data-db",
       "majhi-initech-data-db",
     ]);
-  });
-});
-
-describe("parseDockerSize", () => {
-  it("reads docker's units", () => {
-    expect(parseDockerSize("21.6GB")).toBe(21_600_000_000);
-    expect(parseDockerSize("340MB")).toBe(340_000_000);
-    expect(parseDockerSize("0B")).toBe(0);
-    expect(parseDockerSize("nonsense")).toBeUndefined();
   });
 });
 

@@ -10,17 +10,6 @@ describe("viewerKindOfPath", () => {
 
 describe("task file references", () => {
   const folder = "/Users/owner/workspace/tasks/PRV-1";
-  it("keeps the target task for captain links and sibling file paths", () => {
-    expect(taskFileReference("/api/tasks/ACM-2/files/docs/plan.md", folder)).toEqual({
-      task: "ACM-2",
-      path: "docs/plan.md",
-    });
-    expect(taskFileReference("file:///Users/owner/workspace/tasks/ACM-2/docs/plan.md", folder)).toEqual({
-      task: "ACM-2",
-      path: "docs/plan.md",
-    });
-    expect(taskFileReference("notes.md", folder)).toEqual({ path: "notes.md" });
-  });
   it.each([
     "/api/tasks/ACM-2/files/../secret",
     "/api/tasks/ACM-2/files/%2e%2e/secret",

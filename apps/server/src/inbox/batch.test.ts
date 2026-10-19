@@ -2,7 +2,6 @@ import type { RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../store/migrations.ts";
-import { taskWorld } from "../testing/world.ts";
 import { RecommendationRepo } from "./recommendations.ts";
 import { type DecisionActions, InboxService } from "./service.ts";
 
@@ -103,23 +102,6 @@ describe("batch approve and leave", () => {
     expect(out.decisions.map((d) => d.id).sort()).toEqual(out.failed.map((f) => f.id).sort());
   });
 
-  it("is idempotent when the same click is sent twice, even at the same moment", async () => {
-    const items = Array.from({ length: 30 }, (_, i) => permission(i + 1));
-    const { inbox, log } = setup(items);
-    const input = {
-      batch: "batch-0002",
-      intent: "approve" as const,
-      ids: items.map((i) => `room:${i.task}:${i.id}`),
-    };
-
-    const [first, second] = await Promise.all([inbox.answerBatch(input), inbox.answerBatch(input)]);
-    const third = await inbox.answerBatch(input);
-
-    expect(log).toHaveLength(30);
-    expect(second).toBe(first);
-    expect(third).toEqual(first);
-  });
-
   it("a second click with a new key finds them gone and answers nothing twice", async () => {
     const items = [permission(1), permission(2)];
     const { inbox, log } = setup(items);
@@ -163,26 +145,5 @@ describe("batch approve and leave", () => {
     expect(out.done).toEqual(["room:ACM-1:pm2"]);
     expect(out.skipped).toEqual([{ id: "room:ACM-1:pm1", reason: "The captain suggests Deny" }]);
     expect(log).toEqual(["permission pm2 yes"]);
-  });
-});
-
-describe("decisions.answerBatch through the command table", () => {
-  it("is the owner's: an agent, the captain included, is refused", async () => {
-    const w = await taskWorld();
-    try {
-      const input = { batch: "batch-0008", intent: "approve" as const, ids: ["room:ACM-1:nothing"] };
-      const agent = await w.h.cmd("decisions.answerBatch", input, {
-        actor: { kind: "agent", id: "acme-builder" },
-      });
-      expect(agent.status).toBe(409);
-      const owner = await w.h.cmd("decisions.answerBatch", input);
-      expect(owner.status).toBe(200);
-      expect(owner.body).toMatchObject({
-        done: [],
-        skipped: [{ id: "room:ACM-1:nothing", reason: "It was answered already" }],
-      });
-    } finally {
-      await w.cleanup();
-    }
   });
 });

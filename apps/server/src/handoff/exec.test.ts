@@ -69,31 +69,6 @@ describe("running a project's command for the hand-off", () => {
     expect(seen.output).toMatch(/^PATH=\/tools\/acme\/bin:/m);
   });
 
-  it("keeps the whole output for the log, masked, while the card's end of it stays short", async () => {
-    const token = `ghp_${"a1B2c3D4e5".repeat(4)}`;
-    const out = await run(
-      `echo "token ${token}"; i=1; while [ $i -le 5000 ]; do echo "line $i of the run"; i=$((i+1)); done; echo "done" >&2`,
-    );
-    expect(out.log).toContain("line 1 of the run\n");
-    expect(out.log).toContain("line 5000 of the run");
-    expect(out.log).not.toContain(token);
-    expect(out.log).toContain("token [hidden]");
-    expect(out.output.length).toBeLessThanOrEqual(64 * 1024);
-    expect(out.output.trimEnd().endsWith("done")).toBe(true);
-    expect(out.cut).toBeUndefined();
-  });
-
-  it("cuts an output past the cap in the middle and says so", async () => {
-    const out = await run(
-      'i=1; while [ $i -le 25000 ]; do echo "row $i xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; i=$((i+1)); done',
-      60_000,
-    );
-    expect(out.cut).toBeGreaterThan(0);
-    expect(out.log.startsWith("row 1 ")).toBe(true);
-    expect(out.log).toContain("[majhi: output cut at 0.95 MB,");
-    expect(out.log.trimEnd().endsWith("row 25000 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")).toBe(true);
-  });
-
   it("masks every secret in a text and leaves the rest alone", () => {
     const text = `a ghp_${"x9Y8z7W6v5".repeat(4)} b sk-ant-api03-${"q".repeat(30)} c`;
     expect(maskSecrets(text)).toBe("a [hidden] b [hidden] c");

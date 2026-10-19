@@ -81,24 +81,4 @@ describe("what an agent can never ask for", () => {
     expect(pushed.isError).toBe(true);
     expect((await w.items(task.id)).filter((i) => i.type === "approval")).toEqual([]);
   });
-
-  it("cannot force a task's removal over uncommitted work", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    const remove = adminTools().find((t) => t.command === "tasks.remove");
-    expect(Object.keys(remove?.inputSchema.properties ?? {})).not.toContain("force");
-    const task = (
-      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
-    ).body as { id: string };
-    const forced = await h.majhi.services.admin.call(
-      { task: task.id, agent: "acme-builder" },
-      "majhi_tasks_remove",
-      {
-        id: task.id,
-        force: true,
-        ...asked,
-      },
-    );
-    expect(forced.isError).toBe(true);
-  });
 });

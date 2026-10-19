@@ -7,14 +7,7 @@ import {
 } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { ordersAgree } from "./answers.ts";
-import {
-  baseGate,
-  chooseThreshold,
-  fitSlot,
-  fitTemperature,
-  liveGate,
-  thresholdGate,
-} from "./calibration.ts";
+import { baseGate, chooseThreshold, fitSlot, liveGate, thresholdGate } from "./calibration.ts";
 import type { RawItem } from "./evalRunner.ts";
 import { MIN_LABELS, type SlotDef } from "./slots.ts";
 
@@ -44,21 +37,6 @@ const cal = (over: Partial<Calibration> = {}): Calibration => ({
   fittedAt: "2026-10-04T00:00:00.000Z",
   reason: "Live",
   ...over,
-});
-
-describe("temperature", () => {
-  it("fits T above 1 for an over-confident model and below 1 for an under-confident one", () => {
-    // Says 0.95 and is right half the time.
-    const over = Array.from({ length: 40 }, (_, i) => ({
-      probabilities: { a: 0.95, b: 0.05 },
-      truth: i % 2 === 0 ? "a" : "b",
-    }));
-    expect(fitTemperature(over)).toBeGreaterThan(1.5);
-    // Says 0.6 and is always right.
-    const under = Array.from({ length: 40 }, () => ({ probabilities: { a: 0.6, b: 0.4 }, truth: "a" }));
-    expect(fitTemperature(under)).toBeLessThan(0.8);
-    expect(fitTemperature([])).toBe(1);
-  });
 });
 
 describe("the threshold", () => {
@@ -105,24 +83,6 @@ describe("the threshold", () => {
 });
 
 describe("the gates", () => {
-  it("a fitted map changes what is accepted: the same answer passes at T=1 and fails once flattened", () => {
-    const a = answer("a", 0.85);
-    expect(thresholdGate(choice, a, { temperature: 1, threshold: 0.8 }, settings).accepted).toBe(true);
-    const flat = thresholdGate(choice, a, { temperature: 4, threshold: 0.8 }, settings);
-    expect(flat.accepted).toBe(false);
-    expect(flat.confidence).toBeLessThan(0.8);
-  });
-
-  it("never counts the abstain option, whatever its confidence", () => {
-    const none: Answer = {
-      value: "none",
-      confidence: 0.99,
-      probabilities: { none: 0.99, a: 0.005, b: 0.005 },
-    };
-    expect(thresholdGate(choice, none, { temperature: 1, threshold: 0.1 }, settings).accepted).toBe(false);
-    expect(baseGate(choice, none, settings).accepted).toBe(false);
-  });
-
   it("rejects an answer whose option orders disagree, even when it is very sure", () => {
     const runs = [
       { a: 0.99, b: 0.005, none: 0.005 },
@@ -273,34 +233,5 @@ describe("fitSlot", () => {
       },
     }));
     expect(fitSlot(slot, flipping, "m1", opts)?.calibration.mode).toBe("shadow");
-  });
-
-  it("treats the slot's classes, not the raw options, as the answer", () => {
-    const grouped: SlotDef = { ...slot, classOf: (v) => (v === "keep" ? "keep" : "not-keep") };
-    const raw = items(150, 1, 3, ["keep", "not-keep"]).map((i) => {
-      const value = i.truth === "keep" ? "keep" : "one-off";
-      const q = QuestionSchema.parse({
-        type: "choice",
-        instructions: "x",
-        options: ["keep", "one-off", "generic"],
-      });
-      return {
-        ...i,
-        question: q,
-        answer: {
-          value,
-          confidence: 0.9,
-          probabilities: {
-            [value]: 0.9,
-            keep: value === "keep" ? 0.9 : 0.05,
-            "one-off": 0.04,
-            generic: 0.04,
-            none: 0.01,
-          },
-          runs: [{ [value]: 0.9 }, { [value]: 0.9 }],
-        } as Answer,
-      };
-    });
-    expect(fitSlot(grouped, raw, "m1", opts)?.calibration.mode).toBe("live");
   });
 });

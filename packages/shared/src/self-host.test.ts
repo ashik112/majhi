@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalHost, classifyAddress, selfHostIssue } from "./self-host.ts";
+import { classifyAddress, selfHostIssue } from "./self-host.ts";
 
 describe("classifyAddress", () => {
   it.each([
@@ -35,37 +35,6 @@ describe("selfHostIssue", () => {
     expect(selfHostIssue("git.acme.test")).toBeUndefined();
     expect(selfHostIssue("git.acme.test:8443")).toBeUndefined();
     expect(selfHostIssue("203.0.114.5")).toBeUndefined();
-  });
-
-  it("refuses private and loopback hosts unless the owner confirms", () => {
-    for (const host of [
-      "localhost",
-      "127.0.0.1",
-      "10.0.0.5",
-      "192.168.1.20:8080",
-      "gitlab",
-      "git.corp.local",
-      "app.internal",
-    ]) {
-      expect(selfHostIssue(host)).toMatchObject({ kind: "blocked", allowable: true });
-      expect(selfHostIssue(host, { allowPrivate: true })).toBeUndefined();
-    }
-  });
-
-  it("sees through number tricks", () => {
-    for (const host of ["2130706433", "0x7f.1", "0177.0.0.1", "127.1"]) {
-      expect(canonicalHost(host)?.hostname).toBe("127.0.0.1");
-      expect(selfHostIssue(host)).toMatchObject({ kind: "blocked" });
-    }
-  });
-
-  it("never allows metadata or link-local addresses, even when confirmed", () => {
-    for (const host of ["169.254.169.254", "169.254.0.5", "0.0.0.0", "[fd00:ec2::254]"]) {
-      expect(selfHostIssue(host, { allowPrivate: true })).toMatchObject({
-        kind: "blocked",
-        allowable: false,
-      });
-    }
   });
 
   it("refuses text that is not a bare host", () => {

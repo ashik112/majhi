@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LegacyAuthoritySchema } from "./authority.ts";
 import { HoldsPatchSchema } from "./chat.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
+import { IdSchema, OrgIdSchema } from "./ids.ts";
 import { IncidentSettingsSchema } from "./incident.ts";
 import { NotifyKindSchema } from "./notify.ts";
 import { type AllowRule, AllowRuleSchema, AUTHORITY_LEVELS } from "./risk-kinds.ts";
@@ -167,26 +168,12 @@ export const WikiPatchSchema = z
   .partial();
 export type WikiPatch = z.infer<typeof WikiPatchSchema>;
 
-/** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
-const roomFields = {
-  /** Agent-to-agent turns without an owner message before the task pauses and asks (loop guard). */
-  max_agent_turns: z.number().int().min(1).max(200),
-  /** Rounds of the build and review loop before it stops and asks the owner. */
-  review_rounds: z.number().int().min(1).max(50),
-};
-export const RoomSettingsSchema = z.strictObject({
-  max_agent_turns: roomFields.max_agent_turns.default(12),
-  review_rounds: roomFields.review_rounds.default(5),
-});
-export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
-export const RoomPatchSchema = z.strictObject(roomFields).partial();
 /**
- * What a workspace says about its rooms: its own loop guard, and "Review before it reaches me". Absent
- * `review_before_owner` means on for every workspace but Private (`reviewBeforeOwner` in accounts.ts).
+ * What a workspace says about its rooms: "Review before it reaches me". Absent `review_before_owner`
+ * means on for every workspace but Private (`reviewBeforeOwner` in accounts.ts). A file from before the
+ * loop guard went (`max_agent_turns`) still loads: the unknown key is dropped.
  */
-export const RoomOrgPatchSchema = z
-  .strictObject({ max_agent_turns: roomFields.max_agent_turns, review_before_owner: z.boolean() })
-  .partial();
+export const RoomOrgPatchSchema = z.object({ review_before_owner: z.boolean() }).partial();
 export type RoomOrgPatch = z.infer<typeof RoomOrgPatchSchema>;
 
 /** Cleanup of done tasks. */
@@ -342,7 +329,7 @@ const containersFields = {
   /** Service images the owner allowed in every workspace. Changed only by `containers.images.allow` and `.remove`. */
   images: z.array(ImageRefSchema).max(100),
   /** Service images the owner allowed in one workspace (`private` for tasks with no workspace), by workspace id. Same commands, with `org`. */
-  org_images: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/), z.array(ImageRefSchema).max(100)),
+  org_images: z.record(IdSchema, z.array(ImageRefSchema).max(100)),
   /** CPUs per preview or service container. */
   cpus: ContainerCpusSchema,
   /** Memory per preview or service container. */
@@ -557,10 +544,7 @@ export const AutonomyInstructionSchema = z.strictObject({
   /** When the owner gave it, as a UTC ISO time. */
   at: z.string(),
   /** The workspace it was given in: only that workspace's captain follows it. Absent: every workspace. */
-  org: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
-    .optional(),
+  org: OrgIdSchema.optional(),
 });
 export type AutonomyInstruction = z.infer<typeof AutonomyInstructionSchema>;
 
@@ -659,7 +643,6 @@ export const SettingsSchema = z.object({
   resume: ResumeSettingsSchema,
   commits: CommitsSettingsSchema,
   wiki: WikiSettingsSchema,
-  rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
   editor: EditorSettingsSchema,

@@ -1,6 +1,7 @@
-import { isAbsolute, normalize, relative, sep } from "node:path";
+import { isAbsolute, normalize } from "node:path";
 import type { ConfigState } from "@majhi/shared";
 import { Document } from "yaml";
+import { isBelow } from "../fs.ts";
 
 /** Service in docker-compose.yml that gets the workspace mounts. */
 export const SERVER_SERVICE = "server";
@@ -38,12 +39,6 @@ export function isPublicKeyPath(path: string): boolean {
   return path.startsWith("/") && path.endsWith(".pub") && !path.includes("\n");
 }
 
-/** True when `path` is inside `folder`, not the folder itself (so `~/.majhi-old` is not in `~/.majhi`). */
-function isInside(path: string, folder: string): boolean {
-  const rel = relative(folder, path);
-  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-}
-
 /**
  * How the server reaches the host's SSH agent (see DECISIONS). A socket under `~/.majhi` is
  * already in the server through that mount, so it only needs `SSH_AUTH_SOCK`. Any other socket is
@@ -56,7 +51,7 @@ function agentService(options: OverrideOptions): { volume?: unknown; socket: str
     throw new Error("MAJHI_SSH_AGENT must be an absolute path to a socket, or off.");
   }
   const path = normalize(value);
-  if (options.majhiHome !== undefined && isInside(path, options.majhiHome)) return { socket: path };
+  if (options.majhiHome !== undefined && isBelow(path, options.majhiHome)) return { socket: path };
   // The short `src:dst` form cannot hold a path with a colon. Use the long form for those.
   const volume = path.includes(":")
     ? { type: "bind", source: path, target: AGENT_TARGET }

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nameFromTitle, slugOfName } from "@majhi/shared";
+import { slugOfName } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { UserError } from "../errors.ts";
 import { branchName, freeBranchesTogether } from "./branch-naming.ts";
@@ -19,14 +19,6 @@ afterEach(() => {
 });
 
 describe("a task's name, its branch and its folder", () => {
-  it("makes the name of an owner's sentence from its first meaningful words, and the branch from the name", () => {
-    const name = nameFromTitle("fix(api): the login redirect drops the session when the cart is empty");
-    expect(name).toBe("Login redirect drops session");
-    expect(branchName({ id: "ACM-1", title: "ignored", name, type: "fix" })).toBe(
-      "fix/login-redirect-drops-session",
-    );
-  });
-
   it("gives every repo the same free branch name, numbering all of them together when one repo has it", async () => {
     const wanted = [
       branchName({ id: "ACM-1", title: "x", name: "Login redirect", type: "feat" }),

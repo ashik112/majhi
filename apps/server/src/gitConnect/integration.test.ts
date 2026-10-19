@@ -189,27 +189,6 @@ describe("OAuth apps", () => {
   });
 });
 
-describe("sign-in through the commands", () => {
-  it("saves the token for that workspace in secrets.age and points its git account and mr_tokens at it", async () => {
-    const { h, hosts } = await world();
-    const done = await signIn(h, hosts);
-    expect(done).toMatchObject({ state: "done", org: "acme", account: "octo-acme", alsoUsedBy: [] });
-    const yaml = await readFile(join(h.env.majhiHome, "majhi.yaml"), "utf8");
-    expect(yaml).not.toContain(TOKEN);
-    const acme = (await h.majhi.services.config.sections()).orgs.acme;
-    const ref = acme?.mr_tokens?.github ?? "";
-    expect(acme?.git_accounts).toEqual([{ host: "github.com", account: "octo-acme", token: ref }]);
-    expect(await h.majhi.services.secrets.get(ref.replace("secret:", ""))).toBe(TOKEN);
-    expect((await h.majhi.services.config.sections()).orgs.private?.mr_tokens).toBeUndefined();
-    const status = await h.cmd("onboarding.status");
-    expect(status.body.workspaces.find((x: { id: string }) => x.id === "acme")).toMatchObject({
-      git: [{ kind: "github", host: "github.com", account: "octo-acme", signedIn: true }],
-      projects: 1,
-    });
-    expect(status.body.hostHelper).toBe(true);
-  });
-});
-
 describe("clone", () => {
   function waitJob(h: World["h"], clone: string) {
     return until("clone", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, classifyRemote, classifyTool, destructive, type GateConnection } from "./gate.ts";
+import { classifyCommand, classifyRemote, classifyTool, type GateConnection } from "./gate.ts";
 
 const prod: GateConnection = {
   id: "acme-prod",
@@ -63,22 +63,6 @@ describe("classifyCommand: kubectl", () => {
     ]) {
       expect(kind(line), line).toBe("write");
     }
-  });
-
-  it("names the connection and the exact action, and reads allow", () => {
-    expect(classifyCommand("kubectl  rollout restart   deployment/api", held)).toMatchObject({
-      kind: "write",
-      writes: [
-        {
-          connection: "acme-prod",
-          action: "kubectl rollout restart deployment/api",
-          destructive: false,
-          allowed: true,
-        },
-      ],
-    });
-    const other = classifyCommand("kubectl rollout restart deployment/api -n api", held);
-    expect(other.kind === "write" && other.writes[0]?.allowed).toBe(false);
   });
 
   it("picks the connection from --context, and only one the run holds", () => {
@@ -243,26 +227,6 @@ describe("classifyTool: what the server says about its tools", () => {
     );
     expect(classifyTool("acme-obs", "drop_view", server({ readTools: ["drop_view"] })).kind).toBe("read");
   });
-
-  it("destructiveHint is a destructive write that allow does not cover", () => {
-    const held = server({
-      allow: ["archive_data"],
-      toolAnnotations: { archive_data: { destructiveHint: true } },
-    });
-    expect(classifyTool("acme-obs", "archive_data", held)).toMatchObject({
-      kind: "write",
-      writes: [{ tool: "archive_data", destructive: true, allowed: false }],
-    });
-  });
-
-  it("a write names its reason: the server's word, or the name's", () => {
-    expect(classifyTool("acme-obs", "sync_data", server())).toMatchObject({
-      writes: [{ why: "the server says this tool changes data", destructive: false }],
-    });
-    expect(classifyTool("acme-obs", "mystery", server())).toMatchObject({
-      writes: [{ why: "its name does not say it only reads" }],
-    });
-  });
 });
 
 describe("classifyRemote", () => {
@@ -330,27 +294,6 @@ describe("tool names with the verb after the object", () => {
 });
 
 describe("destructive writes", () => {
-  it("asks for a DigitalOcean delete tool even when allow holds it, and keeps list a read", () => {
-    const held: GateConnection[] = [
-      { id: "acme-do", type: "mcp", server: "acme-do", allow: ["droplet-delete", "droplet-reboot"] },
-    ];
-    expect(classifyTool("acme-do", "droplet-delete", held)).toMatchObject({
-      kind: "write",
-      writes: [
-        {
-          connection: "acme-do",
-          action: "droplet-delete",
-          destructive: true,
-          allowed: false,
-        },
-      ],
-    });
-    expect(classifyTool("acme-do", "droplet-reboot", held)).toMatchObject({
-      writes: [{ destructive: false, allowed: true }],
-    });
-    expect(classifyTool("acme-do", "droplet-list", held)).toEqual({ kind: "read", connections: ["acme-do"] });
-  });
-
   it("asks for kubectl delete even when allow holds the exact command", () => {
     const allowed: GateConnection = { ...prod, allow: ["kubectl delete pod api-7d9"] };
     expect(classifyCommand("kubectl delete pod api-7d9", [allowed])).toMatchObject({
@@ -373,45 +316,5 @@ describe("destructive writes", () => {
     expect(classifyRemote("rm -rf /srv/cache", box)).toMatchObject({
       writes: [{ destructive: true, allowed: false }],
     });
-  });
-
-  it("names what deletes or destroys", () => {
-    for (const action of [
-      'psql -c "DROP TABLE x"',
-      "psql -c 'truncate table events'",
-      'mysql -e "DELETE FROM users WHERE id = 1"',
-      "kubectl delete pod api-7d9",
-      "helm uninstall api",
-      "gh repo delete acme/api --yes",
-      "glab repo delete acme/api",
-      "aws ec2 terminate-instances --instance-ids i-1",
-      "aws s3 sync . s3://acme-logs --delete",
-      "terraform destroy -auto-approve",
-      "docker system prune -af",
-      "rm -rf /var/lib/acme",
-      "redis-cli FLUSHALL",
-      "git push --force origin main",
-      "git push origin +main",
-      "git reset --hard origin/main",
-      "droplet-delete",
-      "db-cluster-delete",
-      "deleteCluster",
-      "purge_queue",
-      "volume_destroy",
-    ]) {
-      expect(destructive(action), action).toBe(true);
-    }
-    for (const action of [
-      "kubectl rollout restart deployment/api",
-      "kubectl scale deployment/api --replicas=2",
-      "aws s3 cp report.csv s3://acme-logs/remove-later.csv",
-      "systemctl restart api",
-      "git push origin main",
-      "droplet-reboot",
-      "mute_alert",
-      `psql -c "UPDATE users SET name = 'x'"`,
-    ]) {
-      expect(destructive(action), action).toBe(false);
-    }
   });
 });

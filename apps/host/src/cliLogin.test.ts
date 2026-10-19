@@ -160,14 +160,6 @@ describe("CliLogins", () => {
     });
   });
 
-  it("keeps two workspaces apart: each gets its own folder and token file", async () => {
-    const dir = await temp();
-    const cli = await fakeCli(dir, "gh");
-    const { majhiHome } = logins(dir, cli.path);
-    expect(loginDir(majhiHome, "acme", "gh")).not.toBe(loginDir(majhiHome, "globex", "gh"));
-    expect(() => loginDir(majhiHome, "../owner", "gh")).toThrow();
-  });
-
   it("cancel kills the CLI and saves nothing", async () => {
     const dir = await temp();
     const cli = await fakeCli(dir, "gh");

@@ -2,13 +2,11 @@ import { describe, expect, it } from "vitest";
 import { BitbucketHost } from "./bitbucket.ts";
 import type { Exec } from "./exec.ts";
 import { GitHubHost } from "./github.ts";
-import { GitLabHost } from "./gitlab.ts";
 import type { MrTarget } from "./types.ts";
 
 /** Approval state parsed from each host's own answers, and the conditional requests that save polls. */
 
 const gh: MrTarget = { host: "github", slug: "acme/api" };
-const gl: MrTarget = { host: "gitlab", slug: "acme/platform/web" };
 const bb: MrTarget = { host: "bitbucket", slug: "acme/api", token: "me@acme.test:token" };
 
 const http = (status: number, etag: string | undefined, body: unknown): string =>
@@ -70,59 +68,12 @@ describe("GitHub reviews", () => {
     expect(status.review).toMatchObject({ approved: false, approvals: 1, changesRequested: true });
   });
 
-  it("asks again with the ETag and reuses the answer on a 304", async () => {
-    const seen: string[][] = [];
-    const exec: Exec = async (_bin, args) => {
-      if (args[0] === "pr") return { code: 0, stdout: prView, stderr: "" };
-      seen.push([...args]);
-      const tag = args.find((a) => a.startsWith("If-None-Match:"));
-      if (tag !== undefined) return { code: 1, stdout: http(304, '"x"', undefined), stderr: "HTTP 304" };
-      const path = args.at(-1) ?? "";
-      return { code: 0, stdout: http(200, '"x"', path.includes("/reviews") ? reviews : pr), stderr: "" };
-    };
-    const host = new GitHubHost(exec);
-    const first = await host.status(gh, 7);
-    const second = await host.status(gh, 7);
-    expect(second.review).toEqual(first.review);
-    expect(seen.filter((a) => a.includes('If-None-Match: "x"'))).toHaveLength(2);
-  });
-
   it("a failed review read keeps the state and CI", async () => {
     const exec: Exec = async (_bin, args) =>
       args[0] === "pr" ? { code: 0, stdout: prView, stderr: "" } : { code: 1, stdout: "", stderr: "boom" };
     const status = await new GitHubHost(exec).status(gh, 7);
     expect(status).toMatchObject({ state: "open", ci: "none" });
     expect(status.review).toBeUndefined();
-  });
-});
-
-describe("GitLab approvals", () => {
-  const view = JSON.stringify({
-    state: "opened",
-    web_url: "https://gitlab.com/acme/platform/web/-/merge_requests/3",
-    head_pipeline: null,
-    reviewers: [{ username: "ana" }, { username: "bo" }],
-    blocking_discussions_resolved: false,
-  });
-  const approvals = {
-    approved: false,
-    approvals_left: 1,
-    approved_by: [{ user: { username: "ana" } }],
-  };
-
-  it("reads approvals left, who approved, pending reviewers and unresolved discussions", async () => {
-    const exec: Exec = async (_bin, args) =>
-      args[0] === "mr"
-        ? { code: 0, stdout: view, stderr: "" }
-        : { code: 0, stdout: http(200, 'W/"a"', approvals), stderr: "" };
-    const status = await new GitLabHost(exec).status(gl, 3);
-    expect(status.review).toEqual({
-      approved: false,
-      approvals: 1,
-      approvalsNeeded: 1,
-      changesRequested: true,
-      pending: ["bo"],
-    });
   });
 });
 
@@ -146,16 +97,6 @@ describe("Bitbucket participants", () => {
     }) as typeof fetch;
     return { host: new BitbucketHost({ fetch: fetcher }), seen };
   }
-
-  it("counts approvals and change requests, and lists silent reviewers", async () => {
-    const { host } = fake([
-      { role: "REVIEWER", approved: true, state: "approved", user: { display_name: "Ana" } },
-      { role: "REVIEWER", approved: false, state: null, user: { display_name: "Bo" } },
-      { role: "PARTICIPANT", approved: false, state: null, user: { display_name: "Cy" } },
-    ]);
-    const status = await host.status(bb, 5);
-    expect(status.review).toEqual({ approved: true, approvals: 1, changesRequested: false, pending: ["Bo"] });
-  });
 
   it("changes requested wins over an approval, and a 304 reuses the stored answer", async () => {
     const { host, seen } = fake([

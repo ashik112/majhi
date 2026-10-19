@@ -1,7 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
-import { isInside } from "../editor/allowed.ts";
+import { isInside } from "../fs.ts";
 import { FETCHED_VALUE_MAX } from "./fetch-secret.ts";
 
 export const CLIPBOARD_COPY_TOOL = "majhi_clipboard_copy";

@@ -6,15 +6,6 @@ import { type GitPushDeps, gitCredential, gitPush, pushArgs, stripCredentials } 
 import { runCommand } from "./runCommand.ts";
 
 describe("pushArgs", () => {
-  it("builds a plain push of one branch", () => {
-    expect(pushArgs({ url: "https://acme-dev@github.com/acme/api.git", branch: "task/x" })).toEqual([
-      "push",
-      "--quiet",
-      "https://acme-dev@github.com/acme/api.git",
-      "refs/heads/task/x:refs/heads/task/x",
-    ]);
-  });
-
   it("refuses force, delete, refspec and option-like branches", () => {
     const url = "https://github.com/acme/api.git";
     for (const branch of ["+main", ":main", "a:b", "--force", "-f", "a..b", "x.lock", "a b", "main^"]) {

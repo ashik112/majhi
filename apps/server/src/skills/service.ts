@@ -16,10 +16,11 @@ import {
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
 import { UserError } from "../errors.ts";
+import { isInside } from "../fs.ts";
 import type { AuditRow } from "../store/runs.ts";
 import { actorName } from "../tasks/cards.ts";
 import type { SkillsCli, Stage } from "./cli.ts";
-import { copyFolder, describeFolder, isInside } from "./files.ts";
+import { copyFolder, describeFolder } from "./files.ts";
 import { readSkillMeta } from "./frontmatter.ts";
 import type { SkillRegistry } from "./registry.ts";
 import type { SkillStore, StoredSkill } from "./store.ts";

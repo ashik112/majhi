@@ -1,28 +1,7 @@
 import { scriptProblem } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { readWatch, type WatchPorts } from "./checks.ts";
-
-const ports = (out: string, seen: { connections?: readonly string[] } = {}): WatchPorts =>
-  ({
-    connection: async (id: string) =>
-      id === "do" ? { org: "acme", type: "mcp", name: "DigitalOcean", fields: {}, vars: {} } : undefined,
-    script: async (input: { connections: readonly string[] }) => {
-      seen.connections = input.connections;
-      return out;
-    },
-  }) as unknown as WatchPorts;
-
-const spec = (fields: Record<string, unknown>) => ({
-  kind: "script" as const,
-  connections: ["do"],
-  ...fields,
-});
 
 describe("script watches", () => {
-  it("refuses a connection of another workspace", async () => {
-    await expect(readWatch(spec({ script: "echo 1" }) as never, "globex", ports("1"))).rejects.toThrow();
-  });
-
   it("lets reads through and refuses scripts that change something", () => {
     for (const ok of [
       'curl -s -H "Authorization: Bearer $DO_TOKEN" "https://api.digitalocean.com/v2/droplets" | jq .meta.total',

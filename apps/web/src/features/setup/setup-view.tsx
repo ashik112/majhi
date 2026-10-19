@@ -51,7 +51,7 @@ import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } fr
 import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
 import { SECTION_ABOUT } from "./sections";
-import { ContextSection, TeamsSection, TurnsSection } from "./settings-panel";
+import { ContextSection, TurnsSection } from "./settings-panel";
 import {
   OverviewSection,
   PageButton,
@@ -184,7 +184,6 @@ export function SetupView() {
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
     turns: s && turnsStatus(s.turns),
-    teams: s && "Lead and workers",
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
@@ -228,9 +227,6 @@ export function SetupView() {
       )}
       {section === "turns" && (
         <WithSettings settings={settings}>{(data) => <TurnsSection settings={data} />}</WithSettings>
-      )}
-      {section === "teams" && (
-        <WithSettings settings={settings}>{(data) => <TeamsSection settings={data} />}</WithSettings>
       )}
       {section === "approvals" && (
         <>

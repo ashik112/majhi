@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { RunMount } from "@majhi/acp";
-import type { Task } from "@majhi/shared";
+import { isId, type Task } from "@majhi/shared";
 import { cacheOrgOf } from "./package-cache.ts";
 
 /**
@@ -10,10 +10,8 @@ import { cacheOrgOf } from "./package-cache.ts";
  * on PATH. A run mounts only its own workspace's folder, never `tools` itself.
  */
 
-const ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
 export function toolsRoot(majhiHome: string, org: string): string {
-  if (!ORG.test(org)) throw new Error(`Not a workspace id: ${org}`);
+  if (!isId(org)) throw new Error(`Not a workspace id: ${org}`);
   return join(majhiHome, "tools", org);
 }
 

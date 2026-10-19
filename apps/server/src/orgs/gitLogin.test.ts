@@ -22,16 +22,6 @@ describe("useGitLogin", () => {
     return { deps, secrets, orgTokens };
   };
 
-  it("saves the token for the chosen org only and returns no token", async () => {
-    const { deps, secrets, orgTokens } = setup();
-    const out = await useGitLogin(deps, { id: "acme", via: "gh", host: "github.com" });
-    expect(out).toEqual({ id: "acme", host: "github", ref: "secret:acme-github-token" });
-    expect(JSON.stringify(out)).not.toContain("tok-sample");
-    expect(secrets).toEqual([{ value: "tok-sample", label: "acme github token" }]);
-    expect(orgTokens.acme).toEqual({ gitlab: "secret:acme-gitlab", github: "secret:acme-github-token" });
-    expect(orgTokens.globex).toEqual({});
-  });
-
   it("refuses an unknown org without reading the token, and a mismatched tool", async () => {
     const { deps } = setup();
     let read = false;

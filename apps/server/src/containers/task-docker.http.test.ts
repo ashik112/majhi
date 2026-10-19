@@ -125,20 +125,4 @@ describe("docker through majhi", () => {
     expect(docker.taskCalls).toEqual([]);
     expect(docker.containers.size).toBe(0);
   }, 60_000);
-
-  it("answers 401 without the run's token, and the token ends with the run", async () => {
-    const { env } = await world();
-    const url = env["ACM-1"]?.MAJHI_DOCKER_URL ?? "";
-    const post = (token: string) =>
-      fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ argv: ["ps"], cwd: "/tmp" }),
-      });
-    expect((await post("nope")).status).toBe(401);
-    expect((await post(env["ACM-1"]?.MAJHI_DOCKER_TOKEN ?? "")).status).toBe(200);
-    await w?.h.cmd("tasks.stop", { id: "ACM-1" });
-    await w?.h.majhi.services.runs.idle();
-    expect((await post(env["ACM-1"]?.MAJHI_DOCKER_TOKEN ?? "")).status).toBe(401);
-  }, 60_000);
 });

@@ -1,12 +1,7 @@
 import { realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { UserError } from "../errors.ts";
-
-/** True when `path` is `root` or inside it. Both must already be normalised. */
-export function isInside(path: string, root: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
+import { isInside } from "../fs.ts";
 
 async function realOr(path: string): Promise<string> {
   try {

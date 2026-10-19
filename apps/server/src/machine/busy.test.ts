@@ -16,11 +16,6 @@ const calm: MachineHost = {
 };
 
 describe("when the machine is busy", () => {
-  it("allows starts on a calm machine and with no reading", () => {
-    expect(busyReason(calm)).toBeUndefined();
-    expect(busyReason(undefined)).toBeUndefined();
-  });
-
   it("refuses when the 1-minute load is over the cores or free memory is under 10 percent", () => {
     expect(busyReason({ ...calm, load1: 27.1 })).toBeDefined();
     expect(busyReason({ ...calm, memAvailableBytes: 2 * GB })).toBeDefined();

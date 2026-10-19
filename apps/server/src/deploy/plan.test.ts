@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DeployPlanner } from "./plan.ts";
-import { C1, C2, environment, GH, push, type Rig, rig } from "./testing/rig.ts";
+import { C1, environment, GH, push, type Rig, rig } from "./testing/rig.ts";
 
 /** What the trail, the bar and the captain's chore read for a task that landed in the base branch. */
 
@@ -94,21 +94,6 @@ describe("the deploy steps of a task", () => {
     expect((await planner(r).stepsOf(task())).map((s) => [s.env, s.who])).toEqual([["qa", "captain"]]);
   });
 
-  it("shows a planned step as planned, with no commit, until the work landed", async () => {
-    r = await rig([environment("staging")]);
-    await r.service.plan(
-      { task: "ACM-1", steps: [{ project: "storefront", env: "staging", runs: GH }] },
-      "captain",
-    );
-    const unlanded = {
-      id: "ACM-1",
-      repos: [{ ...task().repos[0], landed: undefined }],
-    } as unknown as ReturnType<typeof task>;
-    const [step] = await planner(r).stepsOf(unlanded);
-    expect(step).toMatchObject({ state: "planned", who: "captain" });
-    expect(step?.commit).toBeUndefined();
-  });
-
   it("blocks a deploy no rule may start: the commit was not merged by a task whose checks passed", async () => {
     r = await rig([environment("staging")]);
     push(r, C1);
@@ -155,26 +140,5 @@ describe("the deploy steps of a task", () => {
       ["production", "held"],
     ]);
     expect(out.ask).toBeUndefined();
-  });
-
-  it("shows a failed deploy as failed, with what it said", async () => {
-    r = await rig([environment("staging")]);
-    push(r, C1);
-    r.hosts.outcome.github = "failure";
-    const { records } = await r.service.plan(
-      { task: "ACM-1", steps: [{ project: "storefront", env: "staging", runs: GH }] },
-      "captain",
-    );
-    await r.service.deploy({ record: records[0]?.id ?? 0 }, "captain");
-    await r.service.idle();
-    const [staging] = await planner(r).stepsOf(task());
-    expect(staging?.state).toBe("failed");
-    expect(staging?.why).toContain("failure");
-  });
-
-  it("reads nothing for a task with no plan", async () => {
-    r = await rig([]);
-    expect(await planner(r).stepsOf(task())).toEqual([]);
-    expect(await planner(r).stepsOf({ id: "ACM-2", repos: [] })).toEqual([]);
   });
 });

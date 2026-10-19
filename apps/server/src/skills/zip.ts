@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { SKILL_MAX_BYTES, SKILL_MAX_FILES } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { isInside } from "./files.ts";
+import { isInside } from "../fs.ts";
 
 const EOCD = 0x06054b50;
 const CENTRAL = 0x02014b50;

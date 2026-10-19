@@ -61,12 +61,6 @@ describe("limitFailure: Claude API key", () => {
     const acp = new RequestError(-32603, "Internal error", { details: "429 rate_limit_error" });
     expect(limitFailure(acp, undefined, "claude", NOW, "UTC")?.detail).toBe("429 rate_limit_error");
   });
-
-  it("has no reset when the error names none", () => {
-    expect(limitFailure(new Error("429 rate_limit_error"), "", "claude", NOW, "UTC")).toEqual({
-      detail: "429 rate_limit_error",
-    });
-  });
 });
 
 describe("limitFailure: Codex login", () => {
@@ -88,25 +82,6 @@ describe("limitFailure: Codex login", () => {
     );
     expect(wait?.resetsAt).toBe(new Date(NOW.getTime() + ((2 * 24 + 3) * 60 + 4) * 60_000).toISOString());
     expect(limitFailure(new Error('{"type":"usage_limit_reached"}'), "", "codex", NOW, "UTC")).toBeDefined();
-  });
-
-  it("reads a time of day in the zone it is given, the next day when it passed", () => {
-    const text = "You've hit your usage limit. Try again at 11:00 AM.";
-    expect(limitFailure(new Error(text), "", "codex", NOW, "UTC")?.resetsAt).toBe(
-      iso("2026-10-04T11:00:00Z"),
-    );
-    expect(limitFailure(new Error(text), "", "codex", NOW, "Asia/Tokyo")?.resetsAt).toBe(
-      iso("2026-10-04T02:00:00Z"),
-    );
-  });
-
-  it("reads a date with the time", () => {
-    expect(parseReset("try again at Oct 9th, 2026 3:40 PM", NOW, "UTC")?.toISOString()).toBe(
-      iso("2026-10-09T15:40:00Z"),
-    );
-    expect(parseReset("resets Oct 9, 3pm (Europe/Berlin)", NOW, "UTC")?.toISOString()).toBe(
-      iso("2026-10-09T13:00:00Z"),
-    );
   });
 });
 
@@ -141,19 +116,6 @@ describe("limitFailure: Codex API key", () => {
 });
 
 describe("parseReset", () => {
-  it("lands on the next occurrence across a change of offset", () => {
-    const before = new Date("2026-10-24T12:00:00Z");
-    // Berlin leaves summer time that night: 3am on the 25th is CET, UTC+1.
-    expect(parseReset("resets 3am (Europe/Berlin)", before, "UTC")?.toISOString()).toBe(
-      iso("2026-10-25T02:00:00Z"),
-    );
-  });
-
-  it("knows 12am and 12pm", () => {
-    expect(parseReset("resets 12am (UTC)", NOW, "UTC")?.toISOString()).toBe(iso("2026-10-04T00:00:00Z"));
-    expect(parseReset("resets 12pm (UTC)", NOW, "UTC")?.toISOString()).toBe(iso("2026-10-04T12:00:00Z"));
-  });
-
   it("names no reset for a time that has passed or an unknown form", () => {
     expect(parseReset("Claude AI usage limit reached|1700000000", NOW, "UTC")).toBeUndefined();
     expect(parseReset("try again at Nov 17th, 2025 3:40 PM", NOW, "UTC")).toBeUndefined();

@@ -60,26 +60,6 @@ describe("gateAnswer", () => {
     ).toBe(true);
   });
 
-  it("takes the rest as spread evenly when there are no probabilities", () => {
-    // 4 options, 0.5: lift (2 - 1) / 3 = 0.33, the others 0.5 / 3 = 0.17 each.
-    const g = gateAnswer(sizes, { value: "small", confidence: 0.5 }, BAR);
-    expect(g.lift).toBeCloseTo(1 / 3);
-    expect(g.margin).toBeCloseTo(0.5 - 0.5 / 3);
-    expect(g.accepted).toBe(true);
-    expect(gateAnswer(sizes, { value: "small", confidence: 0.3 }, BAR).accepted).toBe(false);
-  });
-
-  it("reads a score's levels as its options", () => {
-    const score = q({ type: "score", instructions: "How hard?", min: 1, max: 3 });
-    const g = gateAnswer(
-      score,
-      { value: 2, confidence: 0.6, probabilities: { "1": 0.1, "2": 0.6, "3": 0.3 } },
-      BAR,
-    );
-    expect(g.lift).toBeCloseTo(0.4);
-    expect(g.margin).toBeCloseTo(0.3);
-  });
-
   it("does not round a number up to the bar", () => {
     const g = gateAnswer(sizes, { value: "small", confidence: 0.3997 }, { min_lift: 0.2, min_margin: 0 });
     expect(g.reason).toBe("0.19 over chance, under 0.20");

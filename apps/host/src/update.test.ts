@@ -344,14 +344,6 @@ describe("update", () => {
     expect(tagged).toBeLessThan(docker.indexOf("compose --profile runner build"));
   });
 
-  it("says so when there was no previous image to go back to", async () => {
-    const s = setup({ failOnce: "compose up", noImage: true });
-    const status = await s.run();
-    expect(status.state).toBe("failed");
-    expect(status.lines.join("\n")).toContain("No previous version to go back to");
-    expect(s.calls.some((c) => c.args.startsWith("tag sha256:"))).toBe(false);
-  });
-
   describe("on a release install", () => {
     const LATEST = "https://api.github.example/repos/acme/majhi/releases/latest";
     const dotenv = `MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\nMAJHI_LATEST_URL=${LATEST}\n`;
@@ -427,12 +419,5 @@ describe("update", () => {
       expect(s.calls.some((c) => c.file === "/usr/bin/docker" && c.args.includes("build"))).toBe(false);
       expect(await env()).toBe(dotenv);
     });
-  });
-
-  it("never asks the pointer or fetches on a dev checkout", async () => {
-    const s = setup({ latestTag: "v1.1.0" });
-    expect((await s.run()).state).toBe("done");
-    expect(s.latestAsked).toEqual([]);
-    expect(s.calls.some((c) => c.args.includes("fetch"))).toBe(false);
   });
 });

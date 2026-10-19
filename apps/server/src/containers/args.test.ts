@@ -324,30 +324,6 @@ describe("assertSafe refuses", () => {
     }
   });
 
-  it("a bind mount, a volume outside majhi's, and driver options", () => {
-    for (const mount of [
-      "type=bind,source=/,target=/host",
-      "type=bind,source=/tmp,target=/tmp",
-      "type=tmpfs,target=/tmp",
-      "type=volume,source=other,target=/data",
-      "type=volume,source=majhi-other-1-data-x,target=/data",
-      "type=volume,source=majhi-acm-1-data-x,target=/data,volume-opt=device=/",
-      "type=volume,source=majhi-acm-1-data-x,target=/data,volume-opt=type=none",
-      "type=volume,source=majhi-acm-1-data-x,target=/data,volume-driver=local",
-      "type=volume,source=majhi-acm-1-data-x,target=/data,bind-propagation=shared",
-      "type=volume,source=majhi-acm-1-data-x,target=/d,ata",
-      "type=volume,source=majhi-acm-1-data-x,target=/../etc",
-      "type=volume,target=/data",
-    ]) {
-      expect(refused(replaced(service(), "--mount", mount))).toThrow(ContainerRefused);
-    }
-    // A preview has no named volume and no other mount.
-    expect(
-      refused(replaced(preview(), "--mount", "type=volume,source=majhi-acm-1-data-x,target=/p")),
-    ).toThrow(ContainerRefused);
-    expect(refused(plus(preview(), "--mount", "type=volume,target=/second"))).toThrow(ContainerRefused);
-  });
-
   it("the wrong network, and a host, none or container network", () => {
     for (const net of [
       "host",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OrgIdSchema } from "./ids.ts";
 
 /**
  * Permissions by risk (docs/briefs/workflow-reset.md, step 1b). One typed answer to "may this happen
@@ -93,11 +94,9 @@ export function isAlwaysKind(kind: RiskKind): kind is AlwaysKind {
   return (ALWAYS_KINDS as readonly string[]).includes(kind);
 }
 
-const RULE_ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
 /** "Always allow this kind of action in this workspace", saved from a card. It only turns a card into a go-ahead. */
 export const AllowRuleSchema = z.strictObject({
-  org: z.string().regex(RULE_ORG),
+  org: OrgIdSchema,
   kind: z.enum(ALWAYS_KINDS),
 });
 export type AllowRule = z.infer<typeof AllowRuleSchema>;

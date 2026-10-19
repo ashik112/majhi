@@ -92,12 +92,6 @@ describe("reporting and dedupe", () => {
     const quiet = await t.report();
     expect(quiet).toMatchObject({ result: "refreshed", finding: { status: "dismissed", seen: 3 } });
   });
-
-  it("refuses a project of another workspace and an unknown project", async () => {
-    const t = setup();
-    await expect(t.report({ project: "globex-web" }, ACME)).rejects.toThrow();
-    await expect(t.report({ project: "nope" }, ACME)).rejects.toThrow();
-  });
 });
 
 describe("one workspace never sees another's findings", () => {

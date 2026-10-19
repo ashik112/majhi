@@ -16,7 +16,6 @@ import {
   NotificationsFilePatchSchema,
   PolicyFilePatchSchema,
   ResumePatchSchema,
-  RoomPatchSchema,
   TurnsPatchSchema,
   WikiPatchSchema,
 } from "./settings.ts";
@@ -48,8 +47,8 @@ export const MajhiConfigSchema = z
     commits: CommitsPatchSchema.optional(),
     /** The project wiki switch: off unless turned on here or per workspace. */
     wiki: WikiPatchSchema.optional(),
-    /** Teams in a room: the loop guard and review rounds (5.3). */
-    rooms: RoomPatchSchema.optional(),
+    /** Removed with the loop guard and review rounds. Old files still load; the section is ignored. */
+    rooms: z.unknown().optional(),
     /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */
     memory: MemoryPatchSchema.optional(),
     /** Which editor "Open in editor" uses: VS Code or Cursor. */

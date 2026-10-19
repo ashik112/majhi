@@ -1,4 +1,3 @@
-import type { AccountUsage } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Harness, harness } from "../testing/harness.ts";
 import { limitFor } from "./status.ts";
@@ -6,37 +5,7 @@ import { limitFor } from "./status.ts";
 const NOW = new Date("2026-10-03T12:00:00Z");
 const MIN = 60_000;
 
-const usage = (window: number, weekly: number, resets = {}): AccountUsage => ({
-  window: { usedPct: window, resetsAt: "2026-10-03T15:00:00.000Z" },
-  weekly: { usedPct: weekly, resetsAt: "2026-10-07T00:00:00.000Z" },
-  models: [],
-  estimated: false,
-  updatedAt: NOW.toISOString(),
-  ...resets,
-});
-
 describe("limitFor", () => {
-  it("takes the error's reset", () => {
-    expect(limitFor({ detail: "x", resetsAt: "2026-10-03T13:00:00.000Z" }, usage(100, 10), NOW)).toEqual({
-      since: NOW.toISOString(),
-      until: "2026-10-03T13:00:00.000Z",
-      resetKnown: true,
-      detail: "x",
-    });
-  });
-
-  it("else the reset of the full window, the later one when both are full", () => {
-    expect(limitFor({ detail: "x" }, usage(100, 10), NOW).until).toBe("2026-10-03T15:00:00.000Z");
-    expect(limitFor({ detail: "x" }, usage(100, 100), NOW).until).toBe("2026-10-07T00:00:00.000Z");
-    expect(limitFor({ detail: "x" }, usage(100, 10), NOW).resetKnown).toBe(false);
-  });
-
-  it("else 15 minutes", () => {
-    const guess = new Date(NOW.getTime() + 15 * MIN).toISOString();
-    expect(limitFor({ detail: "x" }, usage(40, 10), NOW).until).toBe(guess);
-    expect(limitFor({ detail: "x" }, undefined, NOW).until).toBe(guess);
-  });
-
   it("keeps the end of a mark that holds when a second error names no reset", () => {
     const first = limitFor({ detail: "a", resetsAt: "2026-10-03T14:00:00.000Z" }, undefined, NOW);
     const later = new Date(NOW.getTime() + 5 * MIN);

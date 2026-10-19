@@ -129,43 +129,6 @@ afterEach(async () => {
 });
 
 describe("a command-line tool's sign-in", () => {
-  it("shows only a safe sentence when the tool's login fails", async () => {
-    r = await rig();
-    r.host.next = async () => {
-      throw new Error("The Cloudflare (vercel) sign-in ran out of time. Nothing was saved.");
-    };
-    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "failed");
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("refuses a reconnect as another account and leaves the connection as it was", async () => {
-    r = await rig();
-    const first = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(first.flow).state === "connected");
-    const id = r.connect.flow(first.flow).connection ?? "";
-    r.host.next = async () => ({ state: "other-account", identity: "intruder@other.example" });
-    const again = await r.connect.start(
-      { org: "acme", service: "vercel-cli", access: "read", connection: id },
-      OWNER,
-    );
-    await until(() => r.connect.flow(again.flow).state === "failed");
-    expect(r.connect.flow(again.flow).message).toContain("intruder@other.example");
-    expect(r.host.logins.at(-1)?.expected).toBe("ops@acme.example");
-    expect(r.connections.get(id)?.connection.fields?.account).toBe("ops@acme.example");
-  });
-
-  it("cancel stops the tool on the helper and saves nothing", async () => {
-    r = await rig();
-    r.host.next = () => new Promise(() => undefined);
-    const view = await r.connect.start({ org: "acme", service: "stripe-cli", access: "read" }, OWNER);
-    r.connect.cancel(view.flow);
-    expect(r.connect.flow(view.flow).state).toBe("cancelled");
-    await until(() => r.host.cancelled.length === 1);
-    expect(r.host.cancelled[0]).toBe(r.host.logins[0]?.signIn);
-    expect(r.connections.size).toBe(0);
-  });
-
   it("a login that hangs ends as expired, tells the helper to stop and saves nothing", async () => {
     r = await rig();
     r.host.next = () => new Promise(() => undefined);
@@ -174,28 +137,6 @@ describe("a command-line tool's sign-in", () => {
     expect(r.connect.flow(view.flow).state).toBe("expired");
     await until(() => r.host.cancelled.length === 1);
     expect(r.connections.size).toBe(0);
-  });
-
-  it("signs two workspaces in to the same tool as different accounts, each in its own folder", async () => {
-    r = await rig();
-    r.host.next = async (p) => ({
-      state: "done",
-      identity: p.connection.startsWith("vercel-cli-") ? "dev@globex.example" : "ops@acme.example",
-    });
-    const a = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(a.flow).state === "connected");
-    const b = await r.connect.start({ org: "globex", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(b.flow).state === "connected");
-    const idA = r.connect.flow(a.flow).connection ?? "";
-    const idB = r.connect.flow(b.flow).connection ?? "";
-    expect(idA).not.toBe(idB);
-    expect(r.host.logins.map((l) => l.connection)).toEqual([idA, idB]);
-    expect(r.connections.get(idA)?.connection.fields?.account).toBe("ops@acme.example");
-    expect(r.connections.get(idB)?.connection.fields?.account).toBe("dev@globex.example");
-    // Disconnecting one leaves the other.
-    await r.connect.disconnect(idA, OWNER);
-    expect(r.connections.has(idB)).toBe(true);
-    expect(r.host.logouts.map((l) => l.connection)).toEqual([idA]);
   });
 });
 

@@ -297,16 +297,3 @@ export function TurnsSection({ settings }: { settings: Settings }) {
     </Section>
   );
 }
-
-/** How long a team may hand work around without the owner. */
-export function TeamsSection({ settings }: { settings: Settings }) {
-  const teams = useSettingsDraft(settings, ["maxAgentTurns", "reviewRounds"]);
-  return (
-    <Section first title="Teams" note="How long agents may pass work between them without you" draft={teams}>
-      <div className="grid gap-3 @[480px]:grid-cols-2">
-        <NumberField label="Handoffs in a row with no changes" name="maxAgentTurns" draft={teams} />
-        <NumberField label="Review rounds" name="reviewRounds" draft={teams} />
-      </div>
-    </Section>
-  );
-}

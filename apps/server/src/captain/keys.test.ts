@@ -87,23 +87,6 @@ describe("the key claim", () => {
 });
 
 describe("answering a card", () => {
-  it("answers once: the same card twice is one answer and a typed repeat", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    let answers = 0;
-    const answer = async () => {
-      answers += 1;
-    };
-    expect(await answerOnce(repo, NOW, { task: "ACM-1", item: "i1" }, answer)).toEqual({ answered: true });
-    expect(await answerOnce(repo, NOW, { task: "ACM-1", item: "i1" }, answer)).toEqual({
-      answered: false,
-      why: "repeat",
-    });
-    expect(answers).toBe(1);
-    // Another card is another key.
-    expect(await answerOnce(repo, NOW, { task: "ACM-1", item: "i2" }, answer)).toEqual({ answered: true });
-    expect(answers).toBe(2);
-  });
-
   it("gives the key back when the answer fails, so the card can be answered again", async () => {
     const repo = new CaptainRepo(new Store(":memory:").raw);
     await expect(

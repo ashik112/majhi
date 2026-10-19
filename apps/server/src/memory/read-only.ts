@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { PermissionAsk } from "@majhi/acp";
-import { isInside } from "../editor/allowed.ts";
+import { isInside } from "../fs.ts";
 
 /**
  * The ACP tool kinds a read-only session may use: looking at a file and searching files. Everything

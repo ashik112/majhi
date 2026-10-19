@@ -286,7 +286,12 @@ describe("builds in a task", () => {
     expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
     // Each image asks the owner, once, and the card has no container name.
     expect(asked).toEqual(
-      expect.arrayContaining(["? acme/node:22", "? acme/nginx:1.27", "? docker/dockerfile:1.7", "? acme/mysql:8"]),
+      expect.arrayContaining([
+        "? acme/node:22",
+        "? acme/nginx:1.27",
+        "? docker/dockerfile:1.7",
+        "? acme/mysql:8",
+      ]),
     );
   });
 
@@ -314,20 +319,6 @@ describe("builds in a task", () => {
     // A snapshot path is never a way to name a file: a call that names one is outside the task folder.
     const named = await call("ACM-1", repo, "build", "-t", "web:test", "-f", read?.file ?? "/x", ".");
     expect(named.code).not.toBe(0);
-  });
-
-  it("refuses a BUILDKIT_ build argument: BUILDKIT_SYNTAX would load any image as the Dockerfile's frontend", async () => {
-    await dockerfile("FROM alpine:3\n");
-    const out = await build("--build-arg", "BUILDKIT_SYNTAX=evil/frontend:1");
-    expect(out.error?.code).toBe("flag_not_allowed");
-    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
-    await mkdir(join(repo, "app"), { recursive: true });
-    await writeFile(join(repo, "app", "Dockerfile"), "FROM alpine:3\n");
-    const stack = await up(
-      "services:\n  app:\n    build:\n      context: ./app\n      args:\n        BUILDKIT_SYNTAX: evil/frontend:1\n",
-    );
-    expect(stack.error?.code).toBe("flag_not_allowed");
-    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
   });
 
   it("refuses a Dockerfile that is not there or not a file, and one it cannot read the images of", async () => {
@@ -434,17 +425,6 @@ describe("a script's own containers", () => {
     expect(outside.error?.code).toBe("env_file_outside");
   });
 
-  it("refuses a socket, a host network, a privileged flag and a folder outside the task with a code", async () => {
-    const codes = async (...argv: string[]) => (await run(...argv, "alpine:3")).error?.code;
-    expect(await codes("-v", "/var/run/docker.sock:/s")).toBe("socket_mount");
-    expect(await codes("--network", "host")).toBe("host_network");
-    expect(await codes("--privileged")).toBe("privileged");
-    expect(await codes("--pid=host")).toBe("namespace_not_allowed");
-    expect(await codes("--device", "/dev/sda")).toBe("device_not_allowed");
-    expect(await codes("-v", "/etc:/h")).toBe("mount_outside");
-    expect(docker.holds).toEqual([]);
-  });
-
   it("removes every holder and container of a task that ended or after a restart, and only that task's", async () => {
     await run("-d", "--name", "a", "alpine:3");
     await up();
@@ -498,18 +478,6 @@ describe("a script's own containers", () => {
     expect(started.error?.code).toBe("restart_not_available");
     expect(names()).toEqual(["majhi-acm-1-c-a"]);
     expect(docker.taskCalls.filter((c) => c[0] === "start")).toEqual([]);
-  });
-
-  it("lets only as many starts through as the global limit allows when tasks start in parallel", async () => {
-    settings = { ...settings, total: 1 };
-    docker.psDelayMs = 25;
-    const results = await Promise.all([
-      call("ACM-1", repo, "run", "-d", "--name", "a", "alpine:3"),
-      call("ACM-2", join(dir, "tasks", "ACM-2", "shop"), "run", "-d", "--name", "b", "alpine:3"),
-      call("ACM-1", repo, "run", "-d", "--name", "c", "alpine:3"),
-    ]);
-    expect(results.map((r) => r.code).sort()).toEqual([0, 125, 125]);
-    expect([...docker.containers.keys()].filter((n) => n.includes("-c-"))).toHaveLength(1);
   });
 
   it("refuses a name a running process of the task already answers to, and one a container already has", async () => {

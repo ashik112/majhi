@@ -16,6 +16,7 @@ import { type Context, Hono } from "hono";
 import { ExportRefused, exportMarkdown } from "../export/export.ts";
 import { IMAGE_LIMIT, type ImageReader } from "../export/images.ts";
 import type { PdfPrinter } from "../export/pdf.ts";
+import { isBelow } from "../fs.ts";
 import { isCheckLog } from "../handoff/logs.ts";
 
 /** By extension. Anything else is a download, so a browser never guesses. */
@@ -152,9 +153,8 @@ export async function resolveInside(
   } catch {
     return { status: 404, error: "Not found." };
   }
-  const rel = relative(root, target);
-  const parts = rel.split(sep);
-  if (rel === "" || rel.startsWith("..") || hidden(parts)) {
+  const parts = relative(root, target).split(sep);
+  if (!isBelow(target, root) || hidden(parts)) {
     return { status: 403, error: `That file is outside the ${what}.` };
   }
   const info = await stat(target).catch(() => undefined);

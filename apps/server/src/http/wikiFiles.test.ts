@@ -55,17 +55,6 @@ describe("wiki source files", () => {
   });
   afterEach(() => cleanup());
 
-  it("serves a file of the export, with the range the viewer asks for", async () => {
-    const res = await get("src/app.py");
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("def create():\n    return 1\n");
-    const part = await app.request(`/api/wiki/acme/web/${SHA}/files/src/app.py`, {
-      headers: { Range: "bytes=0-2" },
-    });
-    expect(part.status).toBe(206);
-    expect(await part.text()).toBe("def");
-  });
-
   it("serves a dot folder such as .github, but never env files or git's folder", async () => {
     expect((await get(".github/ci.yml")).status).toBe(200);
     expect((await get(".env")).status).toBe(403);

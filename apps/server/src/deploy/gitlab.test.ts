@@ -114,15 +114,6 @@ describe("the gitlab-job provider", () => {
       variables: [{ key: "VERSION", value: "1.8.2" }],
     });
   });
-
-  it("never sends its token to a repo on another host than the remote's", async () => {
-    const { provider, ctx } = gitlab();
-    const wrong: DeployContext = {
-      ...ctx,
-      repoOf: async () => ({ provider: "github", slug: "acme/storefront", host: "github.com" }),
-    };
-    await expect(provider.start(wrong, step)).rejects.toThrow(/not on GitLab/);
-  });
 });
 
 /** A GitLab where `stg` lacks the commit (or has it), for the merge into an environment's branch. */

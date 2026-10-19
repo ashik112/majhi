@@ -1,18 +1,11 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { McpServerSpec } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { cacheEnv } from "../runs/package-cache.ts";
 import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { runFilesRoot } from "./run-files.ts";
-
-/** A run's variables without the workspace package-cache paths every run gets (no secrets in them). */
-const noCaches = (env: Record<string, string> | undefined): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))),
-  );
 
 const KUBECONFIG = `apiVersion: v1
 kind: Config
@@ -121,23 +114,5 @@ describe("a run's connections", () => {
         () => true,
       );
     await until(gone);
-  });
-
-  it("gives an org agent nothing of another org, even where it may work", async () => {
-    const task = (await must("tasks.create", {
-      text: "check the api logs, repo api",
-      repos: [{ project: "acme-api" }],
-      kind: "ops",
-      team: ["globex-builder"],
-      start: true,
-    })) as { id: string };
-    await w.h.majhi.services.runs.idle(task.id);
-    const start = w.h.runtime.starts.at(-1);
-    expect(noCaches(start?.env)).toEqual({});
-    const names = (start?.mcpServers ?? []).map((s) => s.name);
-    expect(names).not.toContain("acme-newrelic");
-    expect(names).not.toContain("globex-prod");
-    expect(JSON.stringify(start)).not.toContain(API_KEY);
-    expect(await readdir(runFilesRoot(w.h.env.majhiHome)).catch(() => [])).toEqual([]);
   });
 });

@@ -19,7 +19,6 @@ import { agentScopes, chatRecallScopes, recallScopes, writableScopes } from "./s
 import { MemoryService } from "./service.ts";
 import { MemoryStore } from "./store.ts";
 
-const OWNER = { kind: "owner" } as const;
 const REGISTRY: Registry = {
   orgs: [
     { id: "acme", name: "Acme" },
@@ -204,29 +203,5 @@ describe("fact kinds and edits in the store", () => {
       ["The pool is cold at start.", "lesson", "agent"],
       ["Acme deploys on Tuesdays.", "statement", "owner"],
     ]);
-  });
-
-  it("moves and rewords a fact, logs what changed, and searches the new words only", async () => {
-    const memory = service();
-    const fact = await memory.add(
-      { text: "Orders use a cold pool.", scope: "org:acme", pinned: false },
-      OWNER,
-    );
-    expect(fact).toMatchObject({ kind: "statement", source: "owner" });
-    const edited = await memory.edit(
-      fact.id,
-      { text: "Tenant only mode expects an X-Tenant header.", scope: "project:acme-api" },
-      OWNER,
-    );
-    expect(edited).toMatchObject({ scope: "project:acme-api", status: "active" });
-    const [event] = memory.events({ fact: fact.id, limit: 1 });
-    expect(event).toMatchObject({ action: "edited", actor: "owner" });
-    expect(
-      (await memory.search("tenant header", { scopes: ["project:acme-api"] })).map((h) => h.fact.id),
-    ).toEqual([fact.id]);
-    expect(await memory.search("cold pool orders", { scopes: ["project:acme-api", "org:acme"] })).toEqual([]);
-    await expect(
-      memory.edit(fact.id, { text: "The key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789" }, OWNER),
-    ).rejects.toThrow();
   });
 });

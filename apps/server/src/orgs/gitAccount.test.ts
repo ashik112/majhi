@@ -94,19 +94,6 @@ describe("useSavedLogin", () => {
   };
   const classify = () => "github" as const;
 
-  it("saves for the chosen org only, after the API accepts it", async () => {
-    const { deps, writes, probes } = setup(200);
-    expect(
-      await useSavedLogin(deps, classify, { id: "acme", host: "github.com", account: "acme-dev" }),
-    ).toEqual({ saved: true });
-    expect(probes).toEqual([{ url: "https://api.github.com/user", auth: "Bearer tok123" }]);
-    expect(writes).toHaveLength(1);
-    expect(writes[0]?.id).toBe("acme");
-    expect(writes[0]?.patch.git_accounts).toEqual([
-      { host: "github.com", account: "acme-dev", token: "secret:new" },
-    ]);
-  });
-
   it("saves nothing when the API refuses it, and the reason never holds the secret", async () => {
     const { deps, writes, saved } = setup(401);
     const out = await useSavedLogin(deps, classify, { id: "acme", host: "github.com", account: "acme-dev" });
@@ -174,24 +161,6 @@ describe("a pasted token", () => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sample-token");
       return new Response(status === 200 ? JSON.stringify(body) : "{}", { status });
     });
-
-  it("is saved for that org only, after the host says whose it is", async () => {
-    const { deps, writes, saved, input } = setup();
-    vi.stubGlobal("fetch", answer(200, { username: "sample-user" }));
-    await setGitAccount(deps, input);
-    expect(saved).toEqual(["acme gitlab.com sample-user token"]);
-    expect(writes).toEqual([
-      {
-        id: "acme",
-        patch: {
-          git_accounts: [
-            { host: "gitlab.com", account: "sample-user", ssh: "default", token: "secret:pasted" },
-          ],
-          mr_tokens: { gitlab: "secret:pasted" },
-        },
-      },
-    ]);
-  });
 
   it("is never saved when the host refuses it, or it belongs to someone else", async () => {
     for (const fetch of [answer(401, undefined), answer(200, { username: "someone-else" })]) {

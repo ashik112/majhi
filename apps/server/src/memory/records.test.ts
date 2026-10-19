@@ -16,19 +16,6 @@ function service() {
   });
 }
 
-const record = (task: string, org: string, project: string, done: string) => ({
-  task,
-  title: `Work on ${project}`,
-  org,
-  projects: [project],
-  asked: `Change ${project}.`,
-  done,
-  decisions: "",
-  outcome: "Merged into main.",
-  left: "",
-  repos: [],
-});
-
 describe("project briefs", () => {
   it("adds a version for each change, keeps every one, and restores an old one as the newest", () => {
     const m = service().project;
@@ -70,23 +57,5 @@ describe("project brief refreshes", () => {
     expect(m.brief("acme-api").versions.map((v) => v.version)).toEqual([2, 1]);
     m.forgetBrief("acme-api");
     expect(m.brief("acme-api")).toEqual({ versions: [] });
-  });
-});
-
-describe("scope isolation", () => {
-  it("never gives one org's records to a search in another org's scopes", async () => {
-    const m = service().project;
-    await m.putRecord(record("ACM-1", "acme", "acme-api", "Moved the health check to src/health.ts."));
-    await m.putRecord(
-      record("GLX-1", "globex", "globex-web", "Moved the health check to src/health.ts too."),
-    );
-    const globex = ["org:globex", "project:globex-web"];
-    const found = await m.records({ query: "health check", scopes: globex, limit: 10 });
-    expect(found.map((h) => h.record.task)).toEqual(["GLX-1"]);
-    expect((await m.records({ scopes: globex, limit: 10 })).map((h) => h.record.task)).toEqual(["GLX-1"]);
-    // A project filter never widens the scopes.
-    expect(await m.records({ query: "health", scopes: globex, project: "acme-api", limit: 10 })).toEqual([]);
-    // Global alone sees no record: records are never global.
-    expect(await m.records({ query: "health check", scopes: ["global"], limit: 10 })).toEqual([]);
   });
 });

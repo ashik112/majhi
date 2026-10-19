@@ -1,14 +1,9 @@
 import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { SKILL_MAX_BYTES, SKILL_MAX_FILES, type SkillFile } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-
-/** True when `child` is `parent` or lies inside it. */
-export function isInside(child: string, parent: string): boolean {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
+import { isInside } from "../fs.ts";
 
 /** One file of a skill folder: where it is now and where it goes, relative to the skill. */
 interface Entry {
