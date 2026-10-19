@@ -42,6 +42,7 @@ import type { RoomService } from "../room/service.ts";
 import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
 import { reachFromChat } from "../tasks/chat-link.ts";
+import type { Crew } from "../tasks/crew-run.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   CONNECTIONS_PATH,
@@ -63,7 +64,6 @@ import {
   type ToolCaller,
   type ToolTokens,
 } from "./access.ts";
-import type { Crew } from "../tasks/crew-run.ts";
 import type { RoomCoordinator } from "./coordinator.ts";
 import { drawDiagram } from "./diagram.ts";
 
@@ -563,7 +563,9 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         case "step_done":
           return ok(deps.crew.stepDone(caller.task, caller.agent, args.result as string));
         case "send_back":
-          return ok(await deps.crew.sendBack(caller.task, caller.agent, args.step as number, args.reason as string));
+          return ok(
+            await deps.crew.sendBack(caller.task, caller.agent, args.step as number, args.reason as string),
+          );
         case "uploads_create": {
           const made = await deps.admin.call(caller, toolName("uploads.create"), { path: args.path });
           return made.isError ? fail(made.text) : ok(made.text);

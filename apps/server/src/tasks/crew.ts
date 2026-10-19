@@ -6,6 +6,7 @@ import {
   type TeamPlan,
   WORKERS_MAX,
 } from "@majhi/shared";
+import { limitClock } from "../runs/limit.ts";
 import type { Limits } from "./team-facts.ts";
 
 /** An account that cannot run, and what fixes it (signed out: sign in; at a limit: it resets at `until`). */
@@ -40,8 +41,11 @@ export function headroomOf(limits: Limits): number {
   return left.length === 0 ? 50 : Math.min(...left);
 }
 
-/** Whether an account can run now, and if not what is wrong with it and when it resets. */
-export function downOf(account: string, limits: Limits): DownAccount | undefined {
+/**
+ * Whether an account can run now, and if not what is wrong with it and when it resets. `marked` is the end of
+ * the limit mark a run's limit error put on the account: it wins over what the windows say.
+ */
+export function downOf(account: string, limits: Limits, marked?: string): DownAccount | undefined {
   if (limits.kind !== "plan") return undefined;
   if (limits.status === "needs-login") return { account, state: "signed-out" };
   if (limits.status === "unreachable") return { account, state: "unreachable" };
@@ -49,7 +53,7 @@ export function downOf(account: string, limits: Limits): DownAccount | undefined
   // At its limit until the full window resets (the weekly one when both are full).
   const full = [limits.window, limits.weekly].filter((w) => w?.leftPct === 0);
   const until = full.map((w) => w?.resetsAt).filter((t): t is string => t !== undefined);
-  const latest = until.length === 0 ? undefined : [...until].sort().at(-1);
+  const latest = marked ?? (until.length === 0 ? undefined : [...until].sort().at(-1));
   return { account, state: "at-limit", ...(latest === undefined ? {} : { until: latest }) };
 }
 
@@ -118,6 +122,24 @@ export function pickReviewer(
       cmp(Number(!a.inTeam), Number(!b.inTeam)) ||
       a.id.localeCompare(b.id),
   )[0];
+}
+
+/**
+ * What the paused card says when every agent is down: each account and the one fix or reset time that
+ * brings it back, in the owner's clock. "Every agent is down. Sign in claude-acme, or wait for codex-acme
+ * (resets 3:40 PM). It resumes by itself when one is back."
+ */
+export function downText(down: readonly DownAccount[], now: Date): string {
+  const fixes = down.map((d) =>
+    d.state === "signed-out"
+      ? `sign in ${d.account}`
+      : d.state === "unreachable"
+        ? `reach ${d.account}`
+        : `wait for ${d.account}${d.until === undefined ? "" : ` (resets ${limitClock(d.until, now)})`}`,
+  );
+  const [first, ...rest] = fixes;
+  const head = first === undefined ? "" : `${first.slice(0, 1).toUpperCase()}${first.slice(1)}`;
+  return `Every agent is down. ${[head, ...rest].join(", or ")}. It resumes by itself when one is back.`;
 }
 
 /** Whether the team has room for one more worker. */
@@ -239,7 +261,10 @@ export function stepPrompt(plan: TeamPlan, i: number, owner: string, why?: strin
   const back =
     step?.reason === undefined || (step.sentBack ?? 0) === 0
       ? []
-      : ["", `This step was sent back (${step.sentBack} time${step.sentBack === 1 ? "" : "s"}). Why: ${step.reason}`];
+      : [
+          "",
+          `This step was sent back (${step.sentBack} time${step.sentBack === 1 ? "" : "s"}). Why: ${step.reason}`,
+        ];
   return [
     `Your step: step ${i + 1} of ${total}. ${step?.what ?? ""}`,
     ...(why === undefined ? [] : ["", why]),

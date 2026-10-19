@@ -739,6 +739,7 @@ describe("lifting a hold", () => {
         autopilot: "on",
         runAtStep: true,
         slotFree: true,
+        anyAccountUp: true,
         lastActivityAt: "2026-10-05T11:00:00.000Z",
         accounts: { "claude-acme": { signedIn: true } },
       };

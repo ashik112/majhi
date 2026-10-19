@@ -35,9 +35,7 @@ export const HANDOFF_RULES = [
  */
 export function handoffPrompt(input: HandoffInput): string {
   const why =
-    input.via === "plan"
-      ? "A step of the plan is yours."
-      : `@${input.from} handed this to you in the room.`;
+    input.via === "plan" ? "A step of the plan is yours." : `@${input.from} handed this to you in the room.`;
   // The fixed text comes first, then what is new in this handoff: the same opening every time is
   // what a provider's prompt cache can reuse (SPEC 5.9 item 7).
   const lines = [

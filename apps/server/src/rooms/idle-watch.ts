@@ -87,7 +87,12 @@ export interface IdleWatchDeps {
   /** The plan's side: put an unfinished step back to work, or give an agent's step to another agent. */
   crew: {
     kick(task: string): Promise<boolean>;
-    stuck(task: string, agent: string, ending: Exclude<TurnEnding, "finished">, text: string): Promise<boolean>;
+    stuck(
+      task: string,
+      agent: string,
+      ending: Exclude<TurnEnding, "finished">,
+      text: string,
+    ): Promise<boolean>;
   };
   /** Pauses the task for the owner with this line in the room ("needs you"). */
   pauseForOwner: (task: string, text: string) => Promise<void>;
@@ -106,7 +111,10 @@ export interface IdleWatchDeps {
  * after a restart the resilience sweep wakes stranded tasks, and the next turn that ends arms this again.
  */
 export class IdleWatch {
-  private readonly last = new Map<string, { agent: string; text: string; ending: TurnEnding; turn: number }>();
+  private readonly last = new Map<
+    string,
+    { agent: string; text: string; ending: TurnEnding; turn: number }
+  >();
   /** The turn each task's quiet period was handled for. */
   private readonly handled = new Map<string, number>();
   private readonly timers = new Map<string, NodeJS.Timeout>();

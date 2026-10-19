@@ -511,6 +511,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const config = new ConfigService({ majhiHome: env.majhiHome, hostHome: env.hostHome });
   // Hooks and chores started without waiting: `close` waits for them before the stores close.
   const background = new Background();
+  // The task service is built after the accounts, which tell it when an account is back.
+  const tasksRef: { current: TaskService | undefined } = { current: undefined };
   // The built-in org used to be `personal`. Old files read as `private` meanwhile, so this can run late.
   background.run(
     () => config.migrateLegacyOrg(),
@@ -574,7 +576,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runtime,
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
-    onChanged: () => events.emit(["accounts"]),
+    onChanged: () => {
+      events.emit(["accounts"]);
+      // An account that came back wakes the tasks whose every agent was down.
+      background.run(async () => void (await tasksRef.current?.resumeDown()));
+    },
     now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
@@ -1241,6 +1247,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  tasksRef.current = tasks;
   chatMemory = new ChatMemory({
     store,
     settings: async () => (await config.settings()).memory,

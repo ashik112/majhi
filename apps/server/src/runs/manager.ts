@@ -1777,7 +1777,10 @@ export class RunManager {
   private pauseSignedOut(run: AgentRun, account: string): void {
     const lead = this.deps.store.tasks.get(run.task)?.team[0];
     run.startFailure = { kind: "signed-out", text: `${account} needs a new sign-in.` };
-    const nobody = lead === undefined || run.agent === lead ? "" : " No teammate with a working account can take its step.";
+    const nobody =
+      lead === undefined || run.agent === lead
+        ? ""
+        : " No teammate with a working account can take its step.";
     this.pause(
       run,
       "signed-out",

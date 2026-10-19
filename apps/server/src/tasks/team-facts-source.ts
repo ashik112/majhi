@@ -1,15 +1,15 @@
 import { type AccountModels, type AgentFrontmatter, canWorkIn, resolveTier, type Task } from "@majhi/shared";
-import { modelForTier } from "../runs/model-options.ts";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { readDecisionSettings } from "../decisions/settings.ts";
+import { modelForTier } from "../runs/model-options.ts";
 import type { Store } from "../store/index.ts";
 import { readPrices } from "../usage/prices.ts";
+import { downOf, type Hand, headroomOf, type ReviewerCandidate } from "./crew.ts";
 import type { TaskPlanner } from "./planner.ts";
 import { likelyPaths, overlapsOf } from "./planning.ts";
-import { downOf, type Hand, headroomOf, type ReviewerCandidate } from "./crew.ts";
 import {
   buildTeamFacts,
   fallbackModels,
@@ -112,8 +112,9 @@ export class TeamFactsSource {
       const fm = all.find((a) => a.id === id);
       if (fm === undefined) return [];
       const view = views.get(fm.account);
-      const limits = view === undefined ? ({ kind: "unknown" } as const) : limitsOf(view.auth, view.status, view.usage);
-      const down = downOf(fm.account, limits);
+      const limits =
+        view === undefined ? ({ kind: "unknown" } as const) : limitsOf(view.auth, view.status, view.usage);
+      const down = downOf(fm.account, limits, view?.limit?.until);
       return [
         { id, up: down === undefined, headroom: headroomOf(limits), costUsd: costs.get(id) ?? 0, down },
       ];

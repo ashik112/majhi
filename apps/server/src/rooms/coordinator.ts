@@ -64,7 +64,7 @@ export class RoomCoordinator {
     // The step waits while its agent waits on the owner or on a background process, and when its model's
     // safeguards stopped it (the idle watch gives the step to another agent then).
     if (asked || questioned || busy || turn.refused === true) return;
-    await this.deps.crew.turnEnded(task.id, turn.agent);
+    await this.deps.crew.turnEnded(task.id, turn.agent, text);
   }
 
   /** majhi-room `read_recent`: the last messages, newest first, each trimmed in the middle (5.13). */

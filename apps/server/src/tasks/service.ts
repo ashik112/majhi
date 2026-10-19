@@ -44,9 +44,9 @@ import {
   parseTaskText,
   priorityRank,
   type ReadMount,
-  reviewBeforeOwner,
   type RoomItem,
   type RoomSearchHit,
+  reviewBeforeOwner,
   type ShipOption,
   type ShipOptions,
   type StoredOrigin,
@@ -150,6 +150,8 @@ import {
   renderTaskMd,
 } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
+import { type DownAccount, downText, hasRoomForWorker } from "./crew.ts";
+import { Crew } from "./crew-run.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { type Admission, admit, admitRunning, type GateLimits, preemptionVictim } from "./gate.ts";
 import { handoverNote } from "./handover.ts";
@@ -192,8 +194,6 @@ import {
 } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { claimTaskFolder, nameSlug, removableFolder, scopeSlug } from "./task-folder.ts";
-import { Crew } from "./crew-run.ts";
-import { type DownAccount, hasRoomForWorker } from "./crew.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 import { chooseType, guessType, typeQuestion } from "./typing.ts";
@@ -1318,7 +1318,10 @@ export class TaskService {
   }
 
   /** The running task an urgent start pauses for `task`, or undefined when none qualifies (`preemptionVictim`). */
-  private victimFor(task: Task, preempt: { by: "owner" | "captain"; ownerAsked: boolean }): string | undefined {
+  private victimFor(
+    task: Task,
+    preempt: { by: "owner" | "captain"; ownerAsked: boolean },
+  ): string | undefined {
     const running = this.deps.store.tasks
       .runningTasks(task.id)
       .filter((t) => t.kind !== "chat" && !this.starting.has(t.id))
@@ -1366,7 +1369,7 @@ export class TaskService {
     await this.holdTask(id, hold, {
       by: "majhi",
       reason: "down",
-      why: lifecycle.sentenceOf(hold),
+      why: downText(down, this.now()),
     });
     this.deps.events.emitTask(id);
   }
@@ -1377,10 +1380,7 @@ export class TaskService {
    */
   async resumeDown(): Promise<string[]> {
     const resumed: string[] = [];
-    const paused = this.deps.store.tasks
-      .getMany(this.deps.store.tasks.idsWithStatus("paused"))
-      .filter((t) => t.pausedReason === "down");
-    for (const task of paused) {
+    for (const task of this.deps.store.tasks.getMany(this.deps.store.tasks.idsPausedFor("down"))) {
       if (!(await this.crew.recovered(task))) continue;
       try {
         await this.start(task.id, "majhi");
@@ -4012,7 +4012,7 @@ export class TaskService {
       {
         ctx: {
           by: "majhi",
-          why: down.length > 0 ? lifecycle.sentenceOf(hold) : why,
+          why: down.length > 0 ? downText(down, this.now()) : why,
           reason: down.length > 0 ? "down" : reason,
           account,
         },

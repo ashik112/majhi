@@ -1167,6 +1167,17 @@ export class TaskRepo {
       .map((r) => r.id);
   }
 
+  /** Ids of the tasks paused for this reason, oldest first: one indexed read, so an event can ask it often. */
+  idsPausedFor(reason: string): string[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.status, "paused"), eq(tasks.pausedReason, reason)))
+      .orderBy(asc(tasks.updatedAt))
+      .all()
+      .map((r) => r.id);
+  }
+
   addAttachments(task: string, added: readonly Attachment[]): void {
     this.db.transaction((tx) => {
       const last = tx

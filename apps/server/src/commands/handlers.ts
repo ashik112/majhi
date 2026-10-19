@@ -990,7 +990,8 @@ export function createHandlers({
       // Start on priority: only the owner and the captain set it, and only they may pause a running task for it.
       const actor = await resolveActor(services, ctx.meta);
       if (input.priority !== undefined) {
-        if (actor.kind === "agent") throw new UserError("Only the owner or the captain changes a task's priority.", 409);
+        if (actor.kind === "agent")
+          throw new UserError("Only the owner or the captain changes a task's priority.", 409);
         await services.tasks.update({ id: input.id, priority: input.priority });
       }
       const preempt =

@@ -76,6 +76,11 @@ export interface ClearReading {
   runAtStep: boolean;
   /** A running place is free (the running cap has room). Absent: not known, so a slot hold does not lift. */
   slotFree?: boolean | undefined;
+  /**
+   * Some agent of the held task can run (an account signed in, a limit reset). Absent: only the accounts the
+   * hold names count. A hold read back from storage names none, so its caller checks the team itself.
+   */
+  anyAccountUp?: boolean | undefined;
   /** When an agent last spoke in the task or a message last arrived for it. */
   lastActivityAt?: string | undefined;
 }
@@ -113,7 +118,10 @@ export function conditionMet(condition: AutoClear, reading: ClearReading): boole
     case "slot-free":
       return reading.slotFree === true;
     case "any-account-available":
-      return condition.accounts.some((account) => conditionMet({ kind: "account-available", account }, reading));
+      return (
+        reading.anyAccountUp === true ||
+        condition.accounts.some((account) => conditionMet({ kind: "account-available", account }, reading))
+      );
     case "activity-after":
       return reading.lastActivityAt !== undefined && reading.lastActivityAt > condition.at;
   }

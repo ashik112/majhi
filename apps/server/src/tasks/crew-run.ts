@@ -25,10 +25,10 @@ import {
   noteResult,
   oneLine,
   ownerOf,
-  progressLines,
-  replacement,
-  type ReviewerCandidate,
   pickReviewer,
+  progressLines,
+  type ReviewerCandidate,
+  replacement,
   sendBack,
   statusOf,
   stepPrompt,
@@ -132,9 +132,7 @@ export class Crew {
     const { host } = this.deps;
     const lead = task.team[0] ?? "";
     const taken = new Set(steps.map((s) => ownerOf(s, task.team)));
-    const candidates = (await host.reviewers(task)).filter(
-      (c) => c.inTeam || hasRoomForWorker(task.team),
-    );
+    const candidates = (await host.reviewers(task)).filter((c) => c.inTeam || hasRoomForWorker(task.team));
     // A reviewer that builds nothing in this plan, so a cheaper model costs the work no quality.
     const free = candidates.filter((c) => !taken.has(c.id));
     const pick = pickReviewer(free.length > 0 ? free : candidates, lead);
@@ -156,10 +154,11 @@ export class Crew {
   // Running the steps
 
   /**
-   * An agent ended a turn. When it owns the step in progress, the step is done: one result line goes
-   * in the room and the next step starts. Anything else it said goes nowhere: no mention wakes anyone.
+   * An agent ended a turn with this last message. When it owns the step in progress, the step is done: one
+   * result line goes in the room (what it reported with `step_done`, else the first line of the message) and
+   * the next step starts. Anything else it said goes nowhere: no mention wakes anyone.
    */
-  turnEnded(taskId: string, agent: string): Promise<void> {
+  turnEnded(taskId: string, agent: string, text: string): Promise<void> {
     return this.serial(taskId, async () => {
       const task = this.deps.store.tasks.get(taskId);
       if (task === undefined || task.status !== "running") return;
@@ -167,7 +166,7 @@ export class Crew {
       if (plan === undefined) return;
       const i = doingBy(plan, agent, task.team);
       if (i !== undefined) {
-        const result = plan.steps[i]?.result ?? "";
+        const result = plan.steps[i]?.result ?? oneLine(text);
         const done = this.deps.plans.update(taskId, (p) => finish(p, i, result === "" ? "done" : result));
         if (done !== undefined)
           this.say(
@@ -201,7 +200,8 @@ export class Crew {
       const plan = this.deps.plans.latest(taskId)?.plan;
       if (task === undefined || plan === undefined) throw new UserError("This task has no plan.");
       const by = doingBy(plan, agent, task.team);
-      if (by === undefined) throw new UserError("You have no step in the plan right now, so none to send back from.");
+      if (by === undefined)
+        throw new UserError("You have no step in the plan right now, so none to send back from.");
       const target = stepNo - 1;
       if (target < 0 || target >= by || statusOf(plan.steps[target] ?? { who: "me", what: "" }) !== "done")
         throw new UserError(`Step ${stepNo} is not a finished step before yours (step ${by + 1}).`);
@@ -213,10 +213,13 @@ export class Crew {
       });
       const why = oneLine(reason, 300);
       if (stopped) {
-        await this.deps.host.pauseForOwner(
-          taskId,
-          `Step ${stepNo} was sent back ${STEP_SEND_BACKS_MAX} times and stopped. The last reason: ${why}`,
-        );
+        // Not awaited: stopping waits for this agent's turn to end, and this call is part of that turn.
+        void this.deps.host
+          .pauseForOwner(
+            taskId,
+            `Step ${stepNo} was sent back ${STEP_SEND_BACKS_MAX} times and stopped. The last reason: ${why}`,
+          )
+          .catch(() => undefined);
         return `Step ${stepNo} stopped: it was sent back ${STEP_SEND_BACKS_MAX} times. The owner decides.`;
       }
       this.say(taskId, "info", `@${agent} sent step ${stepNo} back: ${why}`);
@@ -252,18 +255,30 @@ export class Crew {
     const to = up ? owner : replacement(hands, owner, lead);
     if (to === undefined) {
       const down = allDown(hands);
-      if (down.length > 0) await host.pauseDown(task.id, down);
+      // Not awaited: this may run at the end of an agent's turn, and stopping waits for that turn to end.
+      if (down.length > 0) void host.pauseDown(task.id, down).catch(() => undefined);
       return;
     }
     const started = plans.update(task.id, (p) => begin(p, index, to, lead));
     if (started === undefined) return;
     if (to !== owner)
-      this.say(task.id, "info", `@${owner} cannot run now, so @${to} takes step ${index + 1} of ${started.steps.length}.`);
+      this.say(
+        task.id,
+        "info",
+        `@${owner} cannot run now, so @${to} takes step ${index + 1} of ${started.steps.length}.`,
+      );
     runs.handoff(task, {
       from: "majhi",
       to,
       via: "plan",
-      text: stepPrompt(started, index, to, to !== owner ? `@${owner} could not run, so the step is yours. Its work so far is in the worktree.` : undefined),
+      text: stepPrompt(
+        started,
+        index,
+        to,
+        to !== owner
+          ? `@${owner} could not run, so the step is yours. Its work so far is in the worktree.`
+          : undefined,
+      ),
     });
   }
 
@@ -297,7 +312,11 @@ export class Crew {
       const what = ending === "refused" ? "was blocked by its model's safeguards" : "failed";
       const started = this.deps.plans.update(taskId, (p) => begin(p, i, to, lead));
       if (started === undefined) return false;
-      this.say(taskId, "info", `@${agent} ${what}, so @${to} takes step ${i + 1} of ${started.steps.length}.`);
+      this.say(
+        taskId,
+        "info",
+        `@${agent} ${what}, so @${to} takes step ${i + 1} of ${started.steps.length}.`,
+      );
       const quote = oneLine(text, 200);
       this.deps.runs.handoff(task, {
         from: "majhi",
