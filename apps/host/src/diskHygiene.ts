@@ -3,31 +3,31 @@ import { join } from "node:path";
 import { OPEN_TASKS_FILE, OpenTasksSchema } from "@majhi/shared";
 
 /**
- * What an update removes of majhi's own old images once the new majhi runs. Only things majhi
- * built or named: the `majhi-server:previous` / `majhi-laya:previous` tags, `majhi-preview-<task>`
- * images (label `majhi.container=image`) of tasks that are done or gone, their buildx builders and
- * builder state volumes, and dangling images that carry a majhi label. Never another project's
- * images, volumes or containers, and never the build cache.
+ * What an update removes of majhi's own old images once the new majhi runs. Only things majhi labelled:
+ * the `majhi-server:previous` / `majhi-laya:previous` tags, images carrying `majhi.container=image` (a
+ * preview, or an image a script built) whose task (`majhi.task`) is done or gone, and dangling images that
+ * carry a majhi label. The builders and volumes of the old per-task model are removed by the server itself
+ * when it starts, by task id. Never another project's images, volumes or containers, and never the build
+ * cache beyond its age cap.
  */
 
-/** Images carry these labels: previews (`majhi.container=image`) and the images compose builds. */
+/** Images carry these labels: previews and script builds (`majhi.container=image`) and the images compose builds. */
 export const MAJHI_IMAGE_LABELS = ["majhi.container=image", "majhi.owned=build"] as const;
+/** The label that says which task built an image. */
+const BUILT_BY_LABEL = "majhi.task";
 /** The tags `update` keeps before building, so a failed update can go back. Not needed once it succeeded. */
 export const PREVIOUS_TAGS = ["majhi-server:previous", "majhi-laya:previous"] as const;
 
-const KEY = "([a-z][a-z0-9]{0,9}-[1-9][0-9]*)";
-const PREVIEW_NAME = new RegExp(`^majhi-preview-${KEY}$`);
-const STATE_VOLUME = new RegExp(`^buildx_buildkit_majhi-preview-${KEY}0_state$`);
 const STEP_TIMEOUT_MS = 60_000;
 const IMAGE_FORMAT = "{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}";
 
 type Step = (label: string, args: string[], timeout: number) => Promise<string>;
 
-/** The ids (lowercased) of the tasks that are not done, or undefined when they are not known. */
+/** The ids of the tasks that are not done, or undefined when they are not known. */
 export async function readOpenTasks(majhiHome: string): Promise<Set<string> | undefined> {
   try {
     const raw: unknown = JSON.parse(await readFile(join(majhiHome, OPEN_TASKS_FILE), "utf8"));
-    return new Set(OpenTasksSchema.parse(raw).tasks.map((id) => id.toLowerCase()));
+    return new Set(OpenTasksSchema.parse(raw).tasks);
   } catch {
     return undefined;
   }
@@ -56,36 +56,31 @@ function parseImages(out: string): ImageRow[] {
   });
 }
 
-/** The preview images to remove: majhi's name, and the task is not open. Open tasks unknown: none. */
-export function selectPreviewImages(
-  rows: readonly ImageRow[],
-  open: ReadonlySet<string> | undefined,
-): ImageRow[] {
-  if (open === undefined) return [];
-  return rows.filter((r) => {
-    const key = PREVIEW_NAME.exec(r.repository)?.[1];
-    return key !== undefined && !open.has(key);
-  });
+/** An image majhi labelled, with the task that built it. */
+export interface OwnImage {
+  /** What to remove it by: `repository:tag`, or the id when it has no tag. */
+  ref: string;
+  /** `majhi.task`, empty when the image has no such label. */
+  builtBy: string;
+  bytes: number;
 }
 
-/** The buildx builders of previews of tasks that are not open. */
-export function selectBuilders(names: readonly string[], open: ReadonlySet<string> | undefined): string[] {
+/** The images to remove: majhi's own, built by a task that is not open. Open tasks unknown: none. */
+export function selectOwnImages(
+  rows: readonly OwnImage[],
+  open: ReadonlySet<string> | undefined,
+): OwnImage[] {
   if (open === undefined) return [];
-  return names.filter((n) => {
-    const key = PREVIEW_NAME.exec(n)?.[1];
-    return key !== undefined && !open.has(key);
-  });
+  return rows.filter((r) => r.builtBy !== "" && !open.has(r.builtBy));
 }
 
-/** The state volumes of those builders. */
-export function selectStateVolumes(
-  names: readonly string[],
-  open: ReadonlySet<string> | undefined,
-): string[] {
-  if (open === undefined) return [];
-  return names.filter((n) => {
-    const key = STATE_VOLUME.exec(n)?.[1];
-    return key !== undefined && !open.has(key);
+/** The labelled images of majhi's, read from `docker image inspect` rows: `id`, built-by label, bytes, tags. */
+function parseOwnImages(out: string): OwnImage[] {
+  return lines(out).flatMap((row) => {
+    const [id, builtBy = "", bytes = "0", tags = ""] = row.split("\t");
+    if (id === undefined) return [];
+    const tag = tags.split(",").find((t) => t !== "");
+    return [{ ref: tag ?? id, builtBy, bytes: Number(bytes) || 0 }];
   });
 }
 
@@ -110,7 +105,7 @@ const attempt = (run: Promise<unknown>): Promise<boolean> =>
   );
 
 /**
- * Removes the images and builders listed above and reports them in plain words, with sizes. Every
+ * Removes the images listed above and reports them in plain words, with sizes. Every
  * removal is best effort: a failed one is skipped and never fails an update that already runs.
  */
 /** The most the Docker build cache may hold after an update; older layers above it are trimmed. */
@@ -131,10 +126,10 @@ export async function removeOwnLeftovers(
 ): Promise<void> {
   let total = 0;
   const gone: string[] = [];
-  const removeImage = async (ref: string, size: string): Promise<void> => {
+  const removeImage = async (ref: string, label: string, bytes: number): Promise<void> => {
     if (!(await attempt(step("remove an old image", ["image", "rm", ref], STEP_TIMEOUT_MS)))) return;
-    total += sizeBytes(size);
-    gone.push(size === "" ? ref : `${ref} (${size})`);
+    total += bytes;
+    gone.push(label);
   };
 
   for (const tag of tags) {
@@ -144,47 +139,38 @@ export async function removeOwnLeftovers(
       STEP_TIMEOUT_MS,
     ).catch(() => "");
     const row = parseImages(listed).find((r) => `${r.repository}:${r.tag}` === tag);
-    if (row !== undefined) await removeImage(tag, row.size);
+    if (row !== undefined)
+      await removeImage(tag, row.size === "" ? tag : `${tag} (${row.size})`, sizeBytes(row.size));
   }
 
   const open = await readOpenTasks(majhiHome);
   if (open === undefined) {
     await say("Kept the preview images: the list of open tasks was not available");
   } else {
-    const listed = await step(
-      "list preview images",
-      [
-        "image",
-        "ls",
-        "--filter",
-        "reference=majhi-preview-*",
-        "--filter",
-        `label=${MAJHI_IMAGE_LABELS[0]}`,
-        "--format",
-        IMAGE_FORMAT,
-      ],
+    // By label: the images majhi built, and the task that built each. No name is read as a pattern.
+    const ids = await step(
+      "list majhi's images",
+      ["image", "ls", "-q", "--no-trunc", "--filter", `label=${MAJHI_IMAGE_LABELS[0]}`],
       STEP_TIMEOUT_MS,
-    ).catch(() => "");
-    for (const row of selectPreviewImages(parseImages(listed), open)) {
-      await removeImage(`${row.repository}:${row.tag}`, row.size);
-    }
-    const builders = await step("list builders", ["buildx", "ls", "--format", "{{.Name}}"], STEP_TIMEOUT_MS)
-      .then((out) => lines(out).map((n) => n.replace(/\*$/, "")))
-      .catch(() => []);
-    for (const name of selectBuilders(builders, open)) {
-      if (
-        await attempt(step("remove a preview builder", ["buildx", "rm", "--force", name], STEP_TIMEOUT_MS))
-      ) {
-        gone.push(`builder ${name}`);
-      }
-    }
-    const volumes = await step("list volumes", ["volume", "ls", "--format", "{{.Name}}"], STEP_TIMEOUT_MS)
+    )
       .then(lines)
       .catch(() => []);
-    for (const name of selectStateVolumes(volumes, open)) {
-      if (await attempt(step("remove a builder state volume", ["volume", "rm", name], STEP_TIMEOUT_MS))) {
-        gone.push(`volume ${name}`);
-      }
+    const inspected =
+      ids.length === 0
+        ? ""
+        : await step(
+            "read majhi's images",
+            [
+              "image",
+              "inspect",
+              "--format",
+              `{{.Id}}\t{{index .Config.Labels "${BUILT_BY_LABEL}"}}\t{{.Size}}\t{{join .RepoTags ","}}`,
+              ...new Set(ids),
+            ],
+            STEP_TIMEOUT_MS,
+          ).catch(() => "");
+    for (const image of selectOwnImages(parseOwnImages(inspected), open)) {
+      await removeImage(image.ref, `${image.ref} (${sizeText(image.bytes)})`, image.bytes);
     }
   }
 

@@ -90,21 +90,21 @@ describe("docker through majhi", () => {
     const two = env["ACM-2"] ?? {};
     const started = await docker_(one, w.taskDir("ACM-1"), "run", "-d", "--name", "web", "nginx:1.27-alpine");
     expect(started.code).toBe(0);
-    expect(docker.containers.has("majhi-acm-1-c-web")).toBe(true);
+    expect(docker.containers.has("majhi-acme-api-c-web")).toBe(true);
     // The same name from the other task is a different container, so nothing of ACM-1 goes.
     await docker_(two, w.taskDir("ACM-2"), "rm", "-f", "web");
-    await docker_(two, w.taskDir("ACM-2"), "rm", "-f", "majhi-acm-1-c-web");
-    expect(docker.containers.has("majhi-acm-1-c-web")).toBe(true);
+    await docker_(two, w.taskDir("ACM-2"), "rm", "-f", "majhi-acme-api-c-web");
+    expect(docker.containers.has("majhi-acme-api-c-web")).toBe(true);
     const listed = await docker_(two, w.taskDir("ACM-2"), "ps");
     expect(listed.stdout.trim()).toBe("");
     // The id that `run -d` printed works for its own task only.
     const id = started.stdout.trim();
     const foreign = await docker_(two, w.taskDir("ACM-2"), "rm", "-f", id);
     expect(foreign.code).toBe(125);
-    expect(docker.containers.has("majhi-acm-1-c-web")).toBe(true);
+    expect(docker.containers.has("majhi-acme-api-c-web")).toBe(true);
     const own = await docker_(one, w.taskDir("ACM-1"), "rm", "-f", id);
     expect(own.code).toBe(0);
-    expect(docker.containers.has("majhi-acm-1-c-web")).toBe(false);
+    expect(docker.containers.has("majhi-acme-api-c-web")).toBe(false);
   }, 60_000);
 
   it("refuses what could reach past the task and leaves nothing started", async () => {

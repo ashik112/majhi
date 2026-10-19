@@ -6,11 +6,13 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContainerRefused, type Safety } from "./args.ts";
 import { parseEnvFile, prefetchEnvFiles, readEnvFile } from "./env-file.ts";
+import { envRef } from "./names.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "majhi-env-file-"));
 const folder = join(dir, "tasks", "ACM-1");
 const safety: Safety = {
   task: "ACM-1",
+  env: envRef("acme", "acm-1"),
   runnerNetwork: "majhi-runners",
   majhiHome: join(dir, "home", ".majhi"),
   hostHome: join(dir, "home"),

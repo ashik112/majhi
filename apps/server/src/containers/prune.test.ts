@@ -49,24 +49,24 @@ describe("selectUnusedImages", () => {
 
 describe("selectOldVolumes", () => {
   const volumes = [
-    { task: "ACM-1", name: "majhi-acm-1-db" },
-    { task: "ACM-2", name: "majhi-acm-2-db" },
-    { task: "ACM-3", name: "majhi-acm-3-db" },
-    { task: "ACM-4", name: "majhi-acm-4-db" },
+    { project: "acme-api", task: "", name: "majhi-acme-api-data-db" },
+    { project: "globex-web", task: "", name: "majhi-globex-web-data-db" },
+    { project: "northwind", task: "", name: "majhi-northwind-data-db" },
+    { project: "initech", task: "", name: "majhi-initech-data-db" },
   ];
-  const age = (task: string) =>
-    task === "ACM-1"
+  const age = (v: { project: string }) =>
+    v.project === "acme-api"
       ? ("open" as const)
-      : task === "ACM-2"
+      : v.project === "globex-web"
         ? { doneAt: OLD }
-        : task === "ACM-3"
+        : v.project === "northwind"
           ? { doneAt: NEW }
           : ("gone" as const);
 
-  it("removes volumes of tasks done for a week or gone, never of open or recently done tasks", () => {
+  it("removes volumes of projects done for a week or gone, never of open or recently done projects", () => {
     expect(selectOldVolumes(volumes, age, NOW).map((v) => v.name)).toEqual([
-      "majhi-acm-2-db",
-      "majhi-acm-4-db",
+      "majhi-globex-web-data-db",
+      "majhi-initech-data-db",
     ]);
   });
 });

@@ -319,3 +319,41 @@ describe("a done task keeps its branch and commits when its dependencies go", ()
     expect(await git(worktree, "status", "--porcelain")).toBe("");
   });
 });
+
+describe("the worktree budget", () => {
+  it("removes the oldest finished folders over the limit, never a running, pinned or dirty one", async () => {
+    const dirty = await seed({ id: "ACM-1", updatedAt: "2026-09-01T00:00:00.000Z" });
+    const pinned = await seed({ id: "ACM-2", updatedAt: "2026-09-02T00:00:00.000Z" });
+    const running = await seed({ id: "ACM-3", status: "running", updatedAt: "2026-09-03T00:00:00.000Z" });
+    const merged = await seed({ id: "ACM-4", updatedAt: "2026-09-04T00:00:00.000Z" });
+    const idle = await seed({ id: "ACM-5", status: "review", updatedAt: "2026-09-05T00:00:00.000Z" });
+    const newest = await seed({ id: "ACM-6", updatedAt: "2026-09-06T00:00:00.000Z" });
+    await writeFile(join(dirty.worktree, "src", "index.ts"), "export const changed = true;\n");
+    await writeFile(join(merged.folder, "REPORT.md"), "# Report\n");
+    const budget = new TaskFolderSweep({
+      store,
+      tasksDir: async () => join(dir, "tasks"),
+      now: () => NOW,
+      pinned: () => new Set(["ACM-2"]),
+    });
+
+    const report = await budget.budget(4);
+
+    // Six folders, room for four: the two oldest that may go, in order. The report of a removed task stays.
+    expect(report).toEqual({
+      count: 6,
+      removed: ["ACM-4", "ACM-5"],
+      kept: [
+        { id: "ACM-1", why: "acme-api: it has uncommitted changes" },
+        { id: "ACM-2", why: "pinned" },
+      ],
+    });
+    expect(await exists(join(merged.folder, "api"))).toBe(false);
+    expect(await readFile(join(merged.folder, "REPORT.md"), "utf8")).toBe("# Report\n");
+    expect(await exists(idle.folder)).toBe(false);
+    for (const kept of [dirty, pinned, running, newest]) expect(await exists(kept.worktree)).toBe(true);
+    expect(await readFile(join(dirty.worktree, "src", "index.ts"), "utf8")).toBe(
+      "export const changed = true;\n",
+    );
+  });
+});

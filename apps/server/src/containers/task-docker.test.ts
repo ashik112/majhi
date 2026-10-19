@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Safety } from "./args.ts";
+import { envRef } from "./names.ts";
 import {
   assertTaskArgv,
   ImageNotAllowed,
@@ -15,6 +16,7 @@ const dir = mkdtempSync(join(tmpdir(), "majhi-task-docker-"));
 const folder = join(dir, "tasks", "ACM-1");
 const safety: Safety = {
   task: "ACM-1",
+  env: envRef("acme", "acm-1"),
   runnerNetwork: "majhi-runners",
   majhiHome: join(dir, "home", ".majhi"),
   hostHome: join(dir, "home"),
@@ -62,6 +64,8 @@ describe("docker in a task: what a script may run", () => {
         "label=majhi.container=taskrun",
         "--filter",
         "label=majhi.task=ACM-1",
+        "--filter",
+        "label=majhi.project=acm-1",
         "--filter",
         "name=majhi-acm-1-c-web",
       ],

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContainerRefused, type Safety } from "./args.ts";
 import { loadCompose } from "./compose.ts";
 import { parseCompose } from "./compose-cli.ts";
+import { envRef } from "./names.ts";
 import { buildRunPlan, type TaskDockerContext } from "./task-docker.ts";
 
 /**
@@ -19,6 +20,7 @@ const folder = join(dir, "tasks", "ACM-1");
 const repo = join(folder, "shop");
 const safety: Safety = {
   task: "ACM-1",
+  env: envRef("acme", "acm-1"),
   runnerNetwork: "majhi-runners",
   majhiHome: join(dir, "home", ".majhi"),
   hostHome: join(dir, "home"),

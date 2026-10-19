@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { until } from "../testing/until.ts";
 import { type Limits, type Safety, serviceRunArgs } from "./args.ts";
 import { DockerCli } from "./docker.ts";
+import { envRef } from "./names.ts";
 
 /**
  * What a service's variables reach: the docker CLI that majhi runs is started with its own small
@@ -26,6 +27,7 @@ beforeEach(async () => {
   await mkdir(taskFolder, { recursive: true });
   safety = {
     task: "ACM-1",
+    env: envRef("acme", "acm-1"),
     runnerNetwork: "majhi-runners",
     majhiHome: join(hostHome, ".majhi"),
     hostHome,

@@ -3,6 +3,7 @@ import { basename, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { Spawned } from "@majhi/acp";
 import type {
+  BranchDbInput,
   ContainerInfo,
   ContainersSettings,
   PreviewBuildInput,
@@ -15,12 +16,11 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import { reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
+import { IdSchema, PRIVATE, reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
   buildArgs,
-  builderContainer,
   builderCreateArgs,
   builderGuardRunArgs,
   ContainerRefused,
@@ -32,6 +32,7 @@ import {
   type Limits,
   networkCreateArgs,
   PREVIEW_ALIAS,
+  PREVIEW_SCRATCH,
   previewHoldRunArgs,
   previewRunArgs,
   type Safety,
@@ -40,13 +41,26 @@ import {
   taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import { BranchLedger, branchName } from "./branch-db.ts";
 import { type DockerfileSnapshot, snapshotDockerfile } from "./build-snapshot.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { dockerfileImages } from "./dockerfile-images.ts";
 import { prefetchEnvFiles } from "./env-file.ts";
-import { containerNames } from "./names.ts";
+import { EnvQueue, LeftTheLine } from "./env-queue.ts";
+import {
+  type ContainerNames,
+  containerNames,
+  envNames,
+  envRef,
+  LABEL,
+  legacyOwner,
+  type NameScope,
+  type ObjectKind,
+  orgNames,
+  select,
+} from "./names.ts";
 import {
   type DockerUsage,
   dockerUsage,
@@ -82,7 +96,7 @@ export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 /** The docker calls the service makes. A test gives it a fake. */
 export type ContainerDocker = Pick<
   DockerCli,
-  "exec" | "connect" | "guard" | "guardBuilder" | "create" | "attached" | "task" | "hold"
+  "exec" | "connect" | "guard" | "guardBuilder" | "create" | "attached" | "task" | "hold" | "copyDatabase"
 >;
 
 export interface ContainerServiceDeps {
@@ -92,6 +106,12 @@ export interface ContainerServiceDeps {
   task: (id: string) => Task | undefined;
   /** Ids of the tasks that are not done. Volumes, builders and images of these survive a restart. */
   openTasks: () => string[];
+  /** Ids of every task there is, open or done: the only way to name what an older majhi left for a task. */
+  allTasks: () => string[];
+  /** A line for a task's room (its place in the queue, its turn). */
+  notify?: (task: string, text: string) => void;
+  /** How long a call waits in the queue for a project's environment before it gives up (`limits.env_wait`). */
+  queueWaitMs: () => Promise<number>;
   settings: () => Promise<ContainersSettings>;
   /** The network runners are on. A preview joins it. */
   runnerNetwork: string;
@@ -132,9 +152,14 @@ type StartedSpec =
 export interface Restarted {
   started: string[];
   failed: string[];
+  /** Set when another task holds the project's environment: the task waits in line and starts when it is its turn. */
+  queued?: { place: number; holder: string };
 }
 
 const PORT_POLL_MS = 400;
+/** A dropped copy of a database is tried this many times, this far apart, while its server starts. */
+const FLUSH_TRIES = 8;
+const FLUSH_WAIT_MS = 1_500;
 /** The most docker calls of one task that may wait at once (`wait`, `exec`, a build, a compose up). */
 const MAX_WAITING_CALLS = 16;
 /** Calls of a task read at once: each starts `docker image ls` and up to `MAX_ID_LOOKUPS` `docker inspect`. */
@@ -191,9 +216,11 @@ function withFlagValue(args: readonly string[], flag: string, value: string): st
  */
 export class ContainerService {
   private readonly docker: ContainerDocker | undefined;
-  /** Tasks whose network exists. */
+  /** Who holds each project's environment, and who waits for it. */
+  private readonly queue = new EnvQueue();
+  /** Environments (by key) whose network exists. */
   private readonly networks = new Set<string>();
-  /** The IPv4 subnets of each task's network, once it exists. */
+  /** The IPv4 subnets of each environment's network, once it exists. */
   private readonly subnets = new Map<string, string[]>();
   /** The ports each running forwarder was started with, by container name. */
   private readonly forwarded = new Map<string, string>();
@@ -214,10 +241,10 @@ export class ContainerService {
   private readonly parkedStacks = new Map<string, ComposeInvocation[]>();
   /** What ran when the task stopped running. It starts again when the task runs again. */
   private readonly parked = new Map<string, StartedSpec[]>();
-  /** Preview builds running, by task. The builder stops when the last one ends. */
+  /** Builds running, by workspace: one builder serves all of a workspace's tasks and stops when the last build ends. */
   private readonly builds = new Map<string, number>();
   private pendingStarts = 0;
-  /** The start of each task's builder container that has its network guard, by task. */
+  /** The start of each workspace's builder container that has its network guard, by workspace. */
   private readonly guardedBuilders = new Map<string, string>();
   /** Docker calls of scripts that are waiting right now, by task. */
   private readonly calls = new Map<string, number>();
@@ -228,8 +255,12 @@ export class ContainerService {
   /** Names of the task containers a script is starting or running in the foreground, by task. */
   private readonly scripted = new Map<string, Set<string>>();
 
+  /** The task copies of a project's database, until they are dropped. */
+  private readonly copies: BranchLedger;
+
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
+    this.copies = new BranchLedger(deps.paths.majhiHome);
   }
 
   available(): boolean {
@@ -240,14 +271,19 @@ export class ContainerService {
     return this.docker === undefined ? NOT_IN_DOCKER : undefined;
   }
 
-  /** The networks a run of this task joins when it starts: the task's own, once it has services. */
+  /** The networks a run of this task joins when it starts: the environment's own, while this task holds it. */
   taskNetworks(task: string): string[] {
-    return this.networks.has(task) ? [containerNames(task).network] : [];
+    const t = this.deps.task(task);
+    if (t === undefined) return [];
+    const names = this.names(task);
+    return this.queue.holder(names.key) === task && this.networks.has(names.key) ? [names.network] : [];
   }
 
   /**
-   * Makes the task's network if it is not there, so a runner that starts now joins it. Resolves false
-   * when majhi does not run in Docker. A process of the task starts in a runner with a name on it.
+   * Makes the environment's network if it is not there, so a runner that starts now joins it. Resolves
+   * false when majhi does not run in Docker, the task is done, or another task holds the environment (a
+   * process then starts without a name on the network, and never waits for the queue). A free environment
+   * is taken: the task holds it until it stops running.
    */
   async ensureTaskNetwork(task: string): Promise<boolean> {
     const docker = this.docker;
@@ -256,13 +292,15 @@ export class ContainerService {
     await this.starting;
     // A task that is done gets no network: a process that starts as it ends runs without one.
     if (!this.deps.openTasks().includes(task)) return false;
+    if (!this.queue.take(this.scope(task).env.key, task)) return false;
     await this.locked(task, () => this.ensureNetwork(docker, this.safety(t)));
     return true;
   }
 
   /** The subnets of the task's network: the one private address range its runners and preview may reach. */
   taskSubnets(task: string): string[] {
-    return this.subnets.get(task) ?? [];
+    const key = this.scope(task).env.key;
+    return this.queue.holder(key) === task ? (this.subnets.get(key) ?? []) : [];
   }
 
   // ---------------------------------------------------------------------------
@@ -277,9 +315,12 @@ export class ContainerService {
   ): Promise<ProcessInfo> {
     const docker = this.need();
     const t = this.task(task);
-    const names = containerNames(task);
+    const names = this.names(task);
+    // Read now: a build outlives the call, and its callbacks run when the task may be gone.
+    const org = names.org;
     const settings = await this.deps.settings();
     await this.starting;
+    await this.holdEnv(task);
     return this.locked(task, async () => {
       this.assertOpen(task);
       const building = this.all(task).find((p) => p.container?.kind === "build" && p.status === "running");
@@ -328,7 +369,7 @@ export class ContainerService {
           409,
         );
       }
-      this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+      this.builds.set(org, (this.builds.get(org) ?? 0) + 1);
       try {
         await this.ensureBuilder(docker, safety, settings);
         const info = await this.deps.processes.start({
@@ -357,7 +398,7 @@ export class ContainerService {
                 );
                 spawned.child.once("exit", () => {
                   void snapshot.cleanup();
-                  void this.buildEnded(task);
+                  void this.buildEnded(org);
                 });
                 return spawned;
               } catch (err) {
@@ -370,7 +411,7 @@ export class ContainerService {
         this.deps.changed?.();
         return info;
       } catch (err) {
-        void this.buildEnded(task);
+        void this.buildEnded(org);
         throw err;
       }
     });
@@ -380,17 +421,33 @@ export class ContainerService {
   async previewRun(task: string, agent: string, input: PreviewRunInput): Promise<ContainerInfo> {
     const docker = this.need();
     const t = this.task(task);
-    const names = containerNames(task);
+    const names = this.names(task);
     const settings = await this.deps.settings();
     await this.starting;
+    await this.holdEnv(task);
     // A preview may need the task's services: what stopped with the task starts first.
     await this.taskRunning(task, "preview");
     return this.locked(task, async () => {
       this.assertOpen(task);
+      let builtBy: string;
       try {
-        await docker.exec(["image", "inspect", names.previewImage]);
+        builtBy = (
+          await docker.exec([
+            "image",
+            "inspect",
+            "--format",
+            `{{index .Config.Labels "${LABEL.task}"}}`,
+            names.previewImage,
+          ])
+        ).stdout.trim();
       } catch {
         throw new UserError("There is no preview image yet. Build it first with preview_build.");
+      }
+      // The project has one preview image. Another task's build is not this task's code.
+      if (builtBy !== task) {
+        throw new UserError(
+          `The preview image of this project was built by ${builtBy === "" ? "another task" : builtBy}. Build it with preview_build first.`,
+        );
       }
       const old = this.running(task, "preview", "preview");
       if (old !== undefined) await this.deps.processes.stop(task, old.id, "agent");
@@ -402,6 +459,9 @@ export class ContainerService {
         // The holder owns the network and the port and holds the guard; the preview runs inside its network.
         // The task's runners reach the preview on the task's network, so it exists before the holder joins it.
         await this.ensureNetwork(docker, safety);
+        // The throwaway folder is a named volume of the project, new for each run and gone when the preview ends.
+        await this.quietly(() => docker.exec(["volume", "rm", "-f", names.volume(PREVIEW_SCRATCH)]));
+        await this.ensureVolume(docker, safety, PREVIEW_SCRATCH);
         const holdParts = previewHoldRunArgs(safety, limits, {
           port: input.port,
           image,
@@ -437,7 +497,10 @@ export class ContainerService {
                 throw err;
               }
               const spawned = await docker.attached(parts, safety, { cwd: t.folder });
-              spawned.child.once("close", () => holder.kill());
+              spawned.child.once("close", () => {
+                holder.kill();
+                void this.quietly(() => docker.exec(["volume", "rm", "-f", names.volume(PREVIEW_SCRATCH)]));
+              });
               const lookup = this.lookupHostPort(
                 docker,
                 names.previewContainer,
@@ -498,8 +561,9 @@ export class ContainerService {
         throw new UserError(`${input.image} is not allowed.`);
       }
     }
-    const names = containerNames(task);
+    const names = this.names(task);
     await this.starting;
+    await this.holdEnv(task);
     // The task's other services that stopped with it start again; this one starts as asked now.
     await this.taskRunning(task, input.name);
     return this.locked(task, async () => {
@@ -529,7 +593,7 @@ export class ContainerService {
         await this.ensureNetwork(docker, safety);
         await this.assertNamesFree(docker, task, {
           name: input.name,
-          aliases: taskAliases(task, input.name),
+          aliases: taskAliases(this.scope(task), input.name),
         });
         for (const volume of input.volumes ?? []) await this.ensureVolume(docker, safety, volume.name);
         const container: ProcessContainer = {
@@ -549,26 +613,28 @@ export class ContainerService {
             container,
             // The holder first (it owns the network namespace and holds the guard), then the service inside it.
             spawn: async () => {
-              const holder = { name: input.name, aliases: taskAliases(task, input.name) };
+              const holder = { name: input.name, aliases: taskAliases(this.scope(task), input.name) };
               await this.startHolder(docker, safety, settings, holder);
               try {
                 const spawned = await docker.attached(parts, safety, { cwd: t.folder });
-                spawned.child.once("close", () => this.dropHolder(docker, task, input.name));
+                spawned.child.once("close", () => this.dropHolder(docker, names.holder(input.name)));
                 return {
                   ...spawned,
                   kill: () => {
                     spawned.kill();
-                    this.dropHolder(docker, task, input.name);
+                    this.dropHolder(docker, names.holder(input.name));
                   },
                 };
               } catch (err) {
-                this.dropHolder(docker, task, input.name);
+                this.dropHolder(docker, names.holder(input.name));
                 throw err;
               }
             },
           },
         });
         this.remember(task, input.name, { kind: "service", agent, input });
+        // Copies of the project's database that tasks made and closed since this service last ran go now.
+        void this.flushCopies(task, input.name);
         this.deps.changed?.();
         return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
       });
@@ -596,11 +662,24 @@ export class ContainerService {
     const t = this.task(task);
     const settings = await this.deps.settings();
     await this.starting;
+    // A run that is being prepared must not wait for the queue: when the environment is another task's,
+    // the forwarders start the moment it is this task's turn, and the run goes on without them until then.
+    const key = this.scope(task).env.key;
+    if (!this.queue.take(key, task)) {
+      const got = this.queue.acquire(key, task);
+      if (!got.held) {
+        void got.granted.then(
+          () => this.hostForward(task, services).then(() => undefined),
+          () => undefined,
+        );
+      }
+      return started;
+    }
     await this.locked(task, async () => {
       this.assertOpen(task);
       const safety = this.safety(t);
       const limits = limitsOf(settings);
-      const names = containerNames(task);
+      const names = this.names(task);
       for (const service of services) {
         const alias = `${service.id}.host`;
         const wanted = service.ports.join(",");
@@ -657,11 +736,134 @@ export class ContainerService {
     for (const p of this.deps.processes.listAll()) {
       if (p.status !== "running" || p.container?.kind !== "service" || p.container.name !== alias) continue;
       await this.deps.processes.stop(p.task, p.id, "task");
-      this.forwarded.delete(containerNames(p.task).hostForward(id));
+      if (this.deps.task(p.task) !== undefined) this.forwarded.delete(this.names(p.task).hostForward(id));
       stopped.push(p.task);
     }
     this.deps.changed?.();
     return stopped;
+  }
+
+  /**
+   * Deletes one named volume of a project's environment, for the owner or the captain. A task cannot: its
+   * `down -v` leaves the project's volumes. Refused while a task holds the environment (a container may be
+   * using the volume), and for a volume that is not labelled as this project's.
+   */
+  async removeProjectVolume(project: string, name: string): Promise<string> {
+    const docker = this.need();
+    const key = IdSchema.parse(project);
+    if (this.queue.holder(key) !== undefined) {
+      throw new UserError(
+        `${this.queue.holder(key)} uses the environment of ${key} now. Delete the volume after it lets go.`,
+        409,
+      );
+    }
+    const volume = envNames(key).volume(name);
+    const found = await this.lines(docker, [
+      "volume",
+      "ls",
+      "-q",
+      "--filter",
+      select.kind("volume"),
+      "--filter",
+      select.project(key),
+      "--filter",
+      `name=${volume}`,
+    ]);
+    if (!found.includes(volume)) throw new UserError(`The project ${key} has no volume ${name}.`, 404);
+    await docker.exec(["volume", "rm", volume]);
+    this.deps.changed?.();
+    return volume;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A task's own copy of the project's database
+
+  /**
+   * `CREATE DATABASE <task> TEMPLATE <dev>` in the task's Postgres service, for a task that changes the
+   * schema: the task migrates its own copy and the project's dev data stays as it was. The copy is
+   * written down and dropped when the task closes (`dropCopies`). Asking twice returns the same copy.
+   */
+  async branchDb(task: string, input: BranchDbInput): Promise<{ database: string; template: string }> {
+    const docker = this.need();
+    const names = this.names(task);
+    await this.starting;
+    return this.locked(task, async () => {
+      this.assertOpen(task);
+      if (
+        this.queue.holder(names.key) !== task ||
+        this.running(task, "service", input.service) === undefined
+      ) {
+        throw new UserError(
+          `Start the Postgres service ${input.service} with service_start first: the copy is made inside it.`,
+          409,
+        );
+      }
+      const spec = this.specs.get(task)?.get(input.service);
+      const env = spec?.kind === "service" ? (spec.input.env ?? {}) : {};
+      const user = env.POSTGRES_USER ?? "postgres";
+      const template = input.template ?? env.POSTGRES_DB ?? "postgres";
+      const database = branchName(task);
+      const made = (await this.copies.list()).find((b) => b.env === names.key && b.database === database);
+      if (made !== undefined) return { database, template: made.template };
+      try {
+        await docker.copyDatabase(names.service(input.service), { user, database, template });
+      } catch (err) {
+        throw new UserError(
+          `Could not copy ${template} to ${database}: ${errorMessage(err)} Nothing may be connected to ${template} while it is copied.`,
+        );
+      }
+      await this.copies.add({ env: names.key, service: input.service, user, database, template, task });
+      return { database, template };
+    });
+  }
+
+  /**
+   * Drops the copies a closing task made, in the service that holds them. A copy whose service is not
+   * running stays written down, and the next start of that service drops it (`flushCopies`).
+   */
+  private async dropCopies(task: string): Promise<void> {
+    const docker = this.docker;
+    if (docker === undefined) return;
+    const names = this.names(task);
+    for (const copy of await this.copies.list()) {
+      if (copy.task !== task || copy.env !== names.key) continue;
+      if (this.running(task, "service", copy.service) === undefined) continue;
+      await this.quietly(async () => {
+        await docker.copyDatabase(names.service(copy.service), {
+          user: copy.user,
+          database: copy.database,
+          drop: true,
+        });
+        await this.copies.remove(copy);
+      });
+    }
+  }
+
+  /**
+   * A service of the project started: the copies of tasks that closed meanwhile go now. The server needs
+   * a moment to accept connections, so it is tried a few times, once each.
+   */
+  private async flushCopies(task: string, service: string): Promise<void> {
+    const docker = this.docker;
+    if (docker === undefined) return;
+    const names = this.names(task);
+    const open = new Set(this.deps.openTasks());
+    for (const copy of await this.copies.list()) {
+      if (copy.env !== names.key || copy.service !== service || open.has(copy.task)) continue;
+      for (let attempt = 0; attempt < FLUSH_TRIES; attempt++) {
+        try {
+          await docker.copyDatabase(names.service(service), {
+            user: copy.user,
+            database: copy.database,
+            drop: true,
+          });
+          await this.copies.remove(copy);
+          break;
+        } catch {
+          await new Promise((done) => setTimeout(done, FLUSH_WAIT_MS));
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -713,7 +915,7 @@ export class ContainerService {
     const docker = this.docker;
     if (docker === undefined) return [];
     this.task(task);
-    const names = containerNames(task);
+    const names = this.names(task);
     const owned = new Set(
       this.all(task).flatMap((p) =>
         p.container?.kind === "service" ? [names.service(p.container.name)] : [],
@@ -723,11 +925,13 @@ export class ContainerService {
       "ps",
       "-a",
       "--filter",
-      `label=majhi.container=${TASK_RUN_KIND}`,
+      select.kind(TASK_RUN_KIND),
       "--filter",
-      `label=majhi.task=${task}`,
+      select.task(task),
+      "--filter",
+      select.project(names.key),
       "--format",
-      '{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Label "majhi.compose"}}',
+      `{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Label "${LABEL.compose}"}}`,
     ]);
     return rows.flatMap((row) => {
       const [name = "", image = "", status = "", compose = ""] = row.split("\t");
@@ -735,7 +939,7 @@ export class ContainerService {
       return [
         {
           name: name.slice(names.containerPrefix.length),
-          image: showUserNames(task, image),
+          image: showUserNames(this.scope(task), image),
           status,
           compose: compose !== "",
         },
@@ -752,7 +956,7 @@ export class ContainerService {
     const docker = this.need();
     const container = (await this.scriptContainers(task)).find((c) => c.name === name);
     if (container === undefined) return undefined;
-    const out = await docker.exec(["logs", "--tail", String(lines), containerNames(task).service(name)]);
+    const out = await docker.exec(["logs", "--tail", String(lines), this.names(task).service(name)]);
     return {
       container,
       lines: `${out.stdout}${out.stderr}`
@@ -767,7 +971,7 @@ export class ContainerService {
     const docker = this.need();
     const container = (await this.scriptContainers(task)).find((c) => c.name === name);
     if (container === undefined) return undefined;
-    await docker.exec(["rm", "-f", "-v", containerNames(task).service(name)]);
+    await docker.exec(["rm", "-f", "-v", this.names(task).service(name)]);
     await this.locked(task, () => this.reapHolders(docker, task));
     this.deps.changed?.();
     return container;
@@ -795,7 +999,7 @@ export class ContainerService {
     await this.starting;
     const safety = this.safety(t);
     const refused = (message: string, code: TaskDockerErrorCode = "refused"): TaskDockerResult => {
-      const shown = showUserNames(task, message);
+      const shown = showUserNames(this.scope(task), message);
       return {
         code: 125,
         stdout: "",
@@ -859,6 +1063,20 @@ export class ContainerService {
     }
     if (plan.kind !== "text") this.calls.set(task, waiting + 1);
     try {
+      // The containers of the environment are the holder's alone: a task that does not hold it sees none and
+      // can touch none, whatever name or id it types. Only listing is allowed, and it lists nothing of the holder's.
+      if (plan.kind === "call" && plan.args[0] !== "ps" && this.queue.holder(safety.env.key) !== task) {
+        return refused(
+          `There is no such container in ${task}. The project's environment is used by ${this.queue.holder(safety.env.key) ?? "no task"} now.`,
+        );
+      }
+      // Anything that makes or tags something under the project's names needs the project's environment.
+      const needsEnv =
+        plan.kind === "run" ||
+        plan.kind === "build" ||
+        plan.kind === "compose" ||
+        (plan.kind === "call" && plan.args[0] === "start");
+      if (needsEnv) await this.holdEnv(task, options.signal);
       switch (plan.kind) {
         case "text":
           return { code: 0, stdout: plan.stdout, stderr: "" };
@@ -910,8 +1128,11 @@ export class ContainerService {
   private scriptResult(task: string, out: TaskCallResult): TaskDockerResult {
     return {
       code: out.code ?? 124,
-      stdout: showUserNames(task, out.stdout),
-      stderr: showUserNames(task, out.code === null ? `${out.stderr}\ndocker: timed out\n` : out.stderr),
+      stdout: showUserNames(this.scope(task), out.stdout),
+      stderr: showUserNames(
+        this.scope(task),
+        out.code === null ? `${out.stderr}\ndocker: timed out\n` : out.stderr,
+      ),
     };
   }
 
@@ -922,6 +1143,7 @@ export class ContainerService {
     args: string[],
   ): Promise<TaskDockerResult> {
     const task = safety.task;
+    const org = safety.env.org;
     const snapshot = await this.snapshotBuild(
       docker,
       safety,
@@ -938,11 +1160,11 @@ export class ContainerService {
             409,
           );
         }
-        this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+        this.builds.set(org, (this.builds.get(org) ?? 0) + 1);
         try {
           await this.ensureBuilder(docker, safety, settings);
         } catch (err) {
-          void this.buildEnded(task);
+          void this.buildEnded(org);
           throw err;
         }
       });
@@ -954,7 +1176,7 @@ export class ContainerService {
         );
         return this.scriptResult(task, out);
       } finally {
-        void this.buildEnded(task);
+        void this.buildEnded(org);
       }
     } finally {
       await snapshot.cleanup();
@@ -1033,7 +1255,7 @@ export class ContainerService {
     const built = await this.builtImages(docker, task);
     const allowed = this.allowed(task, settings);
     const missing = dockerfileImages(text, args).filter((ref) => {
-      const local = localImage(task, ref);
+      const local = localImage(safety, ref);
       return !(local !== undefined && built.has(local)) && !allowed.some((image) => sameImage(image, ref));
     });
     const [first, ...more] = missing;
@@ -1070,7 +1292,7 @@ export class ContainerService {
     args: readonly string[],
   ): Promise<void> {
     const task = safety.task;
-    const names = containerNames(task);
+    const names = this.names(task);
     // A holder whose container ended goes first, so what is left is what can really start.
     await this.reapHolders(docker, task);
     for (const container of args.slice(1)) {
@@ -1172,7 +1394,7 @@ export class ContainerService {
     task: string,
     holder: { name: string; aliases: string[] },
   ): Promise<void> {
-    const names = containerNames(task);
+    const names = this.names(task);
     const mine = new Set(holder.aliases.filter((a) => a !== names.service(holder.name)));
     for (const p of this.all(task)) {
       if (p.status === "running" && p.host !== undefined && mine.has(p.host)) {
@@ -1188,7 +1410,7 @@ export class ContainerService {
       "--format",
       "{{.Names}}",
       "--filter",
-      `label=majhi.task=${task}`,
+      select.project(names.key),
     ]);
     if (existing.includes(names.service(holder.name))) {
       throw new ContainerRefused(
@@ -1207,8 +1429,15 @@ export class ContainerService {
     if (reservedNameReason(name) !== undefined) return true;
     if (docker === undefined) return false;
     return (
-      await this.lines(docker, ["ps", "-a", "--format", "{{.Names}}", "--filter", `label=majhi.task=${task}`])
-    ).includes(containerNames(task).service(name));
+      await this.lines(docker, [
+        "ps",
+        "-a",
+        "--format",
+        "{{.Names}}",
+        "--filter",
+        select.project(this.names(task).key),
+      ])
+    ).includes(this.names(task).service(name));
   }
 
   /**
@@ -1226,7 +1455,7 @@ export class ContainerService {
     const subnets = this.taskSubnets(safety.task);
     if (subnets.length === 0)
       throw new UserError(`The network of ${safety.task} has no address range yet.`, 409);
-    const names = containerNames(safety.task);
+    const names = containerNames(safety);
     await this.quietly(() => docker.exec(["rm", "-f", "-v", names.holder(holder.name)]));
     try {
       await docker.hold(
@@ -1245,8 +1474,8 @@ export class ContainerService {
   }
 
   /** Removes a holder, quietly: its container ended or never ran. */
-  private dropHolder(docker: ContainerDocker, task: string, name: string): void {
-    void this.quietly(() => docker.exec(["rm", "-f", "-v", containerNames(task).holder(name)]));
+  private dropHolder(docker: ContainerDocker, holder: string): void {
+    void this.quietly(() => docker.exec(["rm", "-f", "-v", holder]));
   }
 
   /**
@@ -1255,16 +1484,18 @@ export class ContainerService {
    * nothing else, so any number of calls, after a crash too, end in the same state. Call it under the task's lock.
    */
   private async reapHolders(docker: ContainerDocker, task: string): Promise<string[]> {
-    const names = containerNames(task);
+    const names = this.names(task);
     const labelled = (kind: string) => [
       "ps",
       "-a",
       "--format",
       "{{.Names}}",
       "--filter",
-      `label=majhi.container=${kind}`,
+      select.kind(kind as ObjectKind),
       "--filter",
-      `label=majhi.task=${task}`,
+      select.task(task),
+      "--filter",
+      select.project(names.key),
     ];
     const reaped: string[] = [];
     await this.quietly(async () => {
@@ -1304,9 +1535,9 @@ export class ContainerService {
         "image",
         "ls",
         "--filter",
-        "label=majhi.container=image",
+        select.kind("image"),
         "--filter",
-        `label=majhi.task=${task}`,
+        select.project(this.names(task).key),
         "--format",
         "{{.Repository}}:{{.Tag}}",
       ]),
@@ -1329,7 +1560,7 @@ export class ContainerService {
           await docker.exec([
             "inspect",
             "--format",
-            '{{.Name}} {{index .Config.Labels "majhi.task"}} {{index .Config.Labels "majhi.container"}}',
+            `{{.Name}} {{index .Config.Labels "${LABEL.task}"}} {{index .Config.Labels "${LABEL.container}"}}`,
             word,
           ])
         ).stdout.trim();
@@ -1349,13 +1580,16 @@ export class ContainerService {
   /**
    * The task stopped running (review, paused, stopped): its services and preview stop, and
    * `taskRunning` starts them again the same way. Containers run with `--rm`, so stopping removes
-   * them; named volumes keep their data. The network goes and the builder stops, as on `taskStopped`.
+   * them; named volumes keep their data. The network goes, and the project's environment passes to the
+   * next task in line, unless a service with no named volume stays to keep its data (`keepUnsaved`).
    */
   async taskPaused(task: string, options: { keepUnsaved?: boolean } = {}): Promise<{ kept: string[] }> {
     const docker = this.docker;
     if (docker === undefined) return { kept: [] };
+    // A task that waits for the environment stops waiting.
+    this.queue.leave(task);
     // Under the task's lock, so a `taskRunning` that comes meanwhile waits and sees all of it.
-    return this.locked(task, async () => {
+    const result = await this.locked(task, async () => {
       const parked = this.parked.get(task) ?? [];
       const specs = this.specs.get(task);
       const running = this.all(task).filter(
@@ -1389,19 +1623,44 @@ export class ContainerService {
           this.stacks.delete(task);
         }
         await this.removeTaskContainers(task);
-      } else await this.stopBuilder(docker, containerNames(task).builder);
+      } else await this.stopBuilderIfIdle(docker, this.orgOf(task));
       return { kept: [...kept] };
     });
+    if (result.kept.length === 0) this.releaseEnv(task);
+    return result;
   }
 
   /**
    * The task runs again: what `taskPaused` stopped starts again, services first (a preview joins
    * their network). `except` is a name an agent starts anew now. Each failure is reported by name
-   * and the rest still start.
+   * and the rest still start. When another task holds the project's environment, nothing waits here:
+   * the task takes its place in line, `queued` says where, and its services start when it is its turn.
    */
   async taskRunning(task: string, except?: string): Promise<Restarted> {
     const done: Restarted = { started: [], failed: [] };
     if (this.docker === undefined) return done;
+    const key = this.scope(task).env.key;
+    const wants = (this.parked.get(task)?.length ?? 0) > 0 || (this.parkedStacks.get(task)?.length ?? 0) > 0;
+    if (wants && this.queue.holder(key) !== task) {
+      const got = this.queue.acquire(key, task);
+      if (!got.held) {
+        const holder = this.queue.holder(key) ?? "another task";
+        done.queued = { place: got.place, holder };
+        // Its turn: the services start again, and the room is told.
+        void got.granted.then(
+          async () => {
+            this.deps.notify?.(task, `The environment is free. ${task} has it now.`);
+            const again = await this.taskRunning(task, except);
+            if (again.started.length > 0)
+              this.deps.notify?.(task, `Started ${again.started.join(", ")} again.`);
+            if (again.failed.length > 0)
+              this.deps.notify?.(task, `Did not start again: ${again.failed.join("; ")}`);
+          },
+          () => undefined,
+        );
+        return done;
+      }
+    }
     // After a `taskPaused` in flight. The starts below take the lock themselves.
     const parked = await this.locked(task, async () => {
       const found = this.parked.get(task);
@@ -1459,110 +1718,126 @@ export class ContainerService {
   // Cleanup
 
   /**
-   * The task stopped (stop, close, remove): its containers and network go. Volumes stay, so a
-   * paused task keeps its test data. Call after the task's processes were stopped.
+   * The task stopped (stop, close, remove): its containers go, and the environment passes on. Volumes
+   * stay, so a paused task keeps its test data. Call after the task's processes were stopped.
    */
   async taskStopped(task: string): Promise<void> {
     if (this.docker === undefined) return;
+    this.queue.leave(task);
     await this.locked(task, () => this.removeTaskContainers(task));
+    this.releaseEnv(task);
   }
 
-  /** The body of `taskStopped`, for a caller that holds the task's lock already. */
+  /**
+   * The body of `taskStopped`, for a caller that holds the task's lock already. Everything of the
+   * project's environment (network, forwarders) goes only when this task holds it: another task's
+   * environment is never torn down by a task that merely stops.
+   */
   private async removeTaskContainers(task: string): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
-    const names = containerNames(task);
+    const names = this.names(task);
     await this.quietly(async () => {
       const ids = await this.lines(docker, [
         "ps",
         "-aq",
         "--filter",
-        "label=majhi.container",
+        select.anyKind,
         "--filter",
-        `label=majhi.task=${task}`,
+        select.task(task),
+        "--filter",
+        select.project(names.key),
       ]);
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
-    // A runner of the task that is still up must not keep a range the next network may be given.
-    await this.quietly(async () => {
-      const runners = await this.lines(docker, [
-        "ps",
-        "-q",
-        "--filter",
-        RUNNER_LABEL,
-        "--filter",
-        `label=majhi.task=${task}`,
-      ]);
-      for (const id of runners) await docker.guard(id, [], this.deps.guardServer?.());
-    });
-    await this.quietly(() => this.removeNetwork(docker, names.network));
-    await this.quietly(() => this.removeNetwork(docker, names.hostNetwork));
-    for (const name of this.forwarded.keys())
-      if (name.startsWith(`majhi-${names.key}-host-`)) this.forwarded.delete(name);
-    // A paused task leaves nothing running: the builder stops, and the next build starts it again.
-    await this.stopBuilder(docker, names.builder);
-    this.networks.delete(task);
-    this.subnets.delete(task);
+    if (this.queue.holder(names.key) === task) {
+      // The preview's throwaway folder goes with the preview. Only the holder's: it is the environment's.
+      const scratch = names.volume(PREVIEW_SCRATCH);
+      const found = await this.lines(docker, ["volume", "ls", "-q", "--filter", `name=${scratch}`]).catch(
+        (): string[] => [],
+      );
+      if (found.includes(scratch)) await this.quietly(() => docker.exec(["volume", "rm", "-f", scratch]));
+      // A runner of the task that is still up must not keep a range the next network may be given.
+      await this.quietly(async () => {
+        const runners = await this.lines(docker, [
+          "ps",
+          "-q",
+          "--filter",
+          RUNNER_LABEL,
+          "--filter",
+          select.task(task),
+        ]);
+        for (const id of runners) await docker.guard(id, [], this.deps.guardServer?.());
+      });
+      await this.quietly(() => this.removeNetwork(docker, names.network));
+      await this.quietly(() => this.removeNetwork(docker, names.hostNetwork));
+      for (const name of this.forwarded.keys())
+        if (name.startsWith(names.hostForwardPrefix)) this.forwarded.delete(name);
+      this.networks.delete(names.key);
+      this.subnets.delete(names.key);
+    }
+    // A paused task leaves nothing running: the builder stops when no other task of the workspace builds.
+    await this.stopBuilderIfIdle(docker, names.org);
     this.deps.changed?.();
   }
 
   /**
-   * The task is done or removed: everything of it goes, builder and preview image too. Its volumes go
-   * with it when it is removed; when it is only done they stay for a week (`pruneVolumes`), in case it
-   * is reopened.
+   * The task lets go of the project's environment: the next task in line holds it from now on and is
+   * told. Its waiting call (or its `taskRunning`) goes on by itself.
    */
-  async taskEnded(task: string, keepVolumes = false): Promise<void> {
+  private releaseEnv(task: string): void {
+    for (const key of this.queue.heldBy(task)) {
+      const next = this.queue.release(key, task);
+      if (next !== undefined) this.deps.changed?.();
+    }
+  }
+
+  /**
+   * The task is done or removed: its containers go, and so do the images it built. The project's
+   * volumes stay (the project's dev data outlives its tasks) until no task of the project is open for a
+   * week (`pruneVolumes`), or until the project has no task left at all and the next prune sees it.
+   */
+  async taskEnded(task: string): Promise<void> {
+    this.queue.leave(task);
     // One step under the task's lock: a start that waits behind it finds the task closed and refuses.
     await this.locked(task, async () => {
       this.parked.delete(task);
       this.specs.delete(task);
       this.stacks.delete(task);
       this.parkedStacks.delete(task);
-      this.guardedBuilders.delete(task);
+      await this.dropCopies(task);
       await this.removeTaskContainers(task);
-      await this.removeTaskState(task, keepVolumes);
+      await this.removeTaskState(task);
     });
+    this.releaseEnv(task);
   }
 
-  /** What stays of an ended task after its containers: volumes, builder, preview image and built images. */
-  private async removeTaskState(task: string, keepVolumes = false): Promise<void> {
+  /** What stays of an ended task after its containers: the images it built, and the preview image if it made it. */
+  private async removeTaskState(task: string): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
-    const names = containerNames(task);
-    if (!keepVolumes) {
-      await this.quietly(async () => {
-        const volumes = await this.lines(docker, [
-          "volume",
-          "ls",
-          "-q",
-          "--filter",
-          "label=majhi.container=volume",
-          "--filter",
-          `label=majhi.task=${task}`,
-        ]);
-        if (volumes.length > 0) await docker.exec(["volume", "rm", "-f", ...volumes]);
-      });
-    }
-    await this.quietly(() => docker.exec(["buildx", "rm", "--force", names.builder]));
-    await this.quietly(() => docker.exec(["image", "rm", "-f", names.previewImage]));
-    // What the task's scripts built: found by label, removed by id.
+    const names = this.names(task);
+    // What the task's builds made: found by label, removed by id.
     await this.quietly(async () => {
       const images = await this.lines(docker, [
         "image",
         "ls",
         "-q",
         "--filter",
-        "label=majhi.container=image",
+        select.kind("image"),
         "--filter",
-        `label=majhi.task=${task}`,
+        select.task(task),
+        "--filter",
+        select.project(names.key),
       ]);
       if (images.length > 0) await docker.exec(["image", "rm", "-f", ...new Set(images)]);
     });
   }
 
   /**
-   * At startup: containers and networks a previous majhi left go, and the volumes, builders and
-   * preview images of tasks that are done or gone. Those of open tasks stay.
+   * At startup: containers and networks a previous majhi left go, and so does what the old model made
+   * for tasks that are done or gone (a builder, a preview image and volumes of its own). Nothing is
+   * running that majhi started before, so nobody holds an environment and nobody waits for one.
    */
   startup(): Promise<void> {
     const cleaning = this.cleanAtStart();
@@ -1574,9 +1849,9 @@ export class ContainerService {
   private async cleanAtStart(): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
-    const open = new Set(this.deps.openTasks());
+    this.queue.clear();
     await this.quietly(async () => {
-      const ids = await this.lines(docker, ["ps", "-aq", "--filter", "label=majhi.container"]);
+      const ids = await this.lines(docker, ["ps", "-aq", "--filter", select.anyKind]);
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
     await this.quietly(async () => {
@@ -1584,58 +1859,111 @@ export class ContainerService {
         "network",
         "ls",
         "--filter",
-        "label=majhi.container=network",
+        select.kind("network"),
         "--format",
         "{{.Name}}",
       ]);
       for (const network of networks) await this.quietly(() => this.removeNetwork(docker, network));
     });
+    await this.quietly(() => this.removeLegacy(docker));
     await this.quietly(async () => {
       await this.pruneVolumes(new Date());
     });
-    const openKeys = new Set([...open].map((id) => id.toLowerCase()));
-    const leftover = (name: string) =>
-      name.startsWith("majhi-preview-") && !openKeys.has(name.slice("majhi-preview-".length));
+    // The workspaces' builders stop running. The next build starts them again.
     await this.quietly(async () => {
-      const builders = (await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"])).map((n) =>
-        n.replace(/\*$/, ""),
-      );
-      for (const name of builders.filter(leftover))
-        await this.quietly(() => docker.exec(["buildx", "rm", "--force", name]));
-      // The builders of open tasks stop running. The next build starts them again.
-      for (const name of builders.filter((n) => n.startsWith("majhi-preview-") && !leftover(n))) {
-        await this.stopBuilder(docker, name);
-      }
-    });
-    await this.quietly(async () => {
-      const images = await this.lines(docker, [
-        "image",
-        "ls",
-        "--filter",
-        "reference=majhi-preview-*",
-        "--format",
-        "{{.Repository}}",
-      ]);
-      for (const name of images.filter(leftover))
-        await this.quietly(() => docker.exec(["image", "rm", "-f", name]));
+      for (const org of this.knownOrgs()) await this.stopBuilder(docker, this.builderOf(org));
     });
     this.networks.clear();
     this.subnets.clear();
     this.deps.changed?.();
   }
 
-  /** What a task is to the volume prune. */
-  private taskAge(id: string): TaskAge {
-    if (this.deps.openTasks().includes(id)) return "open";
-    const task = this.deps.task(id);
-    return task === undefined ? "gone" : { doneAt: task.updatedAt };
+  /** The workspaces any task belongs to, `private` included: the ones that can have a builder. */
+  private knownOrgs(): string[] {
+    const orgs = new Set<string>([PRIVATE]);
+    for (const id of this.deps.allTasks()) orgs.add(this.deps.task(id)?.org ?? PRIVATE);
+    return [...orgs];
   }
 
-  /** The volumes of tasks gone, or done for `days`. Open tasks keep theirs. */
+  /**
+   * Removes what the old model made for tasks that are not open: the task's own builder `majhi-preview-<task>`
+   * and its state volume, its preview image, and its volumes (labelled with a task and no project). Tasks
+   * the database no longer knows are included: the name space is majhi's, and the owner of an object is read
+   * from its name through the task key schema (`legacyOwner`), never matched as text. A builder of an open
+   * task only stops: the task builds on its workspace's builder from now on.
+   */
+  private async removeLegacy(docker: ContainerDocker): Promise<void> {
+    const open = new Set(this.deps.openTasks());
+    const builders = (await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"])).map((n) =>
+      n.endsWith("*") ? n.slice(0, -1) : n,
+    );
+    for (const name of builders) {
+      const owner = legacyOwner(name, "builder");
+      if (owner === undefined) continue;
+      if (open.has(owner)) await this.stopBuilder(docker, name);
+      else await this.quietly(() => docker.exec(["buildx", "rm", "--force", name]));
+    }
+    for (const name of await this.lines(docker, ["image", "ls", "--format", "{{.Repository}}"])) {
+      const owner = legacyOwner(name, "image");
+      if (owner !== undefined && !open.has(owner))
+        await this.quietly(() => docker.exec(["image", "rm", "-f", name]));
+    }
+    for (const name of await this.lines(docker, ["volume", "ls", "-q"])) {
+      const owner = legacyOwner(name, "state");
+      if (owner !== undefined && !open.has(owner))
+        await this.quietly(() => docker.exec(["volume", "rm", "-f", name]));
+    }
+    // Volumes made for a task before volumes belonged to projects carry a task and no project.
+    const rows = await this.lines(docker, [
+      "volume",
+      "ls",
+      "--filter",
+      select.kind("volume"),
+      "--format",
+      '{{.Name}} {{.Label "majhi.task"}} {{.Label "majhi.project"}}',
+    ]);
+    const stale = rows.flatMap((row) => {
+      const [name, task, project] = row.split(" ");
+      return name !== undefined &&
+        task !== undefined &&
+        task !== "" &&
+        (project ?? "") === "" &&
+        !open.has(task)
+        ? [name]
+        : [];
+    });
+    if (stale.length > 0) await docker.exec(["volume", "rm", "-f", ...stale]);
+  }
+
+  /** What a project is to the volume prune: open while any of its tasks is, else done since its newest task changed. */
+  private projectAges(): Map<string, TaskAge> {
+    const open = new Set(this.deps.openTasks());
+    const ages = new Map<string, TaskAge>();
+    for (const id of this.deps.allTasks()) {
+      const task = this.deps.task(id);
+      if (task === undefined) continue;
+      const key = scopeOf(task).env.key;
+      const before = ages.get(key);
+      if (open.has(id) || before === "open") ages.set(key, "open");
+      else if (before === undefined || (before !== "gone" && task.updatedAt > before.doneAt))
+        ages.set(key, { doneAt: task.updatedAt });
+    }
+    return ages;
+  }
+
+  /** The volumes of projects with no task left, or none open for `days`. Open projects keep theirs. */
   async staleVolumes(now: Date, days = PRUNE_AGE_DAYS): Promise<VolumeRow[]> {
     const docker = this.docker;
     if (docker === undefined) return [];
-    return selectOldVolumes(await listTaskVolumes(docker), (id) => this.taskAge(id), now, days);
+    const ages = this.projectAges();
+    const open = new Set(this.deps.openTasks());
+    return selectOldVolumes(
+      await listTaskVolumes(docker),
+      // A volume of the old model has a task and no project: it follows its task.
+      (v) => (v.project === "" ? (open.has(v.task) ? "open" : "gone") : (ages.get(v.project) ?? "gone")),
+      now,
+      days,
+    );
   }
 
   async pruneVolumes(now: Date, days = PRUNE_AGE_DAYS): Promise<number> {
@@ -1645,7 +1973,7 @@ export class ContainerService {
   }
 
   /**
-   * majhi's own preview images (label `majhi.container=image`) that no container uses and nobody built
+   * majhi's own images (label `majhi.container=image`) that no container uses and nobody built
    * or tagged for `days`. Under a week the images of open tasks stay too.
    */
   async unusedImages(now: Date, days = PRUNE_AGE_DAYS): Promise<ImageRow[]> {
@@ -1669,9 +1997,10 @@ export class ContainerService {
   }
 
   /**
-   * The prune (`prune.ts`): old unused images, the volumes of tasks done for a week, and the week-old
-   * build cache of open tasks' builders. Never the whole build cache. Runs when a week passed since the
-   * last one; the captain's tidy chore runs the image and volume part daily. Undefined when it was not due.
+   * The prune (`prune.ts`): old unused images, the volumes of projects with no open task for a week, and
+   * the week-old build cache of the workspaces' builders. Never the whole build cache. Runs when a week
+   * passed since the last one; the captain's tidy chore runs the image and volume part daily.
+   * Undefined when it was not due.
    */
   async pruneIfDue(
     now = new Date(),
@@ -1694,14 +2023,14 @@ export class ContainerService {
     const existing = new Set<string>();
     await this.quietly(async () => {
       const names = await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"]);
-      for (const name of names) existing.add(name.replace(/\*$/, ""));
+      for (const name of names) existing.add(name.endsWith("*") ? name.slice(0, -1) : name);
     });
-    for (const task of this.deps.openTasks()) {
-      const builder = containerNames(task).builder;
+    for (const org of this.knownOrgs()) {
+      const builder = this.builderOf(org);
       if (!existing.has(builder)) continue;
-      // Under the task's lock, and never while it builds: a prune starts the builder, and it stops again.
-      await this.locked(task, async () => {
-        if ((this.builds.get(task) ?? 0) > 0) return;
+      // Under the workspace's builder lock, and never while it builds: a prune starts the builder, and it stops again.
+      await this.locked(this.builderLock(org), async () => {
+        if ((this.builds.get(org) ?? 0) > 0) return;
         await this.quietly(async () => {
           await pruneBuilderCache(docker, builder);
           builders++;
@@ -1734,9 +2063,86 @@ export class ContainerService {
     return task;
   }
 
+  /**
+   * Holds the project's environment for the task, or waits in line for it. The caller has not taken the
+   * task's lock: a task that waits must still be able to pause, stop and end. The wait ends with a clear
+   * answer when the task leaves the line, the caller aborts, or `limits.env_wait` passes.
+   */
+  private async holdEnv(task: string, signal?: AbortSignal): Promise<void> {
+    const scope = this.scope(task);
+    const got = this.queue.acquire(scope.env.key, task);
+    if (got.held) return;
+    const where = scope.env.project ?? `${scope.env.org} workspace`;
+    const holder = this.queue.holder(scope.env.key) ?? "another task";
+    this.deps.notify?.(
+      task,
+      `Waiting for the ${where} environment, which ${holder} uses now. ${task} is number ${got.place} in line and starts when it is free.`,
+    );
+    this.deps.changed?.();
+    const limit = await this.deps.queueWaitMs();
+    let timer: NodeJS.Timeout | undefined;
+    const gaveUp = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new UserError(
+              `Still waiting for the ${where} environment after ${Math.round(limit / 60_000)} minutes (${holder} uses it). Try again later.`,
+              409,
+            ),
+          ),
+        limit,
+      );
+    });
+    const aborted = new Promise<never>((_, reject) => {
+      signal?.addEventListener(
+        "abort",
+        () => reject(new UserError("The call was cancelled while it waited.")),
+        {
+          once: true,
+        },
+      );
+    });
+    try {
+      await Promise.race([got.granted, gaveUp, aborted]);
+    } catch (err) {
+      this.queue.leave(task);
+      if (err instanceof LeftTheLine) {
+        throw new UserError(`${task} stopped waiting for the ${where} environment.`, 409);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+    this.deps.notify?.(task, `The ${where} environment is free. ${task} has it now.`);
+    this.deps.changed?.();
+  }
+
+  /** The names a task's calls are made under: the task that works, and the project environment it works in. */
+  private scope(id: string): NameScope {
+    return scopeOf(this.task(id));
+  }
+
+  private names(id: string): ContainerNames {
+    return containerNames(this.scope(id));
+  }
+
+  private orgOf(id: string): string {
+    return this.scope(id).env.org;
+  }
+
+  private builderOf(org: string): string {
+    return orgNames(org).builder;
+  }
+
+  /** The lock that serializes starting and stopping one workspace's builder. */
+  private builderLock(org: string): string {
+    return `builder:${org}`;
+  }
+
   private safety(task: Task): Safety {
     return {
       task: task.id,
+      env: scopeOf(task).env,
       runnerNetwork: this.deps.runnerNetwork,
       majhiHome: this.deps.paths.majhiHome,
       hostHome: this.deps.paths.hostHome,
@@ -1785,29 +2191,32 @@ export class ContainerService {
         "--format",
         "{{.Names}}",
         "--filter",
-        `label=majhi.container=${kind}`,
-        ...(task === undefined ? [] : ["--filter", `label=majhi.task=${task}`]),
+        select.kind(kind as ObjectKind),
+        ...(task === undefined ? [] : ["--filter", select.task(task)]),
       ])) {
         found.add(name);
       }
     }
     // A holder counts as the container it belongs to, so one that outlived its container still takes its slot.
-    for (const name of await this.lines(docker, [
+    for (const row of await this.lines(docker, [
       "ps",
       "-a",
       "--format",
-      "{{.Names}}",
+      `{{.Names}}\t{{.Label "${LABEL.project}"}}`,
       "--filter",
-      "label=majhi.container=taskhold",
-      ...(task === undefined ? [] : ["--filter", `label=majhi.task=${task}`]),
+      select.kind("taskhold"),
+      ...(task === undefined ? [] : ["--filter", select.task(task)]),
     ])) {
-      const at = name.indexOf("-h-");
-      if (at !== -1) found.add(`${name.slice(0, at)}-c-${name.slice(at + 3)}`);
+      const [name = "", project = ""] = row.split("\t");
+      const mine = envNames(project);
+      if (name.startsWith(mine.holderPrefix)) found.add(mine.service(name.slice(mine.holderPrefix.length)));
     }
     const procs = task === undefined ? this.deps.processes.listAll() : this.all(task);
     for (const p of procs) {
       if (p.status !== "running" || p.container === undefined || p.container.kind === "build") continue;
-      const names = containerNames(p.task);
+      // A process of a task that is gone has no environment to count in.
+      if (this.deps.task(p.task) === undefined) continue;
+      const names = this.names(p.task);
       found.add(
         p.container.kind === "preview"
           ? names.previewApp
@@ -1835,7 +2244,7 @@ export class ContainerService {
     const mine = await this.containersOf(docker, task);
     if (mine.size + extra > settings.per_task) {
       throw new ContainerRefused(
-        `${task} already runs ${mine.size} container${mine.size === 1 ? "" : "s"}${extra > 1 ? ` and this starts ${extra} more` : ""}, the most it may (${settings.per_task}): ${[...mine].map((n) => showUserNames(task, n)).join(", ")}. Remove one first.`,
+        `${task} already runs ${mine.size} container${mine.size === 1 ? "" : "s"}${extra > 1 ? ` and this starts ${extra} more` : ""}, the most it may (${settings.per_task}): ${[...mine].map((n) => showUserNames(this.scope(task), n)).join(", ")}. Remove one first.`,
         "limit_reached",
       );
     }
@@ -1900,15 +2309,16 @@ export class ContainerService {
   }
 
   /**
-   * The task's builder, made on first use with the limits from the settings, and closed to private
-   * destinations before any build runs on it (`guardBuilder`).
+   * The workspace's builder, made on first use with the limits from the settings, and closed to private
+   * destinations before any build runs on it (`guardBuilder`). Every task of the workspace builds on it, so
+   * its cache serves them all; no other workspace's task ever does.
    */
   private async ensureBuilder(
     docker: ContainerDocker,
     safety: Safety,
     settings: ContainersSettings,
   ): Promise<void> {
-    const names = containerNames(safety.task);
+    const names = containerNames(safety);
     let made = true;
     try {
       await docker.exec(["buildx", "inspect", names.builder]);
@@ -1934,20 +2344,20 @@ export class ContainerService {
   private async guardBuilder(docker: ContainerDocker, safety: Safety): Promise<void> {
     const image = this.deps.runnerImage;
     if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
-    const task = safety.task;
+    const names = containerNames(safety);
     try {
-      await docker.exec(["buildx", "inspect", "--bootstrap", containerNames(task).builder], {
+      await docker.exec(["buildx", "inspect", "--bootstrap", names.builder], {
         timeoutMs: 120_000,
       });
       const started = (
-        await docker.exec(["inspect", "--format", "{{.Id}} {{.State.StartedAt}}", builderContainer(task)])
+        await docker.exec(["inspect", "--format", "{{.Id}} {{.State.StartedAt}}", names.builderContainer])
       ).stdout.trim();
-      if (this.guardedBuilders.get(task) === started) return;
+      if (this.guardedBuilders.get(names.org) === started) return;
       await docker.guardBuilder(
         builderGuardRunArgs(safety, { image, id: randomBytes(4).toString("hex") }),
         safety,
       );
-      this.guardedBuilders.set(task, started);
+      this.guardedBuilders.set(names.org, started);
     } catch (err) {
       throw new UserError(
         `majhi could not close the builder's network, so nothing is built: ${errorMessage(err)}`,
@@ -1955,17 +2365,17 @@ export class ContainerService {
     }
   }
 
-  /** The task's internal network, made once, with the task's running runners (and preview) joined to it. */
+  /** The project's internal network, made once, with the holder's running runners (and preview) joined to it. */
   private async ensureNetwork(docker: ContainerDocker, safety: Safety): Promise<void> {
     const task = safety.task;
-    const names = containerNames(task);
+    const names = containerNames(safety);
     // A network that majhi remembers may be gone (removed by hand, or by a sweep): look before relying on it.
-    if (this.networks.has(task)) {
+    if (this.networks.has(names.key)) {
       try {
         await docker.exec(["network", "inspect", names.network]);
         return;
       } catch {
-        this.networks.delete(task);
+        this.networks.delete(names.key);
       }
     }
     try {
@@ -1973,7 +2383,7 @@ export class ContainerService {
     } catch {
       await docker.create(networkCreateArgs(safety), safety);
     }
-    this.networks.add(task);
+    this.networks.add(names.key);
     const subnets = (
       await this.lines(docker, [
         "network",
@@ -1985,14 +2395,14 @@ export class ContainerService {
     )[0]
       ?.split(" ")
       .filter((cidr) => isIpv4Cidr(cidr));
-    this.subnets.set(task, subnets ?? []);
+    this.subnets.set(names.key, subnets ?? []);
     const runners = await this.lines(docker, [
       "ps",
       "-q",
       "--filter",
       RUNNER_LABEL,
       "--filter",
-      `label=majhi.task=${task}`,
+      select.task(task),
     ]);
     for (const id of runners) {
       try {
@@ -2009,7 +2419,7 @@ export class ContainerService {
 
   /** The forwarders' own network, made once per task. Only forwarders join it. */
   private async ensureHostNetwork(docker: ContainerDocker, safety: Safety): Promise<void> {
-    const name = containerNames(safety.task).hostNetwork;
+    const name = containerNames(safety).hostNetwork;
     try {
       await docker.exec(["network", "inspect", name]);
     } catch {
@@ -2017,9 +2427,10 @@ export class ContainerService {
     }
   }
 
-  /** A named volume of the task. An existing one is used only when it is this task's, with the default driver and no options. */
+  /** A named volume of the project. An existing one is used only when it is this project's, with the default driver and no options. */
   private async ensureVolume(docker: ContainerDocker, safety: Safety, name: string): Promise<void> {
-    const volume = containerNames(safety.task).volume(name);
+    const names = containerNames(safety);
+    const volume = names.volume(name);
     let found: string | undefined;
     try {
       found = (await docker.exec(["volume", "inspect", "--format", "{{json .}}", volume])).stdout;
@@ -2031,15 +2442,15 @@ export class ContainerService {
       return;
     }
     const inspected = parseVolume(found);
+    const labels = names.expectedLabels("volume");
     if (
       inspected === undefined ||
-      inspected.Labels?.["majhi.task"] !== safety.task ||
-      inspected.Labels["majhi.container"] !== "volume" ||
+      [...labels].some(([key, value]) => inspected.Labels[key] !== value) ||
       (inspected.Driver !== undefined && inspected.Driver !== "local") ||
       Object.keys(inspected.Options ?? {}).length > 0
     ) {
       throw new UserError(
-        `The volume ${volume} exists but is not one majhi made for ${safety.task}, so it is not used.`,
+        `The volume ${volume} exists but is not one majhi made for ${names.key}, so it is not used.`,
       );
     }
   }
@@ -2071,19 +2482,26 @@ export class ContainerService {
     this.specs.set(task, specs);
   }
 
-  /** A preview build ended: the builder stops once no other build of the task runs. Its cache stays. */
-  private async buildEnded(task: string): Promise<void> {
-    const left = (this.builds.get(task) ?? 1) - 1;
+  /** A build ended: the workspace's builder stops once no other build of the workspace runs. Its cache stays. */
+  private async buildEnded(org: string): Promise<void> {
+    const left = (this.builds.get(org) ?? 1) - 1;
     if (left > 0) {
-      this.builds.set(task, left);
+      this.builds.set(org, left);
       return;
     }
-    this.builds.delete(task);
+    this.builds.delete(org);
     const docker = this.docker;
     if (docker === undefined) return;
-    // Under the task's lock: a build that starts meanwhile is counted before this looks.
-    await this.locked(task, async () => {
-      if ((this.builds.get(task) ?? 0) === 0) await this.stopBuilder(docker, containerNames(task).builder);
+    // Under the workspace's builder lock: a build that starts meanwhile is counted before this looks.
+    await this.locked(this.builderLock(org), async () => {
+      if ((this.builds.get(org) ?? 0) === 0) await this.stopBuilder(docker, this.builderOf(org));
+    });
+  }
+
+  /** Stops the workspace's builder unless one of its builds is running. The builder holds no memory between builds. */
+  private async stopBuilderIfIdle(docker: ContainerDocker, org: string): Promise<void> {
+    await this.locked(this.builderLock(org), async () => {
+      if ((this.builds.get(org) ?? 0) === 0) await this.stopBuilder(docker, this.builderOf(org));
     });
   }
 
@@ -2146,6 +2564,12 @@ export class ContainerService {
     return next;
   }
 }
+
+/** The names a task's calls are made under. A project's first repo names its environment; a task with none gets its workspace's own. */
+const scopeOf = (task: Task): NameScope => ({
+  task: task.id,
+  env: envRef(task.org, task.repos[0]?.project),
+});
 
 const nameOf = (spec: StartedSpec): string => (spec.kind === "service" ? spec.input.name : "preview");
 

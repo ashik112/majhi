@@ -4,6 +4,7 @@ import { z } from "zod";
 import { errorMessage } from "../errors.ts";
 import { writeFileAtomic } from "../fs.ts";
 import type { DockerResult } from "./docker.ts";
+import { LABEL, select } from "./names.ts";
 
 /**
  * Frees Docker disk without clearing the build cache (the owner's rule: builds stay fast). Three
@@ -16,9 +17,6 @@ import type { DockerResult } from "./docker.ts";
 export const PRUNE_AGE_DAYS = 7;
 /** How often the weekly prune runs on its own. The captain's tidy chore runs the same prune daily. */
 export const PRUNE_EVERY_MS = 7 * 86_400_000;
-
-/** The label every image majhi builds carries (`buildArgs`). */
-const IMAGE_LABEL = "majhi.container=image";
 
 /** The docker calls the prune makes: reads and removals only. */
 export type PruneDocker = { exec(args: readonly string[]): Promise<DockerResult> };
@@ -35,9 +33,10 @@ export interface ImageRow {
   task: string;
 }
 
-/** A task's named volume. */
+/** A named volume of majhi's, with the project it belongs to. A volume the old model made has a task and no project. */
 export interface VolumeRow {
   name: string;
+  project: string;
   task: string;
 }
 
@@ -47,11 +46,13 @@ const lines = (out: DockerResult): string[] =>
     .map((l) => l.trim())
     .filter(Boolean);
 
+const DIGEST_PREFIX = "sha256:";
+
 /** `sha256:<hex>` as the bare hex, the form `DockerCli.exec` accepts for a removal. */
-const bareId = (id: string): string => id.replace(/^sha256:/, "");
+const bareId = (id: string): string => (id.startsWith(DIGEST_PREFIX) ? id.slice(DIGEST_PREFIX.length) : id);
 
 /** Docker prints a tag time it never set as the year 1. */
-const NEVER = /^0001-/;
+const NEVER_TAGGED = "0001-";
 
 /**
  * The images to remove. Pure, so the choice is tested without docker. Only majhi's own preview images
@@ -76,9 +77,7 @@ export function selectUnusedImages(
 
 /** Every local image majhi labelled, with its newest date, size, tags and the task that built it. */
 export async function listImages(docker: PruneDocker): Promise<ImageRow[]> {
-  const ids = lines(
-    await docker.exec(["image", "ls", "-q", "--no-trunc", "--filter", `label=${IMAGE_LABEL}`]),
-  );
+  const ids = lines(await docker.exec(["image", "ls", "-q", "--no-trunc", "--filter", select.kind("image")]));
   if (ids.length === 0) return [];
   const none = (key: string) => `{{with index .Config.Labels "${key}"}}{{.}}{{else}}-{{end}}`;
   const rows = lines(
@@ -86,7 +85,7 @@ export async function listImages(docker: PruneDocker): Promise<ImageRow[]> {
       "image",
       "inspect",
       "--format",
-      `{{.Id}} {{.Created}} {{.Metadata.LastTagTime}} {{.Size}} ${none("majhi.container")} ${none("majhi.task")} {{join .RepoTags ","}}`,
+      `{{.Id}} {{.Created}} {{.Metadata.LastTagTime}} {{.Size}} ${none(LABEL.container)} ${none(LABEL.task)} {{join .RepoTags ","}}`,
       ...new Set(ids),
     ]),
   );
@@ -96,7 +95,7 @@ export async function listImages(docker: PruneDocker): Promise<ImageRow[]> {
     return [
       {
         id,
-        at: NEVER.test(tagged) || Date.parse(tagged) < Date.parse(created) ? created : tagged,
+        at: tagged.startsWith(NEVER_TAGGED) || Date.parse(tagged) < Date.parse(created) ? created : tagged,
         bytes: Number(size) || 0,
         refs: refs.split(",").filter(Boolean),
         label: label === undefined || label === "-" ? "" : label,
@@ -142,37 +141,37 @@ export async function removeImages(
   return { removed, bytes };
 }
 
-/** The volumes majhi made for tasks (label `majhi.container=volume`). */
+/** The volumes majhi made (label `majhi.container=volume`). */
 export async function listTaskVolumes(docker: PruneDocker): Promise<VolumeRow[]> {
   const rows = lines(
     await docker.exec([
       "volume",
       "ls",
       "--filter",
-      "label=majhi.container=volume",
+      select.kind("volume"),
       "--format",
-      '{{.Label "majhi.task"}} {{.Name}}',
+      `{{.Name}}\t{{.Label "${LABEL.project}"}}\t{{.Label "${LABEL.task}"}}`,
     ]),
   );
   return rows.flatMap((row): VolumeRow[] => {
-    const [task, name] = row.split(" ");
-    return task === undefined || name === undefined ? [] : [{ task, name }];
+    const [name, project = "", task = ""] = row.split("\t");
+    return name === undefined || name === "" ? [] : [{ name, project, task }];
   });
 }
 
-/** What a task is to the volume prune: still open, gone, or done since `doneAt`. */
+/** What a project is to the volume prune: still open, gone, or done since `doneAt`. */
 export type TaskAge = "open" | "gone" | { doneAt: string };
 
-/** The volumes of tasks that are gone or were done for at least `days`. Open tasks keep theirs. */
+/** The volumes of projects that are gone or were done for at least `days`. Open projects keep theirs. */
 export function selectOldVolumes(
   volumes: readonly VolumeRow[],
-  age: (task: string) => TaskAge,
+  age: (volume: VolumeRow) => TaskAge,
   now: Date,
   days: number = PRUNE_AGE_DAYS,
 ): VolumeRow[] {
   const cutoff = now.getTime() - days * 86_400_000;
   return volumes.filter((v) => {
-    const a = age(v.task);
+    const a = age(v);
     if (a === "open") return false;
     if (a === "gone") return true;
     const at = Date.parse(a.doneAt);

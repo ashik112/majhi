@@ -24,7 +24,13 @@ let asked: string[];
 let open: string[];
 
 const task = (id: string): Task =>
-  ({ id, folder: join(dir, "tasks", id), team: [], repos: [], org: "acme" }) as unknown as Task;
+  ({
+    id,
+    folder: join(dir, "tasks", id),
+    team: [],
+    repos: [{ project: id.toLowerCase() }],
+    org: "acme",
+  }) as unknown as Task;
 
 function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
   return {
@@ -32,6 +38,8 @@ function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
     processes,
     task: (id: string) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => open,
+    queueWaitMs: async () => 30 * 60_000,
+    allTasks: () => open,
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
     runnerImage: "majhi-runner:dev",
@@ -352,7 +360,7 @@ describe("the builder's network", () => {
     expect(guard).toEqual(
       expect.arrayContaining([
         "--network",
-        "container:buildx_buildkit_majhi-preview-acm-10",
+        "container:buildx_buildkit_majhi-build-acme0",
         "--cap-add",
         "NET_ADMIN",
         "--pull",
@@ -559,6 +567,9 @@ describe("a script's own containers", () => {
   });
 
   it("caps the docker calls of a task that wait at once", async () => {
+    // Only the task that holds the project's environment may call docker on its containers.
+    await service.ensureTaskNetwork("ACM-1");
+    await service.ensureTaskNetwork("ACM-2");
     let release: () => void = () => undefined;
     docker.waitGate = new Promise<void>((resolve) => {
       release = resolve;

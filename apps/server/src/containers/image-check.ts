@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { redactText } from "../admin/policy.ts";
 import { verifiedBin } from "../tools/installer.ts";
 import { DBCHECK_TASK, dbCheckRunArgs, type HostPaths, type Safety } from "./args.ts";
+import { envRef } from "./names.ts";
 import type { ContainerDocker } from "./service.ts";
 
 const MAX_OUT = 64 * 1024;
@@ -38,7 +39,14 @@ export async function runImageCheck(
       ([k, v]) => ENV_NAME.test(k) && v.length <= 4_000 && !v.includes("\u0000"),
     ),
   );
-  const safety: Safety = { ...paths, task: DBCHECK_TASK, runnerNetwork: "", taskFolder: "/" };
+  // A watch belongs to no task and no project: its labels carry the workspace the checked programs are from.
+  const safety: Safety = {
+    ...paths,
+    task: DBCHECK_TASK,
+    env: envRef(input.toolsOrg, undefined),
+    runnerNetwork: "",
+    taskFolder: "/",
+  };
   const name = `majhi-dbcheck-${randomBytes(6).toString("hex")}`;
   const toolsBin = input.toolsOrg === undefined ? undefined : verifiedBin(paths.majhiHome, input.toolsOrg);
   const parts = dbCheckRunArgs(name, input.image, input.command, env, { cpus: 1, memory: "512m" }, safety, {

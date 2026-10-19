@@ -48,6 +48,8 @@ export class FakeDocker implements ContainerDocker {
   volumes = new Map<string, { labels: Record<string, string>; options: Record<string, string> }>();
   builders = new Set<string>();
   images = new Set<string>();
+  /** The task that built an image (its `majhi.task` label), by image name. */
+  imageTasks = new Map<string, string>();
   containers = new Map<string, FakeContainer>();
   runners = ["majhi-run-aaa"];
   connected: string[] = [];
@@ -140,7 +142,9 @@ export class FakeDocker implements ContainerDocker {
         })
       : spawn("sleep", ["30"], { detached: true, stdio: ["pipe", "pipe", "pipe"] });
     if (verb === "buildx build") {
-      this.images.add(parts.flags[parts.flags.indexOf("--tag") + 1] ?? "");
+      const tag = parts.flags[parts.flags.indexOf("--tag") + 1] ?? "";
+      this.images.add(tag);
+      this.imageTasks.set(tag, this.labelsOf(parts)["majhi.task"] ?? "");
       setTimeout(() => killTree(child), 20);
       return { child, cwd: "/", kill: () => killTree(child) };
     }
@@ -221,6 +225,22 @@ export class FakeDocker implements ContainerDocker {
     return { stdout: "", stderr: "" };
   }
 
+  /** The statements run in Postgres containers, as `create <db> from <template> in <container>` and `drop <db> in <container>`. */
+  copyCalls: string[] = [];
+
+  async copyDatabase(
+    container: string,
+    action: { user: string; database: string } & ({ template: string } | { drop: true }),
+  ): Promise<{ stdout: string; stderr: string }> {
+    if (!this.containers.has(container)) throw new Error(`No such container: ${container}`);
+    this.copyCalls.push(
+      "template" in action
+        ? `create ${action.database} from ${action.template} in ${container}`
+        : `drop ${action.database} in ${container}`,
+    );
+    return { stdout: "", stderr: "" };
+  }
+
   async connect(network: string, container: string): Promise<{ stdout: string; stderr: string }> {
     this.calls.push(`network connect ${network} ${container}`);
     if (container === "majhi-preview-acm-1" && !this.containers.has(container))
@@ -243,7 +263,8 @@ export class FakeDocker implements ContainerDocker {
     switch (verb) {
       case "image inspect":
         if (!this.images.has(last)) throw new Error("No such image");
-        return out("[]");
+        // `--format` asks for the task label: the task that built the image.
+        return out(args.includes("--format") ? (this.imageTasks.get(last) ?? "") : "[]");
       case "image rm":
         this.images.delete(last);
         return out("");
@@ -286,15 +307,19 @@ export class FakeDocker implements ContainerDocker {
         return out(JSON.stringify({ Name: last, Driver: "local", Labels: v.labels, Options: v.options }));
       }
       case "volume ls": {
-        const task = filter("label")
-          .find((f) => f.startsWith("label=majhi.task="))
-          ?.slice("label=majhi.task=".length);
-        const rows = [...this.volumes].filter(
-          ([, v]) => task === undefined || v.labels["majhi.task"] === task,
+        const wanted = filter("label").map((f) => f.slice("label=".length).split("="));
+        const rows = [...this.volumes].filter(([, v]) =>
+          wanted.every(([key = "", value = ""]) => v.labels[key] === value),
         );
+        const format = args.includes("--format") ? (args[args.indexOf("--format") + 1] ?? "") : "";
         return out(
           rows
-            .map(([name, v]) => (args.includes("--format") ? `${v.labels["majhi.task"]} ${name}` : name))
+            .map(([name, v]) => {
+              const task = v.labels["majhi.task"] ?? "";
+              const project = v.labels["majhi.project"] ?? "";
+              if (format.includes("\t")) return [name, project, task].join("\t");
+              return format === "" ? name : `${name} ${task} ${project}`;
+            })
             .join("\n"),
         );
       }

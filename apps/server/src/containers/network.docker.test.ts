@@ -42,8 +42,11 @@ function make(openTasks: string[]): ContainerService {
       protectedPaths: [],
     }),
     processes,
-    task: (id) => ({ id, folder: folderOf(id), repos: [], org: "acme" }) as unknown as Task,
+    task: (id) =>
+      ({ id, folder: folderOf(id), repos: [{ project: id.toLowerCase() }], org: "acme" }) as unknown as Task,
     openTasks: () => openTasks,
+    queueWaitMs: async () => 30 * 60_000,
+    allTasks: () => openTasks,
     settings: async () => settings,
     runnerNetwork: runners,
     runnerImage: RUNNER,
@@ -79,13 +82,16 @@ function sweep() {
   for (const task of [A, B]) {
     const found = ids(task);
     if (found.length > 0) docker("rm", "-f", "-v", ...found);
-    const volumes = docker("volume", "ls", "-q", "--filter", `label=majhi.task=${task}`)
+    const volumes = docker("volume", "ls", "-q", "--filter", `label=majhi.project=${task.toLowerCase()}`)
       .stdout.split("\n")
       .filter(Boolean);
     if (volumes.length > 0) docker("volume", "rm", "-f", ...volumes);
     docker("network", "rm", `majhi-${task.toLowerCase()}`);
   }
   docker("network", "rm", runners);
+  // The workspace builder the test made: its container and state volume go with it.
+  docker("rm", "-f", "-v", "buildx_buildkit_majhi-build-acme0");
+  docker("volume", "rm", "-f", "buildx_buildkit_majhi-build-acme0_state");
 }
 
 beforeAll(() => {

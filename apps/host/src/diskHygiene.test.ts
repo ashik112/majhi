@@ -3,52 +3,34 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  type OwnImage,
   readOpenTasks,
   removeOwnLeftovers,
-  selectBuilders,
   selectOtherReleases,
-  selectPreviewImages,
-  selectStateVolumes,
+  selectOwnImages,
 } from "./diskHygiene.ts";
 
 const row = (repository: string, tag = "latest", size = "1GB") => ({ repository, tag, id: "abc", size });
+const own = (ref: string, builtBy: string): OwnImage => ({ ref, builtBy, bytes: 1_000_000_000 });
 
 describe("what an update may remove", () => {
-  const open = new Set(["acm-1"]);
+  const open = new Set(["ACM-1"]);
 
-  it("selects only majhi preview images of tasks that are not open", () => {
+  it("selects only images majhi labelled whose task is not open", () => {
     const rows = [
-      row("majhi-preview-acm-1"),
-      row("majhi-preview-acm-2"),
-      row("acme-web"),
-      row("majhi-server", "dev"),
-      row("someone/majhi-preview-acm-3"),
+      own("majhi-acme-api-preview:latest", "ACM-1"),
+      own("majhi-acme-api-img-web:test", "ACM-2"),
+      own("majhi-preview-acm-3:latest", "ACM-3"),
+      own("sha256:unlabelled", ""),
     ];
-    expect(selectPreviewImages(rows, open).map((r) => r.repository)).toEqual(["majhi-preview-acm-2"]);
+    expect(selectOwnImages(rows, open).map((r) => r.ref)).toEqual([
+      "majhi-acme-api-img-web:test",
+      "majhi-preview-acm-3:latest",
+    ]);
   });
 
-  it("keeps every preview when the open tasks are not known", () => {
-    expect(selectPreviewImages([row("majhi-preview-acm-2")], undefined)).toEqual([]);
-    expect(selectBuilders(["majhi-preview-acm-2"], undefined)).toEqual([]);
-    expect(selectStateVolumes(["buildx_buildkit_majhi-preview-acm-20_state"], undefined)).toEqual([]);
-  });
-
-  it("selects only majhi builders and their state volumes, never another project's", () => {
-    expect(
-      selectBuilders(["majhi-preview-acm-1", "majhi-preview-acm-2", "default", "acme-builder"], open),
-    ).toEqual(["majhi-preview-acm-2"]);
-    expect(
-      selectStateVolumes(
-        [
-          "buildx_buildkit_majhi-preview-acm-10_state",
-          "buildx_buildkit_majhi-preview-acm-20_state",
-          "buildx_buildkit_acme-builder0_state",
-          "acme_data",
-          "majhi-acm-2-data-db",
-        ],
-        open,
-      ),
-    ).toEqual(["buildx_buildkit_majhi-preview-acm-20_state"]);
+  it("keeps every image when the open tasks are not known", () => {
+    expect(selectOwnImages([own("majhi-acme-api-preview:latest", "ACM-2")], undefined)).toEqual([]);
   });
 });
 
@@ -69,19 +51,12 @@ describe("removeOwnLeftovers", () => {
       if (line.startsWith("image ls --format") && line.endsWith("majhi-server:previous"))
         return t("majhi-server", "previous", "id1", "2.1GB");
       if (line.startsWith("image ls --format")) return "";
-      if (line.includes("reference=majhi-preview-*"))
+      if (line.startsWith("image ls -q")) return ["id2", "id3", "id4"].join("\n");
+      if (line.startsWith("image inspect"))
         return [
-          t("majhi-preview-acm-1", "latest", "id2", "500MB"),
-          t("majhi-preview-acm-2", "latest", "id3", "700MB"),
-          t("acme-web", "latest", "id4", "900MB"),
-        ].join("\n");
-      if (line.startsWith("buildx ls"))
-        return "default*\nmajhi-preview-acm-1\nmajhi-preview-acm-2\nacme-builder";
-      if (line.startsWith("volume ls"))
-        return [
-          "buildx_buildkit_majhi-preview-acm-10_state",
-          "buildx_buildkit_majhi-preview-acm-20_state",
-          "acme_data",
+          t("id2", "ACM-1", "500000000", "majhi-acme-api-preview:latest"),
+          t("id3", "ACM-2", "700000000", "majhi-acme-api-img-web:test"),
+          t("id4", "", "900000000", "acme-web:latest"),
         ].join("\n");
       if (line.includes("dangling=true") && line.includes("label=majhi.owned=build"))
         return t("<none>", "<none>", "id5", "300MB");
@@ -91,56 +66,46 @@ describe("removeOwnLeftovers", () => {
     return { calls, step };
   }
 
-  it("removes only majhi's own images, builders and volumes, keeps an open task's preview, and never prunes the build cache", async () => {
+  it("removes only majhi's own labelled images, keeps an open task's, and never prunes the build cache", async () => {
     await writeFile(join(home, "open-tasks.json"), JSON.stringify({ tasks: ["ACM-1"] }));
     const { calls, step } = fakeDocker();
     const said: string[] = [];
     await removeOwnLeftovers(step, home, async (text) => void said.push(text));
     const lines = calls.map((c) => c.join(" "));
 
-    expect(lines).toContain("image rm majhi-server:previous");
-    expect(lines).toContain("image rm majhi-preview-acm-2:latest");
-    expect(lines).toContain("buildx rm --force majhi-preview-acm-2");
-    expect(lines).toContain("volume rm buildx_buildkit_majhi-preview-acm-20_state");
-    expect(lines).toContain("image prune -f --filter label=majhi.owned=build");
-
-    const removals = lines.filter((l) =>
-      /^(image rm|image prune|buildx rm|volume rm|container rm|rm )/.test(l),
-    );
+    const removals = lines.filter((l) => l.startsWith("image rm") || l.startsWith("image prune"));
     expect(removals).toEqual([
       "image rm majhi-server:previous",
-      "image rm majhi-preview-acm-2:latest",
-      "buildx rm --force majhi-preview-acm-2",
-      "volume rm buildx_buildkit_majhi-preview-acm-20_state",
+      "image rm majhi-acme-api-img-web:test",
       "image prune -f --filter label=majhi.owned=build",
     ]);
     const all = lines.join("\n");
-    expect(all).not.toContain("acme");
-    expect(all).not.toContain("acm-1:");
-    expect(all).not.toMatch(/system prune|volume prune|container prune|image prune -f$|prune -a|--all/);
+    expect(all).not.toContain("acme-web");
+    expect(all).not.toMatch(
+      /system prune|volume prune|container prune|image prune -f$|prune -a|--all|buildx rm|volume rm/,
+    );
     // The build cache is only ever trimmed by age, never cleared.
     const builderPrunes = all.split("\n").filter((l) => l.includes("builder prune"));
     expect(builderPrunes.every((l) => l.includes("--filter until="))).toBe(true);
     expect(said.at(-1)).toContain("majhi-server:previous (2.1GB)");
-    expect(said.at(-1)).toContain("majhi-preview-acm-2:latest (700MB)");
+    expect(said.at(-1)).toContain("majhi-acme-api-img-web:test (700 MB)");
     expect(said.at(-1)).toContain("freed");
   });
 
-  it("keeps all previews but still drops the previous tag when the open tasks are unknown", async () => {
+  it("keeps all labelled images but still drops the previous tag when the open tasks are unknown", async () => {
     const { calls, step } = fakeDocker();
     const said: string[] = [];
     await removeOwnLeftovers(step, home, async (text) => void said.push(text));
     const lines = calls.map((c) => c.join(" "));
     expect(lines).toContain("image rm majhi-server:previous");
-    expect(lines.some((l) => l.startsWith("buildx rm") || l.startsWith("volume rm"))).toBe(false);
-    expect(lines.some((l) => l.includes("majhi-preview-acm-2"))).toBe(false);
+    expect(lines.some((l) => l.startsWith("image inspect"))).toBe(false);
     expect(said[0]).toContain("Kept the preview images");
   });
 
-  it("reads the open tasks lowercased, or nothing when the file is bad", async () => {
+  it("reads the open tasks as they are, or nothing when the file is bad", async () => {
     expect(await readOpenTasks(home)).toBeUndefined();
     await writeFile(join(home, "open-tasks.json"), JSON.stringify({ tasks: ["ACM-1"] }));
-    expect([...((await readOpenTasks(home)) ?? [])]).toEqual(["acm-1"]);
+    expect([...((await readOpenTasks(home)) ?? [])]).toEqual(["ACM-1"]);
     await writeFile(join(home, "open-tasks.json"), "{nope");
     expect(await readOpenTasks(home)).toBeUndefined();
   });

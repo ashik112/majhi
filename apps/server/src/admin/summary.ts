@@ -91,6 +91,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "containers.preview.build": (i) => `Build the preview of ${str(i.task)}`,
   "containers.preview.run": (i) => `Run the preview of ${str(i.task)} on port ${str(i.port)}`,
   "containers.services.start": (i) => `Start service ${str(i.name)} (${str(i.image)}) in ${str(i.task)}`,
+  "containers.volumes.remove": (i) => `Delete the volume ${str(i.name)} of project ${str(i.project)}`,
   "containers.stop": (i) => `Stop ${str(i.name)} in ${str(i.task)}`,
   "watch.report": (i) => `Write what watch ${str(i.id)} found`,
   "watch.snooze": (i) => `Snooze watch ${str(i.id)}`,

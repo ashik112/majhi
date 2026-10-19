@@ -1,6 +1,7 @@
 import { imageCommandProblem, mongoCommandProblem } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { ContainerRefused, dbCheckRunArgs, dockerArgv } from "../../containers/args.ts";
+import { envRef } from "../../containers/names.ts";
 import { refused } from "./db-drivers.ts";
 import { realWatchPorts } from "./real-ports.ts";
 
@@ -61,6 +62,7 @@ describe("image checks", () => {
     hostHome: "/Users/owner",
     protectedPaths: ["/Users/owner/keys/secrets.key"],
     task: "WATCH-1",
+    env: envRef("private", undefined),
     runnerNetwork: "",
     taskFolder: "/",
   };

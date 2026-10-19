@@ -37,6 +37,8 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "conversations.archive",
   "notices.list",
   "notices.markRead",
+  "tasks.pin",
+  "containers.volumes.remove",
   "chats.create",
   "chats.rename",
   // What clients wrote, who they are and what is sent to them are the owner's: no agent reads or changes them.

@@ -2958,6 +2958,13 @@ export const commands = {
     input: ServiceStartInputSchema.extend({ task: TaskIdSchema }),
     output: z.object({ container: ContainerInfoSchema }),
   },
+  "containers.volumes.remove": {
+    risk: "destructive",
+    summary:
+      "Delete one named volume of a project's environment (its dev database, say) for good. A task can never do this: its `down -v` leaves them. Owner and captain only, and only while no task holds the project's environment",
+    input: z.object({ project: IdSchema, name: ContainerNameSchema }),
+    output: z.object({ volume: z.string() }),
+  },
   "containers.stop": {
     risk: "change",
     summary: "Stop the preview of a task (name preview) or one of its service containers",
@@ -3039,6 +3046,13 @@ export const commands = {
       target: TaskIdSchema,
     }),
     output: TaskSchema,
+  },
+  "tasks.pin": {
+    risk: "change",
+    summary:
+      "Pin a task so the worktree budget (limits.worktrees) never removes its folder, or unpin it. Owner only",
+    input: z.object({ task: TaskIdSchema, pinned: z.boolean() }),
+    output: z.object({ task: TaskIdSchema, pinned: z.boolean() }),
   },
 
   // Room control (5.13, 5.16) ------------------------------------------------

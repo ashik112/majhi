@@ -221,7 +221,15 @@ describe("machine-wide run cap", () => {
   });
 
   it("never lets the machine-wide run total exceed agents_max", () => {
-    const rest = { per_account: 2, per_task: 3, idle_timeout: "3m", tasks_running: 4, open_by_others: 5 };
+    const rest = {
+      per_account: 2,
+      per_task: 3,
+      idle_timeout: "3m",
+      tasks_running: 4,
+      open_by_others: 5,
+      worktrees: 15,
+      env_wait: "30m",
+    };
     expect(runsTotal({ agents_max: 6, ...rest }, 24)).toBe(6);
     expect(runsTotal({ agents_max: 6, ...rest, runs_total: 9 }, 24)).toBe(6);
   });

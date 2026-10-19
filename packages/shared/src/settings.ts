@@ -75,6 +75,13 @@ const limitsFields = {
   tasks_running: z.number().int().min(1).max(64),
   /** Open tasks per workspace that the owner did not make. Over it, a new one is filed as an idea. */
   open_by_others: z.number().int().min(0).max(100),
+  /**
+   * Task folders kept at once. Over it, the oldest done or idle task folder goes after its branch is
+   * saved; a running, pinned or dirty one never does.
+   */
+  worktrees: z.number().int().min(1).max(500),
+  /** How long a call waits in the queue for a project's environment before it gives up. */
+  env_wait: DurationSchema,
 };
 export const LimitsSettingsSchema = z.strictObject({
   agents_max: limitsFields.agents_max.default(6),
@@ -84,6 +91,8 @@ export const LimitsSettingsSchema = z.strictObject({
   idle_timeout: limitsFields.idle_timeout.default("3m"),
   tasks_running: limitsFields.tasks_running.default(4),
   open_by_others: limitsFields.open_by_others.default(5),
+  worktrees: limitsFields.worktrees.default(15),
+  env_wait: limitsFields.env_wait.default("30m"),
 });
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
 export const LimitsPatchSchema = z.strictObject(limitsFields).partial();

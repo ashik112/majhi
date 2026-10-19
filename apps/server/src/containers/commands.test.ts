@@ -71,10 +71,10 @@ describe("a task that ends", () => {
     expect((await h.cmd("containers.services.start", { ...db, volumes })).status).toBe(200);
     // The service and its holder.
     expect(docker.containers.size).toBe(2);
-    expect(docker.networks.has("majhi-acm-1")).toBe(true);
-    expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
-    docker.images.add("majhi-preview-acm-1");
-    docker.builders.add("majhi-preview-acm-1");
+    expect(docker.networks.has("majhi-acme-api")).toBe(true);
+    expect(docker.volumes.has("majhi-acme-api-data-pgdata")).toBe(true);
+    docker.images.add("majhi-acme-api-preview");
+    docker.builders.add("majhi-build-acme");
   }
 
   it("stopping it removes the containers and the network but keeps the volumes", async () => {

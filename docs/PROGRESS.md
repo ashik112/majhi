@@ -2815,3 +2815,41 @@ Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2723 tests
 Review fixes: incidents are never ideas; the agent names its task through `status` (unpublished branches follow); a resume takes a running place like a start.
 
 Left for the next steps: no Start now control in the UI yet (the command takes `now` for the owner; the console of step 3 has the key); the Ideas list and Needs you wording are step 3; `project-busy` is in the gate's type for step 2.
+
+## Workflow reset step 2: the environment per project (built, branch feat/env-per-project, not merged)
+
+**Plan.** Brief: `docs/briefs/workflow-reset.md` step 2. Order:
+
+1. `containers/names.ts` becomes the one place for every docker name and label, keyed by the right unit: org (builder `majhi-build-<org>`, package store), project (network, holders, services, volumes, preview image, script images) and task only for the holder label. Every object gets `majhi.org`; project objects also get `majhi.project`.
+2. `containers/service.ts` and `env-queue.ts`: one holder per project environment, the rest wait in order with their place posted to their room; release on pause, stop and end hands it to the next.
+3. No unnamed volumes (`args.ts`, `task-docker.ts`, preview scratch).
+4. `env.branchDb` (`branch_db` tool and command): `CREATE DATABASE <task> TEMPLATE <dev>`, dropped when the task closes.
+5. `limits.worktrees` (default 15) and the budget sweep; archive on merge.
+6. Package store at `<tasks_dir>/.cache/<org>` (measured first, see DECISIONS).
+7. Migration at start and disk hygiene (server `prune.ts`, host `diskHygiene.ts`) select by labels and typed data, never by name text.
+8. SPEC 5.15 and 5.17, DECISIONS rows.
+
+**Test plan** (only these): nothing shared across workspaces; the queue hands the environment to exactly one task; the budget never removes a dirty, running or pinned folder; the template database is dropped on close; an anonymous volume becomes a named, labelled one. Typecheck and touched tests while working; full vitest, build and playwright once at the end. Journey with real docker on `alpine:3` and `postgres:18-alpine` only.
+
+**What works.**
+- `containers/names.ts` is the one place for every docker name and label: builder `majhi-build-<org>` per workspace (found by its typed name: `docker buildx create` cannot label a builder), everything else `majhi-<project>-...` per project, every object labelled `majhi.org` and `majhi.project`, containers also `majhi.task` (the holder).
+- One task holds a project's environment; others wait in order with their place in their room, and the release wakes the next (`containers/env-queue.ts`, no polling). A task that does not hold it sees and touches none of its containers.
+- Anonymous volumes become `anon-<hash>` named volumes of the project; the preview scratch is a named volume removed with the preview.
+- `branch_db` tool: a task's copy of the dev database, dropped when the task closes (or on the next start of the service).
+- `limits.worktrees` (default 15), the budget sweep, archive on merge, `tasks.pin` (owner only).
+- At start, the old per-task builder, state volume, preview image and volumes of tasks that are not open are removed by task id and label. Host disk hygiene selects images by label.
+
+**How to try it.** Two tasks of one project start services: the second waits (its room says so) and gets the environment when the first leaves running. `docker ps --filter label=majhi.project=<project>` shows the objects. Tests: `pnpm exec vitest run apps/server/src/containers/environment.test.ts apps/server/src/tasks/folder-sweep.test.ts`.
+
+**Measured (real docker, OrbStack, small public images).**
+- Builder state: the old per-task builder `majhi-preview-pyz-160` holds 1.478 GB for one task. The workspace builder holds 14.6 MB after two alpine builds and serves every task; the second build of the same Dockerfile took 4.9 s with the layers cached, the first 10.8 s including the builder's creation.
+- Builder memory: 23 MiB while building, 119 MiB if left bootstrapped and idle, 0 stopped. It stops when the workspace's last build ends.
+- Project volume: `pgdata` 63.8 MB, shared by every task of the project; one preview image 14.5 MB per project. Per task: its folder and nothing in docker.
+- Package store: hard links cannot be made into `node_modules` on a bind mount here (two mounts: `EXDEV`; one mount: the link becomes a copy), and a named volume hard-links (22 of 23 files). The copy costs next to nothing on disk on this runtime (43 MB of `node_modules` moved the host's free space by 1 MB). See DECISIONS 2026-10-19.
+
+**Left / known.**
+- Hard-linked package installs need a Linux host with one mount for the project folder (follow-up in DECISIONS); on this runtime nothing majhi can lay out gives link count above 1.
+- Objects of tasks that no longer exist in the database are found only by label (images, volumes), not builders. The 13 unlabelled hash-named volumes on the owner's machine are left: nothing proves they are majhi's.
+- The queue is in memory: a restart clears every environment, as it removes every container.
+- The web app shows no queue place yet (the room line carries it); a pin button and the budget setting need the web step.
+
