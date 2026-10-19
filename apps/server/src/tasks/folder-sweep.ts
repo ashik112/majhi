@@ -9,6 +9,7 @@ import { git, gitOk, uncommitted } from "../git/git.ts";
 import { removeWorktree } from "../git/worktrees.ts";
 import type { Store } from "../store/index.ts";
 import { REPORT_FILE } from "./report.ts";
+import { removableFolder } from "./task-folder.ts";
 
 /**
  * Frees disk in the folders of tasks that are done (SPEC 5.4, 5.18 Cleanup). Code only, no model.
@@ -276,8 +277,7 @@ export class TaskFolderSweep {
    */
   async budget(limit: number, dry = false): Promise<BudgetReport> {
     const report: BudgetReport = { count: 0, removed: [], kept: [] };
-    const tasksRoot = await realpath(await this.deps.tasksDir()).catch(() => undefined);
-    if (tasksRoot === undefined) return report;
+    const tasksDir = await this.deps.tasksDir();
     const pinned = this.deps.pinned?.() ?? new Set<string>();
     const folders: Task[] = [];
     for (const [id] of this.deps.store.tasks.statuses()) {
@@ -301,7 +301,7 @@ export class TaskFolderSweep {
         report.kept.push({ id: task.id, why: "pinned" });
         continue;
       }
-      const why = await this.retire(task, tasksRoot, "saved", dry);
+      const why = await this.retire(task, tasksDir, "saved", dry);
       if (why === undefined) {
         report.removed.push(task.id);
         over--;
@@ -320,9 +320,7 @@ export class TaskFolderSweep {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "done") return "it is not done";
     if (this.deps.pinned?.().has(id) === true) return "pinned";
-    const tasksRoot = await realpath(await this.deps.tasksDir()).catch(() => undefined);
-    if (tasksRoot === undefined) return "no tasks folder";
-    const why = await this.retire(task, tasksRoot, "merged", false);
+    const why = await this.retire(task, await this.deps.tasksDir(), "merged", false);
     if (why === undefined) this.forget();
     return why;
   }
@@ -334,13 +332,18 @@ export class TaskFolderSweep {
    */
   private async retire(
     task: Task,
-    tasksRoot: string,
+    tasksDir: string,
     need: "saved" | "merged",
     dry: boolean,
   ): Promise<string | undefined> {
-    const root = await realpath(task.folder).catch(() => undefined);
-    if (root === undefined) return undefined;
-    if (!inside(root, tasksRoot)) return "its folder is outside the tasks folder";
+    // The task's stored folder, and the one test of whether majhi may delete it (step 1's `removableFolder`).
+    const here = await stat(task.folder).then(
+      (s) => s.isDirectory(),
+      () => false,
+    );
+    if (!here) return undefined;
+    const root = await removableFolder(tasksDir, task.folder);
+    if (root === undefined) return "its folder is outside the tasks folder";
     const trees: Task["repos"] = [];
     for (const repo of task.repos) {
       const worktree = repo.worktree;
