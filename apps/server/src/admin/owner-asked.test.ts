@@ -38,16 +38,11 @@ describe("an agent saying the owner asked", () => {
     // Git accounts, identity, projects, workspace roots, repos attached: the card always shows.
     const waiting = [
       ["majhi_orgs_update", { id: "acme", identity: { name: "Mallory", email: "m@acme.test" } }],
-      ["majhi_orgs_update", { id: "acme", lead_start: "org" }],
       ["majhi_orgs_setGitAccount", { id: "acme", host: "github.com", account: "mallory" }],
       ["majhi_projects_update", { id: "acme-api", org: "acme", aliases: ["api"] }],
       ["majhi_projects_remove", { id: "acme-api" }],
       ["majhi_workspaces_set", { workspaces: ["/Users/owner"] }],
       ["majhi_tasks_create", { text: "fix the login bug", repos: [{ project: "acme-api" }], start: true }],
-      [
-        "majhi_tasks_split",
-        { task: task.id, children: [{ text: "add a test", repos: [{ project: "acme-api" }] }] },
-      ],
       ["majhi_tasks_start", { id: task.id }],
     ] as const;
     for (const [tool, input] of waiting) {

@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { slugOfName } from "@majhi/shared";
 import { UserError } from "../errors.ts";
@@ -70,4 +70,15 @@ export async function claimTaskFolder(tasksDir: string, scope: string, slug: str
     }
   }
   throw new UserError(`Could not find a free folder name in ${parent}.`, 409);
+}
+
+/**
+ * The folder to delete for a removed task, or undefined when it is not one majhi may delete: it must
+ * exist and, once links are resolved, lie strictly inside the tasks folder.
+ */
+export async function removableFolder(tasksDir: string, folder: string): Promise<string | undefined> {
+  const root = await realpath(tasksDir).catch(() => undefined);
+  const real = await realpath(folder).catch(() => undefined);
+  if (root === undefined || real === undefined) return undefined;
+  return isInside(root, real) ? real : undefined;
 }

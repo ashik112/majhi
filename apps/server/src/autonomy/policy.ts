@@ -95,7 +95,7 @@ const GIT_ACCESS: ReadonlySet<string> = new Set([
 ]);
 
 /** `orgs.update` fields that change identity, git accounts, where merges land, or what agents may do alone. */
-const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "lead_start", "base"] as const;
+const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "base"] as const;
 
 /** Automations that start tasks or run commands later, outside the run gate and the caps. */
 const AUTOMATION_EDITS: ReadonlySet<string> = new Set([

@@ -189,7 +189,7 @@ import {
   targetRefusal,
 } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
-import { claimTaskFolder, nameSlug, scopeSlug } from "./task-folder.ts";
+import { claimTaskFolder, nameSlug, removableFolder, scopeSlug } from "./task-folder.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 import { chooseType, guessType, typeQuestion } from "./typing.ts";
@@ -816,6 +816,17 @@ export class TaskService {
       );
     }
     this.deps.store.tasks.setFields(id, input);
+    return this.fieldsChanged(id);
+  }
+
+  /** The lines the task's agent keeps current (Now, Next, Done when). A line left out stays as it was. */
+  setStatusLines(
+    id: string,
+    lines: { now?: string | undefined; next?: string | undefined; doneWhen?: string | undefined },
+  ): Task {
+    const task = this.get(id);
+    if (task.status === "done") throw new UserError(`${id} is done.`, 409);
+    this.deps.store.tasks.setStatusLines(id, lines, this.now().toISOString());
     return this.fieldsChanged(id);
   }
 
@@ -1517,6 +1528,7 @@ export class TaskService {
   async update(input: {
     id: string;
     title?: string | undefined;
+    name?: string | undefined;
     brief?: string | undefined;
     agent?: string | undefined;
     mode?: CoordinationMode | undefined;
@@ -1537,6 +1549,8 @@ export class TaskService {
         { priority: input.priority, due: input.due },
         this.now().toISOString(),
       );
+    if (input.name !== undefined)
+      this.deps.store.tasks.setName(task.id, this.nameFor(input.name, task.title), this.now().toISOString());
     const title = (input.title ?? task.title).trim();
     if (title === "") throw new UserError("The title cannot be empty.");
     const current = task.brief.trim().split(/\r?\n/);
@@ -2895,9 +2909,12 @@ export class TaskService {
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) await removeWorktree(repo.source, repo.worktree, force);
     }
-    // The folder is only ever `<tasks_dir>/<task id>`; refuse to delete anything else.
-    if (basename(task.folder) === id && task.folder.includes(sep) && task.folder !== sep) {
-      await rm(task.folder, { recursive: true, force: true });
+    // Only a folder strictly inside the tasks folder goes (`<tasks_dir>/<id>` before names,
+    // `<tasks_dir>/<project>/<name>` after): never the tasks folder, nothing outside it, no link out.
+    const loaded = await this.deps.config.load();
+    if (loaded.state.status === "loaded") {
+      const folder = await removableFolder(loaded.state.config.tasksDir, task.folder);
+      if (folder !== undefined) await rm(folder, { recursive: true, force: true });
     }
     const { store } = this.deps;
     const held = store.tasks.linksTo(id);

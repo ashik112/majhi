@@ -34,6 +34,10 @@ export interface TaskStatusRow {
   at: string;
   actor: string;
   hold: string | null;
+  /** The task's short name, its Done when line and its first project, for a started task's line. */
+  name: string | null;
+  doneWhen: string | null;
+  project: string | null;
 }
 
 export interface BugRow {
@@ -130,20 +134,23 @@ export class NoticesRepo {
   }
 
   /**
-   * Tasks that are in review, done or paused now, with the event that put them there. A task that
+   * Tasks that are in review, done or paused now, or that just began (running, from the inbox or ready), with the event that put them there. A task that
    * moved on has no row: the feed says what is true.
    */
   taskStatuses(since: string, limit: number): TaskStatusRow[] {
     return this.db
       .prepare(
         `SELECT t.id AS id, t.title AS title, t.org AS org, t.status AS status,
-                e.id AS event, e.at AS at, e.actor AS actor, e.hold AS hold
+                e.id AS event, e.at AS at, e.actor AS actor, e.hold AS hold,
+                t.name AS name, t.done_when AS doneWhen,
+                (SELECT project FROM task_repos WHERE task = t.id ORDER BY pos LIMIT 1) AS project
            FROM tasks t
            JOIN task_events e ON e.id = (
                   SELECT max(id) FROM task_events
                    WHERE task = t.id AND refused = 0 AND to_status = t.status
                      AND coalesce(from_status, '') != to_status)
-          WHERE t.updated_at >= ? AND t.status IN ('review', 'done', 'paused') AND t.kind != 'chat'
+          WHERE t.updated_at >= ? AND t.status IN ('review', 'done', 'paused', 'running') AND t.kind != 'chat'
+            AND (t.status != 'running' OR coalesce(e.from_status, '') IN ('inbox', 'ready'))
             AND e.at >= ?
           ORDER BY e.at DESC LIMIT ?`,
       )

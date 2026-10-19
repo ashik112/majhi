@@ -205,17 +205,6 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     fixtures: VERDICTS,
   },
   {
-    id: "team-pick",
-    title: "Team for a new task",
-    use: "routing",
-    question: /^team$/,
-    target: 0.9,
-    // The owner can change the team of a task; a doubtful pick falls back to the default team.
-    startMode: "live",
-    startBar: 0.9,
-    teacher: true,
-  },
-  {
     id: "task-type",
     title: "Type of a new task",
     use: "routing",

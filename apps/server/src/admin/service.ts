@@ -568,7 +568,7 @@ export class AdminService {
 
   /**
    * Runs a command for an agent at once, whatever the approval policy says, because the caller
-   * checked a rule the owner set (a lead starting a task under `lead_start`). It still leaves an
+   * checked a rule the owner set. It still leaves an
    * `applied` card in the agent's room. `accept` names a failure that is not one (a task that
    * waits on a dependency): the card shows it as applied and the agent gets `accepted` back.
    */
@@ -1653,7 +1653,6 @@ const SENSITIVE_ORG_FIELDS = [
   "mr_tokens",
   "git_accounts",
   "merge",
-  "lead_start",
 ] as const;
 
 /**

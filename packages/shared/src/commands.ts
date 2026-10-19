@@ -1788,7 +1788,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, the memory limit of pre-ship checks, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, the memory limit of pre-ship checks, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -1812,10 +1812,6 @@ export const commands = {
       turns: OrgConfigSchema.shape.turns.nullable().optional(),
       /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
-      /** The default team for new tasks, lead first. null lets the decision provider pick. */
-      team: OrgConfigSchema.shape.team.nullable().optional(),
-      /** Which tasks a lead may start without asking. null goes back to `children`. */
-      lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
       git_accounts: OrgConfigSchema.shape.git_accounts.nullable().optional(),
       dismissed_logins: OrgConfigSchema.shape.dismissed_logins.nullable().optional(),
@@ -2322,7 +2318,7 @@ export const commands = {
       dependsOn: z.array(TaskIdSchema).max(20).default([]),
       /**
        * Makes the new task a fix task of this one: it gets a `follow-up` link to it (5.15). A fix
-       * task starts only when the owner approves, whatever the org's `lead_start` says.
+       * task made by an agent is an idea: it starts only when the owner starts it.
        */
       followUpOf: TaskIdSchema.optional(),
       /**
@@ -2397,6 +2393,8 @@ export const commands = {
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
+      /** Renames the task (2 to 4 words). Its branch and folder keep the names they have. */
+      name: TaskNameSchema.optional(),
       brief: z.string().max(100_000).optional(),
       /**
        * The branch the task's worktree is cut from and ships into. Refused when the repo has no such

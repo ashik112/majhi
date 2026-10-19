@@ -910,13 +910,15 @@ export class AutonomyService {
     }
     const p = await this.staffing().propose(request);
     if (p.lead === undefined) return undefined;
+    // One agent per task: staffing picks who, and only the owner (or an @mention) makes it a team.
+    const team = [p.lead];
     this.staffLines.push({
-      key: command === "tasks.start" ? `start:${str(input.id)}` : p.team.join(","),
+      key: command === "tasks.start" ? `start:${str(input.id)}` : team.join(","),
       reason: p.reason,
     });
     if (this.staffLines.length > 20) this.staffLines.shift();
-    if (command === "tasks.create") return { ...input, team: p.team };
-    await this.deps.tasks.staffTeam(str(input.id) ?? "", p.team);
+    if (command === "tasks.create") return { ...input, team };
+    await this.deps.tasks.staffTeam(str(input.id) ?? "", team);
     return input;
   }
 
@@ -2007,9 +2009,6 @@ export class AutonomyService {
     if (typeof existing === "string") for (const a of this.deps.store.tasks.get(existing)?.team ?? []) add(a);
     add(input.agent);
     for (const a of Array.isArray(input.team) ? input.team : []) add(a);
-    for (const c of Array.isArray(input.children) ? input.children : [])
-      add((c as { agent?: unknown }).agent);
-    if (agents.size === 0) for (const a of sections.orgs[world.org]?.team ?? []) add(a);
     return [...new Set([...agents].flatMap((a) => world.agents[a]?.account ?? []))];
   }
 

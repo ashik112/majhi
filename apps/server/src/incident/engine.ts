@@ -386,6 +386,11 @@ export class IncidentEngine {
       },
       `opened:${task.id}`,
     );
+    // The highest severity goes to the front of the line when running tasks are at their limit: the line
+    // orders by priority first, and a start still never goes past the limit.
+    if (source.kind === "watch" && source.incident.severity === "high") {
+      this.deps.store.tasks.setPlanning(task.id, { priority: "high" }, this.at());
+    }
     await this.adopt(task.id, source);
     // The investigation reads only: it never waits for Auto-pilot or the Start row.
     const started = await this.tryStart(task.id);

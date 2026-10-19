@@ -1,6 +1,5 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
 import {
-  DEFAULT_LEAD_START,
   GLOBAL_CONNECTIONS,
   LEGACY_PERSONAL,
   type OrgConfig,
@@ -77,8 +76,6 @@ export class OrgService {
       "rooms",
       "turns",
       "tiers",
-      "team",
-      "lead_start",
       "mr_tokens",
       "git_accounts",
       "dismissed_logins",
@@ -151,7 +148,6 @@ function view(
     key,
     accountCount: accounts.filter((a) => a.org === id).length,
     agentCount: agentScopes.filter((s) => s === id).length,
-    leadStart: org.lead_start ?? DEFAULT_LEAD_START,
   };
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
@@ -174,7 +170,6 @@ function view(
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
   if (org.turns !== undefined && Object.keys(org.turns).length > 0) out.turns = org.turns;
   if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;
-  if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;
   if (org.git_accounts !== undefined && org.git_accounts.length > 0) out.gitAccounts = org.git_accounts;
   return out;

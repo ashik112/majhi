@@ -72,7 +72,7 @@ export interface Decisions {
   revoke(token: string): void;
   /**
    * Runs the chain on typed questions and records the decision on the task (5.12). Rooms use it
-   * for the default team of a new task and a review verdict. Resolves undefined when there is no
+   * for a review verdict and the type of a new task. Resolves undefined when there is no
    * provider at all.
    */
   decide(request: DecideRequestInput, use: DecideUse): Promise<DecisionResult | undefined>;
