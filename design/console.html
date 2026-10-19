@@ -37,7 +37,7 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
 .glass{background:var(--glass);backdrop-filter:blur(18px) saturate(1.35);-webkit-backdrop-filter:blur(18px) saturate(1.35);border:1px solid var(--glass-line);border-radius:14px;box-shadow:var(--shadow)}
 
 .top{display:flex;align-items:center;gap:12px;padding:8px 10px 8px 12px;min-width:0}
-.mark{width:26px;height:26px;border-radius:7px;background:#f0b455;color:#1a1204;font:600 12px/26px var(--mono);text-align:center;flex:none;box-shadow:0 0 14px -2px rgb(240 180 85 / .45)}
+.mark{width:26px;height:26px;border-radius:7px;background:#f0b455;color:#1a1204;display:grid;place-items:center;flex:none;box-shadow:0 0 14px -2px rgb(240 180 85 / .45)}
 .seg{display:flex;gap:2px;padding:3px;background:var(--field);border:1px solid var(--line-strong);border-radius:9px;min-width:0;flex:none}
 .seg button{height:26px;padding:0 8px;border-radius:7px;color:var(--fg-muted);font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}
 .seg button:hover{color:var(--fg);background:var(--raised)}
@@ -205,6 +205,7 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
 [data-theme^=focus] .rule{background:var(--line)}
 [data-theme^=focus] .gh{background:var(--panel)}
 [data-theme^=focus] .mark{box-shadow:none}
+.mark svg{width:19px}
 /* no glow, no breathing: a static dot; motion only when something changes */
 [data-theme^=focus] .lamp{box-shadow:none!important;animation:none!important}
 [data-theme^=focus] .l-paused{background:none;border:1.5px solid var(--paused)}
@@ -312,7 +313,7 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
 <body>
 <div class="shell" id="shell">
   <header class="top glass">
-    <div class="mark" aria-label="majhi">mj</div>
+    <div class="mark" aria-label="majhi"><svg viewBox="28 54 200 172" aria-hidden="true" fill="currentColor"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></div>
     <div class="seg" role="group" aria-label="Workspace" id="wsf"></div>
     <div class="conn" id="conn"></div>
     <div class="tele" id="tele"></div>
@@ -508,7 +509,7 @@ function render(){
 function renderChat(){
   const t=flat[1][sel[1]]||null;
   const chats=[{k:"cap",t:"Captain"},...(t?[{k:"task",t:(t.p?t.p+" · ":"")+t.t,lamp:LAMP[t.s]}]:[]),{k:"client",ws:"ACM",t:"Initrode client"},{k:"client",ws:"ACM",t:"#general"},...(S.ws.length>4?[{k:"client",ws:"STK",t:"Stark ops channel"}]:[])];
-  $("#chips").innerHTML=chats.map((c,i)=>`<button class="chip" aria-pressed="${i===(t?1:0)}">${c.k==="cap"?`<span class="mark" style="width:16px;height:16px;line-height:16px;font-size:8px;border-radius:4px;box-shadow:none">mj</span>`:c.lamp?`<span class="lamp l-${c.lamp}" aria-hidden="true"></span>`:wsb(c.ws)}<span class="t">${esc(c.t)}</span></button>`).join("");
+  $("#chips").innerHTML=chats.map((c,i)=>`<button class="chip" aria-pressed="${i===(t?1:0)}">${c.k==="cap"?`<span class="mark" style="width:16px;height:16px;border-radius:4px;box-shadow:none"><svg viewBox="28 54 200 172" aria-hidden="true" fill="currentColor" style="width:11px"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>`:c.lamp?`<span class="lamp l-${c.lamp}" aria-hidden="true"></span>`:wsb(c.ws)}<span class="t">${esc(c.t)}</span></button>`).join("");
   if(!t){$("#th").innerHTML="";$("#msgs").innerHTML=`<div class="empty"><b>Nothing picked</b>Pick a task in Work, or talk to the captain.</div>`;$("#cph").textContent="Message the captain";return;}
   const slug=t.t.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,4).join("-");
   $("#th").innerHTML=`<div class="t"><span class="x2">${t.p?`<span class="p" style="color:var(--ws${wsHue[t.ws]??5});font-weight:500">${esc(t.p)} · </span>`:""}${esc(t.t)}</span></div><div style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--fg-faint)">${wsb(t.ws)}</div>
