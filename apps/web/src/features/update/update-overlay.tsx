@@ -67,7 +67,7 @@ function Running({ startedAt }: { startedAt: string }) {
   const failed = phase.kind === "failed" || timedOut;
   const lines = "lines" in phase ? phase.lines : [];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[var(--z-float)] flex items-center justify-center bg-canvas/85 p-6 backdrop-blur-sm">
       <section
         role="alertdialog"
         aria-modal="true"

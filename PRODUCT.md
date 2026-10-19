@@ -36,7 +36,7 @@ Owned core, reused parts: majhi orchestrates existing agents over ACP rather tha
 
 ## Brand Commitments
 
-- Name: majhi. Mark: amber rounded square with `mj` in mono.
+- Name: majhi. Mark: the boat (a human and an agent in one boat, `apps/web/public/favicon.svg`) in an amber rounded square.
 - Voice: plain, direct, no em dashes, no filler.
 
 ## Product Principles

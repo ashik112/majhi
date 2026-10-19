@@ -114,7 +114,11 @@ function rowOf(
   }
   const label = labelOf(first.task === undefined ? undefined : ctx.task(first.task), ws);
   const lamp: Lamp = "needs";
-  const quick = primaryOption(first, undefined)?.label ?? openLabel(first.link);
+  // A question's answers can be whole paragraphs, so its quiet button says what it does.
+  const quick =
+    first.kind === "question" && first.options.length > 0
+      ? "Choose"
+      : (primaryOption(first, undefined)?.label ?? openLabel(first.link));
   if (label !== undefined) {
     return {
       ...base,

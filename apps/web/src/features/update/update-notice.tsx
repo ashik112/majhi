@@ -1,6 +1,8 @@
 import { ArrowUpCircle, LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CommandLine } from "@/components/command-line";
+import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -24,6 +26,18 @@ export function UpdateNotice() {
   const [manual, setManual] = useState<string>();
   const notice = updateNotice(version.data);
   const began = version.data?.update;
+  const row = useRef<HTMLDivElement>(null);
+  const closePanel = useCallback(() => setOpen(false), []);
+  const panelWanted =
+    open || start.error !== null || manual !== undefined || (notice.kind !== "none" && !notice.canUpdate);
+  // The panel renders in a portal in the top layer, above every pane in every theme.
+  const { panel, style, container } = useAnchoredPanel({
+    open: panelWanted && session === undefined,
+    close: closePanel,
+    trigger: row,
+    align: "left",
+    maxHeight: 480,
+  });
 
   // The server started the update it was waiting with: show its progress.
   useEffect(() => {
@@ -55,7 +69,10 @@ export function UpdateNotice() {
   const showPanel = open || start.error !== null || manualOnly;
   return (
     <section aria-label="Update ready" className="relative shrink-0">
-      <div className="flex h-9 items-center gap-1 rounded-lg border border-amber-line bg-amber-wash pr-1 pl-1">
+      <div
+        ref={row}
+        className="flex h-9 items-center gap-1 rounded-lg border border-amber-line bg-amber-wash pr-1 pl-1"
+      >
         <button
           type="button"
           aria-expanded={open}
@@ -79,56 +96,61 @@ export function UpdateNotice() {
           </Button>
         )}
       </div>
-      {showPanel && (
-        <div
-          className={cn(
-            "absolute bottom-full left-0 z-30 mb-2 flex w-[280px] max-w-[calc(100vw-24px)] flex-col gap-2 rounded-lg border border-amber-line p-3 shadow-lg",
-            GLASS_STRONG,
-          )}
-        >
-          <p className="text-xs font-medium text-fg">{changeSummary(notice.changes)}</p>
-          {notice.changes.length > 0 && (
-            <ul
-              aria-label="Changes"
-              className="flex max-h-40 flex-col gap-1 overflow-y-auto text-xs text-fg-soft"
-            >
-              {notice.changes.map((change) => (
-                <li key={change} className="text-pretty">
-                  {change}
-                </li>
-              ))}
-            </ul>
-          )}
-          {notice.dirty && (
-            <p className="text-xs text-fg-muted text-pretty">
-              The majhi folder has changes you have not committed. The update includes them.
-            </p>
-          )}
-          {manualOnly ? (
-            <>
+      {showPanel &&
+        createPortal(
+          <div
+            ref={panel}
+            popover="manual"
+            style={style}
+            className={cn(
+              "z-[var(--z-float)] flex w-[280px] flex-col gap-2 overflow-y-auto rounded-lg border border-amber-line p-3 shadow-lg",
+              GLASS_STRONG,
+            )}
+          >
+            <p className="text-xs font-medium text-fg">{changeSummary(notice.changes)}</p>
+            {notice.changes.length > 0 && (
+              <ul
+                aria-label="Changes"
+                className="flex max-h-40 flex-col gap-1 overflow-y-auto text-xs text-fg-soft"
+              >
+                {notice.changes.map((change) => (
+                  <li key={change} className="text-pretty">
+                    {change}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {notice.dirty && (
               <p className="text-xs text-fg-muted text-pretty">
-                {manual ?? "The host helper is not connected, so majhi cannot rebuild itself from here."} Run
-                this in the majhi folder:
+                The majhi folder has changes you have not committed. The update includes them.
               </p>
-              <CommandLine command="make up" />
-            </>
-          ) : (
-            !direct && (
-              <UpdateButtons
-                working={notice.working}
-                waiting={waiting}
-                pending={start.isPending}
-                onUpdate={(when) => void update(when)}
-              />
-            )
-          )}
-          {start.error && (
-            <p role="alert" className="text-xs text-red">
-              {describeError(start.error)}
-            </p>
-          )}
-        </div>
-      )}
+            )}
+            {manualOnly ? (
+              <>
+                <p className="text-xs text-fg-muted text-pretty">
+                  {manual ?? "The host helper is not connected, so majhi cannot rebuild itself from here."}{" "}
+                  Run this in the majhi folder:
+                </p>
+                <CommandLine command="make up" />
+              </>
+            ) : (
+              !direct && (
+                <UpdateButtons
+                  working={notice.working}
+                  waiting={waiting}
+                  pending={start.isPending}
+                  onUpdate={(when) => void update(when)}
+                />
+              )
+            )}
+            {start.error && (
+              <p role="alert" className="text-xs text-red">
+                {describeError(start.error)}
+              </p>
+            )}
+          </div>,
+          container,
+        )}
     </section>
   );
 }

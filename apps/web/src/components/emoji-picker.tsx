@@ -102,7 +102,7 @@ export function EmojiPickerPanel({
       aria-label={label}
       style={style}
       onKeyDown={onKeyDown}
-      className={cn("z-50 flex w-[300px] flex-col overflow-hidden rounded-xl", GLASS_STRONG)}
+      className={cn("z-[var(--z-float)] flex w-[300px] flex-col overflow-hidden rounded-xl", GLASS_STRONG)}
     >
       <Picker.Root
         columns={COLUMNS}

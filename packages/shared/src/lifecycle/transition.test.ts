@@ -741,6 +741,7 @@ describe("lifting a hold", () => {
         slotFree: true,
         anyAccountUp: true,
         lastActivityAt: "2026-10-05T11:00:00.000Z",
+        resolvedTasks: ["ACME-2", "ACME-1"],
         accounts: { "claude-acme": { signedIn: true } },
       };
       const from = task({ status: "running", hold: hold(cause) });

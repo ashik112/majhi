@@ -2588,6 +2588,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     async () => {
       // Effects a crash left in the lifecycle outbox run first, so the reconcile sees their result.
       await tasks.drainOutbox();
+      await tasks.reconcileDependencyHolds();
       await resilience.startup();
     },
     (err) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`),

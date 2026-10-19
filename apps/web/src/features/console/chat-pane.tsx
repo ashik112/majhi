@@ -8,51 +8,14 @@ import { ComposerAutoFocus } from "@/features/room/auto-focus";
 import { useNewChat } from "@/lib/chat-queries";
 import { useClients } from "@/lib/client-queries";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
-import { type ChatChip, nameOf, projectOf, WORK_STATE_LAMP, type WorkState, workspaceName } from "./model";
-import { ConsoleLamp, WorkspaceTag, wsStyle } from "./parts";
+import { ChatChips } from "./chat-chips";
+import { type ChatChip, nameOf, projectOf, type WorkState, workspaceName } from "./model";
+import { WorkspaceTag, wsStyle } from "./parts";
 
 const ChatBody = lazy(() => import("./chat-body"));
 
 /** The id of the pseudo chat for client chats that wait to be linked (see `chat-body.tsx`). */
 const NEW_CHATS = "new-chats";
-
-/** Chips shown before the rest go under "More". */
-const CHIPS_SHOWN = 8;
-
-function Chip({
-  chip,
-  pressed,
-  stateOf,
-  hues,
-  orgs,
-  onPick,
-}: {
-  chip: ChatChip;
-  pressed: boolean;
-  stateOf: WorkState | undefined;
-  hues: ReadonlyMap<string, number>;
-  orgs: readonly OrgView[] | undefined;
-  onPick: (id: string) => void;
-}) {
-  return (
-    <button type="button" className="cs-chip" aria-pressed={pressed} onClick={() => onPick(chip.id)}>
-      {chip.kind === "captain" || chip.kind === "lane" ? (
-        <span
-          className="cs-mark"
-          style={{ width: 16, height: 16, lineHeight: "16px", fontSize: 8, borderRadius: 4 }}
-        >
-          mj
-        </span>
-      ) : chip.kind === "task" && stateOf !== undefined ? (
-        <ConsoleLamp state={WORK_STATE_LAMP[stateOf]} />
-      ) : chip.kind === "conversation" ? (
-        <WorkspaceTag name={workspaceName(orgs, chip.org)} org={chip.org} hues={hues} />
-      ) : null}
-      <span className="cs-t">{chip.title}</span>
-      {chip.unread > 0 && <span className="cs-unread">{chip.unread}</span>}
-    </button>
-  );
-}
 
 /** The header of a task's chat: `project · Name`, its workspace, the three lines and the facts. */
 function TaskHeader({
@@ -177,11 +140,6 @@ export function ChatPane(props: {
   onPick: (id: string) => void;
   onFocus: () => void;
 }) {
-  const shown = props.chips.slice(0, CHIPS_SHOWN);
-  // The chosen chat always shows, even when it would fall under More.
-  const chosen = props.chips.find((c) => c.id === props.selected);
-  if (chosen !== undefined && !shown.includes(chosen)) shown.push(chosen);
-  const more = props.chips.filter((c) => !shown.includes(c));
   // The chat the owner has open: a task once its work started in it, and work it started elsewhere.
   const open = props.tasks.get(props.selected);
   const moved = useMemo(
@@ -200,32 +158,15 @@ export function ChatPane(props: {
       aria-label="Chat"
       onMouseDownCapture={props.onFocus}
     >
-      <div className="cs-chips">
-        {shown.map((chip) => (
-          <Chip
-            key={chip.id}
-            chip={chip}
-            pressed={chip.id === props.selected}
-            stateOf={chip.kind === "task" ? props.stateOf(chip.id) : undefined}
-            hues={props.hues}
-            orgs={props.orgs}
-            onPick={props.onPick}
-          />
-        ))}
-        <ChatTools selected={props.selected} onPick={props.onPick} />
-        {more.length > 0 && (
-          <Menu
-            label="More chats"
-            align="left"
-            items={more.map((c) => ({ label: c.title, onSelect: () => props.onPick(c.id) }))}
-            trigger={(t) => (
-              <button type="button" className="cs-chip" {...t}>
-                {more.length} more
-              </button>
-            )}
-          />
-        )}
-      </div>
+      <ChatChips
+        chips={props.chips}
+        selected={props.selected}
+        stateOf={props.stateOf}
+        hues={props.hues}
+        orgs={props.orgs}
+        onPick={props.onPick}
+        tools={<ChatTools selected={props.selected} onPick={props.onPick} />}
+      />
       {open !== undefined && open.kind !== "chat" && (
         <TaskHeader task={open} hues={props.hues} orgs={props.orgs} />
       )}

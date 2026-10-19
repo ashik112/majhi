@@ -7,6 +7,7 @@ import {
   type DecisionSuggestion,
   draftDecisionId,
   incidentDecisionId,
+  OPTION_LABEL_MAX,
   OUTBOUND_CHANNEL_LABEL,
   type OutboundChannel,
   type Draft as OutboundDraft,
@@ -394,11 +395,16 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
    */
   const decorate = (
     id: string,
-    options: DecisionOption[],
+    raw: DecisionOption[],
     own?: DecisionSuggestion,
     workspace?: string,
     question = false,
   ) => {
+    // An agent's answer can be any length; the schema holds a label to OPTION_LABEL_MAX, and one longer
+    // would make the whole list invalid.
+    const options = raw.map((o) =>
+      o.label.length > OPTION_LABEL_MAX ? { ...o, label: `${o.label.slice(0, OPTION_LABEL_MAX - 1)}…` } : o,
+    );
     const stored = src.recommendations.get(id);
     const picked: DecisionSuggestion | undefined =
       stored !== undefined && options.some((o) => o.id === stored.option)
@@ -458,7 +464,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       taskTitle: captainItem?.title ?? subject.title,
       ...(subject.chat ? { chat: true as const } : {}),
       title: captainItem?.title ?? draft.title,
-      sentence: captainItem?.sentence ?? draft.sentence ?? draft.title,
+      // The schema holds a sentence to 500 characters; the detail carries a question whole.
+      sentence: (captainItem?.sentence ?? draft.sentence ?? draft.title).slice(0, 500),
       ...(draft.blocked === undefined ? {} : { blocked: draft.blocked }),
       ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,

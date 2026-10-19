@@ -139,7 +139,7 @@ Plain neutral surfaces, five lamp colours for state, one accent for the main act
 - **Raised and selected** (`raised`, `selected`): hover and the selected row; translucent white (dark) or black (light) so they work on any panel.
 - **Line ladder** (`line` < `line-strong` < `line-control` < `line-hover`): dividers, pane borders, control borders, hover borders.
 - **Text ladder** (`fg` < `fg-soft` < `fg-muted` < `fg-faint` < `fg-dim`): names, body, reasons, labels and counts, disabled.
-- **Accent** (`accent`, `accent-hover`, `accent-ink`, `accent-text`): the main button, the focus outline, the caret, the text selection. Amber in every theme. The `mj` mark is amber always.
+- **Accent** (`accent`, `accent-hover`, `accent-ink`, `accent-text`): the main button, the focus outline, the caret, the text selection. Amber in every theme. The boat mark is amber always.
 - **Lamps** (`lamp-working`, `lamp-needs`, `lamp-paused`, `lamp-done`, `lamp-idle`): the five states and nothing else. In the flat themes: working is a still dot, needs is a still dot (red only on incidents; hollow ring in Work), paused is a hollow ring, done a dot, idle a hollow ring.
 
 Mission keeps its own palette (ground #050a13, glass at 60% with an 18px blur, cyan hairlines, brighter lamps); see its block in `styles.css`.
@@ -164,7 +164,7 @@ Mission sets names at 13px, as the original console did.
 
 ## Layout
 
-Top bar (one row, 14px corners): the `mj` mark (back to the console), the workspace filter (All, then each workspace as a colour square, its name and its waiting count; with more than six, five and "N more"), an Offline lamp when the server cannot be reached, the counts (incidents in red when above zero, need you, working, queued), search (Cmd K), the sun button, Settings.
+Top bar (one row, 14px corners): the boat mark (back to the console), the workspace filter (All, then each workspace as a colour square, its name and its waiting count; with more than six, five and "N more"), an Offline lamp when the server cannot be reached, the counts (incidents in red when above zero, need you, working, queued), search (Cmd K), the sun button, Settings.
 
 Under it, the console grid. **Needs you** is a queue in four groups: Incidents, Decide, Review, Done by the captain. **Work** is grouped by workspace, then project, with Up next, Ideas and Done today as rails at the foot. **Chat** has chips for the captain, the selected task's room and client chats, a task header (name, workspace, Now, Next, Done when, facts) and the room.
 

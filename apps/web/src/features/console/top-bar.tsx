@@ -2,6 +2,7 @@ import { PAGE_PATH, PRIVATE, PRIVATE_NAME } from "@majhi/shared";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Search, Settings } from "lucide-react";
 import { AppearanceButton } from "@/components/shell/appearance";
+import { MajhiMark } from "@/components/ui/majhi-mark";
 import { Menu } from "@/components/ui/menu";
 import { isSettingsPath } from "@/features/settings/settings-frame";
 import { useFeedLost } from "@/lib/feed-status";
@@ -74,7 +75,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
   return (
     <header className="cs-top cs-glass">
       <Link to="/" className="cs-mark" aria-label="majhi: back to the console">
-        mj
+        <MajhiMark />
       </Link>
       <Workspaces />
       {lost && (

@@ -27,10 +27,14 @@ export const OwnerDecisionKindSchema = z.enum([
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
+/** The longest answer label a decision carries. The server cuts longer ones, so one agent's long answer never invalidates the whole queue. */
+export const OPTION_LABEL_MAX = 1000;
+
 /** One button. `id` is what `decisions.answer` takes as `option`. */
 export const DecisionOptionSchema = z.object({
   id: z.string().min(1).max(200),
-  label: z.string().min(1).max(200),
+  /** An agent's answer can be a paragraph; the card shows it whole. */
+  label: z.string().min(1).max(OPTION_LABEL_MAX),
   primary: z.literal(true).optional(),
   /** The answer needs typed text (Ask for changes, a free-text answer): the screen opens a reply box and sends it as `text`. */
   text: z.literal(true).optional(),

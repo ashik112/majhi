@@ -102,7 +102,10 @@ function decisionNotice(d: OwnerDecision): Omit<Notice, "read"> {
   const says =
     hint === undefined || hinted === undefined
       ? undefined
-      : `${hint.by === "captain" ? "Captain says" : "The agent suggests"} ${hinted.toLowerCase()}.`;
+      : oneLine(
+          `${hint.by === "captain" ? "Captain says" : "The agent suggests"} ${hinted.toLowerCase()}.`,
+          200,
+        );
   return {
     id: `decision:${d.id}`,
     kind: "decision",

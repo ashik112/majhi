@@ -1,5 +1,7 @@
 import { Sun } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredPanel } from "@/components/ui/anchored";
 import { cn } from "@/lib/cn";
 import { GLASS_STRONG } from "@/lib/glass";
 import {
@@ -19,32 +21,19 @@ import {
 /** The top bar's sun button: a popover with the theme, the mode and the density. Saved in this browser. */
 export function AppearanceButton() {
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const close = useCallback(() => setOpen(false), []);
+  // The panel renders in a portal in the top layer: the glass panes of the console each form a
+  // stacking context, and a panel inside the top bar would be painted under them.
+  const { panel, style, container } = useAnchoredPanel({ open, close, trigger, align: "right" });
 
   useEffect(() => {
-    if (!open) return;
-    root.current?.querySelector<HTMLElement>("[aria-pressed='true']")?.focus();
-    const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
-  }, [open]);
+    if (open) panel.current?.querySelector<HTMLElement>("[aria-pressed='true']")?.focus();
+  }, [open, panel]);
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the wrapper only closes the popover on Esc
-    <div
-      ref={root}
-      className="relative"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || !open) return;
-        event.stopPropagation();
-        setOpen(false);
-        trigger.current?.focus();
-      }}
-    >
+    <>
       <button
         ref={trigger}
         type="button"
@@ -56,19 +45,31 @@ export function AppearanceButton() {
       >
         <Sun aria-hidden="true" className="size-[15px]" />
       </button>
-      {open && (
-        <section
-          id={id}
-          aria-label="Appearance"
-          className={cn(
-            "absolute top-9 right-0 z-40 flex w-[248px] flex-col gap-2.5 rounded-xl p-2.5",
-            GLASS_STRONG,
-          )}
-        >
-          <AppearanceControls hint={false} />
-        </section>
-      )}
-    </div>
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            popover="manual"
+            id={id}
+            role="dialog"
+            aria-label="Appearance"
+            style={style}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.stopPropagation();
+              setOpen(false);
+              trigger.current?.focus();
+            }}
+            className={cn(
+              "z-[var(--z-float)] flex w-[248px] flex-col gap-2.5 rounded-xl p-2.5",
+              GLASS_STRONG,
+            )}
+          >
+            <AppearanceControls hint={false} />
+          </div>,
+          container,
+        )}
+    </>
   );
 }
 

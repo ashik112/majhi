@@ -19,12 +19,12 @@ import { FailedStep, HandoffBlock } from "@/features/handoff/handoff-block";
 import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/features/task/ship";
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
-import { type ApiRequestError, cmd } from "@/lib/api";
+import { ApiRequestError, cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import { useHandoff } from "@/lib/handoff-queries";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
-import { useAfterTaskChange, useShipOptions } from "@/lib/task-queries";
+import { useAfterTaskChange, useAllTasks, useShipOptions } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { DockBar } from "./dock-bar";
 import { questionLine } from "./question-line";
@@ -301,7 +301,7 @@ function checkProgress(state: HandoffState | undefined, now: number): ReactNode 
 const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   owner: "You stopped it.",
   loop: "The agents handed work back and forth without changing a file, so majhi paused them. Reply or Resume to continue.",
-  blocked: "A task it waits on changed. See the room for what to do.",
+  blocked: "A task it waits on is holding it back. Remove the link, or start that task.",
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
   "signed-out": "An account is signed out. Sign in, then resume.",
@@ -341,9 +341,30 @@ function PendingPause({
     onSuccess: () => after(),
     onError: (error) => toast("Could not resume", { detail: describeError(error), tone: "error" }),
   });
+  // The hold as the board reads it: its sentence and the one step that ends it.
+  const hold = useAllTasks().data?.find((t) => t.id === task.id)?.hold;
+  const fix = hold?.fix;
   const why =
     item.why ??
-    (item.by === "captain" && item.reason === "owner" ? "Captain paused it." : PAUSE_WHY[item.reason]);
+    (item.by === "captain" && item.reason === "owner"
+      ? "Captain paused it."
+      : (hold?.sentence ?? PAUSE_WHY[item.reason]));
+  // The fix for a dependency hold: drop the links that hold it, then start the task again. Taking off
+  // the last link already lifts the hold.
+  const unblock = useMutation<unknown, ApiRequestError, readonly string[]>({
+    mutationFn: async (targets) => {
+      for (const target of targets) {
+        await cmd("tasks.unlink", { task: task.id, type: "depends-on", target }).catch((error: unknown) => {
+          // A link to a task that is gone may already be removed: nothing is left to take off.
+          if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
+        });
+      }
+      // Same as the console: with the links gone, start it. If something still holds it, the error says what.
+      await cmd("tasks.start", { id: task.id });
+    },
+    onSuccess: () => after(),
+    onError: (error) => toast("Could not remove the link", { detail: describeError(error), tone: "error" }),
+  });
   return (
     <DockBar
       label="Paused"
@@ -352,7 +373,27 @@ function PendingPause({
       line={why}
       actions={
         <>
-          <Button size="sm" variant="primary" disabled={resume.isPending} onClick={() => resume.mutate()}>
+          {fix?.kind === "remove-links" && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={unblock.isPending}
+              onClick={() => unblock.mutate(fix.tasks)}
+            >
+              Remove link to {fix.tasks.join(", ")}
+            </Button>
+          )}
+          {fix?.kind === "raise-budget" && (
+            <Button size="sm" variant="primary" asChild>
+              <PageLink page="limits">Raise the budget</PageLink>
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={fix?.kind === "remove-links" || fix?.kind === "raise-budget" ? "secondary" : "primary"}
+            disabled={resume.isPending}
+            onClick={() => resume.mutate()}
+          >
             <RotateCw aria-hidden="true" />
             Resume
           </Button>

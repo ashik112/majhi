@@ -33,3 +33,39 @@ describe("parents and children", () => {
     expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).not.toBe("done");
   });
 });
+
+describe("a task held on a link to a task that is gone", () => {
+  it("is released when the task is removed, and by the start-up sweep for a link left dangling", async () => {
+    w = await taskWorld();
+    await create("fix the api outage", { repos: [{ project: "acme-api" }] });
+    await create("tighten the alert on api", { repos: [{ project: "acme-api" }] });
+    await w.h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1" });
+    const { tasks, store } = w.h.majhi.services;
+    const held = await tasks.apply("ACM-2", {
+      type: "dependencyChanged",
+      change: "closed-unmerged",
+      on: ["ACM-1"],
+      at: new Date().toISOString(),
+    });
+    expect("applied" in held).toBe(true);
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).toBe("paused");
+
+    // The blocker is removed: the hold has nothing left to wait for.
+    const removed = await w.h.cmd("tasks.remove", { id: "ACM-1" });
+    expect(removed.status).toBe(200);
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).not.toBe("paused");
+
+    // A link to a task that never existed (an old row) is dropped, and the hold it caused is lifted.
+    store.tasks.putLink({ task: "ACM-2", type: "depends-on", other: "GHOST-9", when: "merged" });
+    await tasks.apply("ACM-2", {
+      type: "dependencyChanged",
+      change: "closed-unmerged",
+      on: ["GHOST-9"],
+      at: new Date().toISOString(),
+    });
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).toBe("paused");
+    await tasks.reconcileDependencyHolds();
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).not.toBe("paused");
+    expect(store.tasks.allLinks().filter((l) => l.other === "GHOST-9")).toEqual([]);
+  });
+});

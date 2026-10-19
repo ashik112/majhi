@@ -34,14 +34,26 @@ const KEY = "majhi.look";
 /** The key of the look before themes: `{ theme: dark | light | system, accent }`. Only its mode carries over. */
 const LEGACY_KEY = "majhi.appearance";
 
+/** The console's list panes that can fold to a 44px rail. Chat always stays. */
+export const FOLDABLE_PANES = ["needs", "work"] as const;
+export type FoldablePane = (typeof FOLDABLE_PANES)[number];
+
 const LookSchema = z.object({
   theme: z.enum(THEME_IDS).catch("graphite"),
   mode: z.enum(MODES).catch("system"),
   density: z.enum(DENSITIES).catch("comfortable"),
+  /** The panes the owner folded to a rail, kept per browser. */
+  minimized: z.array(z.enum(FOLDABLE_PANES)).catch([]),
 });
 export type Look = z.infer<typeof LookSchema>;
 
-const DEFAULT: Look = { theme: "graphite", mode: "system", density: "comfortable" };
+const DEFAULT: Look = { theme: "graphite", mode: "system", density: "comfortable", minimized: [] };
+
+/** Folds a pane to its rail, or brings it back. */
+export function togglePane(pane: FoldablePane): void {
+  const folded = current.minimized.includes(pane);
+  setLook({ minimized: folded ? current.minimized.filter((p) => p !== pane) : [...current.minimized, pane] });
+}
 
 function stored(key: string): unknown {
   try {

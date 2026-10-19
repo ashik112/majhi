@@ -126,7 +126,10 @@ export function Pick({
             aria-label={label}
             style={{ ...style, ...(menuWidth === undefined ? {} : { minWidth: menuWidth }) }}
             onKeyDown={onKeyDown}
-            className={cn("z-50 flex max-w-[360px] flex-col overflow-y-auto rounded-lg p-1.5", GLASS_STRONG)}
+            className={cn(
+              "z-[var(--z-float)] flex max-w-[360px] flex-col overflow-y-auto rounded-lg p-1.5",
+              GLASS_STRONG,
+            )}
           >
             {options.map((option, i) => {
               const checked = option.value === value;
