@@ -100,7 +100,9 @@ Mockup on live data first, for each screen, and an explicit yes before building 
 
 ## Step 4: incidents end to end
 
-Detect (watch checks, server errors, tagged by workspace), merge repeats into one open incident per service, one Telegram ping, the agent investigates over the existing connection with logs and recent deploys and states the likely cause, opens a fix PR, the owner approves the merge and deploy, the agent drafts the client update and the owner approves it, the agent writes a short post-incident note. Design note before building.
+Detect (watch checks, server errors, tagged by workspace), merge repeats into one open incident per service, one Telegram ping, the agent investigates over the existing connection with logs and recent deploys and states the likely cause, opens a fix PR, the fix is merged and deployed, the client update is drafted and sent, the agent writes a short post-incident note. Design note before building.
+
+Who does the merge, the deploy and the client update is the owner's choice per workspace (owner, 2026-10-19: "I want to have the choice to let captain handle these"). Two switches on the workspace's incident settings: **Fix: Ask me / Captain ships** (merge and deploy the fix after its checks pass) and **Client update: Ask me / Captain sends**. Default Ask me. With Captain, the captain acts and posts what it did in Needs you as a done item the owner can read, not a question. This is the org policy that CLAUDE.md allows for push, merge and outbound messages; it is set only by the owner, never by the captain.
 
 ## Step 5: the captain
 
