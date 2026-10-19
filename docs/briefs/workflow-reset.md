@@ -118,4 +118,19 @@ Who does the merge, the deploy and the client update is the owner's choice per w
 
 ## Step 5: the captain
 
+**One captain, one account** (owner, 2026-10-19). One captain replaces the per-workspace captain chats (root plus one per workspace today): one conversation, one name, answering about every workspace. By default one AI account (the owner's pick, for example their personal Claude) runs it everywhere. Access stays per workspace: a step in a workspace gets only that workspace's git, SSH, connections and wiki, and nothing from one client's workspace goes into a step for another. Each workspace can override with "Captain uses this workspace's account" (for contracts that require it). A fallback account takes over at the main one's limit; a workspace that cannot run says so in Needs you. The per-workspace chats' history becomes searchable in the one conversation, filtered by workspace.
+
 One authority level per workspace (Ask me, Routine, Full), tools matched to the three places, the owner's standing intent and the workspace wiki summary in every turn, read-only commands that work with Auto-pilot off, lane scoping by workspace id rather than by text. A morning brief per workspace and a weekly client report (what shipped, time and agent cost, incidents and uptime). Actions the CLAUDE.md "never" list reserves for the owner stay with the owner. Design note before building.
+
+## Step 1b: permissions by risk (after step 1)
+
+Owner, 2026-10-19: "for trivial things they ask permission. Then what is the use of an agentic system?" The live queue had 6 approval cards of 17: a `cd` into the task's own folder, the captain reading ship options, an official image pull, pushing the task's own branch. Cause: everything outside a short allow list is "unsettled" (captain/permission-rules.ts), and "Always" saves a rule per agent, command and task (admin/policy.ts), so 33 rules never generalise.
+
+- **Inside the task sandbox nothing asks:** its worktree, its containers and network, reads and edits, commands, installs, tests, builds, majhi's read tools, official images and images the workspace already allowed. Each action is logged and shows in Done today.
+- **One authority level per workspace, set only by the owner:** Ask me, Routine (default) or Full. Routine pushes the task's own branch and opens a draft PR without asking. Full also merges to main and deploys to staging. Production deploys and client messages ask unless the workspace's incident setting says Captain ships. Writes on client servers, deletes outside the sandbox, secrets and going over budget always ask. This level is the org policy CLAUDE.md requires for push, merge and outbound messages; the captain and agents can never change it.
+- **"Always" saves one rule for the workspace and the kind of action**, never per task or per command line.
+- **Allowed tests:** sandbox actions never produce a card; each level allows exactly its row and nothing more; only the owner can change a level; an Always rule applies to the next task of the same workspace and to no other workspace.
+
+## Teams: Lead + workers only
+
+Owner, 2026-10-19. One agent stays the default. The only multi-agent setup is **Lead + workers**, picked by the owner on a task (or proposed by the captain and confirmed). The lead writes a short plan; each step names the worker that owns it. Workers get work only from the plan, never by @mention; steps are plan steps, never tasks; at most 3 workers; a step sent back twice stops and goes to Needs you with the reason. The task shows one Now / Next / Done when, with each worker's line and cost underneath. Review is a workspace setting, "Review before it reaches me" (on or off); when on, the last step is a review on a cheaper model. Mention-driven waking, pipeline and review-loop modes go.
