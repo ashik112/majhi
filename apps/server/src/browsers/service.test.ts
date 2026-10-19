@@ -15,7 +15,11 @@ function fakeDocker() {
       running.add(args[args.indexOf("--name") + 1] ?? "");
       return "id";
     }
-    if (cmd === "logs") return "majhi-browserd ready";
+    if (cmd === "logs") {
+      return args.some((a) => a.includes("testbrowser"))
+        ? "majhi-testbrowserd ready"
+        : "majhi-browserd ready";
+    }
     if (cmd === "inspect") {
       const name = args[args.length - 1] ?? "";
       if (args.includes("{{.State.Running}}")) return running.has(name) ? "true" : "false";
@@ -82,6 +86,38 @@ describe("a workspace's browser container", () => {
     expect(await service.endpoint("ACM-1", "acme", "globex-web")).toEqual({
       problem: "globex-web has no browser here.",
     });
+
+    // The test browser is the same: one container per workspace, found from the run's task.
+    const tb = fakeDocker();
+    const orgs: Record<string, string> = {
+      "ACM-1": "acme",
+      "ACM-2": "acme",
+      "GLO-1": "globex",
+      "PRV-1": "private",
+    };
+    const testBrowser = new TestBrowserService({
+      image: "majhi-testbrowser:dev",
+      network: "majhi-runners",
+      runner: () => ({ docker: "docker", cliEnv: {}, user: "501:20" }),
+      orgOf: (task) => orgs[task] ?? "private",
+      docker: tb.docker,
+    });
+    expect(await testBrowser.ensureFor("ACM-1")).toBe("majhi-testbrowser-acme");
+    expect(await testBrowser.ensureFor("GLO-1")).toBe("majhi-testbrowser-globex");
+    expect(await testBrowser.ensureFor("ACM-2")).toBe("majhi-testbrowser-acme");
+    expect(await testBrowser.ensureFor("PRV-1")).toBe("majhi-testbrowser-private");
+    expect(tb.runs.map((r) => r[r.indexOf("--name") + 1])).toEqual([
+      "majhi-testbrowser-acme",
+      "majhi-testbrowser-globex",
+      "majhi-testbrowser-private",
+    ]);
+    // No folder of the computer is mounted, and each carries its own workspace's label.
+    for (const run of tb.runs) expect(run).not.toContain("--mount");
+    expect(tb.runs.map((r) => r.filter((_, i) => r[i - 1] === "--label"))).toEqual([
+      ["majhi.container=testbrowser", "majhi.org=acme"],
+      ["majhi.container=testbrowser", "majhi.org=globex"],
+      ["majhi.container=testbrowser", "majhi.org=private"],
+    ]);
   });
 });
 
