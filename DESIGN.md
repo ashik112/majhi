@@ -1,96 +1,64 @@
 ---
 name: majhi
-description: A flight director's console for agent work. Glass panels over a radar grid, one situation board read at a glance.
+description: One calm console for agent work. Needs you, Work and Chat on one screen; flat panels, one primary button, red only for incidents.
 colors:
-  base: "#050a13"
-  canvas: "#0a0f17"
-  glass: "rgb(12 18 28 / 0.6)"
-  glass-strong: "rgb(13 19 30 / 0.975)"
-  card: "rgb(18 26 39 / 0.58)"
-  field: "rgb(5 9 16 / 0.55)"
-  sunken: "rgb(3 6 11 / 0.62)"
-  raised: "rgb(130 175 230 / 0.075)"
-  selected: "rgb(130 185 245 / 0.14)"
-  glass-line: "rgb(80 190 235 / 0.2)"
-  hair: "rgb(90 200 240 / 0.28)"
-  grid: "rgb(110 160 215 / 0.06)"
-  grid-major: "rgb(110 170 230 / 0.1)"
-  ring: "rgb(90 195 240 / 0.15)"
-  line: "rgb(140 185 240 / 0.1)"
-  line-strong: "rgb(140 185 240 / 0.14)"
-  line-control: "rgb(150 195 245 / 0.22)"
-  line-bright: "rgb(150 195 245 / 0.28)"
-  line-hover: "rgb(165 205 250 / 0.4)"
-  fg: "#e7edf5"
-  fg-soft: "#c2ccd9"
-  fg-muted: "#9da9b9"
-  fg-faint: "#828fa1"
-  fg-dim: "#5a6778"
-  accent: "#f0b455"
-  accent-hover: "#f5c273"
-  accent-press: "#e0a444"
-  accent-ink: "#1a1204"
-  accent-wash: "rgb(240 180 85 / 0.12)"
-  accent-line: "rgb(240 180 85 / 0.38)"
-  accent-text: "#f3c47a"
-  brand: "#f0b455"
-  brand-ink: "#1a1204"
-  caution: "#f0b455"
-  caution-wash: "rgb(240 180 85 / 0.1)"
-  caution-line: "rgb(240 180 85 / 0.32)"
-  blue: "#8ab8f5"
-  green: "#7fd1b9"
-  red: "#f07b6b"
-  violet: "#c3a6f5"
-  lamp-working: "#3fd4f5"
-  lamp-needs: "#ff6868"
-  lamp-paused: "#ee72dc"
-  lamp-done: "#45d99a"
-  lamp-idle: "#5f6d80"
+  base: "#161617"
+  panel: "#1c1c1e"
+  card: "#222224"
+  field: "#141415"
+  raised: "rgb(255 255 255 / 0.04)"
+  selected: "rgb(255 255 255 / 0.075)"
+  line: "rgb(255 255 255 / 0.06)"
+  line-strong: "rgb(255 255 255 / 0.08)"
+  line-control: "rgb(255 255 255 / 0.13)"
+  line-hover: "rgb(255 255 255 / 0.22)"
+  fg: "#d6d6d9"
+  fg-soft: "#b8b8bd"
+  fg-muted: "#96969c"
+  fg-faint: "#88888e"
+  fg-dim: "#6e6e74"
+  accent: "#e2ad5b"
+  accent-hover: "#ebbb70"
+  accent-ink: "#1d1405"
+  accent-text: "#e6b86e"
+  lamp-needs: "#e07a6f"
+  lamp-working: "#78a8cc"
+  lamp-done: "#78b394"
+  lamp-paused: "#88888e"
+  lamp-idle: "#6e6e74"
+  blue: "#90b2d8"
+  violet: "#b3a6d6"
+  ws-0: "#8fb0d6"
+  ws-1: "#b7a3dc"
+  ws-2: "#7fc0b0"
+  ws-3: "#d8b072"
+  ws-4: "#e09a84"
+  ws-5: "#a9b4c4"
 typography:
-  headline:
-    fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
-    fontSize: "1.375rem"
-    fontWeight: 600
-    lineHeight: "26px"
-    letterSpacing: "-0.01em"
-  title:
-    fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
-    fontSize: "0.9375rem"
-    fontWeight: 600
-    lineHeight: "1.375rem"
-  card-title:
+  name:
     fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 500
-    lineHeight: 1.35
-  body:
+    lineHeight: "20px"
+  detail:
     fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
     fontSize: "0.8125rem"
     fontWeight: 400
-    lineHeight: "1.25rem"
+    lineHeight: "19px"
   label:
     fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
-    lineHeight: "1.125rem"
+    lineHeight: "18px"
   group-label:
     fontFamily: "IBM Plex Sans, Helvetica Neue, system-ui, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 500
-    lineHeight: 1.25
     letterSpacing: "0.08em"
   data:
     fontFamily: "IBM Plex Mono, ui-monospace, SF Mono, Menlo, monospace"
     fontSize: "0.6875rem"
     fontWeight: 400
-    lineHeight: "1rem"
-    fontFeature: "tnum"
-  telemetry:
-    fontFamily: "IBM Plex Mono, ui-monospace, SF Mono, Menlo, monospace"
-    fontSize: "0.9375rem"
-    fontWeight: 500
-    lineHeight: "1.375rem"
     fontFeature: "tnum"
 rounded:
   xs: "4px"
@@ -100,296 +68,163 @@ rounded:
   xl: "12px"
   2xl: "14px"
   full: "9999px"
-spacing:
-  "1": "4px"
-  "1.5": "6px"
-  "2": "8px"
-  "2.5": "10px"
-  "3": "12px"
-  "3.5": "14px"
-  "4": "16px"
-  "5": "20px"
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.accent-ink}"
-    typography: "{typography.body}"
     rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "34px"
-  button-primary-hover:
-    backgroundColor: "{colors.accent-hover}"
-  button-primary-active:
-    backgroundColor: "{colors.accent-press}"
-  button-secondary:
+    height: "24px"
+  button-outline:
     backgroundColor: "{colors.raised}"
     textColor: "{colors.fg}"
-    typography: "{typography.body}"
     rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "34px"
-  button-secondary-hover:
+    height: "24px"
+  row:
+    textColor: "{colors.fg}"
+    rounded: "{rounded.md}"
+  row-selected:
     backgroundColor: "{colors.selected}"
-  button-ghost:
-    textColor: "{colors.fg-muted}"
-    rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "34px"
-  button-ghost-hover:
-    backgroundColor: "{colors.raised}"
-    textColor: "{colors.fg}"
-  input:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.fg}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "34px"
-  glass-panel:
-    backgroundColor: "{colors.glass}"
+  pane:
+    backgroundColor: "{colors.panel}"
     rounded: "{rounded.2xl}"
-  task-card:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.xl}"
-    padding: "12px"
-  choice-chip:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.fg-muted}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "34px"
-  choice-chip-pressed:
-    backgroundColor: "{colors.accent-wash}"
-    textColor: "{colors.fg}"
-  segment:
-    textColor: "{colors.fg-muted}"
-    typography: "{typography.label}"
-    rounded: "{rounded.md}"
-    padding: "0 10px"
-    height: "32px"
-  segment-pressed:
-    backgroundColor: "{colors.selected}"
-    textColor: "{colors.fg}"
-  badge:
-    textColor: "{colors.fg-muted}"
-    typography: "{typography.data}"
-    rounded: "{rounded.sm}"
-    padding: "0 6px"
-    height: "20px"
-  nav-item:
-    textColor: "{colors.fg-muted}"
-    typography: "{typography.card-title}"
-    rounded: "{rounded.md}"
-    padding: "0 10px"
-    height: "32px"
-  nav-item-selected:
-    backgroundColor: "{colors.selected}"
-    textColor: "{colors.fg}"
-  lamp:
-    backgroundColor: "{colors.lamp-working}"
-    rounded: "{rounded.full}"
-    size: "8px"
 ---
 
 # Design System: majhi
 
 ## Overview
 
-**Creative North Star: "The Flight Director's Console"**
+**Creative North Star: "One calm console"**
 
-majhi is a console, not a document. The owner runs agent teams across orgs all day on a desktop, and the whole app is one fixed instrument panel: blue-black glass panels frosted over a faint radar grid, cyan hairlines where one region meets another, and round status lamps that say what runs, what needs the owner, and what waits. The viewport is the console. The document never scrolls; every list scrolls inside its own panel and fades at its edges, so a row meets the glass softly instead of being cut mid-line.
+The owner lives in majhi all day and answers one question first: what needs me. So the app is one screen with three panes side by side: **Needs you**, **Work** and **Chat**. It lands on Needs you. Everything else (accounts, limits, usage, connections, skills, agents, memory, wiki, playbooks, audit, workspaces, projects) is Settings, one click from a gear in the top bar. The approved reference is `design/console.html`; the build follows it pair by pair.
 
-Density is instrument-grade: a 13px base, a five-step type ramp that tops out at 22px, and numbers set in IBM Plex Mono with tabular figures so counts line up and never jitter. The palette is a dark blue-black ground with near-neutral cool text; colour is spent almost entirely on signal. Five lamp colours carry state and nothing else, and one pickable accent (amber by default, matching the brand mark) carries action and current selection. Dark is the default theme; light is pale instrument glass on a cool gray grid, with every token re-tuned rather than inverted. A System choice follows the operating system.
+The look is flat and quiet. Panels are plain surfaces with a hairline, no grid, no rings, no blur, no glow. Colour is rare so that it means something: red marks an incident and nothing else; a task that waits for the owner is a hollow ring in Work and a plain dot in the queue; running is a still dot. Nothing loops. A new item pulses once and is still. One filled button is on screen at a time: the selected row's main action.
 
-The world rejects the flat gray card stack with "Nothing here" boxes: an empty column is not a box, it is a slim rail with its name and count.
+The shell is the viewport (`100dvh`, no page scroll). Each pane scrolls inside itself. Words always sit beside colour; a lamp alone never carries meaning.
 
-**Key Characteristics:**
-- Fixed-viewport shell: glass sidebar (228px), glass top telemetry strip, status columns and a roster, 12px gaps and 12px outer padding.
-- Two glass weights: translucent resting glass, near-opaque floating glass.
-- Round status lamps in five fixed colours, always with a word beside them.
-- Mono only for numbers, ids, handles, paths and data.
-- Pickable accent (amber, blue, violet, lime, steel) that never sits on a lamp hue.
-- Theme and accent applied before first paint from the saved choice.
+**Key characteristics:**
+- Three panes (Needs you 34%, Work 36%, Chat 30%), 10px gaps (12px at Comfortable and Spacious), 14px pane corners.
+- Four themes (Graphite default, Warm, Focus, Mission), each in Light and Dark; mode Light, Dark or System; density Compact, Comfortable (default), Spacious. All set from the sun button in the top bar, remembered in this browser, applied before first paint.
+- One row anatomy in every pane, so the eye learns it once.
+- Keyboard first: J K move, Tab changes pane, A does the main thing.
+
+## Themes, modes and density
+
+`data-theme` (`graphite`, `warm`, `focus`, `mission`), `data-mode` (`light`, `dark`, the resolved choice) and `data-density` sit on `<html>`; `index.html` sets them before the first paint from `localStorage["majhi.look"]` and `apps/web/src/lib/look.ts` saves them. All values are `--c-*` custom properties in `apps/web/src/styles.css`; the Tailwind tokens (`bg-card`, `text-fg-muted`, `border-line-strong`) map to them, so a screen follows the theme with no code. A theme is about 35 lines: the raw colours, with washes and soft tints derived once.
+
+- **Graphite** (default): neutral grey, the calmest. Dark text is 11.7:1 on the panel.
+- **Warm**: the same quiet with a brown tint; softer for long days.
+- **Focus**: cool blue-grey; colour only for what is abnormal.
+- **Mission**: the original look kept as a theme: blue-black glass over a radar grid, cyan hairlines, glowing lamps, the breathing working lamp. It is the only theme with blur, grid, halos and an animated lamp (`--glass-filter`, `--lamp-halo`, `--lamp-animation` are set only there).
+
+Readable text is at least 4.5:1 on its panel in all twelve combinations (`fg`, `fg-soft`, `fg-muted`, `fg-faint`, and `accent-text`); `fg-dim` is for dividers and disabled things, never for words that must be read. Filled primary buttons use dark ink on the amber fill in every theme.
+
+**Density.** Compact keeps the reason on the same line as the name (32px rows). Comfortable (default) puts the reason on its own line (13px, `fg-muted`) with 8px by 10px row padding. Spacious adds more room around rows, heads and panes. Only spacing and line breaks change; type sizes stay.
+
+**Workspace identity.** Each workspace gets one of six hues (`--c-ws-0` to `--c-ws-5`), tuned per theme and mode so it never reads as a status. Workspaces take the hues in their list order; Private is always the neutral sixth. A workspace shows as a colour square and its name, never its key (`PRV`, `ACM`).
+
+### Named Rules
+**The Red Is For Incidents Rule.** Red (`lamp-needs`) marks an incident (a tinted frame, a red dot, a red count in the top bar) and a hollow ring in Work for "your call". Everything else that waits is a neutral dot. Never red for a button, a link or a chart.
+
+**The One Primary Rule.** One filled (accent) button is visible on screen: the selected row's main action, in the focused pane. Other actions are outlined; hover offers a quiet outlined button on a row.
+
+**The No Loop Rule.** Nothing animates forever in the flat themes. A new item pulses once (1.2s). Spinners and loading shimmers are the only loops, and only while something loads. Reduced motion turns every animation off.
+
+**The Word Beside The Lamp Rule.** Every lamp has its word or count beside it ("your call", "working", "blocked"); lamps are `aria-hidden`.
 
 ## Colors
 
-A blue-black instrument ground with cool neutral text, five reserved lamp colours for state, and one pickable accent for action.
+Plain neutral surfaces, five lamp colours for state, one accent for the main action.
 
-### Primary
-- **Brand Amber accent** (`accent`): primary buttons, focus outlines, text caret, text selection highlight and pressed choice chips. It never marks the selected row; that is the selected tint (see Navigation). It is the default of five accents; the owner can switch to Radar Blue (#7ea6ff), Plotter Violet (#a98bf5), Signal Lime (#b6dc4e) or Instrument Steel (#b8c4d6). Each accent ships a full set (hover, press, ink, wash, line, text) per theme. Accent-text is the variant used for type on glass; accent-ink is the text on a filled accent.
-- **Mark Amber** (`brand`): the `mj` mark only. It stays amber in every theme and accent.
+- **Ground and panels** (`base`, `panel`, `card`, `field`): the page, a pane, a floating surface, an input well.
+- **Raised and selected** (`raised`, `selected`): hover and the selected row; translucent white (dark) or black (light) so they work on any panel.
+- **Line ladder** (`line` < `line-strong` < `line-control` < `line-hover`): dividers, pane borders, control borders, hover borders.
+- **Text ladder** (`fg` < `fg-soft` < `fg-muted` < `fg-faint` < `fg-dim`): names, body, reasons, labels and counts, disabled.
+- **Accent** (`accent`, `accent-hover`, `accent-ink`, `accent-text`): the main button, the focus outline, the caret, the text selection. Amber in every theme. The `mj` mark is amber always.
+- **Lamps** (`lamp-working`, `lamp-needs`, `lamp-paused`, `lamp-done`, `lamp-idle`): the five states and nothing else. In the flat themes: working is a still dot, needs is a still dot (red only on incidents; hollow ring in Work), paused is a hollow ring, done a dot, idle a hollow ring.
 
-### Secondary: Status Lamps
-- **Working Cyan** (`lamp-working`): an agent is working. Breathes (2.2s glow pulse).
-- **Needs-You Red** (`lamp-needs`): the task waits for the owner (review, your turn). Steady glow ring.
-- **Paused Magenta** (`lamp-paused`): stopped by usage limit, offline, error, or by the owner. Steady glow ring.
-- **Done Green** (`lamp-done`): finished or shipped (MR open, done). Plain lit dot.
-- **Idle Slate** (`lamp-idle`): inbox, ready, nobody on it. Unlit 1.5px ring. Idle text uses `fg-faint`, since the idle lamp is too dim to read.
-
-### Tertiary: Messages and Caution
-- **Caution Amber** (`caution`): warnings and approvals, with wash and line variants for badges and notices.
-- **Message Blue, Green, Red, Violet** (`blue`, `green`, `red`, `violet`): identity, badge tones, links (blue), @mentions (violet), allowed toggles (green wash), errors and invalid fields (red), and syntax highlighting (plus coral and pink). These are softer, lower-chroma than the lamps and never stand in for a lamp.
-
-### Neutral
-- **Radar Ground** (`base`): the backdrop behind everything; the grid, rings and glows sit on it.
-- **Console Glass** (`glass`): resting panels (sidebar, top bars, columns frame, roster, cards' material). 60% fill, 18px blur.
-- **Floating Glass** (`glass-strong`): menus, dialogs, drawers. 97.5% fill so text behind never shows through.
-- **Card Glass** (`card`), **Field Well** (`field`), **Sunken Well** (`sunken`): task cards, inputs and segmented tracks, code wells.
-- **Raised / Selected tints** (`raised`, `selected`): hover and pressed fills; translucent blue-white, never gray.
-- **Cyan Hairline** (`hair`, `glass-line`): panel borders and the column-head rule that fades from left to 85%.
-- **Line ladder** (`line` < `line-strong` < `line-control` < `line-bright` < `line-hover`): dividers, card borders, control borders, scrollbar thumb, hover borders.
-- **Text ladder** (`fg` < `fg-soft` < `fg-muted` < `fg-faint` < `fg-dim`): primary text, body text, secondary, labels and counts, disabled and code comments.
-- **Grid, Grid Major, Ring** (`grid`, `grid-major`, `ring`): the radar backdrop only: a 32px grid, a 160px major grid, 160px rings centred at 72% / 58% and faint crosshairs.
-
-Light theme re-tunes every token (ground #e5eaf0, text #0e1726, lamps darkened to #0a7694 / #cf2a2a / #a52a93 / #0b8058 / #8d99a9, amber accent #e39a2b with #8f5406 text). The light scope and horizon glows are transparent; the grid and rings stay. Values live in `apps/web/src/styles.css` and the sidecar.
-
-### Named Rules
-**The Lamp Law Rule.** One colour per state, the same on the board, in rooms and in the sidebar, and the saturated lamp values are used for nothing else. Status text in a lamp colour, a lit card frame, a count beside a lit column: all state. Buttons, links, badges and charts use the accent or the message palette.
-
-**The Between-the-Lamps Rule.** Accents sit between the lamps on the colour wheel, never on one. A new accent must not be read as cyan, red, magenta or green.
-
-**The Word Beside the Lamp Rule.** A lamp colour never carries meaning alone. Every lamp has its state word, label or count beside it; lamps themselves are `aria-hidden`.
-
-**The Material Cyan Rule.** The glass world's own cyan (hairlines, panel edges, grid, rings) is material, not signal: it stays low-alpha (0.06 to 0.3). Only the full-strength `lamp-working` means "working".
+Mission keeps its own palette (ground #050a13, glass at 60% with an 18px blur, cyan hairlines, brighter lamps); see its block in `styles.css`.
 
 ## Typography
 
-**Display Font:** none; the console has no display tier.
-**Body Font:** IBM Plex Sans (with Helvetica Neue, system-ui)
-**Label/Mono Font:** IBM Plex Mono (with ui-monospace, SF Mono, Menlo)
+IBM Plex Sans for words, IBM Plex Mono for numbers, ids, handles, paths and data (tabular figures).
 
-**Character:** An engineering pair from one family. Plex Sans carries words at small sizes with no ceremony; Plex Mono carries every number, id and handle like a readout.
+- **Name** (500, 14px, 20px): the name of a row, `project · Name`, the project in its workspace colour.
+- **Detail** (400, 13px, 19px): the reason or Now line, the open question, Next and Done when, chat text.
+- **Label** (400, 12px): buttons, chips, status words, the top bar.
+- **Group label** (500, 11px, 0.08em, uppercase, `fg-faint`): the head of a group (Incidents, Decide, Review). Workspace heads are 12px 600 in the workspace colour, not uppercase.
+- **Data** (Plex Mono 11px): ages, counts, keys, facts.
+- **Telemetry** (Plex Mono 500, 15px): the counts in the top bar.
 
-### Hierarchy
-- **Headline** (600, 22px, 26px, -0.01em): the page title in the top bar ("Board"). One per page.
-- **Title** (600, 15px, 22px): card and dialog headings, empty-state headings. Column heads use 600 at 13px.
-- **Card title** (500, 14px, 1.35): task titles on cards (clamped to three lines), sidebar navigation, agent message body (14px, 1.6).
-- **Body** (400, 13px, 20px): the default everywhere; controls and inputs.
-- **Label** (400, 12px, 18px): secondary lines, chips, segments, lamp status lines.
-- **Group label** (500, 11px, 0.08em, uppercase, `fg-faint`): the heading of a group or the column heads of a table ("Setup", "Agents right now", "Accounts"). Never above a title.
-- **Data** (Plex Mono 400, 11 to 13px, tabular): task ids, agent handles, counts, percentages, paths, keyboard hints.
-- **Telemetry** (Plex Mono 500, 15px, tabular): the big numbers in the top telemetry strip, with the word in Sans beside each.
-
-Documents in the file viewer step up to 15px at 1.65 with headings at 1.55em and 1.28em over a hairline.
+Mission sets names at 13px, as the original console did.
 
 ### Named Rules
-**The Mono Is Data Rule.** Mono is only for numbers, ids, handles, paths, code and data. Prose, labels and titles are always Sans.
+**The Mono Is Data Rule.** Mono only for numbers, ids, handles, paths, code and keys. Prose and names are Sans.
 
-**The Tabular Count Rule.** Every count, time and percentage that can change is tabular (`tnum`), so it lines up and does not jitter while it ticks.
+**The Tabular Count Rule.** Every count, time and percentage that can change is tabular.
 
 ## Layout
 
-The shell is the viewport (`100dvh`, overflow hidden, no overscroll). Inside it: a 12px outer padding and 12px gaps between regions. The sidebar is a 228px glass column: the brand with the notifications bell, the workspace switcher, the navigation (daily rows, then Setup, then System) and, pinned at its foot, the "Agents right now" lamps. It fits a 900px window without scrolling. Below 800px of window height the lamps fold into one line of counts and the gaps tighten, so it still fits at 700px; anything shorter scrolls the navigation inside itself. The main area stacks a glass top bar (min 68px, 14px corners) above the working region.
+Top bar (one row, 14px corners): the `mj` mark (back to the console), the workspace filter (All, then each workspace as a colour square, its name and its waiting count; with more than six, five and "N more"), an Offline lamp when the server cannot be reached, the counts (incidents in red when above zero, need you, working, queued), search (Cmd K), the sun button, Settings.
 
-On the board, status columns share the width (min 228px each) with 12px gaps and scroll vertically inside themselves. Columns with no cards, and Done while folded, collapse to 44px rails: dashed border, lamp, the column name set vertically and the count in mono. The agent roster sits at the right as a glass panel. At narrower widths (checked at 1100px) the columns keep their minimum and the row scrolls horizontally inside the board, never the page; the telemetry strip tightens its gap below 1280px.
+Under it, the console grid. **Needs you** is a queue in four groups: Incidents, Decide, Review, Done by the captain. **Work** is grouped by workspace, then project, with Up next, Ideas and Done today as rails at the foot. **Chat** has chips for the captain, the selected task's room and client chats, a task header (name, workspace, Now, Next, Done when, facts) and the room.
 
-Spacing runs on a 4px base with half steps: 8px is the dominant gap, then 6, 4, 12 and 10. Card padding is 12px; panel padding 16px by 14px; top bar 20px left inset.
-
-### Named Rules
-**The Fixed Console Rule.** The document never scrolls. Every region that can overflow scrolls inside itself with `overscroll-behavior: contain` and edge fades.
-
-**The Edge Fade Rule.** Scroll areas fade 22px at an edge only while there is more to scroll that way (scroll-driven; static fades where unsupported). Areas with a sticky header fade only the bottom.
-
-**The Rail Rule.** An empty column is never an empty box. It collapses to a slim dashed rail with its lamp, vertical name and count.
-
-## Elevation & Depth
-
-Depth is glass over a backdrop, not stacked paper. The backdrop is layered: base colour, a low horizon glow, a cool glow top left, an accent-tinted glow bottom right, a 32px grid, a 160px major grid, radar rings and crosshairs. Glass surfaces blur and saturate it (18px blur and 1.35 saturate at rest; 24px and 1.4 floating) and carry a 1px cyan-tinted hairline, a 1px inner highlight along the top edge, and a soft, low, diffuse shadow. Dialogs sit over a scrim with a 3px blur and enter with a 6px rise, a slight scale and a 2px blur clearing.
-
-### Shadow Vocabulary
-- **Glass rest** (`inset 0 1px 0 0 var(--c-glass-hi), 0 14px 34px -16px rgb(0 0 0 / 0.75), 0 3px 8px -4px rgb(0 0 0 / 0.5)`): every resting glass surface and task card.
-- **Pop** (`inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -18px rgb(0 0 0 / 0.85), 0 6px 16px -6px rgb(0 0 0 / 0.55)`): floating glass, and a task card on hover.
-- **Lamp glow** (`0 0 0 3px` of 16% lamp colour plus `0 0 9px` of 55%): needs-you and paused lamps. Working breathes between 8px and 12px glow.
-- **Accent halo** (`0 6px 18px -8px var(--c-accent)`): under the primary button only. The mark carries a matching small glow.
+- From 1240px up: three columns. Under 1240px: two columns and Chat slides in over the right when a task opens (`Tab` to it, or a click on a row); `Esc` closes it.
+- Needs you with nothing in it folds to a 44px rail (dashed, a green dot, "Needs you · all clear" set vertically) and Work and Chat take the room.
+- Offline: a banner on Needs you, the actions dim, answers wait. Keys say so instead of sending.
+- Panes that are not in focus step back (82% opacity) and return on hover. The focused pane has a stronger border and its selected row open.
+- Spacing runs on a 4px base. Row padding 8px by 10px (Comfortable); group heads add 16px above.
 
 ### Named Rules
-**The Two Glass Rule.** Resting surfaces use translucent glass; anything that floats over content (menus, dialogs, drawers, popovers) uses the near-opaque floating glass, because a popover inside a panel cannot blur what lies outside that panel.
+**The Fixed Console Rule.** The document never scrolls. Every list scrolls inside its own pane. Lists over 100 rows are virtualised.
 
-**The Lit Frame Rule.** A card in a lit state (working, needs you, paused) carries its lamp in the frame: the border tinted to 30 to 35% of the lamp colour and a 7 to 8% wash fading from the top edge. Done and idle cards stay plain.
+**The Rail Rule.** An empty thing is never an empty box. It is a slim dashed rail with its name and count.
 
-## Shapes
+## Row anatomy
 
-Soft instrument corners, nested so the outer frame is always the roundest: shell panels and rails 14px, cards and dialogs 12px, panels 10px, controls, inputs and nav rows 8px, badges 6px, inline code and small links 4px. Lamps and avatars are full circles. Borders are 1px hairlines throughout and go all the way round; the only dashed border is the collapsed column rail. The column head closes with a 1px hairline that fades out to the right.
+Every row, in every pane: **lamp, `project · Name`, the reason or Now line, then a count, an age or a status word**. Comfortable puts the reason on a second line; Compact keeps one.
 
-### Named Rules
-**The No Edge Bars Rule.** Selection and state are never marked by a bar, stripe or coloured border on one edge of a row, card, callout or panel. Selection is a filled tint with a ring all round; state is a lamp with its word, or a tinted frame on every side (the Lit Frame Rule).
+- The project is in the workspace's colour; with no project the workspace's name stands in.
+- The selected row opens in place: the full question or Next and Done when, then its actions. Unset fields are hidden, never "Not set".
+- The selected row's main action is the one filled button; the others are outlined; a ghost "Later" or "Open" ends the line.
+- A row that merges repeats shows `×N` (5 tasks blocked by one closed task, 4 sign-ins). The groups come from typed fields, not from words (`packages/shared/src/queue.ts`).
+- Work rows under a project head show the name only; the label `project · Name` is the row's accessible name and the Chat header.
+- A group shows 8 rows, then "Show N more". "Done by the captain" shows 3.
+
+## Keys
+
+`J` `K` or the arrows move; `Tab` and `Shift+Tab` change pane; `A` does the selected row's main button; `Shift+A` does it for the whole group; `1` to `3` pick that answer; `E` puts a row off for four hours; `U` undoes; `Enter` opens (a task opens its page); `S` stops the selected task; `.` starts it now; `[` folds its workspace; `C` writes in the chat; `Esc` closes the chat or leaves a message box. `N` is a new task, `Cmd K` the palette, `?` the list. Keys do nothing while the owner types in a field or a dialog is open. Every action leaves an Undo toast for five seconds: a question is held by the server for that time, other answers are held in the page and sent when the time is up (a reload before then puts the row back).
+
+## Elevation and depth
+
+Flat themes: no shadows at rest. Floating surfaces (menus, the appearance popover, the undo toast, dialogs) use `card` fill, a hairline and one soft shadow (`0 18px 40px -12px` at 60%, lighter in light mode). Mission: glass over the radar backdrop with the original shadows.
 
 ## Components
 
-### Buttons
-Quiet and exact: colour moves, nothing jumps.
-- **Shape:** gently rounded (8px); heights 28, 34 (default), 40 and 44px; icon buttons 28 and 32px square.
-- **Primary:** accent fill, accent-ink text, semibold, with the accent halo. Hover and press step to the accent's hover and press values.
-- **Secondary (default):** raised tint, `line-control` border, `fg` text; hover brightens the border and moves to the selected tint.
-- **Ghost:** no fill, `fg-muted` text; hover gains the raised tint and full text colour.
-- **Focus / Disabled:** 2px accent outline at 2px offset; disabled drops to 45% opacity. Transitions are 150ms on colour only.
+**Buttons.** 24px tall in the console (28, 34, 40, 44 elsewhere), 8px corners. Primary: accent fill, ink text, semibold. Outline: raised tint, `line-control` border. Ghost: no border, muted. Focus is a 2px accent outline. Disabled is 45% opacity. A key hint (`A`) sits on the primary only.
 
-### Chips
-- **Choice chip:** 34px min height, 8px corners, card fill, `line-strong` border, muted text. Pressed: accent wash and accent line with full text; `aria-pressed` carries the state. Can set its content in mono for ids.
-- **Allowed state:** green wash and green line for toggles that mean "on".
+**Chips and segments.** A 3px-inset track with 26px segments; the pressed one has the selected tint and a 1px ring. The workspace filter, the mode and density pickers and the chat chips use it.
 
-### Segmented switch
-A 3px-inset track (9px corners, field fill, `line-strong` border) holding 32px segments. The pressed segment gets the selected tint and a 1px inset `line-control` ring. Counts follow the label in mono, `fg-faint`.
+**Appearance popover.** Four swatches (each shows the theme's light and dark panel), then Mode and Density segments. Esc closes it.
 
-### Cards / Containers
-- **Task card:** 12px corners, card glass with 12px blur, `glass-line` border, glass rest shadow, 12px padding, 8px internal gap. Top row: lamp, org tile, id in mono, parent link, team avatars. Then the title (card title role, three lines max), a status line in the lamp's colour, and a 3px progress bar or, while working, a 3px track with a cyan sweep. Hover lifts 1px, brightens the border and moves to the pop shadow. Cards rise in with a 30ms stagger (capped at eight).
-- **Glass panel / Card:** glass material; 10px corners (panel) or 12px with 16px by 14px padding (page card).
-- **Badge:** 20px tall, 6px corners, 1px border, 11px text; tones neutral, caution, blue, green, red; mono for ids.
+**Toast.** Bottom centre, floating surface: what was done and `Undo U`. Five seconds.
 
-### Inputs / Fields
-- **Style:** 34px tall, 8px corners, field fill, `line-control` border, 13px text, accent caret, `fg-faint` placeholder.
-- **Focus:** the border turns accent; no ring on top.
-- **Error / Disabled:** red border (also on focus); disabled at 50% opacity.
-
-### Navigation and selection
-The sidebar navigation is a stack of 32px rows (14px, medium), muted at rest, raised tint on hover. Counts sit right-aligned in mono. Group labels head the Setup and System groups and the lamps. The workspace switcher is a 36px field-well button (badge, name, open count) that opens a floating-glass menu; the bell opens a floating-glass panel beside the sidebar listing what needs the owner, each row with its lamp, its line and the task under it.
-
-One selection treatment everywhere (sidebar pages, the rows of every list-and-detail page, pressed segments): the `selected` tint, a 1px inset `line-control` ring all round, and full `fg` text, medium weight where the row's text is otherwise regular. It is `ROW_SELECTED` in `components/ui/list-detail.tsx`. The accent does not mark selection, and nothing marks it on one edge only.
-
-### List and detail
-Agents, Accounts, Health and usage, Projects and links and Workspaces share one frame (`components/ui/list-detail.tsx`): a glass list on the left (264px, 296px from 1320px) and the picked item on the right, both as tall as the page and each scrolling inside itself with edge fades. The list groups rows by org under a small head (org badge, name, count, and a ghost + button when the group takes new items); a row is two lines, the name first and a status line under it, with its lamp or dot and word. A pinned footer holds the list's one action (New workspace, Add account, Register a repo). The detail has a fixed head (name, key facts, actions) over sections divided by hairlines, never boxed; each editable section keeps its own draft with Cancel and Save showing only while something changed.
-
-### Connections
-Connections has one primary **Connect a service** action in the page header, with **Connected** and **Browse services** views below. The catalog's fixed head shows **Connect for**, offering Global or a named workspace with a sentence stating who can use the connection. The destination stays visible and locks during sign-in.
-
-The scrolling pane holds search, category filters, and service cards sorted alphabetically within Services and Cloud tools. Cards use the existing glass, corners, Sans type, and focus treatment. Locally sourced SVG brand marks keep their colours on white backplates in both themes. Each card names its sign-in method or app setup requirement. Service access, OAuth progress, and guided app setup open inline. **Custom setup** sits below the catalog as a secondary path.
-
-Saved rows show the service mark, account or description, Global or workspace label, and a status lamp with its word. Details repeat the scope and audience. Global removal explicitly says agents in every workspace lose access. Lists and setup scroll inside the pane; the shell stays fixed.
-
-### Status Lamp (signature)
-A round lamp, 8px by default (7px in rails and docks, 6px in the connection indicator). Working: filled and breathing. Needs you and paused: filled with a steady glow ring. Done: filled, no glow. Idle: an unlit 1.5px ring. A dim lamp (35% opacity) keeps its colour but unlit, for a count of zero.
-
-### Telemetry Strip (signature)
-The top bar reads like a readout: the page headline, then counts ("28 open", "0 working", "1 needs you", "326M tokens today") with the number in telemetry mono and the word in Sans, separated by 16px hairline dividers. A count lights in its lamp colour only when above zero.
-
-### Needs You Dock (signature)
-In a task room, anything waiting for the owner stays in a glass dock above the message box (12px corners, 10px padding, needs-red tinted border, max 55% of the height, scrolls inside) until answered, headed by a 7px needs lamp and the words "Needs you". Answered items return to the log in place.
-
-### Appearance picker
-A popover of floating glass: a three-way theme segment (Dark, Light, System) and five round accent swatches, the chosen one checked. Saved in the browser; `index.html` applies the saved theme and accent before first paint so the page never flashes.
+**Settings.** The existing list-and-detail pages inside one frame with a Settings list on the left. They follow the themes through the same tokens.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep the shell fixed at the viewport and scroll lists inside their panels with `scroll-fade` (or `scroll-fade-end` under a sticky header).
-- **Do** pair every lamp colour with its word, label or count, and keep lamps `aria-hidden`.
-- **Do** use resting glass for surfaces and floating glass (97.5% fill) for anything over content.
-- **Do** set every number, id, handle and path in IBM Plex Mono with tabular figures, and everything else in IBM Plex Sans.
-- **Do** collapse empty columns to 44px dashed rails with a vertical name and a mono count.
-- **Do** tune new tokens for both themes and all five accents in `styles.css`; components use only the Tailwind tokens mapped to `--c-*`, whose default palette, sizes and radii are cleared.
-- **Do** nest corners: 14px shell panels over 12px cards over 8px controls.
-- **Do** mark the selected row with `ROW_SELECTED`: selected tint, inset ring all round, full text.
+- **Do** keep the shell at the viewport and scroll inside panes.
+- **Do** read colour from tokens in `styles.css`; add a token for both modes of every theme.
+- **Do** put a word beside every lamp.
+- **Do** keep one filled button on screen and make it fit the row's state (Answer, Unblock, Start now, Stop).
+- **Do** judge a screen with the longest names, 100+ rows and an empty state, at 1440 and 1100 wide, light and dark.
+- **Do** keep Mission as a theme: its glass, grid and glow live only under `data-theme="mission"` or in tokens only it sets.
 
 ### Don't:
-- **Don't** let the document scroll, or add a page-level scroll container.
-- **Don't** use a lamp colour for an accent, a button, a chart series or decoration, and don't add an accent that lands on a lamp hue.
-- **Don't** let colour alone carry a state.
-- **Don't** raise the world's material cyan (hairlines, grid, rings) to lamp strength; full-strength cyan means working.
-- **Don't** set prose, labels or titles in mono.
-- **Don't** use the uppercase group label as a kicker or eyebrow above a title; it heads groups and table columns only.
-- **Don't** draw an empty column as an empty box with "Nothing here".
-- **Don't** use hard offset shadows, flat gray cards, or blur-dependent popovers.
-- **Don't** recolour the `mj` mark with the accent; it stays amber.
-- **Don't** mark selection or state with an edge bar: no coloured `border-left` or `border-right`, no one-edge `::before` stripe, no absolutely placed bar on a row's side. Use the selected tint and ring, a lamp with its word, or a frame tinted on every side.
+- **Don't** use red for anything but an incident and the hollow "your call" ring.
+- **Don't** add an animation that loops, a glow, a grid or a blur outside Mission.
+- **Don't** show a workspace by its key.
+- **Don't** put a native `title` tooltip on a row that re-renders; the label is the row's accessible name.
+- **Don't** set prose in mono, or show "Not set" for an empty field; hide it.
+- **Don't** mark selection on one edge only (no coloured side bar); use the selected tint and ring all round.
+- **Don't** draw an empty column as an empty box with "Nothing here"; it is a rail.

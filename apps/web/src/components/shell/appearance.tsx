@@ -1,32 +1,22 @@
-import { Check, Monitor, Moon, Palette, Sun } from "lucide-react";
+import { Sun } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import {
-  ACCENT_LABEL,
-  ACCENTS,
-  type Accent,
-  setAppearance,
-  type ThemeChoice,
-  useAppearance,
-} from "@/lib/appearance";
 import { cn } from "@/lib/cn";
 import { GLASS_STRONG } from "@/lib/glass";
+import {
+  DENSITIES,
+  DENSITY_LABEL,
+  type Density,
+  MODE_LABEL,
+  MODES,
+  type Mode,
+  setLook,
+  THEME_IDS,
+  THEME_LABEL,
+  type ThemeId,
+  useLook,
+} from "@/lib/look";
 
-const THEME_ROWS: readonly { value: ThemeChoice; label: string; icon: typeof Moon }[] = [
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "light", label: "Light", icon: Sun },
-  { value: "system", label: "System", icon: Monitor },
-];
-
-/** Swatch colors: the accent as it shows in the dark theme, where the swatches are picked most. */
-const SWATCH: Record<Accent, string> = {
-  amber: "#f0b455",
-  blue: "#7ea6ff",
-  violet: "#a98bf5",
-  lime: "#b6dc4e",
-  steel: "#b8c4d6",
-};
-
-/** The sidebar's Appearance button: a popover with the theme and the accent. Saved in this browser. */
+/** The top bar's sun button: a popover with the theme, the mode and the density. Saved in this browser. */
 export function AppearanceButton() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -61,87 +51,97 @@ export function AppearanceButton() {
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label="Appearance"
-        title="Appearance: theme and accent"
         onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "grid size-7 cursor-pointer place-items-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-raised hover:text-fg",
-          open && "bg-selected text-fg",
-        )}
+        className="cs-iconbtn"
       >
-        <Palette aria-hidden="true" className="size-4" />
+        <Sun aria-hidden="true" className="size-[15px]" />
       </button>
       {open && (
         <section
           id={id}
           aria-label="Appearance"
           className={cn(
-            "absolute bottom-0 left-full z-40 ml-4 flex w-[232px] animate-rise flex-col gap-3 rounded-xl p-3",
+            "absolute top-9 right-0 z-40 flex w-[248px] flex-col gap-2.5 rounded-xl p-2.5",
             GLASS_STRONG,
           )}
         >
-          <AppearanceControls />
+          <AppearanceControls hint={false} />
         </section>
       )}
     </div>
   );
 }
 
-/** The theme segment and the accent swatches, in the sidebar popover and on Hub setup. */
-export function AppearanceControls({ className, hint = true }: { className?: string; hint?: boolean }) {
-  const appearance = useAppearance();
+function Segment<T extends string>({
+  label,
+  options,
+  value,
+  labels,
+  onPick,
+}: {
+  label: string;
+  options: readonly T[];
+  value: T;
+  labels: Record<T, string>;
+  onPick: (next: T) => void;
+}) {
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
-        <legend className="mb-1.5 text-sm font-medium text-fg-soft">Theme</legend>
-        <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line-strong bg-field p-[3px]">
-          {THEME_ROWS.map(({ value, label, icon: Icon }) => {
-            const on = appearance.theme === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setAppearance({ theme: value })}
-                className={cn(
-                  "flex h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-md text-xs transition-colors duration-150",
-                  on
-                    ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
-                    : "text-fg-muted hover:bg-raised hover:text-fg",
-                )}
-              >
-                <Icon aria-hidden="true" className="size-4" />
-                {label}
-              </button>
-            );
-          })}
+    <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+      <legend className="mb-1 text-xs text-fg-faint">{label}</legend>
+      <div className="cs-seg w-full">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={value === option}
+            onClick={() => onPick(option)}
+            className="flex-1 justify-center"
+          >
+            {labels[option]}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Theme swatches, then mode and density. In the top bar's popover and on Hub setup. */
+export function AppearanceControls({ className, hint = true }: { className?: string; hint?: boolean }) {
+  const look = useLook();
+  return (
+    <div className={cn("flex flex-col gap-2.5", className)}>
+      <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+        <legend className="mb-1 text-xs text-fg-faint">Theme</legend>
+        <div className="grid grid-cols-2 gap-1.5">
+          {THEME_IDS.map((theme: ThemeId) => (
+            <button
+              key={theme}
+              type="button"
+              aria-pressed={look.theme === theme}
+              data-look-swatch={theme}
+              onClick={() => setLook({ theme })}
+              className="cs-swatch"
+            >
+              <span>{THEME_LABEL[theme]}</span>
+            </button>
+          ))}
         </div>
       </fieldset>
-      <fieldset className="m-0 flex flex-col border-0 p-0">
-        <legend className="mb-2 text-sm font-medium text-fg-soft">Accent</legend>
-        <div className="flex items-center gap-2">
-          {ACCENTS.map((accent) => {
-            const on = appearance.accent === accent;
-            return (
-              <button
-                key={accent}
-                type="button"
-                aria-pressed={on}
-                aria-label={ACCENT_LABEL[accent]}
-                title={ACCENT_LABEL[accent]}
-                onClick={() => setAppearance({ accent })}
-                style={{ backgroundColor: SWATCH[accent] }}
-                className={cn(
-                  "grid size-7 cursor-pointer place-items-center rounded-full text-[#10141b] transition-transform duration-150 hover:scale-110",
-                  on && "ring-2 ring-fg ring-offset-2 ring-offset-[var(--c-glass-strong)]",
-                )}
-              >
-                {on && <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />}
-              </button>
-            );
-          })}
-        </div>
-        {hint && <p className="mt-2.5 text-xs text-fg-faint">Saved in this browser.</p>}
-      </fieldset>
+      <Segment<Mode>
+        label="Mode"
+        options={MODES}
+        value={look.mode}
+        labels={MODE_LABEL}
+        onPick={(mode) => setLook({ mode })}
+      />
+      <Segment<Density>
+        label="Density"
+        options={DENSITIES}
+        value={look.density}
+        labels={DENSITY_LABEL}
+        onPick={(density) => setLook({ density })}
+      />
+      {hint && <p className="text-xs text-fg-faint">Saved in this browser.</p>}
     </div>
   );
 }

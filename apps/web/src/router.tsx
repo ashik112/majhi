@@ -11,7 +11,7 @@ import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
-import { BoardScreen } from "@/features/board/home-screen";
+import { ConsoleScreen } from "@/features/console/console-screen";
 
 /** Search params every page may carry: the org filter, and the agent or account a link points at. */
 export interface AppSearch {
@@ -36,8 +36,9 @@ export interface AppSearch {
   task?: string;
   /** An agent shown in the agent drawer, opened from a mention in a message. */
   peek?: string;
-  /** How the board shows tasks. The board is the default. */
-  view?: "tree";
+  /** On the console: the chat to open (`captain`, or a conversation id) and the pane to focus. */
+  chat?: string;
+  pane?: "needs" | "work";
   /** On Skills: the skill whose detail opens. */
   skill?: string;
   /** On Memory: the project shown (or `global`), and its tab. */
@@ -79,7 +80,8 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
   const item = text(search.item);
-  const view = search.view === "tree" ? "tree" : undefined;
+  const chat = text(search.chat);
+  const pane = search.pane === "needs" || search.pane === "work" ? search.pane : undefined;
   const skill = text(search.skill);
   const project = text(search.project);
   const tab = text(search.tab);
@@ -95,7 +97,8 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const from = text(search.from);
   const to = text(search.to);
   return {
-    ...(view ? { view } : {}),
+    ...(chat ? { chat } : {}),
+    ...(pane ? { pane } : {}),
     ...(org ? { org } : {}),
     ...(agent ? { agent } : {}),
     ...(account ? { account } : {}),
@@ -132,27 +135,34 @@ const rootRoute = createRootRoute({
     <Problem icon={<MapPinOff />} title="Nothing here" body="This address does not match any page in majhi.">
       <div>
         <Button asChild variant="secondary">
-          <Link to="/">Go to the board</Link>
+          <Link to="/">Go to the console</Link>
         </Button>
       </div>
     </Problem>
   ),
 });
 
+// The console is Needs you, Work and Chat on one screen; it is the first thing the app loads.
 const boardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.board,
-  component: BoardScreen,
+  component: ConsoleScreen,
 });
+// Old addresses: Today, Decisions and Chats are the console now. A decision or a chat they named is
+// selected there.
 const chatsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.chats,
-  component: lazyRouteComponent(() => import("@/features/chats/chats-screen"), "ChatsScreen"),
+  beforeLoad: () => {
+    throw redirect({ to: PAGE_PATH.board });
+  },
 });
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chats/$taskId",
-  component: lazyRouteComponent(() => import("@/features/chats/chats-screen"), "ChatsScreen"),
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: PAGE_PATH.board, search: { chat: params.taskId } });
+  },
 });
 const taskRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -243,12 +253,16 @@ const limitsRoute = createRoute({
 const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.today,
-  component: lazyRouteComponent(() => import("@/pages/today-page"), "TodayPage"),
+  beforeLoad: () => {
+    throw redirect({ to: PAGE_PATH.board });
+  },
 });
 const decisionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.decisions,
-  component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: PAGE_PATH.board, search: search.id === undefined ? {} : { id: search.id } });
+  },
 });
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,

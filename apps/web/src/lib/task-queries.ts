@@ -57,6 +57,11 @@ export function useTasks(enabled = true) {
   });
 }
 
+/** The whole list as the server sends it: tasks, chats and captain threads. The console sorts them itself. */
+export function useAllTasks(enabled = true) {
+  return useQuery<TaskSummary[], ApiRequestError>({ ...taskListQuery, enabled });
+}
+
 /** The chats with agents, newest first, done ones included. */
 export function useChats(enabled = true) {
   return useQuery<TaskSummary[], ApiRequestError, TaskSummary[]>({

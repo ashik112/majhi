@@ -24,3 +24,8 @@ export function useFeedOpen(): boolean {
 export function healthEveryMs(feedOpen: boolean): number {
   return feedOpen ? 30_000 : 1500;
 }
+
+/** True once the events socket has been open and is now down: the server cannot be reached. False before its first try. */
+export function useFeedLost(): boolean {
+  return useSyncExternalStore(subscribe, () => open === false);
+}

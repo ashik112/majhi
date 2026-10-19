@@ -9,7 +9,7 @@
  * outside that panel (the panel is its backdrop root), so the fill alone has to hide the text behind.
  */
 export const GLASS =
-  "border border-glass-line bg-glass shadow-glass backdrop-blur-[18px] backdrop-saturate-[1.35]";
+  "border border-glass-line bg-glass shadow-glass [backdrop-filter:var(--glass-filter)]";
 
 export const GLASS_STRONG =
-  "border border-glass-line bg-glass-strong shadow-pop backdrop-blur-[24px] backdrop-saturate-[1.4]";
+  "border border-glass-line bg-glass-strong shadow-pop [backdrop-filter:var(--glass-filter-strong)]";

@@ -1,0 +1,1059 @@
+/*
+ * The console: Needs you, Work and Chat on one screen (design/console.html is the approved reference;
+ * these rules are its rules, on the theme tokens of styles.css). Colors, fonts and radii come from
+ * tokens; nothing here names a color. Flat themes are the base; Mission adds its glass, glow and
+ * breathing lamp at the end. Density is `data-density` on <html>: Compact is the base, Comfortable
+ * and Spacious give the reason its own line and more room.
+ */
+
+.cs-shell {
+  display: grid;
+  height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+.cs-main {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  outline: none;
+}
+.cs-glass {
+  background: var(--c-glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--c-glass-line);
+  border-radius: 14px;
+  box-shadow: var(--c-shadow-glass);
+}
+
+/* Top bar ----------------------------------------------------------------- */
+.cs-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 12px;
+  min-width: 0;
+}
+.cs-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--c-brand);
+  color: var(--c-brand-ink);
+  font: 600 12px/26px var(--font-mono);
+  text-align: center;
+  flex: none;
+}
+.cs-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--c-field);
+  border: 1px solid var(--c-line-strong);
+  border-radius: 9px;
+  min-width: 0;
+  flex: none;
+}
+.cs-seg button {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--c-fg-muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cs-seg button:hover {
+  color: var(--c-fg);
+  background: var(--c-raised);
+}
+.cs-seg button[aria-pressed="true"] {
+  background: var(--c-selected);
+  color: var(--c-fg);
+  box-shadow: inset 0 0 0 1px var(--c-line-control);
+}
+.cs-seg .cs-c {
+  font: 400 11px var(--font-mono);
+  color: var(--c-fg-faint);
+}
+.cs-conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--c-lamp-paused);
+}
+.cs-tele {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  flex: none;
+}
+.cs-tele > span {
+  white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--c-fg-muted);
+  font-size: 12px;
+}
+.cs-tele b {
+  font: 500 15px var(--font-mono);
+  font-feature-settings: "tnum";
+  color: var(--c-fg-dim);
+}
+.cs-tele .cs-on b {
+  color: var(--c-fg);
+}
+.cs-tele .cs-inc b {
+  color: var(--c-lamp-needs);
+}
+.cs-tele i {
+  width: 1px;
+  height: 18px;
+  background: var(--c-line-strong);
+}
+.cs-iconbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--c-line-control);
+  background: var(--c-raised);
+  display: grid;
+  place-items: center;
+  color: var(--c-fg-muted);
+  flex: none;
+  cursor: pointer;
+}
+.cs-iconbtn:hover,
+.cs-iconbtn[aria-expanded="true"] {
+  color: var(--c-fg);
+  border-color: var(--c-line-hover);
+  background: var(--c-selected);
+}
+.cs-kbd {
+  font: 400 10px/16px var(--font-mono);
+  color: var(--c-fg-faint);
+  border: 1px solid var(--c-line-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.cs-search {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-line-control);
+  background: var(--c-field);
+  color: var(--c-fg-faint);
+  width: 200px;
+  flex: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+.cs-search:hover {
+  border-color: var(--c-line-hover);
+}
+.cs-swatch {
+  height: 46px;
+  border-radius: 8px;
+  border: 1px solid var(--c-line-control);
+  font-size: 12px;
+  color: var(--c-fg-soft);
+  display: grid;
+  place-items: end start;
+  padding: 4px 6px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--sw-light) 50%, var(--sw-dark) 50%);
+}
+.cs-swatch span {
+  background: var(--c-glass-strong);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.cs-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--c-accent);
+}
+
+/* Panes ------------------------------------------------------------------- */
+.cs-console {
+  display: grid;
+  grid-template-columns: minmax(0, 34fr) minmax(0, 36fr) minmax(0, 30fr);
+  gap: 10px;
+  min-height: 0;
+}
+.cs-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: var(--c-panel, var(--c-glass));
+}
+.cs-pane[data-focus="true"] {
+  border-color: var(--c-line-hover);
+}
+.cs-phead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  flex: none;
+  min-width: 0;
+}
+.cs-phead h2 {
+  font: 600 13px/20px var(--font-sans);
+  white-space: nowrap;
+}
+.cs-phead .cs-sub {
+  font-size: 12px;
+  color: var(--c-fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-phead .cs-sub b {
+  font: 400 12px var(--font-mono);
+  color: var(--c-fg-muted);
+}
+.cs-phead .cs-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+.cs-rule {
+  height: 1px;
+  background: var(--c-line);
+  flex: none;
+}
+.cs-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1;
+  padding: 0 6px 12px;
+  scrollbar-gutter: stable;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line-control) transparent;
+  scroll-padding: 36px 0 12px;
+}
+.cs-foot {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  border-top: 1px solid var(--c-line);
+  font-size: 11px;
+  color: var(--c-fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cs-foot > span {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+/* Lamps: still dots. Mission adds glow and breathing through --lamp-halo and --lamp-animation. */
+.cs-lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  color: var(--c-fg-faint);
+  background: currentColor;
+}
+.cs-lamp[data-state="working"] {
+  color: var(--c-lamp-working);
+  animation: var(--lamp-animation);
+}
+.cs-lamp[data-state="needs"] {
+  color: var(--c-lamp-needs);
+  box-shadow: var(--lamp-halo);
+}
+.cs-lamp[data-state="paused"] {
+  color: var(--c-lamp-paused);
+  background: none;
+  border: 1.5px solid currentColor;
+  box-shadow: var(--lamp-halo);
+}
+.cs-lamp[data-state="done"] {
+  color: var(--c-lamp-done);
+}
+.cs-lamp[data-state="idle"] {
+  color: var(--c-lamp-idle);
+  background: none;
+  border: 1.5px solid currentColor;
+}
+/* In the queue, being there is the signal: plain dots. Red is for incidents. */
+.cs-pane[data-pane="needs"] .cs-lamp[data-state="needs"],
+.cs-pane[data-pane="needs"] .cs-lamp[data-state="done"] {
+  color: var(--c-fg-muted);
+  box-shadow: none;
+}
+.cs-pane[data-pane="needs"] .cs-lamp[data-state="done"] {
+  color: var(--c-fg-dim);
+}
+.cs-pane[data-pane="needs"] .cs-row[data-incident="true"] .cs-lamp {
+  color: var(--c-lamp-needs);
+}
+/* In Work, "your call" points at the queue: a hollow ring and a quiet word. */
+.cs-pane[data-pane="work"] .cs-lamp[data-state="needs"] {
+  background: none;
+  border: 1.5px solid var(--c-lamp-needs);
+  box-shadow: none;
+}
+.cs-lamp[data-dim="true"] {
+  opacity: 0.35;
+}
+
+/* Workspace identity: a square in the workspace's hue, never its key. */
+.cs-wsdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+  display: inline-block;
+  background: var(--ws, var(--c-ws-5));
+}
+.cs-wsname {
+  color: var(--ws, var(--c-ws-5));
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Group heads ------------------------------------------------------------- */
+.cs-gh {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 4px;
+  background: var(--c-panel, var(--c-glass));
+  font: 500 11px/16px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-fg-faint);
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+  text-align: left;
+}
+.cs-gh .cs-n {
+  letter-spacing: 0;
+  font: 400 11px var(--font-mono);
+  color: var(--c-fg-muted);
+}
+.cs-gh .cs-chev {
+  margin-left: auto;
+  transition: transform 0.15s;
+  color: var(--c-fg-dim);
+  flex: none;
+}
+.cs-gh[aria-expanded="false"] .cs-chev {
+  transform: rotate(-90deg);
+}
+.cs-gh.cs-ws-h {
+  text-transform: none;
+  letter-spacing: 0;
+  font: 600 12px var(--font-sans);
+  color: var(--c-fg);
+}
+.cs-gh .cs-meta {
+  font: 400 11px var(--font-sans);
+  color: var(--c-fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.cs-sub-h {
+  font: 500 11px var(--font-sans);
+  color: var(--c-fg-faint);
+  padding: 4px 6px 0 28px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Rows -------------------------------------------------------------------- */
+.cs-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  cursor: default;
+  width: 100%;
+  text-align: left;
+}
+.cs-row:hover {
+  background: var(--c-raised);
+}
+.cs-row[aria-selected="true"] {
+  background: var(--c-selected);
+  box-shadow: inset 0 0 0 1px var(--c-line-strong);
+}
+.cs-row .cs-lamp {
+  justify-self: center;
+}
+.cs-main-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cs-title {
+  font: 500 14px/20px var(--font-sans);
+  white-space: nowrap;
+  display: flex;
+  min-width: 60px;
+  max-width: 66%;
+  flex: 0 1 auto;
+}
+.cs-title .cs-p {
+  color: var(--ws, var(--c-fg-muted));
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+.cs-title .cs-p + .cs-s {
+  padding-left: 0.3em;
+}
+.cs-title .cs-s {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 40px;
+}
+.cs-row[aria-selected="true"] .cs-title .cs-s {
+  color: var(--c-fg);
+}
+.cs-gist {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--c-fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cs-row[aria-selected="true"] .cs-gist {
+  display: none;
+}
+.cs-gist .cs-unset {
+  color: var(--c-fg-faint);
+}
+.cs-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  padding-right: 2px;
+}
+.cs-age {
+  font: 400 11px var(--font-mono);
+  color: var(--c-fg-faint);
+  min-width: 24px;
+  text-align: right;
+}
+.cs-row:hover .cs-age,
+.cs-row[aria-selected="true"] .cs-age {
+  display: none;
+}
+.cs-st {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--c-fg-muted);
+}
+.cs-st[data-tone="needs"] {
+  color: var(--c-fg-soft);
+}
+.cs-st[data-tone="paused"],
+.cs-st[data-tone="idle"] {
+  color: var(--c-fg-faint);
+}
+.cs-count {
+  font: 500 10px/16px var(--font-mono);
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--c-selected);
+  color: var(--c-fg-muted);
+}
+.cs-row[data-incident="true"] .cs-count {
+  background: var(--c-red-wash);
+  color: var(--c-lamp-needs);
+}
+.cs-unread {
+  font: 500 10px/16px var(--font-mono);
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--c-selected);
+  color: var(--c-fg-soft);
+  text-align: center;
+}
+
+/* Buttons: one filled primary on screen, on the selected row. Others are outlined. */
+.cs-btn {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--c-line-control);
+  background: var(--c-raised);
+  font-size: 12px;
+  color: var(--c-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cs-btn:hover {
+  border-color: var(--c-line-hover);
+  background: var(--c-selected);
+}
+.cs-btn[disabled] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.cs-btn[data-primary="true"] {
+  background: var(--c-accent);
+  border-color: transparent;
+  color: var(--c-accent-ink);
+  font-weight: 600;
+}
+.cs-btn[data-primary="true"]:hover {
+  background: var(--c-accent-hover);
+}
+.cs-btn[data-ghost="true"] {
+  border-color: transparent;
+  background: none;
+  color: var(--c-fg-muted);
+}
+.cs-btn[data-ghost="true"]:hover {
+  background: var(--c-raised);
+  color: var(--c-fg);
+}
+.cs-btn[data-primary="true"] .cs-kbd {
+  border-color: color-mix(in oklab, var(--c-accent-ink) 30%, transparent);
+  color: var(--c-accent-ink);
+  opacity: 0.7;
+}
+.cs-btn:not([data-primary="true"]) .cs-kbd {
+  display: none;
+}
+/* Hover offers a quiet outlined button for the row's main answer. */
+.cs-quick {
+  display: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-row:hover:not([aria-selected="true"]) .cs-quick {
+  display: inline-flex;
+}
+
+/* The selected row opens in place. */
+.cs-det {
+  grid-column: 2 / 4;
+  display: none;
+  padding: 2px 0 8px;
+  gap: 4px;
+}
+.cs-row[aria-selected="true"] .cs-det {
+  display: grid;
+}
+.cs-det .cs-q {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--c-fg);
+  overflow-wrap: anywhere;
+}
+.cs-det .cs-q .cs-lbl {
+  color: var(--c-fg-muted);
+  margin-right: 8px;
+}
+.cs-det .cs-list {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--c-fg-muted);
+}
+.cs-acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.cs-row[data-incident="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c-lamp-needs) 35%, transparent);
+  background: color-mix(in oklab, var(--c-lamp-needs) 6%, transparent);
+  margin: 2px 0;
+}
+.cs-row[data-incident="true"][aria-selected="true"] {
+  background: color-mix(in oklab, var(--c-lamp-needs) 10%, transparent);
+}
+.cs-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px 5px 28px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--c-fg-muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cs-more:hover {
+  background: var(--c-raised);
+  color: var(--c-fg);
+}
+.cs-empty {
+  padding: 14px 8px;
+  display: grid;
+  gap: 2px;
+  color: var(--c-fg-faint);
+  font-size: 12px;
+}
+.cs-empty b {
+  font: 500 13px var(--font-sans);
+  color: var(--c-fg-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cs-rail {
+  margin: 4px 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px dashed var(--c-line-control);
+  border-radius: 8px;
+  color: var(--c-fg-faint);
+  font-size: 12px;
+  cursor: pointer;
+  width: calc(100% - 12px);
+  text-align: left;
+}
+.cs-rail:hover {
+  color: var(--c-fg);
+  border-color: var(--c-line-hover);
+}
+.cs-rail .cs-n {
+  margin-left: auto;
+  color: var(--c-fg-muted);
+  font: 400 11px var(--font-mono);
+}
+
+/* Offline: a banner, and the actions dim. */
+.cs-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--c-fg-soft);
+  background: color-mix(in oklab, var(--c-lamp-paused) 10%, transparent);
+  border-bottom: 1px solid var(--c-line-control);
+  border-radius: 14px 14px 0 0;
+}
+.cs-offline .cs-needsable {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Needs you with nothing in it folds to a 44px rail; Work and Chat take the room. */
+.cs-console[data-clear="true"] {
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+}
+.cs-vrail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  height: 100%;
+  border-radius: 14px;
+  border: 1px dashed var(--c-line-control);
+  color: var(--c-fg-faint);
+  cursor: pointer;
+  width: 100%;
+}
+.cs-vrail span.cs-w {
+  writing-mode: vertical-rl;
+  font: 500 12px var(--font-sans);
+  color: var(--c-fg-muted);
+}
+.cs-vrail .cs-n {
+  font: 400 11px var(--font-mono);
+}
+
+/* Chat -------------------------------------------------------------------- */
+.cs-chips {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.cs-chip {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-card);
+  color: var(--c-fg-muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex: none;
+  max-width: 210px;
+  cursor: pointer;
+}
+.cs-chip .cs-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-chip:hover {
+  color: var(--c-fg);
+  border-color: var(--c-line-hover);
+}
+.cs-chip[aria-pressed="true"] {
+  background: var(--c-selected);
+  color: var(--c-fg);
+  box-shadow: inset 0 0 0 1px var(--c-line-control);
+}
+.cs-th {
+  padding: 8px 14px 10px;
+  display: grid;
+  gap: 6px;
+  flex: none;
+}
+.cs-th .cs-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 14px/20px var(--font-sans);
+  min-width: 0;
+}
+.cs-th .cs-t .cs-x2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-th .cs-t .cs-p {
+  color: var(--ws, var(--c-fg-muted));
+  font-weight: 500;
+}
+.cs-facts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cs-fact {
+  font: 400 11px/18px var(--font-mono);
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--c-line-strong);
+  color: var(--c-fg-muted);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-kv {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 1px 8px;
+  font-size: 13px;
+  line-height: 19px;
+}
+.cs-kv i {
+  font-style: normal;
+  color: var(--c-fg-faint);
+}
+.cs-kv span {
+  color: var(--c-fg-soft);
+  overflow-wrap: anywhere;
+}
+.cs-chat-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  padding: 0 10px 10px;
+}
+
+/* A new item arrives with one short pulse, then is still. */
+@keyframes cs-arrive {
+  from {
+    background: var(--c-accent-wash);
+  }
+  to {
+    background: transparent;
+  }
+}
+.cs-row[data-new="true"] {
+  animation: cs-arrive 1.2s ease-out 1;
+}
+
+/* The panes that are not in focus step back, and come back on hover. */
+.cs-pane[data-focus="false"] .cs-row {
+  opacity: 0.82;
+}
+.cs-pane[data-focus="false"] .cs-row:hover {
+  opacity: 1;
+}
+
+/* The undo toast */
+.cs-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translate(-50%, 8px);
+  opacity: 0;
+  transition:
+    opacity 0.18s,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  background: var(--c-glass-strong);
+  border: 1px solid var(--c-line-control);
+  border-radius: 10px;
+  padding: 6px 6px 6px 12px;
+  font-size: 12px;
+  color: var(--c-fg-soft);
+  box-shadow: var(--c-shadow-pop);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 60;
+  max-width: 90vw;
+}
+.cs-toast span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-toast[data-on="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+/* Density: Comfortable (default) and Spacious give the reason its own line. */
+[data-density="comfortable"] .cs-row,
+[data-density="spacious"] .cs-row {
+  align-items: start;
+  padding: 8px 10px;
+  row-gap: 2px;
+}
+[data-density="spacious"] .cs-row {
+  padding: 11px 12px;
+}
+[data-density="comfortable"] .cs-row .cs-lamp,
+[data-density="spacious"] .cs-row .cs-lamp {
+  margin-top: 6px;
+}
+[data-density="comfortable"] .cs-main-line,
+[data-density="spacious"] .cs-main-line {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+[data-density="comfortable"] .cs-title,
+[data-density="spacious"] .cs-title {
+  max-width: 100%;
+}
+[data-density="comfortable"] .cs-gist,
+[data-density="spacious"] .cs-gist {
+  flex-basis: 100%;
+  color: var(--c-fg-muted);
+}
+[data-density="comfortable"] .cs-end,
+[data-density="spacious"] .cs-end {
+  padding-top: 1px;
+}
+[data-density="comfortable"] .cs-row,
+[data-density="spacious"] .cs-row {
+  margin-top: 2px;
+}
+[data-density="comfortable"] .cs-det,
+[data-density="spacious"] .cs-det {
+  padding: 4px 0 2px;
+  gap: 6px;
+}
+[data-density="comfortable"] .cs-gh,
+[data-density="spacious"] .cs-gh {
+  padding: 16px 8px 8px;
+}
+[data-density="spacious"] .cs-gh {
+  padding: 20px 10px 10px;
+}
+[data-density="comfortable"] .cs-sub-h,
+[data-density="spacious"] .cs-sub-h {
+  padding: 8px 10px 2px 30px;
+}
+[data-density="comfortable"] .cs-scroll,
+[data-density="spacious"] .cs-scroll {
+  padding-left: 10px;
+}
+[data-density="comfortable"] .cs-phead,
+[data-density="spacious"] .cs-phead {
+  padding: 14px 16px 12px;
+}
+[data-density="comfortable"] .cs-foot,
+[data-density="spacious"] .cs-foot {
+  padding: 9px 16px;
+}
+[data-density="comfortable"] .cs-rail,
+[data-density="spacious"] .cs-rail {
+  height: 36px;
+  margin: 6px 10px 0;
+  width: calc(100% - 20px);
+}
+[data-density="comfortable"] .cs-more,
+[data-density="spacious"] .cs-more {
+  padding: 9px 10px 9px 32px;
+}
+[data-density="comfortable"] .cs-console,
+[data-density="spacious"] .cs-console,
+[data-density="comfortable"] .cs-shell,
+[data-density="spacious"] .cs-shell {
+  gap: 12px;
+}
+[data-density="comfortable"] .cs-shell,
+[data-density="spacious"] .cs-shell {
+  padding: 12px;
+}
+
+/* Under 1240px Chat slides over the right when a task opens. */
+@media (max-width: 1240px) {
+  .cs-console {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+  .cs-console[data-clear="true"] {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .cs-pane[data-pane="chat"] {
+    position: fixed;
+    right: 10px;
+    top: 62px;
+    bottom: 10px;
+    width: min(460px, 46vw);
+    z-index: 30;
+    background: var(--c-glass-strong);
+    box-shadow: var(--c-shadow-pop);
+    transform: translateX(calc(100% + 20px));
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    visibility: hidden;
+  }
+  .cs-pane[data-pane="chat"][data-open="true"] {
+    transform: none;
+    visibility: visible;
+  }
+  .cs-search {
+    width: 132px;
+  }
+  .cs-search .cs-kbd,
+  .cs-tele .cs-q {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-row[data-new="true"] {
+    animation: none;
+  }
+}
+
+/* Mission keeps its glass: the translucent panes, the blur and the glow. */
+:root[data-theme="mission"] .cs-pane {
+  background: var(--c-glass);
+}
+:root[data-theme="mission"] .cs-gh {
+  background: linear-gradient(var(--c-glass-strong) 75%, transparent);
+}
+:root[data-theme="mission"] .cs-rule {
+  background: linear-gradient(90deg, var(--c-glass-line), transparent 85%);
+}
+:root[data-theme="mission"] .cs-pane[data-pane="needs"] .cs-lamp[data-state="needs"] {
+  color: var(--c-lamp-needs);
+  box-shadow: var(--lamp-halo);
+}
+:root[data-theme="mission"] .cs-pane[data-pane="work"] .cs-lamp[data-state="needs"] {
+  background: currentColor;
+  border: 0;
+  box-shadow: var(--lamp-halo);
+}
+:root[data-theme="mission"] .cs-pane[data-focus="false"] .cs-row {
+  opacity: 0.82;
+}
+:root[data-theme="mission"] .cs-title,
+:root[data-theme="mission"] .cs-gist,
+:root[data-theme="mission"] .cs-det .cs-q,
+:root[data-theme="mission"] .cs-det .cs-list,
+:root[data-theme="mission"] .cs-kv {
+  font-size: 13px;
+}
+:root[data-theme="mission"] .cs-mark {
+  box-shadow: 0 0 14px -2px color-mix(in oklab, var(--c-brand) 45%, transparent);
+}
+
+.cs-toast .cs-btn .cs-kbd {
+  display: inline;
+}
+
+.cs-main > .cs-console {
+  flex: 1 1 0;
+}
+
+.cs-moved {
+  margin: 0;
+  padding: 0 14px 8px;
+  font-size: 13px;
+  color: var(--c-fg-muted);
+}
+.cs-moved a {
+  color: var(--c-fg);
+  text-decoration: underline;
+  text-decoration-color: var(--c-fg-faint);
+  text-underline-offset: 2px;
+}
+.cs-th a.cs-x2 {
+  display: block;
+}

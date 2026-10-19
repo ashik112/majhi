@@ -4,6 +4,7 @@ import { KeyRound, Paperclip } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -35,6 +36,7 @@ import {
   pendingOwnerItem,
   type Trigger,
 } from "./model";
+import { ComposerAutoFocus } from "./auto-focus";
 import { ModelPicker } from "./model-picker";
 
 interface PopupOption {
@@ -103,14 +105,16 @@ export function Composer({
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [active, setActive] = useState(0);
   const [focused, setFocused] = useState(false);
+  const autoFocus = useContext(ComposerAutoFocus);
   // A room that opens with nothing focused (from the new-task dialog, or a page load) gets the box.
   useEffect(() => {
+    if (!autoFocus) return;
     const frame = requestAnimationFrame(() => {
       const now = document.activeElement;
       if (now === null || now === document.body) field.current?.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [autoFocus]);
   useTypingSignal(taskId, focused && text.trim() !== "");
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);

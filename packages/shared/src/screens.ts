@@ -1,9 +1,9 @@
 /**
- * majhi's screens as plain data: the web app builds its sidebar, Settings list and router paths
+ * majhi's screens as plain data: the web app builds its Settings list and router paths
  * from it, and the captain's prompt carries the same map, so neither can name a page that is not there.
  */
 
-/** The path of every page, in one place: the router, the sidebar, the keys and the links between pages read it. */
+/** The path of every page, in one place: the router, the keys and the links between pages read it. */
 export const PAGE_PATH = {
   today: "/today",
   board: "/",
@@ -30,11 +30,11 @@ export const PAGE_PATH = {
 export type PageName = keyof typeof PAGE_PATH;
 export type PagePath = (typeof PAGE_PATH)[PageName];
 
-/** What each page is called in the sidebar, the palette and the shortcuts list. */
+/** What each page is called in Settings, the palette and the shortcuts list. */
 export const PAGE_LABEL: Record<PageName, string> = {
   today: "Today",
-  board: "Tasks",
-  chats: "Chats",
+  board: "Console",
+  chats: "Chat",
   captain: "Captain",
   playbooks: "Playbooks",
   watch: "Watch",
@@ -53,14 +53,8 @@ export const PAGE_LABEL: Record<PageName, string> = {
   audit: "Audit log",
 };
 
-/** The sidebar's rows: the daily work at the top, the team and health at the foot, then Settings. */
-export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "wiki", "watch"] as const;
-export const SIDEBAR_FOOT = ["agents", "skills", "accounts", "usage"] as const;
-export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];
-export type SidebarFootPage = (typeof SIDEBAR_FOOT)[number];
-
-/** The name a page shows in the sidebar. */
-export function sidebarLabel(page: PageName): string {
+/** The name a page is called in a message ("Watch (/watch)"). The console is one screen with three panes. */
+export function pageLabel(page: PageName): string {
   return page === "decisions" ? "Needs you" : PAGE_LABEL[page];
 }
 
@@ -117,7 +111,23 @@ export type SettingsItem =
   | { kind: "section"; section: SetupSection; label?: string };
 
 /** The pages that open inside the Settings frame, besides Hub setup itself. */
-export type SettingsPage = Extract<PageName, "connections" | "projects" | "memory" | "limits" | "audit">;
+export type SettingsPage = Extract<
+  PageName,
+  | "connections"
+  | "projects"
+  | "memory"
+  | "limits"
+  | "audit"
+  | "accounts"
+  | "usage"
+  | "agents"
+  | "skills"
+  | "wiki"
+  | "playbooks"
+  | "orgs"
+  | "watch"
+  | "captain"
+>;
 
 /** The Settings list, in order. Pages keep their own address; Hub setup's sections are `/setup?section=`. */
 export const SETTINGS_GROUPS: readonly { label: string; items: readonly SettingsItem[] }[] = [
@@ -131,10 +141,12 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
     ],
   },
   {
-    label: "Access",
+    label: "Workspaces",
     items: [
-      { kind: "page", page: "connections" },
+      { kind: "page", page: "orgs" },
       { kind: "page", page: "projects" },
+      { kind: "page", page: "accounts" },
+      { kind: "page", page: "connections" },
       { kind: "section", section: "roots" },
       { kind: "section", section: "ssh" },
     ],
@@ -142,9 +154,14 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
   {
     label: "Agents",
     items: [
+      { kind: "page", page: "agents" },
+      { kind: "page", page: "captain" },
+      { kind: "page", page: "skills" },
+      { kind: "page", page: "playbooks" },
       { kind: "page", page: "memory" },
       { kind: "section", section: "memory", label: "Memory rules" },
-      { kind: "section", section: "wiki" },
+      { kind: "page", page: "wiki" },
+      { kind: "section", section: "wiki", label: "Wiki settings" },
       { kind: "section", section: "teams" },
       { kind: "section", section: "turns" },
       { kind: "section", section: "context" },
@@ -156,11 +173,13 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
       { kind: "page", page: "limits" },
       { kind: "section", section: "approvals" },
       { kind: "section", section: "decisions" },
+      { kind: "page", page: "watch" },
     ],
   },
   {
     label: "System",
     items: [
+      { kind: "page", page: "usage" },
       { kind: "section", section: "containers" },
       { kind: "section", section: "backups" },
       { kind: "section", section: "history" },
@@ -179,20 +198,19 @@ export function settingsItemPath(item: SettingsItem): string {
   return item.section === "overview" ? PAGE_PATH.setup : `${PAGE_PATH.setup}?section=${item.section}`;
 }
 
-/** How a message names a page: its sidebar name and its address, like "Watch (/watch)". */
+/** How a message names a page: its name and its address, like "Watch (/watch)". */
 export function pageRef(page: PageName): string {
-  return `${sidebarLabel(page)} (${PAGE_PATH[page]})`;
+  return `${pageLabel(page)} (${PAGE_PATH[page]})`;
 }
 
 /**
- * Every screen, one line each: the sidebar, the Settings list, then the pages only the palette
+ * Every screen, one line each: the console, then the Settings list, then the pages only the palette
  * (Cmd K, which lists every page) opens.
  */
 export const SCREEN_MAP: string = (() => {
   const settingsPages = new Set<PageName>(["setup"]);
   const lines = [
-    ...SIDEBAR_MAIN.map((page) => `Sidebar > ${pageRef(page)}`),
-    ...SIDEBAR_FOOT.map((page) => `Sidebar foot > ${pageRef(page)}`),
+    "Console (/) > Needs you, Work and Chat, side by side. The old addresses /decisions, /today and /chats open it",
     ...SETTINGS_GROUPS.flatMap((group) =>
       group.items.map((item) => {
         if (item.kind === "page") settingsPages.add(item.page);
@@ -200,7 +218,7 @@ export const SCREEN_MAP: string = (() => {
       }),
     ),
   ];
-  const placed = new Set<PageName>([...SIDEBAR_MAIN, ...SIDEBAR_FOOT, ...settingsPages]);
+  const placed = new Set<PageName>(["board", ...settingsPages]);
   const others = (Object.keys(PAGE_PATH) as PageName[]).filter((page) => !placed.has(page));
   return [...lines, ...others.map((page) => `Palette (Cmd K) > ${pageRef(page)}`)].join("\n");
 })();

@@ -88,9 +88,9 @@ test("an account at its limit mid-run hands the task to the fallback, with a han
   expect(acme1?.status).toBe("at-limit");
   expect(acme1?.limit).toMatchObject({ until: new Date(resetsAt * 1000).toISOString(), resetKnown: true });
 
-  // The board's top bar shows it.
-  await page.goto("/");
-  await expect(page.getByTestId("account-readout").filter({ hasText: "claude-acme-1" })).toBeVisible();
-  await shot(page, "limits-top-bar");
+  // The account's own page in Settings shows it, with when it comes back.
+  await page.goto("/accounts?account=claude-acme-1");
+  await expect(page.getByText("At limit", { exact: false }).first()).toBeVisible();
+  await shot(page, "limits-account");
   await cmd(request, "tasks.close", { id });
 });

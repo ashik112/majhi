@@ -1,16 +1,14 @@
+import { useNavigate } from "@tanstack/react-router";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { pressMatches, shortcut } from "@/features/shell/shortcuts";
 
-/** The Captain panel's tabs: the owner's own chat, every thread merged, or one workspace's thread. */
+/** The Captain chat's tabs: the owner's own chat, every thread merged, or one workspace's thread. */
 export type PanelTab = "talk" | "all" | `ws:${string}` | `urgent:${string}`;
 
 interface BossControls {
-  open: boolean;
-  /** Opens the panel, on a tab when one is given. */
+  /** Opens the captain's chat in the console, on a tab when one is given. */
   show: (tab?: PanelTab, draft?: string) => void;
-  hide: () => void;
-  toggle: () => void;
-  /** The tab the panel shows, in the drawer and on the Captain page alike. */
+  /** The tab the chat shows. */
   tab: PanelTab;
   setTab: (tab: PanelTab) => void;
   /** Text waiting to be put in the message box (an incident to ask about), taken once. */
@@ -20,35 +18,33 @@ interface BossControls {
 
 const BossContext = createContext<BossControls | null>(null);
 
-/** Whether the Captain panel is open, which tab it shows, and Cmd+J (Ctrl+J elsewhere) to toggle it from any page. */
+/** Which tab the captain's chat shows, text waiting for its box, and Cmd+J (Ctrl+J elsewhere) to open it from any page. */
 export function BossProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const [tab, setTab] = useState<PanelTab>("talk");
   const [draft, setDraft] = useState<string | undefined>(undefined);
   const takeDraft = useCallback(() => setDraft(undefined), []);
-  const show = useCallback((next?: PanelTab, text?: string) => {
-    if (next !== undefined) setTab(next);
-    if (text !== undefined) setDraft(text);
-    setOpen(true);
-  }, []);
-  const hide = useCallback(() => setOpen(false), []);
-  const toggle = useCallback(() => setOpen((v) => !v), []);
+  const show = useCallback(
+    (next?: PanelTab, text?: string) => {
+      if (next !== undefined) setTab(next);
+      if (text !== undefined) setDraft(text);
+      void navigate({ to: "/", search: { chat: "captain" } });
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const press = shortcut("boss").press;
       if (press === undefined || !pressMatches(press, event)) return;
       event.preventDefault();
-      setOpen((v) => !v);
+      void navigate({ to: "/", search: { chat: "captain" } });
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [navigate]);
 
-  const value = useMemo(
-    () => ({ open, show, hide, toggle, tab, setTab, draft, takeDraft }),
-    [open, show, hide, toggle, tab, draft, takeDraft],
-  );
+  const value = useMemo(() => ({ show, tab, setTab, draft, takeDraft }), [show, tab, draft, takeDraft]);
   return <BossContext.Provider value={value}>{children}</BossContext.Provider>;
 }
 
