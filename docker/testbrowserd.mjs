@@ -35,6 +35,8 @@ const IDLE_EXIT_MS = Number(process.env.MAJHI_TESTBROWSER_EXIT_MS ?? 15 * 60_000
 const START_WAIT_MS = 180_000;
 const SWEEP_MS = 15_000;
 const BASE_PORT = 3100;
+/** The path a run-server listens at. The client's own path (majhi's proxy route) is replaced by it. */
+const SERVER_PATH = "/pw";
 const ENV = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: "/tmp", LANG: process.env.LANG ?? "C.UTF-8" };
 
 /** The client's version from its User-Agent (`Playwright/1.63.0 (...)`), or undefined when it is not one. */
@@ -114,7 +116,7 @@ function main() {
         );
         await run("node", [cli, "install", "chromium"], env, "/tmp");
       }
-      entry.proc = spawn("node", [cli, "run-server", "--port", String(entry.port), "--host", "127.0.0.1"], {
+      entry.proc = spawn("node", [cli, "run-server", "--port", String(entry.port), "--host", "127.0.0.1", "--path", SERVER_PATH], {
         env,
         stdio: "ignore",
       });
@@ -163,9 +165,13 @@ function main() {
     upstream.on("error", () => socket.destroy());
     upstream.on("close", () => socket.destroy());
     upstream.on("connect", () => {
-      const lines = [`${req.method} ${req.url} HTTP/1.1`];
-      for (let i = 0; i < req.rawHeaders.length; i += 2)
-        lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
+      // The server answers only its own path and only to a loopback Host, so both are set; the query stays.
+      const query = new URL(req.url ?? "/", "http://localhost").search;
+      const lines = [`${req.method} ${SERVER_PATH}${query} HTTP/1.1`];
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        const name = req.rawHeaders[i];
+        lines.push(`${name}: ${name.toLowerCase() === "host" ? `127.0.0.1:${entry.port}` : req.rawHeaders[i + 1]}`);
+      }
       upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
       if (head.length > 0) upstream.write(head);
       socket.pipe(upstream);
