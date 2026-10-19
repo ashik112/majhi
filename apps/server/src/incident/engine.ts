@@ -133,8 +133,6 @@ export interface EngineDeps {
       opts: { by: string; whenSubtasksOpen: "stay"; whenUnshipped: "stay" | "keep" },
     ): Promise<Task>;
     reopen(id: string): Promise<Task>;
-    /** Types a task that was made before it was known to be an incident. */
-    setType(id: string, type: "incident", by: "captain"): unknown;
   };
   deploys: { rollback(id: number, actor: "owner"): Promise<unknown> };
   projects: (org: string) => Promise<EngineProject[]>;
@@ -177,31 +175,9 @@ export function isSeverityOne(source: IncidentSource): boolean {
 
 const FIX_LIVE = "Fix live";
 
-/** An incident task: typed one, or opened by a watch or a deploy. A client's request is a task with a client origin, not an incident. */
-export function isIncidentTask(t: Pick<Task, "typing" | "origin">): boolean {
-  if (t.typing?.type === "incident") return true;
-  const k = t.origin?.kind;
-  return (k === "watch" || k === "deploy") && t.typing?.by !== "owner";
-}
-
-/** Client claims made before this date were ops tasks with no type: they are incidents. Every later incident is typed when it opens. */
-const UNTYPED_CLIENT_INCIDENTS_BEFORE = "2026-10-08T12:00:00.000Z";
-
-/**
- * An incident that never started: typed incident, or opened by a watch or a deploy, or the old client-claim
- * incident (an ops task with no repo). A client's request proposed as a task is none of these and stays put.
- */
-function isStuckIncident(t: Pick<Task, "typing" | "origin" | "kind" | "repos" | "createdAt">): boolean {
-  if (t.typing?.type === "incident") return true;
-  if (t.typing?.by === "owner") return false;
-  const k = t.origin?.kind;
-  if (k === "watch" || k === "deploy") return true;
-  return (
-    k === "client" &&
-    t.kind === "ops" &&
-    t.repos.length === 0 &&
-    t.createdAt < UNTYPED_CLIENT_INCIDENTS_BEFORE
-  );
+/** An incident task is a task typed `incident`; every incident source types it when it opens it. */
+export function isIncidentTask(t: Pick<Task, "typing">): boolean {
+  return t.typing?.type === "incident";
 }
 
 export class IncidentEngine {
@@ -762,14 +738,12 @@ export class IncidentEngine {
   }
 
   /**
-   * Incident tasks that never started (made by older code, or whose start failed) start their investigation now. A
-   * task an incident source made but that was typed something else is typed an incident first. True when one started.
+   * Incident tasks that never started (made by older code, or whose start failed) start their investigation now. True when one started.
    */
   private async adoptStuck(org: string): Promise<boolean> {
     let started = false;
     for (const t of this.unfinished()) {
-      if (t.org !== org || t.status !== "inbox" || !isStuckIncident(t)) continue;
-      if (t.typing?.type !== "incident") this.deps.tasks.setType(t.id, "incident", "captain");
+      if (t.org !== org || t.status !== "inbox" || !isIncidentTask(t)) continue;
       if (await this.tryStart(t.id)) started = true;
     }
     return started;

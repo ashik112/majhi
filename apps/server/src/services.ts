@@ -2782,6 +2782,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       incidentOfFinding: (finding) => opsWatch?.incidentOfFinding(finding),
     },
     settings: async (org) => effectiveIncident((await config.settings()).autonomy.orgs[org]?.incident),
+    greenMin: () => opsWatch?.settings().resolveMin ?? 0,
     envs: async (project) => (await projects.infos()).find((p) => p.id === project)?.deploy.length ?? 0,
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
@@ -2814,7 +2815,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       pauseVictim: (id) => tasks.pauseVictim(id),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
-      setType: (id, type, by) => tasks.setType(id, type, by),
     },
     deploys: { rollback: (id, actor) => deployWorld.service.rollback(id, actor) },
     projects: async (org) =>
