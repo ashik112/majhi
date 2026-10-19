@@ -17,7 +17,7 @@ import {
 } from "./model";
 import type { ActionDef } from "./needs-pane";
 import { type PaneItem, PaneList } from "./pane-list";
-import { Btn, Chevron, ConsoleLamp, Kbd, RowTitle, WorkspaceTag, wsStyle } from "./parts";
+import { Btn, Chevron, ConsoleLamp, Kbd, MinimizeButton, RowTitle, WorkspaceTag, wsStyle } from "./parts";
 
 export type RailId = "queued" | "ideas" | "done";
 
@@ -224,6 +224,7 @@ export function WorkPane(props: {
   onToggleRail: (id: RailId) => void;
   onNewTask: () => void;
   onFocus: () => void;
+  onMinimize: () => void;
 }) {
   return (
     <section
@@ -243,6 +244,7 @@ export function WorkPane(props: {
           <Btn primary onClick={props.onNewTask} keyHint="N">
             New task
           </Btn>
+          <MinimizeButton name="Work" keys="Shift+2" onClick={props.onMinimize} />
         </div>
       </div>
       <div className="cs-rule" />

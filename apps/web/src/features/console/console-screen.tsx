@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { lastAnsweredAt, useDecisionDetail } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
+import { type FoldablePane, togglePane, useLook } from "@/lib/look";
 import { useNow } from "@/lib/use-now";
 import { type NeedsDeps, needsActions, workActions, workWhat } from "./action-defs";
 import { later as laterStore, say, undoLast } from "./actions";
 import { ChatPane } from "./chat-pane";
 import { useConsole } from "./data-context";
 import { blockersOf, type ChatChip, type WorkState } from "./model";
-import { buildNeeds, type Needs, type NeedsRow, splitRow } from "./needs-model";
+import { type Needs, type NeedsRow, splitRow } from "./needs-model";
 import { initialShown, NeedsPane, needsItems, showMore } from "./needs-pane";
+import { PaneRail } from "./parts";
 import { useConsoleActions } from "./use-actions";
 import { entryKey, type RailId, selectableEntries, WorkPane, workItems } from "./work-pane";
 
@@ -244,7 +246,16 @@ export function ConsoleScreen() {
 
   const total = data.counts.needYou + needs.captain.length;
   const clear = !data.loading && total === 0;
-  const visiblePanes: PaneIndex[] = clear ? [1, 2] : [0, 1, 2];
+  // A pane is a 44px rail when the owner folded it, and Needs you also when nothing is in it.
+  const { minimized } = useLook();
+  const needsFolded = minimized.includes("needs");
+  const workFolded = minimized.includes("work");
+  const needsRail = clear || needsFolded;
+  const visiblePanes: PaneIndex[] = [
+    ...(needsRail ? [] : ([0] as const)),
+    ...(workFolded ? [] : ([1] as const)),
+    2,
+  ];
 
   // The keys. One listener, reading the latest state, so a keypress renders the change and nothing else.
   const live = useRef({
@@ -263,6 +274,9 @@ export function ConsoleScreen() {
     detail,
     replying,
     closedOrgs,
+    needsRail,
+    needsFolded,
+    workFolded,
   });
   live.current = {
     pane,
@@ -280,9 +294,29 @@ export function ConsoleScreen() {
     detail,
     replying,
     closedOrgs,
+    needsRail,
+    needsFolded,
+    workFolded,
   };
   const actsRef = useRef(acts);
   actsRef.current = acts;
+
+  // Fold a pane to its rail or bring it back. The focus moves off a pane that folds, onto one that opens.
+  const foldPane = useCallback((which: FoldablePane) => {
+    const s = live.current;
+    const index: PaneIndex = which === "needs" ? 0 : 1;
+    const folding = which === "needs" ? !s.needsFolded : !s.workFolded;
+    togglePane(which);
+    if (!folding) {
+      if (which === "needs" && s.clear) return;
+      setPane(index);
+      setChatOpen(false);
+    } else if (s.pane === index) {
+      const other: PaneIndex = which === "needs" ? (s.workFolded ? 2 : 1) : s.needsRail ? 2 : 0;
+      setPane(other);
+      setChatOpen(other === 2);
+    }
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -318,7 +352,9 @@ export function ConsoleScreen() {
       };
       const primary = (list: readonly { primary?: boolean; run: () => void }[] | undefined) =>
         list?.find((a) => a.primary === true)?.run();
-      if (k === "j" || k === "ArrowDown") {
+      if (event.shiftKey && (event.code === "Digit1" || event.code === "Digit2")) {
+        foldPane(event.code === "Digit1" ? "needs" : "work");
+      } else if (k === "j" || k === "ArrowDown") {
         if (s.pane !== 2) {
           move(1);
           event.preventDefault();
@@ -346,7 +382,7 @@ export function ConsoleScreen() {
         if (decisions.length > 0) {
           actsRef.current.answerMany(decisions, "approve", `Did all ${decisions.length} in this group`);
         }
-      } else if ((k === "1" || k === "2" || k === "3") && s.pane === 0) {
+      } else if (k.length === 1 && k >= "1" && k <= "9" && s.pane === 0) {
         const picks = (s.selectedNeedsActions ?? []).filter((a) => a.ghost !== true && a.id !== "later");
         picks[Number(k) - 1]?.run();
       } else if (k === "e" && s.pane === 0 && s.needsRow !== undefined) {
@@ -379,14 +415,14 @@ export function ConsoleScreen() {
       } else if (k === "Escape") {
         if (s.replying !== undefined) setReplying(undefined);
         setChatOpen(false);
-        if (s.pane === 2) setPane(s.clear ? 1 : 0);
+        if (s.pane === 2) setPane(s.visiblePanes[0] ?? 2);
       } else return;
       if (k !== "Tab" && k !== "j" && k !== "k" && k !== "ArrowDown" && k !== "ArrowUp")
         event.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
+  }, [navigate, foldPane]);
 
   // Pressed on a row: that pane has the focus, a task also opens its chat.
   const selectNeeds = useCallback((id: string) => {
@@ -442,20 +478,24 @@ export function ConsoleScreen() {
       className="cs-console"
       data-testid="tasks-home"
       data-offline={lost || undefined}
-      data-clear={clear || undefined}
+      data-needs-rail={needsRail || undefined}
+      data-work-rail={workFolded || undefined}
+      data-chat-main={(needsRail && workFolded) || undefined}
       aria-label="Console"
       ref={(el) => {
         chatPane.current = el?.querySelector<HTMLElement>('[data-pane="chat"]') ?? null;
       }}
     >
-      {clear ? (
-        <section className="cs-pane" data-pane="needs" aria-label="Needs you">
-          <div className="cs-vrail" aria-hidden="false">
-            <ConsoleDoneLamp />
-            <span className="cs-w">Needs you · all clear</span>
-            <span className="cs-n">0</span>
-          </div>
-        </section>
+      {needsRail ? (
+        <PaneRail
+          pane="needs"
+          name="Needs you"
+          count={total}
+          lamp={clear ? "done" : "needs"}
+          keys="Shift+1"
+          note={clear ? "all clear" : undefined}
+          onOpen={clear ? undefined : () => foldPane("needs")}
+        />
       ) : (
         <NeedsPane
           needs={needs}
@@ -500,42 +540,55 @@ export function ConsoleScreen() {
           }}
           onReplyCancel={() => setReplying(undefined)}
           onFocus={() => setPane(0)}
+          onMinimize={() => foldPane("needs")}
         />
       )}
-      <WorkPane
-        items={items}
-        selectedKey={workKey}
-        focus={pane === 1}
-        now={now}
-        hues={data.hues}
-        orgs={data.orgs}
-        openCount={openCount}
-        orgCount={data.work.length}
-        unreadOf={(id) => unreadById.get(id) ?? 0}
-        nowLineOf={nowLineOf}
-        waitsOnOf={waitsOnOf}
-        actions={workActionsOf}
-        onSelect={selectWork}
-        onToggleOrg={(org) =>
-          setClosedOrgs((prev) => {
-            const next = new Set(prev);
-            if (next.has(org)) next.delete(org);
-            else next.add(org);
-            return next;
-          })
-        }
-        onUnfold={(key) => setOpenFolds((s) => new Set([...s, key]))}
-        onToggleRail={(id) =>
-          setOpenRails((prev) => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-          })
-        }
-        onNewTask={newTask.open}
-        onFocus={() => setPane(1)}
-      />
+      {workFolded ? (
+        <PaneRail
+          pane="work"
+          name="Work"
+          count={openCount}
+          lamp="working"
+          keys="Shift+2"
+          onOpen={() => foldPane("work")}
+        />
+      ) : (
+        <WorkPane
+          items={items}
+          selectedKey={workKey}
+          focus={pane === 1}
+          now={now}
+          hues={data.hues}
+          orgs={data.orgs}
+          openCount={openCount}
+          orgCount={data.work.length}
+          unreadOf={(id) => unreadById.get(id) ?? 0}
+          nowLineOf={nowLineOf}
+          waitsOnOf={waitsOnOf}
+          actions={workActionsOf}
+          onSelect={selectWork}
+          onToggleOrg={(org) =>
+            setClosedOrgs((prev) => {
+              const next = new Set(prev);
+              if (next.has(org)) next.delete(org);
+              else next.add(org);
+              return next;
+            })
+          }
+          onUnfold={(key) => setOpenFolds((s) => new Set([...s, key]))}
+          onToggleRail={(id) =>
+            setOpenRails((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          onNewTask={newTask.open}
+          onFocus={() => setPane(1)}
+          onMinimize={() => foldPane("work")}
+        />
+      )}
       <ChatPane
         chips={chips}
         selected={chatId}
@@ -553,10 +606,6 @@ export function ConsoleScreen() {
       />
     </main>
   );
-}
-
-function ConsoleDoneLamp() {
-  return <span className="cs-lamp" data-state="done" aria-hidden="true" />;
 }
 
 export { laterStore };

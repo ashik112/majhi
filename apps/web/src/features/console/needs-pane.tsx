@@ -1,9 +1,15 @@
-import { type DecisionDetail, QUEUE_GROUP_LABEL, QUEUE_GROUP_SHOWN, type QueueGroup } from "@majhi/shared";
+import {
+  type DecisionDetail,
+  type OwnerDecision,
+  QUEUE_GROUP_LABEL,
+  QUEUE_GROUP_SHOWN,
+  type QueueGroup,
+} from "@majhi/shared";
 import { memo, useEffect, useRef, useState } from "react";
 import { ageWord } from "./model";
 import type { Needs, NeedsRow } from "./needs-model";
 import { type PaneItem, PaneList } from "./pane-list";
-import { Btn, Chevron, ConsoleLamp, Kbd, RowTitle, wsStyle } from "./parts";
+import { Btn, Chevron, ConsoleLamp, Kbd, MinimizeButton, RowTitle, wsStyle } from "./parts";
 
 export interface ActionDef {
   id: string;
@@ -51,20 +57,47 @@ export function showMore(shown: Record<QueueGroup, number>, group: QueueGroup): 
   return { ...shown, [group]: shown[group] + MORE_STEP };
 }
 
+/** The one decision a row answers, when it does not merge repeats. */
+function onlyOf(row: NeedsRow): OwnerDecision | undefined {
+  return row.decisions.length === 1 ? row.decisions[0] : undefined;
+}
+
+/** A question with answers is drawn as a numbered list of choices, each one whole. */
+export function isChoiceCard(row: NeedsRow): boolean {
+  const only = onlyOf(row);
+  return only !== undefined && only.kind === "question" && only.options.length > 0;
+}
+
+/**
+ * What the card says. A question is the question itself, from the detail's typed `questions` (the
+ * decision's own sentence names the agent first, and the agent is shown elsewhere). It waits for the
+ * detail rather than showing the sentence for a moment and then another text.
+ */
+function bodyOf(row: NeedsRow, only: OwnerDecision | undefined, detail: DecisionDetail | undefined) {
+  const gist = row.gist === "" ? undefined : row.gist;
+  if (only === undefined) return gist;
+  if (only.kind !== "question") {
+    if (only.sentence === undefined) return gist;
+    return only.sentence !== row.name ? only.sentence : undefined;
+  }
+  if (detail?.id !== only.id) return undefined;
+  return detail.questions?.[0]?.question ?? only.sentence ?? gist;
+}
+
 function Detail({ row, detail }: { row: NeedsRow; detail: DecisionDetail | undefined }) {
-  const only = row.decisions.length === 1 ? row.decisions[0] : undefined;
+  const only = onlyOf(row);
+  // The agent's own suggestion is marked on its choice; only the captain's reasoning is worth a sentence.
   const suggested =
-    only?.suggestion === undefined
+    only?.suggestion === undefined || only.suggestion.by !== "captain" || isChoiceCard(row)
       ? undefined
-      : `${only.suggestion.by === "captain" ? "Captain suggests" : "The agent suggests"} ${
+      : `Captain suggests ${
           only.options.find((o) => o.id === only.suggestion?.option)?.label ?? only.suggestion.option
         }${only.suggestion.reason === "" ? "" : `: ${only.suggestion.reason}`}`;
-  const sentence = only?.sentence;
+  const body = bodyOf(row, only, detail);
   const diff = detail?.diff;
   return (
     <>
-      {sentence !== undefined && sentence !== row.name && <div className="cs-q">{sentence}</div>}
-      {sentence === undefined && row.gist !== "" && <div className="cs-q">{row.gist}</div>}
+      {body !== undefined && <div className="cs-q">{body}</div>}
       {detail?.command !== undefined && (
         <div className="cs-q" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
           {detail.command}
@@ -120,6 +153,73 @@ function ReplyBox({ onSend, onCancel }: { onSend: (text: string) => void; onCanc
   );
 }
 
+/**
+ * The answers of a question, stacked and numbered, each in full width with its text whole. A row
+ * chooses on a click or its number key. The suggested one is marked and carries the filled button.
+ */
+function Choices(props: {
+  decision: OwnerDecision | undefined;
+  picks: readonly ActionDef[];
+  replying: boolean;
+  onReplySend: (text: string) => void;
+  onReplyCancel: () => void;
+}) {
+  const suggestion = props.decision?.suggestion;
+  return (
+    <fieldset className="cs-choices">
+      <legend className="sr-only">Answers</legend>
+      {props.picks.map((a, i) => {
+        if (a.typed === true && props.replying) {
+          return (
+            <div key={a.id} className="cs-choice" data-open>
+              <span className="cs-num">{i + 1}</span>
+              <div className="cs-ctext">
+                <ReplyBox onSend={props.onReplySend} onCancel={props.onReplyCancel} />
+              </div>
+            </div>
+          );
+        }
+        const suggested = suggestion?.option === a.id;
+        return (
+          // biome-ignore lint/a11y/useKeyWithClickEvents: the console takes the number keys itself
+          // biome-ignore lint/a11y/useSemanticElements: it holds a button of its own, which a <button> cannot
+          <div
+            key={a.id}
+            role="button"
+            tabIndex={-1}
+            className="cs-choice cs-needsable"
+            data-suggested={suggested || undefined}
+            data-pick={i + 1}
+            onClick={(event) => {
+              event.stopPropagation();
+              a.run();
+            }}
+          >
+            <span className="cs-num">{i + 1}</span>
+            <span className="cs-ctext">
+              {a.label}
+              {a.typed === true ? "…" : ""}
+            </span>
+            {(a.primary === true || suggested) && (
+              <div className="cs-cmeta">
+                {suggested && <span className="cs-tag">suggested</span>}
+                {suggested && suggestion?.by === "captain" && suggestion.reason !== "" && (
+                  <span className="cs-why">{suggestion.reason}</span>
+                )}
+                {a.primary === true && (
+                  <Btn primary keyHint="A" onClick={a.run}>
+                    Choose
+                  </Btn>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </fieldset>
+  );
+}
+
 interface RowProps {
   row: NeedsRow;
   selected: boolean;
@@ -167,7 +267,26 @@ const RowView = memo(function RowView(props: RowProps) {
       {selected && (
         <div className="cs-det">
           <Detail row={row} detail={detail} />
-          {replying ? (
+          {isChoiceCard(row) ? (
+            <>
+              <Choices
+                decision={row.decisions[0]}
+                picks={(actions ?? []).filter((a) => a.ghost !== true)}
+                replying={replying}
+                onReplySend={props.onReplySend}
+                onReplyCancel={props.onReplyCancel}
+              />
+              <div className="cs-acts">
+                {(actions ?? [])
+                  .filter((a) => a.ghost === true)
+                  .map((a) => (
+                    <Btn key={a.id} ghost className="cs-needsable" onClick={a.run}>
+                      {a.label}
+                    </Btn>
+                  ))}
+              </div>
+            </>
+          ) : replying ? (
             <ReplyBox onSend={props.onReplySend} onCancel={props.onReplyCancel} />
           ) : (
             <div className="cs-acts">
@@ -216,6 +335,7 @@ export function NeedsPane(props: {
   onReplySend: (text: string) => void;
   onReplyCancel: () => void;
   onFocus: () => void;
+  onMinimize: () => void;
 }) {
   const items = needsItems(props.needs, props.shown, props.closed);
   return (
@@ -242,6 +362,9 @@ export function NeedsPane(props: {
             </>
           )}
         </span>
+        <div className="cs-right">
+          <MinimizeButton name="Needs you" keys="Shift+1" onClick={props.onMinimize} />
+        </div>
       </div>
       <div className="cs-rule" />
       {items.length === 0 ? (
@@ -314,8 +437,8 @@ export function NeedsPane(props: {
         </span>
         <span>
           <Kbd>1</Kbd>
-          <Kbd>2</Kbd>
-          <Kbd>3</Kbd> pick
+          <Kbd>…</Kbd>
+          <Kbd>9</Kbd> pick
         </span>
         <span>
           <Kbd>⇧A</Kbd> whole group

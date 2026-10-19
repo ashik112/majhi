@@ -45,9 +45,21 @@
   border-radius: 7px;
   background: var(--c-brand);
   color: var(--c-brand-ink);
-  font: 600 12px / 26px var(--font-mono);
-  text-align: center;
+  display: grid;
+  place-items: center;
   flex: none;
+}
+.cs-mark svg {
+  width: 19px;
+}
+.cs-mark[data-size="sm"] {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: none;
+}
+.cs-mark[data-size="sm"] svg {
+  width: 11px;
 }
 .cs-seg {
   display: flex;
@@ -238,13 +250,28 @@
   align-items: center;
   flex: none;
 }
+.cs-fold {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--c-fg-faint);
+  cursor: pointer;
+  flex: none;
+}
+.cs-fold:hover {
+  color: var(--c-fg);
+  background: var(--c-raised);
+}
 .cs-rule {
   height: 1px;
   background: var(--c-line);
   flex: none;
 }
 .cs-scroll {
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   min-height: 0;
   flex: 1;
@@ -408,7 +435,7 @@
   min-height: 32px;
   padding: 0 6px;
   border-radius: 8px;
-  cursor: default;
+  cursor: pointer;
   width: 100%;
   text-align: left;
 }
@@ -584,6 +611,8 @@
 /* The selected row opens in place. */
 .cs-det {
   grid-column: 2 / 4;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   display: none;
   padding: 2px 0 8px;
   gap: 4px;
@@ -611,6 +640,97 @@
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 4px;
+  min-width: 0;
+}
+/* A long label wraps inside its button instead of running past the pane. */
+.cs-acts .cs-btn {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  padding-block: 3px;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.cs-det .cs-list {
+  overflow-wrap: anywhere;
+}
+
+/* The answers of a question: stacked, numbered, each one whole. */
+.cs-choices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+}
+.cs-choice {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 6px;
+  align-items: start;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-card);
+  cursor: pointer;
+}
+.cs-choice:hover {
+  background: var(--c-raised);
+  border-color: var(--c-line-hover);
+}
+.cs-choice[data-suggested="true"] {
+  border-color: var(--c-line-control);
+  background: var(--c-selected);
+}
+.cs-choice[data-open] {
+  cursor: default;
+}
+.cs-choice[data-open]:hover {
+  background: var(--c-card);
+  border-color: var(--c-line-strong);
+}
+.cs-num {
+  font: 500 11px / 19px var(--font-mono);
+  color: var(--c-fg-faint);
+  text-align: center;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 5px;
+  height: 19px;
+}
+.cs-ctext {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--c-fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cs-cmeta {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.cs-tag {
+  font: 500 11px / 16px var(--font-sans);
+  color: var(--c-fg-muted);
+  border: 1px solid var(--c-line-control);
+  border-radius: 9px;
+  padding: 0 7px;
+}
+.cs-why {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--c-fg-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .cs-row[data-incident="true"] {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c-lamp-needs) 35%, transparent);
@@ -695,9 +815,15 @@
   pointer-events: none;
 }
 
-/* Needs you with nothing in it folds to a 44px rail; Work and Chat take the room. */
-.cs-console[data-clear="true"] {
+/* A folded pane is a 44px rail (Needs you also when nothing is in it); Chat takes the room. */
+.cs-console[data-needs-rail="true"] {
   grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+}
+.cs-console[data-work-rail="true"] {
+  grid-template-columns: minmax(0, 34fr) 44px minmax(0, 66fr);
+}
+.cs-console[data-needs-rail="true"][data-work-rail="true"] {
+  grid-template-columns: 44px 44px minmax(0, 1fr);
 }
 .cs-vrail {
   display: flex;
@@ -712,6 +838,14 @@
   cursor: pointer;
   width: 100%;
 }
+.cs-vrail:hover:not(:disabled) {
+  color: var(--c-fg);
+  border-color: var(--c-line-hover);
+  background: var(--c-raised);
+}
+.cs-vrail:disabled {
+  cursor: default;
+}
 .cs-vrail span.cs-w {
   writing-mode: vertical-rl;
   font: 500 12px var(--font-sans);
@@ -723,13 +857,36 @@
 
 /* Chat -------------------------------------------------------------------- */
 .cs-chips {
+  position: relative;
+  overflow: hidden;
   display: flex;
+  align-items: center;
   gap: 4px;
   padding: 8px 10px;
-  overflow-x: auto;
-  scrollbar-width: none;
   flex: none;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  min-width: 0;
+}
+.cs-strip {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+/* The same chips, unseen, to read their widths. */
+.cs-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+}
+.cs-measure > span {
+  display: flex;
+  flex: none;
 }
 .cs-chip {
   height: 26px;
@@ -754,11 +911,63 @@
 .cs-chip:hover {
   color: var(--c-fg);
   border-color: var(--c-line-hover);
+  background: var(--c-raised);
 }
 .cs-chip[aria-pressed="true"] {
   background: var(--c-selected);
   color: var(--c-fg);
   box-shadow: inset 0 0 0 1px var(--c-line-control);
+}
+.cs-picker {
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+}
+.cs-picker-search {
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--c-line-strong);
+  background: transparent;
+  color: var(--c-fg);
+  font-size: 13px;
+  outline: none;
+  flex: none;
+}
+.cs-picker-list {
+  overflow-y: auto;
+  padding: 4px;
+  min-height: 0;
+}
+.cs-picker-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--c-fg-faint);
+}
+.cs-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--c-fg-soft);
+  cursor: pointer;
+}
+.cs-opt .cs-t {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-opt:hover,
+.cs-opt[aria-selected="true"] {
+  background: var(--c-raised);
+  color: var(--c-fg);
+}
+.cs-opt[data-current] .cs-t {
+  font-weight: 600;
 }
 .cs-th {
   padding: 8px 14px 10px;
@@ -863,7 +1072,7 @@
   gap: 10px;
   align-items: center;
   pointer-events: none;
-  z-index: 60;
+  z-index: var(--z-float);
   max-width: 90vw;
 }
 .cs-toast span {
@@ -967,8 +1176,25 @@
   .cs-console {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
   }
-  .cs-console[data-clear="true"] {
+  .cs-console[data-needs-rail="true"] {
     grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .cs-console[data-work-rail="true"] {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+  .cs-console[data-chat-main="true"] {
+    grid-template-columns: 44px 44px minmax(0, 1fr);
+  }
+  .cs-console[data-chat-main="true"] .cs-pane[data-pane="chat"] {
+    position: relative;
+    inset: auto;
+    width: auto;
+    z-index: auto;
+    transform: none;
+    visibility: visible;
+    transition: none;
+    background: var(--c-panel, var(--c-glass));
+    box-shadow: var(--c-shadow-glass);
   }
   .cs-pane[data-pane="chat"] {
     position: fixed;
@@ -976,7 +1202,7 @@
     top: 62px;
     bottom: 10px;
     width: min(460px, 46vw);
-    z-index: 30;
+    z-index: var(--z-pane-over);
     background: var(--c-glass-strong);
     box-shadow: var(--c-shadow-pop);
     transform: translateX(calc(100% + 20px));
@@ -1057,4 +1283,16 @@
 }
 .cs-th a.cs-x2 {
   display: block;
+}
+
+/* Whatever answers a click shows a pointer and a hover, so no control looks dead. */
+.cs-console :is(button, [role="button"], [role="option"], a):not(:disabled) {
+  cursor: pointer;
+}
+button.cs-gh:hover {
+  color: var(--c-fg-muted);
+}
+.cs-rail:hover,
+.cs-more:hover {
+  background: var(--c-raised);
 }
