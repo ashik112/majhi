@@ -5,6 +5,8 @@ import {
   type AutonomySettings,
   carriedOver,
   commandRisk,
+  DEFAULT_LEVEL,
+  hasLegacyFields,
   isAlwaysKind,
   levelAllows,
   type PolicySettings,
@@ -66,7 +68,15 @@ function sameEntry(a: AutonomyOrg | undefined, b: AutonomyOrg): boolean {
 export function planLevels(input: LevelMigrationInput): LevelMigration | undefined {
   const { autonomy } = input;
   const listed = new Set(autonomy.pick.orgs ?? []);
-  const ids = new Set([PRIVATE, ...input.orgs, ...Object.keys(autonomy.orgs)]);
+  const saved = input.policy.rules as readonly SavedRule[];
+  // Only a file that still holds something from before the level is migrated. In one, a workspace with no
+  // saved entry was effectively Ask me, so it stays that way; elsewhere an unset workspace is the default.
+  const oldFile =
+    listed.size > 0 ||
+    saved.some((r) => !("kind" in r)) ||
+    Object.values(autonomy.orgs).some((entry) => hasLegacyFields(entry));
+  if (!oldFile) return undefined;
+  const ids = new Set([...input.orgs, ...Object.keys(autonomy.orgs)]);
   const orgs: Record<string, AutonomyOrg> = { ...autonomy.orgs };
   const moved: string[] = [];
   for (const id of ids) {
@@ -77,14 +87,13 @@ export function planLevels(input: LevelMigrationInput): LevelMigration | undefin
     }
     // Private with nothing saved is Routine by default, which is what it was: nothing to write.
     if (entry === undefined && id === PRIVATE) continue;
-    const next = carriedOver(entry, id === PRIVATE);
+    const next = carriedOver(entry, id === PRIVATE, id === PRIVATE ? DEFAULT_LEVEL : "ask");
     if (sameEntry(autonomy.orgs[id], next)) continue;
     orgs[id] = next;
     moved.push(id);
   }
 
   const settled = { orgs };
-  const saved = input.policy.rules as readonly SavedRule[];
   const kept: AllowRule[] = [];
   for (const rule of saved) {
     const own = "kind" in rule;

@@ -274,11 +274,15 @@ export function levelOfOrg(entry: LegacyFields | undefined, isPrivate: boolean):
 
 /**
  * A workspace's entry carried over to the level: its nearest level and incident switches written out, and
- * the old table, ship rules, flags and full access gone. An entry with nothing from before is Routine in
- * Private, the owner's own space, and Ask me elsewhere, which is what it effectively was. Pure: the startup
- * migration and `authority.set` both write what this returns.
+ * the old table, ship rules, flags and full access gone. An entry with nothing from before gets `unset`,
+ * Routine unless the caller knows better. Pure: the startup migration and `authority.set` both write what
+ * this returns.
  */
-export function carriedOver(entry: AutonomyOrg | undefined, isPrivate: boolean): AutonomyOrg {
+export function carriedOver(
+  entry: AutonomyOrg | undefined,
+  isPrivate: boolean,
+  unset: AuthorityLevel = DEFAULT_LEVEL,
+): AutonomyOrg {
   const {
     authority: _authority,
     ships: _ships,
@@ -290,7 +294,7 @@ export function carriedOver(entry: AutonomyOrg | undefined, isPrivate: boolean):
   const chosen = entry?.level;
   const settled = chosen === "ask" || chosen === "routine" || chosen === "full";
   const old = hasLegacyFields(entry) ? legacyLevelOf(entry, isPrivate) : undefined;
-  const level: AuthorityLevel = settled ? chosen : (old?.level ?? (isPrivate ? DEFAULT_LEVEL : "ask"));
+  const level: AuthorityLevel = settled ? chosen : (old?.level ?? unset);
   const incident = { ...(rest.incident ?? {}) };
   if (incident.fix === undefined && old?.incident.fix !== undefined) incident.fix = old.incident.fix;
   if (incident.clientUpdate === undefined && old?.incident.clientUpdate !== undefined) {

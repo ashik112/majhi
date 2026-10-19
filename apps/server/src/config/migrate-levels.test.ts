@@ -96,4 +96,21 @@ describe("the move to authority levels", () => {
     // A second run finds nothing and writes nothing.
     expect(await service.migrateLevels({ orgOfTask: (task) => TASKS[task] })).toBe(false);
   });
+
+  it("leaves a file with nothing from before alone, so a workspace made later keeps the default", async () => {
+    await writeFile(
+      service.file,
+      [
+        "workspaces: [~/Work]",
+        "orgs:",
+        "  acme: { name: Acme }",
+        "autonomy:",
+        "  orgs:",
+        "    globex: { level: full }",
+        "",
+      ].join("\n"),
+    );
+    expect(await service.migrateLevels({ orgOfTask: () => undefined })).toBe(false);
+    expect((await service.settings()).autonomy.orgs).toEqual({ globex: { level: "full" } });
+  });
 });
