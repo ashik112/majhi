@@ -51,7 +51,16 @@ export class ChatDesk {
   /** Rooms woken whose lane turn has not ended yet, by lane chat. */
   private readonly woken = new Map<string, Set<string>>();
 
+  private stopped = false;
+
   constructor(private readonly deps: DeskDeps) {}
+
+  /** majhi is closing: nothing collected is woken, so no timer reads the store after it closes. */
+  stop(): void {
+    this.stopped = true;
+    for (const p of this.pending.values()) if (p.timer !== undefined) clearTimeout(p.timer);
+    this.pending.clear();
+  }
 
   /** A message that passed the gate. */
   add(room: RoomRow, item: ClientItem, opts: { urgent?: boolean | undefined } = {}): void {
@@ -92,7 +101,7 @@ export class ChatDesk {
 
   private queue(room: RoomRow, key: string, block: string, onWoken?: () => void, retried?: ClientItem): void {
     const org = room.org;
-    if (org === undefined) return;
+    if (org === undefined || this.stopped) return;
     const now: Pending = this.pending.get(room.id) ?? {
       org,
       blocks: new Map(),
@@ -115,8 +124,9 @@ export class ChatDesk {
   async flush(roomId: string): Promise<void> {
     const now = this.pending.get(roomId);
     this.pending.delete(roomId);
+    if (now === undefined) return;
     const room = this.deps.store.client.room(roomId);
-    if (now === undefined || room === undefined) return;
+    if (room === undefined) return;
     if (now.timer !== undefined) clearTimeout(now.timer);
     const rules = chatRoomSettings(room.chat).rules;
     const text = [
