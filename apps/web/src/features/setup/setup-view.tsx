@@ -184,7 +184,7 @@ export function SetupView() {
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
     turns: s && turnsStatus(s.turns),
-    teams: s && `${s.rooms.review_rounds} review rounds`,
+    teams: s && "Lead and workers",
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
