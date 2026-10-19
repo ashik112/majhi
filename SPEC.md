@@ -488,7 +488,9 @@ Root agents can also:
 - **Create tasks:** through the `majhi-tasks` MCP tool (`create`, `list`, `update`). New tasks land in Up next and do not start without the owner, unless the org's policy allows it.
 - **Use MCP tools:** any MCP server the owner attaches to them, plus `majhi-projects` (`list`, `propose_change`, `propose_move`) and `majhi-tasks`.
 
-### 5.11 Trackers (optional per org)
+### 5.11 Trackers (removed)
+
+Removed on 2026-10-05 by the owner (decision D2). Do not build. Kept as history.
 
 - Adapters behind one interface: `pull(assignedToMe)`, `get(key)`, `comment(key, text)`, `setStatus(key, status)`, `link(key, url)`.
 - Pull on demand and on a schedule. New items land in Up next via the Dispatcher.
@@ -1020,7 +1022,8 @@ Delivered in two parts, each usable and reviewed on its own.
 - Task kind `ops`, `REPORT.md` and the Report tab; agents create linked fix tasks through `majhi-tasks`.
 - **Done when:** asked "why is the api down in prod", a root agent investigates with a read-only kubectl connection and New Relic, streams what it is doing, can be stopped midway and resumed, writes a report, and proposes a fix task and a restart that both wait for approval. An org agent cannot use another org's connection.
 
-### Phase 11: Trackers
+### Phase 11: Trackers (removed)
+- Removed on 2026-10-05 by the owner (decision D2). Do not build. Kept as history.
 - Jira, ClickUp and GitHub Issues adapters, per org. Items flow into the board through the Dispatcher; push a local task to a tracker; MR links and status written back.
 - **Done when:** a Jira item flows into a room and gets its MR link written back, and a local task pushed to ClickUp stays in sync.
 
