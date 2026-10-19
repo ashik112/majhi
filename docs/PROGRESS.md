@@ -1,3 +1,9 @@
+## Workflow reset, step 0: write it down, 2026-10-19
+
+Plan: record the owner-approved workflow reset before any code. `docs/briefs/workflow-reset.md` holds the measured causes, the model and the six steps; SPEC.md gets a governing "Workflow model" section and loses the stale `task/<id>-<slug>` branch lines; DECISIONS.md gets one row that supersedes the per-task builder, default team and lead-start rows. No code changes.
+
+Next: step 1 (gate, one agent per task, Now / Next / Done when, short names for display, branches and folders), then step 2 (environment per project), step 3 (three screens, mockups first), step 4 (incidents), step 5 (captain).
+
 ## Performance costs, 2026-10-09
 
 Plan: cache Home review facts before Git reads, bound refresh concurrency and coalesce simultaneous reads; load unused UI and database drivers on demand; repair performance benchmark selectors and cleanup. Run targeted tests for cache invalidation and merge freshness, workspace typechecks, and built-server/browser benchmarks before and after.

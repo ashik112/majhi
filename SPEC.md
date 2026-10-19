@@ -14,7 +14,7 @@ The owner works on several orgs: their own projects, clients and teams. An org c
 
 ### Goals
 
-1. Create a task in one sentence, with repos, base branch, agents, images, docs and links, and have a team of agents do it in isolated git worktrees.
+1. Create a task in one sentence, with repos, base branch, agents, images, docs and links, and have an agent (or a team, when the owner picks one) do it in isolated git worktrees.
 2. One task can span several repos. Each repo gets its own worktree, branch and MR.
 3. Agents coordinate in a task room by @mentioning each other. The owner can talk to the room at any time.
 4. Agents, accounts, models, skills and memory are fast to add, swap and configure. Models can be set by hand or picked per task by the decision provider. The owner has final say on every setting.
@@ -39,6 +39,17 @@ The owner works on several orgs: their own projects, clients and teams. An org c
 - **One control plane, and the captain runs it.** Every change in majhi is a typed command. The UI, the palette and the captain agent all use the same commands, so the owner can set up and run everything just by talking to the captain (5.16). Everything is configurable at runtime, and every change can be undone.
 - **No manual work outside majhi.** Anything the owner would otherwise do in a terminal, a config file or another app (loading SSH keys, restarting, mounting, signing in, fixing setup) is done by majhi itself, through the UI, the captain or the host helper. When something truly needs the owner outside majhi (answering a macOS prompt, finishing a browser sign-in, the very first `make up`), majhi says so explicitly, in the place the owner is looking, with the exact step. A terminal command is only ever a fallback, never the main path.
 - **Light on resources.** Agent processes and models start when needed and stop when idle. Limits keep memory, CPU and tokens bounded (5.17).
+
+### Workflow model (owner, 2026-10-19)
+
+This section wins over anything below that disagrees, until each step of `docs/briefs/workflow-reset.md` rewrites the section it changes.
+
+- **A task is one piece of work:** a short name, one agent by default, a plan inside it, and three lines its agent keeps current: Now, Next, Done when. A team only when the owner picks one on that task. Plan steps are not tasks.
+- **One gate:** every path that creates or starts a task goes through one check. The owner's own tasks always pass. Others share a cap on running tasks (default 4) and a cap on open tasks per workspace (default 5); over it they wait or become ideas. A task an agent makes is an idea until the owner starts it.
+- **The environment belongs to the project:** one builder and one package store per workspace, one environment (services, preview, dev database) per project with a queue, and a task is a branch and a worktree. A task that changes the schema gets a database copy dropped on close.
+- **Three places:** Needs you (the only queue), Work (by workspace and project), Chat (captain, task rooms, client chats). Everything else is Settings. No new top-level page without the owner's yes.
+- **Names say what and where:** a task shows as `project · Name` everywhere. Its branch and folder come from the name. The id is internal (address, tooltip, keys).
+- **The captain runs a freelancer's operations:** incidents end to end, a morning brief and a weekly report per client, one authority level per workspace.
 
 ---
 
@@ -85,7 +96,7 @@ The UI reference is `design/ui-demo.dc.html`. It is a prototype written in a can
 **Left column: task box and task list**
 - Task box: a multiline input. While typing, it parses the text live and shows chips for what it understood:
   - repos, matched by project aliases
-  - never a base or working branch: words in the title or text are prose ("taken with Playwright", "work on main later", "the default branch"). The base is the project's, or the one picked for a repo on purpose (a project chip's branch, `repos[].base` on create); a picked base the repo does not have falls back to the project's with a warning. Until the task starts, its base can change (`tasks.update` with `base`). The working branch is always a new `task/<key>-<slug>`, the slug keeping every title word
+  - never a base or working branch: words in the title or text are prose ("taken with Playwright", "work on main later", "the default branch"). The base is the project's, or the one picked for a repo on purpose (a project chip's branch, `repos[].base` on create); a picked base the repo does not have falls back to the project's with a warning. Until the task starts, its base can change (`tasks.update` with `base`). The working branch is always a new `{type}/{slug}` from the task's short name (DECISIONS 2026-10-08, no internal ids in client git)
   - @mentioned agents (these become the team instead of the org default)
   - links (fetched and given to the team)
   - attached files and pasted images
@@ -393,7 +404,7 @@ projects:
 ### 5.4 Tasks, briefs, branches, attachments
 
 - Parsing rules from 3.1 run on the server too (shared code in `packages/shared`).
-- Defaults: base branch from the org, working branch `task/<task-id>-<slug>`. If the owner names an existing branch, check it out in the worktree instead of creating one.
+- Defaults: base branch from the org, working branch `{type}/{slug}` from the task's short name (a project's `branchPattern` wins). If the owner names an existing branch, check it out in the worktree instead of creating one.
 - Create one worktree per repo with `git worktree add`. Fetch first. Fail loudly on conflicts or a dirty base.
 - Generate `TASK.md` at the task root: brief, repos with branches and paths, team with roles, attachment list with summaries, recalled memory, org rules (commit identity). Keep it short. Regenerate when the team or repos change.
 - Attachments: images are passed to agents that support images, and noted in TASK.md. Documents are converted to text once and summarized once, and the summary goes in TASK.md with the full file available on disk. Links are fetched once, stored as markdown in `attachments/`, and summarized the same way.
