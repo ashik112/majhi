@@ -29,6 +29,7 @@ import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
+import { useTaskLabel } from "@/lib/task-label";
 import { useAckIncident, useWatch } from "@/lib/watch-queries";
 import {
   actionOf,
@@ -428,6 +429,7 @@ function AgendaPanel({
  * services show here too and open on the Watch page; one that is also a finding is listed once.
  */
 function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undefined }) {
+  const labelOf = useTaskLabel();
   const { watch } = today;
   const run = useRunAttention();
   // An incident the agenda lists already is not listed a second time.
@@ -518,7 +520,9 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
             >
               <Lamp state="working" size={7} />
               <span className="min-w-0 flex-1 truncate text-base text-fg">{t.title}</span>
-              <span className="tnum shrink-0 font-mono text-xs text-fg-faint">{t.id}</span>
+              <span title={t.id} className="tnum shrink-0 font-mono text-xs text-fg-faint">
+                {labelOf({ ...t, repos: t.project === undefined ? [] : [{ project: t.project }] })}
+              </span>
             </button>
           </li>
         ))}

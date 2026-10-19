@@ -2125,6 +2125,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .map((t) => ({
           id: t.id,
           title: t.title,
+          ...(t.name === undefined ? {} : { name: t.name }),
+          ...(t.repos[0] === undefined ? {} : { project: t.repos[0].project }),
           ...(t.org === undefined ? {} : { org: t.org }),
           since: t.updatedAt,
         })),

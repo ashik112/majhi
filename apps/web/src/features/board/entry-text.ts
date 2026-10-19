@@ -238,6 +238,7 @@ export function lineOf(entry: RowEntry, ctx: LineContext): EntryLine {
       const kids = ctx.kids.get(task.id) ?? [];
       const running = kids.filter((k) => k.status === "running").length;
       const text =
+        task.now ??
         doing?.text ??
         (task.working.length === 0 && task.children !== undefined
           ? `${running} of ${task.children.total} subtasks running`

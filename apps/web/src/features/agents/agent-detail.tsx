@@ -33,6 +33,7 @@ import { badgeLetters, formatTokens, plural } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useConfig } from "@/lib/queries";
 import { useAccounts, useAgents, useSetBoss } from "@/lib/studio-queries";
+import { useTaskLabel } from "@/lib/task-label";
 import { useNow } from "@/lib/use-now";
 import { AgentHealthDialog, DuplicateDialog, RemoveAgentDialog, RenameDialog } from "./agent-dialogs";
 import { AgentEmojiButton } from "./agent-emoji";
@@ -229,13 +230,14 @@ function NowBlock({
   const signedOut = useAccounts().data?.find((a) => a.id === accountId)?.status === "needs-login";
   const state = signedOut ? "needs" : (lamp?.lamp ?? "idle");
   const mine = tasksOf(id, tasks);
+  const labelOf = useTaskLabel();
   const working = mine.find((t) => t.working.includes(id));
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <p className="flex items-center gap-2 text-base">
         <Lamp state={state} />
         <span className={LAMP_TEXT[state]}>{signedOut ? "Signed out" : (lamp?.state ?? "Idle")}</span>
-        {working && <span className="min-w-0 truncate text-fg-muted">on {working.id}</span>}
+        {working && <span className="min-w-0 truncate text-fg-muted">on {labelOf(working)}</span>}
       </p>
       {mine.length === 0 ? (
         <p className="text-sm text-fg-faint">Not on any open task.</p>
@@ -258,7 +260,9 @@ function NowBlock({
                   className="flex h-7 min-w-0 items-center gap-2 rounded-md px-1.5 text-sm transition-colors hover:bg-raised"
                 >
                   <Lamp state={lit} size={7} />
-                  <span className="tnum shrink-0 font-mono text-xs text-fg-muted">{t.id}</span>
+                  <span title={t.id} className="tnum shrink-0 font-mono text-xs text-fg-muted">
+                    {labelOf(t)}
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-fg-soft">{t.title}</span>
                   <span className={cn("shrink-0 text-xs", LAMP_TEXT[lit])}>{info.label}</span>
                 </Link>

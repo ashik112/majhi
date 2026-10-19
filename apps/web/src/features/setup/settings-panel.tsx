@@ -137,6 +137,8 @@ export function ContextSection({ settings }: { settings: Settings }) {
     "runsTotal",
     "perAccount",
     "perTask",
+    "tasksRunning",
+    "openByOthers",
     "idleTimeout",
   ]);
   const resume = useSettingsDraft(settings, ["resumeAuto", "resumeHandoff"]);
@@ -172,6 +174,18 @@ export function ContextSection({ settings }: { settings: Settings }) {
           />
           <NumberField label="Per account" name="perAccount" draft={limits} />
           <NumberField label="Per task" name="perTask" draft={limits} />
+          <NumberField
+            label="Tasks running at once"
+            hint="Over it, a start waits its turn."
+            name="tasksRunning"
+            draft={limits}
+          />
+          <NumberField
+            label="Open tasks from others"
+            hint="Per workspace. Past it, what the captain or a scan files is an idea."
+            name="openByOthers"
+            draft={limits}
+          />
           <Field label="Stop idle agents after" hint="Like 10m or 1h" error={limits.error("idleTimeout")}>
             {(p) => (
               <Input

@@ -32,7 +32,14 @@ export interface AgendaDeps {
   /** A finding the owner does not want counted in the brief (its playbook's "tell me in the brief" is off). */
   briefHidden?: ((f: Finding) => boolean) | undefined;
   goals: () => Goal[];
-  running: () => { id: string; title: string; org?: string | undefined; since?: string | undefined }[];
+  running: () => {
+    id: string;
+    title: string;
+    name?: string | undefined;
+    project?: string | undefined;
+    org?: string | undefined;
+    since?: string | undefined;
+  }[];
   /** The incident a finding was made for. */
   incidentOf?: ((finding: number) => number | undefined) | undefined;
   /** A workspace's name by id. */
@@ -269,6 +276,8 @@ export class AgendaService {
           .map((t) => ({
             id: t.id,
             title: t.title,
+            ...(t.name === undefined ? {} : { name: t.name }),
+            ...(t.project === undefined ? {} : { project: t.project }),
             ...(t.org === undefined ? {} : { org: t.org }),
             ...(orgName(t.org) === undefined ? {} : { orgName: orgName(t.org) as string }),
             ...(t.since === undefined ? {} : { since: t.since }),

@@ -23,6 +23,7 @@ import { useMemorySearch } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { MIN_SEARCH_LENGTH, useDebounced, useRoomSearch } from "@/lib/search-queries";
 import { useOrgs } from "@/lib/studio-queries";
+import { useTaskLabel } from "@/lib/task-label";
 import { useStartTask, useTask, useTasks, useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { matchCommands, type PaletteCommand } from "./commands";
@@ -65,13 +66,16 @@ interface Entry {
 function TaskNode({
   task: t,
 }: {
-  task: Pick<TaskSummary, "id" | "title" | "chat" | "team" | "org" | "updatedAt">;
+  task: Pick<TaskSummary, "id" | "title" | "name" | "repos" | "chat" | "team" | "org" | "updatedAt">;
 }) {
   const orgs = useOrgs().data;
+  const labelOf = useTaskLabel();
   if (t.chat !== true)
     return (
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className="shrink-0 font-mono text-xs text-fg-muted">{t.id}</span>
+        <span title={t.id} className="shrink-0 font-mono text-xs text-fg-muted">
+          {labelOf(t)}
+        </span>
         <span className="min-w-0 truncate text-base">{t.title}</span>
       </span>
     );
