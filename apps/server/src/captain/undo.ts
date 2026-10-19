@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UserError } from "../errors.ts";
-import { git, gitOk } from "../git/git.ts";
+import { git, gitOk, hasTrackedChanges } from "../git/git.ts";
 import { checkedOutAt } from "../git/merge.ts";
 
 /**
@@ -65,7 +65,7 @@ export async function revertMerge(
   const patch = await git(source, ["diff", "--binary", "--full-index", after, before]);
   if (patch.trim() === "") return undefined;
   const at = (await checkedOutAt(source)).get(into);
-  if (at !== undefined && (await git(at, ["status", "--porcelain", "--untracked-files=no"])).trim() !== "") {
+  if (at !== undefined && (await hasTrackedChanges(at))) {
     throw new UserError(
       `${at} has uncommitted changes on ${into}. Commit or stash them, then undo again.`,
       409,

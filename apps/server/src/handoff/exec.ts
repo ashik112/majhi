@@ -1,5 +1,5 @@
 import { type BaseEnv, type RunMount, type Spawner, withToolsPath } from "@majhi/acp";
-import { detectSecrets, type Task } from "@majhi/shared";
+import { hideSecrets, type Task } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { withExcludes } from "../git/worktree-excludes.ts";
 import type { PackageStoreFor } from "../runs/package-cache.ts";
@@ -59,13 +59,7 @@ export function allowedEnv(env: Record<string, string> | undefined): Record<stri
 
 /** Hides what looks like a secret in text that came out of a command. */
 export function maskSecrets(text: string): string {
-  const found = detectSecrets(text);
-  if (found.length === 0) return text;
-  let out = text;
-  for (const m of [...found].sort((a, b) => b.start - a.start)) {
-    out = `${out.slice(0, m.start)}[hidden]${out.slice(m.end)}`;
-  }
-  return out;
+  return hideSecrets(text, "[hidden]");
 }
 
 /**

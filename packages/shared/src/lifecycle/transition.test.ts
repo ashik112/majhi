@@ -615,20 +615,42 @@ const READING: ClearReading = {
 };
 
 describe("lifting a hold", () => {
-  const WHO = ["owner", "captain"] as const;
+  const WHO = ["owner", "captain", "majhi"] as const;
   const CAPTAIN_CANNOT_LIFT: HoldCause[] = [
     "owner-stop",
     "loop-guard",
     "dependency-closed",
     "dependency-removed",
   ];
+  /** Everything majhi can read for itself, so the cause's own condition holds. */
+  const FULL: ClearReading = {
+    ...READING,
+    online: true,
+    budgetHasRoom: true,
+    autopilot: "on",
+    runAtStep: true,
+    slotFree: true,
+    anyAccountUp: true,
+    lastActivityAt: "2026-10-05T11:00:00.000Z",
+    resolvedTasks: ["ACME-2", "ACME-1"],
+    accounts: { "claude-acme": { signedIn: true } },
+  };
 
   describe.each(CAUSES)("%s", (cause) => {
     it.each(WHO)("by %s is allowed exactly when the table lists them", (by) => {
-      const r = transition(task({ status: "running", hold: hold(cause) }), { type: "holdCleared", by });
+      const from = task({ status: "running", hold: hold(cause) });
+      const r = transition(
+        from,
+        by === "majhi" ? { type: "holdCleared", by, reading: FULL } : { type: "holdCleared", by },
+      );
       // The captain never lifts an owner stop, a loop guard or a closed or removed dependency.
       if (by === "captain" && CAPTAIN_CANNOT_LIFT.includes(cause))
         expect(refused(r).code).toBe("not-allowed");
+      // Majhi lifts only a hold whose condition is met.
+      if (by === "majhi" && liftersOf(hold(cause)).includes("majhi"))
+        expect(refused(transition(from, { type: "holdCleared", by, reading: READING })).code).toBe(
+          "condition-not-met",
+        );
       if (liftersOf(hold(cause)).includes(by)) expect(ok(r).next.hold).toBeUndefined();
       else {
         const refusal = refused(r);

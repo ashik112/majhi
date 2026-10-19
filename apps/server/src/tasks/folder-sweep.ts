@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import type { Task } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
-import { git, gitOk, uncommitted } from "../git/git.ts";
+import { git, gitOk, hasTrackedChanges, uncommitted } from "../git/git.ts";
 import { removeWorktree } from "../git/worktrees.ts";
 import type { Store } from "../store/index.ts";
 import { REPORT_FILE } from "./report.ts";
@@ -523,7 +523,7 @@ export class TaskFolderSweep {
         () => false,
       );
       if (!exists) continue;
-      if (await trackedChanges(repo.worktree)) {
+      if (await hasTrackedChanges(repo.worktree)) {
         plan.kept.push(`${repo.project} has uncommitted changes`);
         return plan;
       }
@@ -590,7 +590,7 @@ export class TaskFolderSweep {
     if (repo === undefined) return needsIgnore ? "" : undefined;
     let clean = repoClean.get(repo);
     if (clean === undefined) {
-      clean = !(await trackedChanges(repo));
+      clean = !(await hasTrackedChanges(repo));
       repoClean.set(repo, clean);
     }
     if (!clean) return "its repo has uncommitted changes";
@@ -623,16 +623,6 @@ async function repoOf(root: string, from: string): Promise<string | undefined> {
     dir = dirname(dir);
   }
   return undefined;
-}
-
-/** True when a tracked file is modified or staged, or git cannot tell. Untracked files do not count. */
-async function trackedChanges(repo: string): Promise<boolean> {
-  try {
-    const out = await git(repo, ["status", "--porcelain", "--untracked-files=no"]);
-    return out.trim() !== "";
-  } catch {
-    return true;
-  }
 }
 
 /**

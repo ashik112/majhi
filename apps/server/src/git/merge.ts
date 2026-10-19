@@ -1,5 +1,5 @@
 import { rm } from "node:fs/promises";
-import { GitError, git, gitOk } from "./git.ts";
+import { GitError, git, gitOk, hasTrackedChanges } from "./git.ts";
 
 /**
  * Local merges of a task branch into any branch (main, dev, staging, ...), done by the server,
@@ -169,7 +169,7 @@ export async function mergeBlocker(
   }
   if (await gitOk(source, ["merge-base", "--is-ancestor", branch, into])) return undefined;
   const at = (await checkedOutAt(source)).get(into);
-  if (at !== undefined && (await trackedChanges(at))) {
+  if (at !== undefined && (await hasTrackedChanges(at))) {
     return { reason: `${at} has uncommitted changes on ${into}. Commit or stash them, then merge again.` };
   }
   const conflicts = await mergeConflicts(source, branch, into);
@@ -189,16 +189,12 @@ function listed(files: readonly string[]): string {
   return `${files.slice(0, 8).join(", ")}${files.length > 8 ? " and more" : ""}`;
 }
 
-async function trackedChanges(checkout: string): Promise<boolean> {
-  return (await git(checkout, ["status", "--porcelain", "--untracked-files=no"])).trim() !== "";
-}
-
 /**
  * Merges or squashes in a checkout that has `into` checked out. Refuses tracked changes; on a
  * conflict or any failure, resets to where it started.
  */
 async function integrateIn(checkout: string, req: MergeRequest, fastForward: boolean): Promise<MergeOutcome> {
-  if (await trackedChanges(checkout)) {
+  if (await hasTrackedChanges(checkout)) {
     return {
       ok: false,
       reason: `${checkout} has uncommitted changes on ${req.into}. Commit or stash them, then merge again.`,
@@ -263,7 +259,7 @@ async function rebaseAndForward(req: MergeRequest): Promise<MergeOutcome> {
   const { source, branch, into } = req;
   const places = await checkedOutAt(source);
   const intoAt = places.get(into);
-  if (intoAt !== undefined && (await trackedChanges(intoAt))) {
+  if (intoAt !== undefined && (await hasTrackedChanges(intoAt))) {
     return {
       ok: false,
       reason: `${intoAt} has uncommitted changes on ${into}. Commit or stash them, then merge again.`,
@@ -279,7 +275,7 @@ async function rebaseAndForward(req: MergeRequest): Promise<MergeOutcome> {
     branchAt = req.scratch;
   }
   try {
-    if (await trackedChanges(branchAt)) {
+    if (await hasTrackedChanges(branchAt)) {
       return {
         ok: false,
         reason: `${branchAt} has uncommitted changes on ${branch}. Commit them, then merge again.`,

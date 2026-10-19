@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSecrets } from "./secrets-detect.ts";
+import { detectSecrets, hideSecrets } from "./secrets-detect.ts";
 
 const PRIVATE_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\ndef\n-----END OPENSSH PRIVATE KEY-----";
 
@@ -39,6 +39,10 @@ describe("detectSecrets", () => {
       const found = detectSecrets(text);
       if (expected === undefined) expect(found, text).toEqual([]);
       else expect(found[0]).toMatchObject(expected);
+      // The same finding is what every outlet (command output, logs, approvals, client replies) hides.
+      expect(hideSecrets(text, "[hidden]")).toBe(
+        expected === undefined ? text : text.replace(expected.value, "[hidden]"),
+      );
     },
   );
 });

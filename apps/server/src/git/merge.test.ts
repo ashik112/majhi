@@ -40,6 +40,12 @@ const tip = async (cwd: string, ref: string) => (await git(cwd, ["rev-parse", re
 
 describe("mergeBranch with squash", () => {
   it("on a conflict changes neither branch and leaves the checkout clean", async () => {
+    // A checkout with the owner's uncommitted edit is refused before anything moves.
+    await writeFile(join(repo, "a.txt"), "owner edit");
+    expect(await mergeBranch({ ...request("main"), method: "squash" })).toMatchObject({ ok: false });
+    expect(await readFile(join(repo, "a.txt"), "utf8")).toBe("owner edit");
+    await git(repo, ["checkout", "-q", "--", "a.txt"]);
+
     await commit(repo, "b.txt", "main side");
     const mainBefore = await tip(repo, "main");
     const branchBefore = await tip(repo, "task/x");

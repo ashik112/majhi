@@ -1,8 +1,8 @@
 import {
   type AuthorityChoice,
-  detectSecrets,
   type HoldClass,
   type Holds,
+  hideSecrets,
   type ReplyFlags,
   type ReplyHold,
 } from "@majhi/shared";
@@ -45,10 +45,7 @@ const REMOVED = "[removed]";
 
 /** The text with every secret it holds replaced. */
 export function withoutSecrets(text: string): string {
-  const found = detectSecrets(text).toSorted((a, b) => b.start - a.start);
-  let out = text;
-  for (const secret of found) out = `${out.slice(0, secret.start)}${REMOVED}${out.slice(secret.end)}`;
-  return out;
+  return hideSecrets(text, REMOVED);
 }
 
 function isWordChar(ch: string | undefined): boolean {
