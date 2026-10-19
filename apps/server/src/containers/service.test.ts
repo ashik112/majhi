@@ -24,7 +24,7 @@ function build(withDocker: ContainerDocker | undefined): ContainerService {
     task: (id) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => openTasks,
     queueWaitMs: async () => 30 * 60_000,
-    allTasks: () => ["ACM-1", "ACM-2", "ACM-3", "ACM-4", "ACM-5", "ACM-6", "ACM-9"],
+    allTasks: () => ["ACM-1", "ACM-2", "ACM-3", "ACM-4", "ACM-5", "ACM-6"],
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
     runnerImage: "majhi-runner:dev",
@@ -345,14 +345,21 @@ describe("ContainerService", () => {
         docker.builders.add(`majhi-preview-${t.toLowerCase()}`);
         docker.images.add(`majhi-preview-${t.toLowerCase()}`);
       }
+      // ACM-9 is no longer in the database, and its state volume is left over. Names that are no task's stay.
+      docker.volumes.set("buildx_buildkit_majhi-preview-acm-90_state", { labels: {}, options: {} });
+      docker.volumes.set("buildx_buildkit_acme-builder0_state", { labels: {}, options: {} });
+      docker.builders.add("majhi-preview-tools");
       await service.startup();
       expect(docker.containers.size).toBe(0);
       expect(docker.networks.size).toBe(0);
       // The builder of the open task stops, and starts again on its next build; the others are gone.
       expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
       // The old model's volumes of tasks that are not open go; the open task's stay.
-      expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x"]);
-      expect([...docker.builders]).toEqual(["majhi-preview-acm-1"]);
+      expect([...docker.volumes.keys()]).toEqual([
+        "majhi-acm-1-data-x",
+        "buildx_buildkit_acme-builder0_state",
+      ]);
+      expect([...docker.builders]).toEqual(["majhi-preview-acm-1", "majhi-preview-tools"]);
       expect([...docker.images]).toEqual(["majhi-preview-acm-1"]);
     });
   });

@@ -4,6 +4,7 @@ import { type ComposeProject, type ComposeService, loadCompose } from "./compose
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { containerNames, select } from "./names.ts";
 import {
+  ANONYMOUS_VOLUME_PREFIX,
   buildRunPlan,
   ImageNotAllowed,
   localImage,
@@ -289,6 +290,7 @@ async function down(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDock
   const wanted = inv.services.map((s) => s.toLowerCase());
   const chosen = containers.filter((c) => wanted.length === 0 || wanted.includes(c.service));
   const lines: string[] = [];
+  const stderr: string[] = [];
   if (chosen.length > 0) {
     const removed = await host.call(["rm", "-f", "-v", ...chosen.map((c) => c.name)]);
     if (removed.code !== 0) return removed;
@@ -300,14 +302,30 @@ async function down(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDock
     try {
       const ctx = await host.context(inv.cwd);
       const project = await loadCompose(inv, ctx);
-      await host.removeVolumes(project.volumes.map((v) => names.volume(v)));
-      for (const v of project.volumes) lines.push(` Volume ${v}  Removed`);
+      // Only what the stack's own containers own goes: their unnamed volumes. The volumes the files declare
+      // are the project's shared data (the dev database), so they stay and the script is told why.
+      const own = [
+        ...new Set(
+          project.services.flatMap((s) =>
+            s.spec.mounts.flatMap((m) =>
+              m.volume?.startsWith(ANONYMOUS_VOLUME_PREFIX) === true ? [m.volume] : [],
+            ),
+          ),
+        ),
+      ];
+      await host.removeVolumes(own.map((v) => names.volume(v)));
+      for (const v of own) lines.push(` Volume ${v}  Removed`);
+      for (const v of project.volumes) {
+        stderr.push(
+          `docker: [volume_shared] ${v} belongs to the project environment and stays. Ask the owner or the captain to remove it.\n`,
+        );
+      }
     } catch (err) {
       // No compose file left to name the volumes: the containers are gone, which is what down is for.
       if (!(err instanceof ContainerRefused)) throw err;
     }
   }
-  return ok(lines.length === 0 ? "Nothing to remove.\n" : `${lines.join("\n")}\n`);
+  return ok(lines.length === 0 ? "Nothing to remove.\n" : `${lines.join("\n")}\n`, stderr.join(""));
 }
 
 async function ps(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDockerResult> {

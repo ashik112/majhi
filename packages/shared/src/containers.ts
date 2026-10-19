@@ -265,6 +265,7 @@ export const TaskDockerErrorCodeSchema = z.enum([
   "command_not_available",
   "restart_not_available",
   "name_in_use",
+  "volume_shared",
   "name_reserved",
   "task_not_open",
   "compose_file_not_found",

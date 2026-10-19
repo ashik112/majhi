@@ -149,6 +149,7 @@ export function envNames(key: string) {
     holder: (name: string): string => `majhi-${key}-h-${name}`,
     containerPrefix: `majhi-${key}-c-`,
     holderPrefix: `majhi-${key}-h-`,
+    volume: (name: string): string => `majhi-${key}-data-${name}`,
   };
 }
 
@@ -187,12 +188,26 @@ export function containerNames(scope: NameScope): ContainerNames {
   };
 }
 
-/** What each task had before the environment belonged to the project: a builder, a preview image and volumes of its own. */
-export function legacyNames(task: string): { builder: string; previewImage: string; builderState: string } {
-  const key = task.toLowerCase();
-  return {
-    builder: `majhi-preview-${key}`,
-    previewImage: `majhi-preview-${key}`,
-    builderState: `buildx_buildkit_majhi-preview-${key}0_state`,
-  };
+const LEGACY_PREFIX = "majhi-preview-";
+const LEGACY_STATE_PREFIX = `buildx_buildkit_${LEGACY_PREFIX}`;
+const LEGACY_STATE_SUFFIX = "0_state";
+
+/**
+ * What each task had before the environment belonged to the project: a builder and a preview image named
+ * `majhi-preview-<task key>`, and the builder's state volume. That name space is majhi's own, so the task
+ * an old object belonged to is read from its name: the part after the prefix must be a task key
+ * (`TaskIdSchema`). Any other name, even one that starts the same way, belongs to someone else or to the
+ * new model and answers undefined.
+ */
+export function legacyOwner(name: string, kind: "builder" | "image" | "state"): string | undefined {
+  let rest: string;
+  if (kind === "state") {
+    if (!name.startsWith(LEGACY_STATE_PREFIX) || !name.endsWith(LEGACY_STATE_SUFFIX)) return undefined;
+    rest = name.slice(LEGACY_STATE_PREFIX.length, name.length - LEGACY_STATE_SUFFIX.length);
+  } else {
+    if (!name.startsWith(LEGACY_PREFIX)) return undefined;
+    rest = name.slice(LEGACY_PREFIX.length);
+  }
+  const key = rest.toUpperCase();
+  return TaskIdSchema.safeParse(key).success ? key : undefined;
 }

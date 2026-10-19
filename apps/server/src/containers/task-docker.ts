@@ -257,12 +257,15 @@ export function volumeKey(source: string): string | undefined {
   return matches(ContainerNameSchema, key) ? key : undefined;
 }
 
+/** Every volume `anonymousVolume` makes starts with this: the volumes a container owns, as opposed to the project's shared ones. */
+export const ANONYMOUS_VOLUME_PREFIX = "anon-";
+
 /**
  * The named volume an unnamed mount becomes: one per container and path, so two containers of a project
  * never share one by accident, and cleanup finds it by its labels.
  */
 export function anonymousVolume(owner: string, target: string): string {
-  return `anon-${createHash("sha256").update(`${owner}\0${target}`).digest("hex").slice(0, 10)}`;
+  return `${ANONYMOUS_VOLUME_PREFIX}${createHash("sha256").update(`${owner}\0${target}`).digest("hex").slice(0, 10)}`;
 }
 
 /**

@@ -1304,6 +1304,9 @@ export function createHandlers({
       if (result.status !== "started") throw new UserError("The service did not start.");
       return { container: result.container };
     },
+    "containers.volumes.remove": async (input) => ({
+      volume: await services.containers.removeProjectVolume(input.project, input.name),
+    }),
     "containers.stop": async (input, ctx) => ({
       container: await services.containers.stop(
         input.task,

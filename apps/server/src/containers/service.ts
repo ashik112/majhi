@@ -16,7 +16,7 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import { PRIVATE, reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
+import { IdSchema, PRIVATE, reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
@@ -55,7 +55,7 @@ import {
   envNames,
   envRef,
   LABEL,
-  legacyNames,
+  legacyOwner,
   type NameScope,
   type ObjectKind,
   orgNames,
@@ -741,6 +741,38 @@ export class ContainerService {
     }
     this.deps.changed?.();
     return stopped;
+  }
+
+  /**
+   * Deletes one named volume of a project's environment, for the owner or the captain. A task cannot: its
+   * `down -v` leaves the project's volumes. Refused while a task holds the environment (a container may be
+   * using the volume), and for a volume that is not labelled as this project's.
+   */
+  async removeProjectVolume(project: string, name: string): Promise<string> {
+    const docker = this.need();
+    const key = IdSchema.parse(project);
+    if (this.queue.holder(key) !== undefined) {
+      throw new UserError(
+        `${this.queue.holder(key)} uses the environment of ${key} now. Delete the volume after it lets go.`,
+        409,
+      );
+    }
+    const volume = envNames(key).volume(name);
+    const found = await this.lines(docker, [
+      "volume",
+      "ls",
+      "-q",
+      "--filter",
+      select.kind("volume"),
+      "--filter",
+      select.project(key),
+      "--filter",
+      `name=${volume}`,
+    ]);
+    if (!found.includes(volume)) throw new UserError(`The project ${key} has no volume ${name}.`, 404);
+    await docker.exec(["volume", "rm", volume]);
+    this.deps.changed?.();
+    return volume;
   }
 
   // ---------------------------------------------------------------------------
@@ -1854,31 +1886,32 @@ export class ContainerService {
   }
 
   /**
-   * Removes what the old model made for tasks that are not open: the task's own builder and its state
-   * volume, its preview image, and its volumes (labelled with a task and no project). The names come
-   * from the task ids, never from a pattern, so nothing majhi did not make can match. A builder of an
-   * open task only stops: the task builds on its workspace's builder from now on.
+   * Removes what the old model made for tasks that are not open: the task's own builder `majhi-preview-<task>`
+   * and its state volume, its preview image, and its volumes (labelled with a task and no project). Tasks
+   * the database no longer knows are included: the name space is majhi's, and the owner of an object is read
+   * from its name through the task key schema (`legacyOwner`), never matched as text. A builder of an open
+   * task only stops: the task builds on its workspace's builder from now on.
    */
   private async removeLegacy(docker: ContainerDocker): Promise<void> {
     const open = new Set(this.deps.openTasks());
-    const builders = new Set(
-      (await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"])).map((n) =>
-        n.endsWith("*") ? n.slice(0, -1) : n,
-      ),
+    const builders = (await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"])).map((n) =>
+      n.endsWith("*") ? n.slice(0, -1) : n,
     );
-    const images = new Set(await this.lines(docker, ["image", "ls", "--format", "{{.Repository}}"]));
-    const volumes = new Set(await this.lines(docker, ["volume", "ls", "-q"]));
-    for (const id of this.deps.allTasks()) {
-      const old = legacyNames(id);
-      if (builders.has(old.builder)) {
-        if (open.has(id)) await this.stopBuilder(docker, old.builder);
-        else await this.quietly(() => docker.exec(["buildx", "rm", "--force", old.builder]));
-      }
-      if (open.has(id)) continue;
-      if (images.has(old.previewImage))
-        await this.quietly(() => docker.exec(["image", "rm", "-f", old.previewImage]));
-      if (volumes.has(old.builderState))
-        await this.quietly(() => docker.exec(["volume", "rm", "-f", old.builderState]));
+    for (const name of builders) {
+      const owner = legacyOwner(name, "builder");
+      if (owner === undefined) continue;
+      if (open.has(owner)) await this.stopBuilder(docker, name);
+      else await this.quietly(() => docker.exec(["buildx", "rm", "--force", name]));
+    }
+    for (const name of await this.lines(docker, ["image", "ls", "--format", "{{.Repository}}"])) {
+      const owner = legacyOwner(name, "image");
+      if (owner !== undefined && !open.has(owner))
+        await this.quietly(() => docker.exec(["image", "rm", "-f", name]));
+    }
+    for (const name of await this.lines(docker, ["volume", "ls", "-q"])) {
+      const owner = legacyOwner(name, "state");
+      if (owner !== undefined && !open.has(owner))
+        await this.quietly(() => docker.exec(["volume", "rm", "-f", name]));
     }
     // Volumes made for a task before volumes belonged to projects carry a task and no project.
     const rows = await this.lines(docker, [

@@ -213,4 +213,28 @@ describe("a volume with no source", () => {
     expect(run).toContain(`type=volume,source=${volume?.[0]},target=/var/lib/postgresql/data`);
     expect(run.some((a) => a === "type=volume,target=/var/lib/postgresql/data")).toBe(false);
   });
+
+  it("is the only kind `docker compose down -v` removes: the project's shared volume stays", async () => {
+    const shop = join(dir, "tasks", "ACM-1", "api");
+    await writeFile(
+      join(shop, "compose.yaml"),
+      "services:\n  db:\n    image: postgres:16-alpine\n    volumes: ['pgdata:/var/lib/postgresql/data']\n  cache:\n    image: postgres:16-alpine\n    volumes: [{type: volume, target: /scratch}]\nvolumes:\n  pgdata: {}\n",
+    );
+    const call = (...argv: string[]) =>
+      service.taskDocker("ACM-1", { argv, cwd: shop }, { ask: async () => "pending" });
+    const up = await call("compose", "up", "-d");
+    expect(up.stderr).toBe("");
+    expect([...docker.volumes.keys()].sort()).toEqual([
+      "majhi-acme-api-data-anon-6591aa6c4f",
+      "majhi-acme-api-data-pgdata",
+    ]);
+
+    const down = await call("compose", "down", "-v");
+
+    expect(down.code).toBe(0);
+    expect(down.stderr).toBe(
+      "docker: [volume_shared] pgdata belongs to the project environment and stays. Ask the owner or the captain to remove it.\n",
+    );
+    expect([...docker.volumes.keys()]).toEqual(["majhi-acme-api-data-pgdata"]);
+  });
 });
