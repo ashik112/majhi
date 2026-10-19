@@ -1,8 +1,8 @@
 import { batchPlan, type DecisionDetail, type TaskSummary } from "@majhi/shared";
 import { openLabel, primaryOption } from "@/features/decisions/model";
 import { nameOf, projectOf, type WorkState } from "./model";
-import type { ActionDef } from "./needs-pane";
 import type { NeedsRow } from "./needs-model";
+import type { ActionDef } from "./needs-pane";
 import type { WorkEntry } from "./work-pane";
 
 /** What the actions of a row can do, handed in by the screen so this file stays free of hooks. */
@@ -95,7 +95,9 @@ export function needsActions(
   const where = first.link.kind === "task" || first.link.kind === "chat";
   return [
     ...buttons,
-    ...(where ? [{ id: "open", label: "Open", ghost: true, run: () => deps.open(first.link) } satisfies ActionDef] : []),
+    ...(where
+      ? [{ id: "open", label: "Open", ghost: true, run: () => deps.open(first.link) } satisfies ActionDef]
+      : []),
     later,
   ];
 }

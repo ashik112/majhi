@@ -219,6 +219,12 @@ export function later(ids: readonly string[], text: string, until: number): void
 /** Shows a line with no Undo, for what could not be done now (offline, nothing to answer). */
 export function say(text: string): void {
   const token = nextToken++;
-  stack.push({ token, text, hidden: [], undo: () => undefined, timer: window.setTimeout(() => drop(token), UNDO_MS) });
+  stack.push({
+    token,
+    text,
+    hidden: [],
+    undo: () => undefined,
+    timer: window.setTimeout(() => drop(token), UNDO_MS),
+  });
   changed();
 }

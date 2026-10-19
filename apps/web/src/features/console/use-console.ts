@@ -1,12 +1,18 @@
-import { type Conversation, type OrgView, type OwnerDecision, PRIVATE, type TaskSummary } from "@majhi/shared";
+import {
+  type Conversation,
+  type OrgView,
+  type OwnerDecision,
+  PRIVATE,
+  type TaskSummary,
+} from "@majhi/shared";
 import { useMemo } from "react";
 import { workspaceOf } from "@/features/decisions/model";
-import { useHomeFacts } from "@/lib/home-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { useConversations } from "@/lib/conversation-queries";
 import { useDecisions } from "@/lib/decision-queries";
-import { useOrgFilter } from "@/lib/org-filter";
+import { useHomeFacts } from "@/lib/home-queries";
 import { useNotices } from "@/lib/notice-queries";
+import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useAllTasks } from "@/lib/task-queries";
 import { useHiddenIds } from "./actions";
@@ -78,7 +84,10 @@ export function useConsoleData(now: number): ConsoleData {
       buildNeeds({
         decisions: (all ?? []).filter((d) => !hidden.has(d.id) && inFilter(d, org)),
         notices: (notices?.notices ?? []).filter(
-          (n) => !hidden.has(`notice:${n.id}`) && !hidden.has(n.id) && (org === undefined || (n.org ?? PRIVATE) === org),
+          (n) =>
+            !hidden.has(`notice:${n.id}`) &&
+            !hidden.has(n.id) &&
+            (org === undefined || (n.org ?? PRIVATE) === org),
         ),
         tasks,
         orgs,

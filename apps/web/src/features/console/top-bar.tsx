@@ -3,10 +3,10 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Search, Settings } from "lucide-react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Menu } from "@/components/ui/menu";
-import { MOD_KEY } from "@/lib/format";
-import { useFeedLost } from "@/lib/feed-status";
-import { useOrgFilter } from "@/lib/org-filter";
 import { isSettingsPath } from "@/features/settings/settings-frame";
+import { useFeedLost } from "@/lib/feed-status";
+import { MOD_KEY } from "@/lib/format";
+import { useOrgFilter } from "@/lib/org-filter";
 import { useConsole } from "./data-context";
 import { ConsoleLamp, Kbd, wsStyle } from "./parts";
 
@@ -27,6 +27,7 @@ function Workspaces() {
   if (picked !== undefined && !shown.includes(picked)) shown.push(picked);
   const rest = all.filter((w) => !shown.includes(w));
   return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own box and legend
     <div className="cs-seg" role="group" aria-label="Workspace">
       <button type="button" aria-pressed={org === undefined} onClick={() => setOrg(undefined)}>
         All

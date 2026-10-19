@@ -5,20 +5,24 @@ import { useNewTask } from "@/features/new-task/new-task-context";
 import { lastAnsweredAt, useDecisionDetail } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
 import { useNow } from "@/lib/use-now";
-import { needsActions, type NeedsDeps, workActions, workWhat } from "./action-defs";
+import { type NeedsDeps, needsActions, workActions, workWhat } from "./action-defs";
 import { later as laterStore, say, undoLast } from "./actions";
+import { ChatPane } from "./chat-pane";
 import { useConsole } from "./data-context";
 import { blockersOf, type ChatChip, type WorkState } from "./model";
 import { buildNeeds, type Needs, type NeedsRow, splitRow } from "./needs-model";
 import { initialShown, NeedsPane, needsItems, showMore } from "./needs-pane";
-import { ChatPane } from "./chat-pane";
 import { useConsoleActions } from "./use-actions";
 import { entryKey, type RailId, selectableEntries, WorkPane, workItems } from "./work-pane";
 
 type PaneIndex = 0 | 1 | 2;
 
 /** The id to keep selected: the one that was, else the row now where it was, else the first. */
-function keep<T extends { id: string }>(rows: readonly T[], id: string | undefined, last: number): string | undefined {
+function keep<T extends { id: string }>(
+  rows: readonly T[],
+  id: string | undefined,
+  last: number,
+): string | undefined {
   if (id !== undefined && rows.some((r) => r.id === id)) return id;
   return rows[Math.min(Math.max(last, 0), rows.length - 1)]?.id;
 }
@@ -47,11 +51,18 @@ function useArrivals(ids: readonly string[], ready: boolean): ReadonlySet<string
 
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
 }
 
 function overlayOpen(): boolean {
-  return document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"][popover]') !== null;
+  return (
+    document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"][popover]') !== null
+  );
 }
 
 /** Needs you, Work and Chat side by side. The keys are the reference's (design/console.html). */
@@ -92,7 +103,10 @@ export function ConsoleScreen() {
   const needsList = useMemo(() => needsItems(needs, shown, closed), [needs, shown, closed]);
   const needsRows = useMemo(() => needsList.flatMap((i) => (i.type === "row" ? [i.row] : [])), [needsList]);
   const needsId = keep(needsRows, needsSel, lastNeeds.current);
-  lastNeeds.current = Math.max(0, needsRows.findIndex((r) => r.id === needsId));
+  lastNeeds.current = Math.max(
+    0,
+    needsRows.findIndex((r) => r.id === needsId),
+  );
   const needsRow = needsRows.find((r) => r.id === needsId);
 
   // Work
@@ -111,7 +125,10 @@ export function ConsoleScreen() {
   const entries = useMemo(() => selectableEntries(items), [items]);
   const entryKeys = useMemo(() => entries.map((e) => ({ id: entryKey(e) })), [entries]);
   const workKey = keep(entryKeys, workSel, lastWork.current);
-  lastWork.current = Math.max(0, entryKeys.findIndex((e) => e.id === workKey));
+  lastWork.current = Math.max(
+    0,
+    entryKeys.findIndex((e) => e.id === workKey),
+  );
   const entry = entries.find((e) => entryKey(e) === workKey);
 
   const unreadById = useMemo(
@@ -120,7 +137,8 @@ export function ConsoleScreen() {
   );
   const stateById = useMemo(() => {
     const map = new Map<string, WorkState>();
-    for (const g of data.work) for (const p of g.projects) for (const r of [...p.rows, ...p.folded]) map.set(r.task.id, r.state);
+    for (const g of data.work)
+      for (const p of g.projects) for (const r of [...p.rows, ...p.folded]) map.set(r.task.id, r.state);
     return map;
   }, [data.work]);
 
@@ -190,7 +208,9 @@ export function ConsoleScreen() {
 
   const answerTask = useCallback(
     (task: TaskSummary) => {
-      const row = needs.incident.concat(needs.decide, needs.review).find((r) => r.decisions.some((d) => d.task === task.id));
+      const row = needs.incident
+        .concat(needs.decide, needs.review)
+        .find((r) => r.decisions.some((d) => d.task === task.id));
       if (row !== undefined) {
         setNeedsSel(row.id);
         setPane(0);
@@ -212,7 +232,10 @@ export function ConsoleScreen() {
     }),
     [answerTask, acts, openTask],
   );
-  const workActionsOf = useMemo(() => (entry === undefined ? undefined : workActions(entry, workDeps)), [entry, workDeps]);
+  const workActionsOf = useMemo(
+    () => (entry === undefined ? undefined : workActions(entry, workDeps)),
+    [entry, workDeps],
+  );
 
   const arrived = useArrivals(
     needsRows.map((r) => r.id),
@@ -225,23 +248,54 @@ export function ConsoleScreen() {
 
   // The keys. One listener, reading the latest state, so a keypress renders the change and nothing else.
   const live = useRef({
-    pane, needsRows, needsRow, needsId, entries, entry, workKey, selectedNeedsActions, workActionsOf, needs, visiblePanes, clear,
-    detail, replying, closedOrgs,
+    pane,
+    needsRows,
+    needsRow,
+    needsId,
+    entries,
+    entry,
+    workKey,
+    selectedNeedsActions,
+    workActionsOf,
+    needs,
+    visiblePanes,
+    clear,
+    detail,
+    replying,
+    closedOrgs,
   });
   live.current = {
-    pane, needsRows, needsRow, needsId, entries, entry, workKey, selectedNeedsActions, workActionsOf, needs, visiblePanes, clear,
-    detail, replying, closedOrgs,
+    pane,
+    needsRows,
+    needsRow,
+    needsId,
+    entries,
+    entry,
+    workKey,
+    selectedNeedsActions,
+    workActionsOf,
+    needs,
+    visiblePanes,
+    clear,
+    detail,
+    replying,
+    closedOrgs,
   };
   const actsRef = useRef(acts);
   actsRef.current = acts;
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing || event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing || event.defaultPrevented)
+        return;
       const s = live.current;
       const k = event.key;
       if (typing(event.target)) {
-        if (k === "Escape" && event.target instanceof HTMLElement && chatPane.current?.contains(event.target)) {
+        if (
+          k === "Escape" &&
+          event.target instanceof HTMLElement &&
+          chatPane.current?.contains(event.target)
+        ) {
           event.target.blur();
           setChatOpen(false);
         }
@@ -300,7 +354,8 @@ export function ConsoleScreen() {
       } else if (k === "u") {
         if (!undoLast()) say("Nothing to undo.");
       } else if (k === "Enter") {
-        if (s.pane === 0 && s.needsRow?.decisions[0] !== undefined) actsRef.current.open(s.needsRow.decisions[0].link);
+        if (s.pane === 0 && s.needsRow?.decisions[0] !== undefined)
+          actsRef.current.open(s.needsRow.decisions[0].link);
         else if (s.pane === 0 && s.needsRow?.notice !== undefined) actsRef.current.read(s.needsRow);
         else if (s.pane === 1 && s.entry !== undefined) {
           void navigate({ to: "/t/$taskId", params: { taskId: s.entry.task.id }, search: {} });
@@ -326,7 +381,8 @@ export function ConsoleScreen() {
         setChatOpen(false);
         if (s.pane === 2) setPane(s.clear ? 1 : 0);
       } else return;
-      if (k !== "Tab" && k !== "j" && k !== "k" && k !== "ArrowDown" && k !== "ArrowUp") event.preventDefault();
+      if (k !== "Tab" && k !== "j" && k !== "k" && k !== "ArrowDown" && k !== "ArrowUp")
+        event.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -348,7 +404,9 @@ export function ConsoleScreen() {
     (id: string) => {
       const row = needs.incident.concat(needs.decide, needs.review, needs.captain).find((r) => r.id === id);
       if (row === undefined) return;
-      needsActionsOf(row, undefined).find((a) => a.primary === true)?.run();
+      needsActionsOf(row, undefined)
+        .find((a) => a.primary === true)
+        ?.run();
     },
     [needs, needsActionsOf],
   );
@@ -365,14 +423,19 @@ export function ConsoleScreen() {
     },
     [data.tasks],
   );
-  const nowLineOf = useCallback((task: TaskSummary) => task.now ?? data.doing.get(task.id)?.text, [data.doing]);
+  const nowLineOf = useCallback(
+    (task: TaskSummary) => task.now ?? data.doing.get(task.id)?.text,
+    [data.doing],
+  );
 
   const last = lastAnsweredAt();
   const lastText =
     last === undefined
       ? undefined
       : `Last answered at ${new Date(last).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
-  const openCount = data.work.reduce((n, g) => n + g.projects.reduce((m, p) => m + p.rows.length + p.folded.length, 0), 0) + data.rails.queued.length;
+  const openCount =
+    data.work.reduce((n, g) => n + g.projects.reduce((m, p) => m + p.rows.length + p.folded.length, 0), 0) +
+    data.rails.queued.length;
 
   return (
     <main
@@ -426,7 +489,12 @@ export function ConsoleScreen() {
             const row = replying === undefined ? undefined : needsRows.find((r) => r.id === replying.row);
             const decision = row?.decisions[0];
             if (row !== undefined && decision !== undefined && replying !== undefined) {
-              acts.answerOne(decision, replying.option, `${row.prefix === undefined ? "" : `${row.prefix} · `}${row.name}`, text);
+              acts.answerOne(
+                decision,
+                replying.option,
+                `${row.prefix === undefined ? "" : `${row.prefix} · `}${row.name}`,
+                text,
+              );
             }
             setReplying(undefined);
           }}

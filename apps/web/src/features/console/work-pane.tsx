@@ -10,13 +10,13 @@ import {
   WORK_STATE_TONE,
   WORK_STATE_WORD,
   type WorkRow,
-  type WorkspaceGroup,
   type WorkState,
+  type WorkspaceGroup,
   workspaceMeta,
   workspaceName,
 } from "./model";
-import { type ActionDef } from "./needs-pane";
-import { PaneList, type PaneItem } from "./pane-list";
+import type { ActionDef } from "./needs-pane";
+import { type PaneItem, PaneList } from "./pane-list";
 import { Btn, Chevron, ConsoleLamp, Kbd, RowTitle, WorkspaceTag, wsStyle } from "./parts";
 
 export type RailId = "queued" | "ideas" | "done";
@@ -91,7 +91,9 @@ export function workItems(input: {
   for (const [id, list] of rails) {
     const open = input.openRails.has(id);
     out.push({ key: `r:${id}`, type: "rail", id, count: list.length, open });
-    if (open) for (const task of list) out.push({ key: `${id}:${task.id}`, type: "row", entry: { task, rail: id, state: undefined } });
+    if (open)
+      for (const task of list)
+        out.push({ key: `${id}:${task.id}`, type: "row", entry: { task, rail: id, state: undefined } });
   }
   return out;
 }
@@ -134,11 +136,16 @@ const RowView = memo(function RowView(props: RowProps) {
   const gist =
     nowLine ??
     (state === "blocked" || rail === "queued" ? props.waitsOn : undefined) ??
-    (rail === "queued" ? "Starts when a slot frees" : rail === "ideas" ? "Waits for you to start it" : undefined);
+    (rail === "queued"
+      ? "Starts when a slot frees"
+      : rail === "ideas"
+        ? "Waits for you to start it"
+        : undefined);
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the console takes the keys itself (J, K, A, Enter)
     <div
       role="option"
+      tabIndex={-1}
       aria-selected={selected}
       aria-label={`${projectOf(task)} ${nameOf(task)}`}
       className="cs-row"

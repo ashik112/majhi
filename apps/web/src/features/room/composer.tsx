@@ -26,6 +26,7 @@ import { useServerOffline } from "@/lib/queries";
 import { useTask } from "@/lib/task-queries";
 import { useTypingSignal } from "@/lib/typing-signal";
 import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
+import { ComposerAutoFocus } from "./auto-focus";
 import {
   addressedAgent,
   applyCompletion,
@@ -36,7 +37,6 @@ import {
   pendingOwnerItem,
   type Trigger,
 } from "./model";
-import { ComposerAutoFocus } from "./auto-focus";
 import { ModelPicker } from "./model-picker";
 
 interface PopupOption {

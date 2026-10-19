@@ -283,12 +283,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const pages: PaletteCommand[] = (Object.keys(PAGE_LABEL) as PageName[])
     .filter((name) => name !== "today" && name !== "decisions" && name !== "chats")
     .map((name) => ({
-    id: `page:${name}`,
-    name: PAGE_LABEL[name],
-    keywords: `page go open ${PAGE_KEYWORDS[name]}`,
-    hint: chordOf(PAGE_PATH[name]) ?? "Page",
-    run: () => go(PAGE_PATH[name]),
-  }));
+      id: `page:${name}`,
+      name: PAGE_LABEL[name],
+      keywords: `page go open ${PAGE_KEYWORDS[name]}`,
+      hint: chordOf(PAGE_PATH[name]) ?? "Page",
+      run: () => go(PAGE_PATH[name]),
+    }));
 
   const entries = ((): Entry[] => {
     const out: Entry[] = [];

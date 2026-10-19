@@ -22,7 +22,9 @@ function PlainList<T extends PaneItem>({ items, render, selectedKey, label }: Pr
   const selectedIndex = selectedKey === undefined ? -1 : items.findIndex((i) => i.key === selectedKey);
   useEffect(() => {
     if (selectedIndex < 0) return;
-    scroller.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+    scroller.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
   return (
     <div ref={scroller} className="cs-scroll" role="listbox" aria-label={label}>

@@ -43,7 +43,13 @@ export default function VirtualList<T extends PaneItem>({
               key={item.key}
               data-index={v.index}
               ref={virtualizer.measureElement}
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${v.start}px)` }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${v.start}px)`,
+              }}
             >
               {render(item)}
             </div>

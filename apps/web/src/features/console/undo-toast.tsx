@@ -7,7 +7,12 @@ export function UndoToast() {
   return (
     <div className="cs-toast" role="status" aria-live="polite" data-on={toast !== undefined}>
       <span>{toast?.text ?? ""}</span>
-      <button type="button" className="cs-btn" onClick={() => undoLast()} tabIndex={toast === undefined ? -1 : 0}>
+      <button
+        type="button"
+        className="cs-btn"
+        onClick={() => undoLast()}
+        tabIndex={toast === undefined ? -1 : 0}
+      >
         Undo <Kbd>U</Kbd>
       </button>
     </div>

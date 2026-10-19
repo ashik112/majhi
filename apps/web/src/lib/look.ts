@@ -56,7 +56,9 @@ function read(): Look {
   const saved = stored(KEY);
   const parsed = LookSchema.safeParse(saved);
   if (parsed.success && saved !== undefined) return parsed.data;
-  const legacy = LookSchema.shape.mode.safeParse((stored(LEGACY_KEY) as { theme?: unknown } | undefined)?.theme);
+  const legacy = LookSchema.shape.mode.safeParse(
+    (stored(LEGACY_KEY) as { theme?: unknown } | undefined)?.theme,
+  );
   return legacy.success ? { ...DEFAULT, mode: legacy.data } : DEFAULT;
 }
 

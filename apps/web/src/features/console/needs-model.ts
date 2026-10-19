@@ -116,7 +116,16 @@ function rowOf(
   const lamp: Lamp = "needs";
   const quick = primaryOption(first, undefined)?.label ?? openLabel(first.link);
   if (label !== undefined) {
-    return { ...base, lamp, prefix: label.prefix, name: label.name, gist: gistOf(first), count: 1, list: undefined, quick };
+    return {
+      ...base,
+      lamp,
+      prefix: label.prefix,
+      name: label.name,
+      gist: gistOf(first),
+      count: 1,
+      list: undefined,
+      quick,
+    };
   }
   const hasPrefix = org !== undefined;
   return {

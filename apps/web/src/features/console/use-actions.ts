@@ -9,12 +9,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
+import { useToast } from "@/components/ui/toast";
+import { actionOf, openLabel } from "@/features/decisions/model";
 import { cmd } from "@/lib/api";
 import { useAfterBatch, useAnswerDecision } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
 import { queryKeys } from "@/lib/queries";
-import { useToast } from "@/components/ui/toast";
-import { actionOf, openLabel } from "@/features/decisions/model";
 import { hold, holdOnServer, LATER_MS, later, say, UNDO_MS } from "./actions";
 import { blockersOf } from "./model";
 import type { NeedsRow } from "./needs-model";
@@ -214,13 +214,20 @@ export function useConsoleActions(openChat: (id: string) => void) {
     (task: TaskSummary, now: boolean) => {
       if (lost) return say("Offline. It starts when majhi is back.");
       const label = taskLabel(task);
-      void cmd("tasks.start", { id: task.id, ...(now ? { now: true } : {}) }, { reason: "Owner started a task" }).then(
+      void cmd(
+        "tasks.start",
+        { id: task.id, ...(now ? { now: true } : {}) },
+        { reason: "Owner started a task" },
+      ).then(
         () => {
           toast(`Started: ${label}`);
           refresh();
         },
         (error: unknown) =>
-          toast("Could not start it", { detail: error instanceof Error ? error.message : String(error), tone: "error" }),
+          toast("Could not start it", {
+            detail: error instanceof Error ? error.message : String(error),
+            tone: "error",
+          }),
       );
     },
     [lost, toast, refresh],
@@ -236,7 +243,10 @@ export function useConsoleActions(openChat: (id: string) => void) {
           refresh();
         },
         (error: unknown) =>
-          toast("Could not stop it", { detail: error instanceof Error ? error.message : String(error), tone: "error" }),
+          toast("Could not stop it", {
+            detail: error instanceof Error ? error.message : String(error),
+            tone: "error",
+          }),
       );
     },
     [lost, toast, refresh],

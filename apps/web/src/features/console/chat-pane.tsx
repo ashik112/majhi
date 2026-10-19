@@ -1,13 +1,13 @@
 import { type OrgView, type TaskSummary, taskLabel } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { lazy, Suspense, useMemo } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Menu } from "@/components/ui/menu";
-import { useAgents, useOrgs } from "@/lib/studio-queries";
-import { useClients } from "@/lib/client-queries";
-import { useNewChat } from "@/lib/chat-queries";
+import { Skeleton } from "@/components/ui/skeleton";
 import { agentEntryOptions } from "@/features/chats/new-chat-options";
 import { ComposerAutoFocus } from "@/features/room/auto-focus";
+import { useNewChat } from "@/lib/chat-queries";
+import { useClients } from "@/lib/client-queries";
+import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { type ChatChip, nameOf, projectOf, WORK_STATE_LAMP, type WorkState, workspaceName } from "./model";
 import { ConsoleLamp, WorkspaceTag, wsStyle } from "./parts";
 
@@ -37,7 +37,10 @@ function Chip({
   return (
     <button type="button" className="cs-chip" aria-pressed={pressed} onClick={() => onPick(chip.id)}>
       {chip.kind === "captain" || chip.kind === "lane" ? (
-        <span className="cs-mark" style={{ width: 16, height: 16, lineHeight: "16px", fontSize: 8, borderRadius: 4 }}>
+        <span
+          className="cs-mark"
+          style={{ width: 16, height: 16, lineHeight: "16px", fontSize: 8, borderRadius: 4 }}
+        >
           mj
         </span>
       ) : chip.kind === "task" && stateOf !== undefined ? (
@@ -72,7 +75,12 @@ function TaskHeader({
   return (
     <div className="cs-th" style={wsStyle(hues, task.org)}>
       <div className="cs-t">
-        <Link to="/t/$taskId" params={{ taskId: task.id }} className="cs-x2" aria-label={`Open ${project === "" ? "" : `${project} · `}${nameOf(task)}`}>
+        <Link
+          to="/t/$taskId"
+          params={{ taskId: task.id }}
+          className="cs-x2"
+          aria-label={`Open ${project === "" ? "" : `${project} · `}${nameOf(task)}`}
+        >
           {project !== "" && <span className="cs-p">{project} · </span>}
           {nameOf(task)}
         </Link>
@@ -126,7 +134,12 @@ function ChatTools({ selected, onPick }: { selected: string; onPick: (id: string
   return (
     <>
       {waiting > 0 && (
-        <button type="button" className="cs-chip" aria-pressed={selected === NEW_CHATS} onClick={() => onPick(NEW_CHATS)}>
+        <button
+          type="button"
+          className="cs-chip"
+          aria-pressed={selected === NEW_CHATS}
+          onClick={() => onPick(NEW_CHATS)}
+        >
           <span className="cs-t">New chats</span>
           <span className="cs-unread">{waiting}</span>
         </button>
@@ -239,4 +252,3 @@ export function ChatPane(props: {
     </section>
   );
 }
-

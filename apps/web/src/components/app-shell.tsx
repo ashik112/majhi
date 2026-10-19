@@ -1,6 +1,6 @@
 import { PAGE_PATH } from "@majhi/shared";
-import { lazy, Suspense } from "react";
 import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { StaleBuildBar } from "@/components/shell/stale-build";
@@ -23,9 +23,15 @@ import { useArrivalNewTask } from "@/onboarding/arrive";
 
 // What opens on demand is read when it first opens, so the first screen carries only the console.
 const Palette = lazy(() => import("@/features/search/palette").then((m) => ({ default: m.Palette })));
-const TaskDrawer = lazy(() => import("@/features/task-drawer/task-drawer").then((m) => ({ default: m.TaskDrawer })));
-const AgentDrawer = lazy(() => import("@/features/agent-drawer/agent-drawer").then((m) => ({ default: m.AgentDrawer })));
-const UpdateNotice = lazy(() => import("@/features/update/update-notice").then((m) => ({ default: m.UpdateNotice })));
+const TaskDrawer = lazy(() =>
+  import("@/features/task-drawer/task-drawer").then((m) => ({ default: m.TaskDrawer })),
+);
+const AgentDrawer = lazy(() =>
+  import("@/features/agent-drawer/agent-drawer").then((m) => ({ default: m.AgentDrawer })),
+);
+const UpdateNotice = lazy(() =>
+  import("@/features/update/update-notice").then((m) => ({ default: m.UpdateNotice })),
+);
 const ShortcutsDialog = lazy(() =>
   import("@/components/shell/shortcuts-dialog").then((m) => ({ default: m.ShortcutsDialog })),
 );

@@ -9,13 +9,7 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup =
-  | "Anywhere"
-  | "Go to"
-  | "Task"
-  | "Console"
-  | "Skills & MCP"
-  | "Message box";
+export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Console" | "Skills & MCP" | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses

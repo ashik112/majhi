@@ -57,9 +57,7 @@ export function Lamp({
         state === "idle" ? "border-[1.5px] border-current" : "bg-current",
         dim && "opacity-35",
         !dim && state === "working" && "animate-lamp",
-        !dim &&
-          (state === "needs" || state === "paused") &&
-          "shadow-[var(--lamp-halo)]",
+        !dim && (state === "needs" || state === "paused") && "shadow-[var(--lamp-halo)]",
         className,
       )}
     />

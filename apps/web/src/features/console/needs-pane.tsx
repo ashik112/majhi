@@ -1,13 +1,8 @@
-import {
-  type DecisionDetail,
-  QUEUE_GROUP_LABEL,
-  QUEUE_GROUP_SHOWN,
-  type QueueGroup,
-} from "@majhi/shared";
+import { type DecisionDetail, QUEUE_GROUP_LABEL, QUEUE_GROUP_SHOWN, type QueueGroup } from "@majhi/shared";
 import { memo, useEffect, useRef, useState } from "react";
 import { ageWord } from "./model";
 import type { Needs, NeedsRow } from "./needs-model";
-import { PaneList, type PaneItem } from "./pane-list";
+import { type PaneItem, PaneList } from "./pane-list";
 import { Btn, Chevron, ConsoleLamp, Kbd, RowTitle, wsStyle } from "./parts";
 
 export interface ActionDef {
@@ -146,6 +141,7 @@ const RowView = memo(function RowView(props: RowProps) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: the console takes the keys itself (J, K, A, Enter)
     <div
       role="option"
+      tabIndex={-1}
       aria-selected={selected}
       className="cs-row"
       data-incident={row.incident || undefined}
@@ -251,13 +247,15 @@ export function NeedsPane(props: {
       {items.length === 0 ? (
         <div className="cs-scroll" aria-busy={props.loading}>
           {!props.loading && (
-          <div className="cs-empty">
-            <b>
-              <ConsoleLamp state="done" />
-              All clear
-            </b>
-            {props.lastAnswered === undefined ? "Nothing waits for you." : `Nothing waits for you. ${props.lastAnswered}`}
-          </div>
+            <div className="cs-empty">
+              <b>
+                <ConsoleLamp state="done" />
+                All clear
+              </b>
+              {props.lastAnswered === undefined
+                ? "Nothing waits for you."
+                : `Nothing waits for you. ${props.lastAnswered}`}
+            </div>
           )}
         </div>
       ) : (
