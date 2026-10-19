@@ -164,12 +164,18 @@ export interface BranchRequest {
 
 /** `feat/add-login`. A pattern that renders to something git would refuse falls back to the default. */
 export function branchName(req: BranchRequest): string {
+  const typeWord = req.typeWords?.[req.type] ?? req.type;
+  // `fix/login-redirect`, not `fix/fix-login-redirect`: the type already says it.
+  const nameSlug = (name: string): string => {
+    const slug = slugOfName(name);
+    return slug.startsWith(`${typeWord}-`) ? slug.slice(typeWord.length + 1) : slug;
+  };
   const render = (pattern: string): string =>
     pattern
-      .replace(/\{type\}/g, req.typeWords?.[req.type] ?? req.type)
+      .replace(/\{type\}/g, typeWord)
       .replace(/\{id\}/g, req.id.toLowerCase())
       .replace(/\{ID\}/g, req.id.toUpperCase())
-      .replace(/\{slug\}/g, (req.name === undefined ? shortSlug(req.title) : slugOfName(req.name)) || "task")
+      .replace(/\{slug\}/g, (req.name === undefined ? shortSlug(req.title) : nameSlug(req.name)) || "task")
       .replace(/[-_.]+$/, "")
       .replace(/\/[-_.]+/g, "/");
   const own = render(req.pattern ?? DEFAULT_BRANCH_PATTERN);
