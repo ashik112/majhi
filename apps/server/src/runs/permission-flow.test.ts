@@ -152,6 +152,23 @@ describe("what the level lets through without a card", () => {
   });
 });
 
+describe("Allow in this task", () => {
+  it("lets the next ask of that kind in the same task run, and no other task's", async () => {
+    const t = flow();
+    const run = t.runOf("ACM-8");
+    const asking = t.permissions.ask(run, t.shell("gh pr merge 7"), signal);
+    await tick();
+    t.permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task");
+    expect(await asking).toBe("once");
+    expect(await t.permissions.ask(run, t.shell("gh pr merge 7"), signal)).toBe("once");
+    expect(t.items.get("perm:4:2")).toMatchObject({ state: "auto" });
+    const other = t.runOf("ACM-9");
+    void t.permissions.ask(other, t.shell("gh pr merge 7"), signal);
+    await tick();
+    expect(other.pending.size).toBe(1);
+  });
+});
+
 describe("Always", () => {
   const push = "git push origin main";
 

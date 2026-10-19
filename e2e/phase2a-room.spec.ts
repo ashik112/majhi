@@ -73,42 +73,46 @@ async function expectIdle(page: Page) {
 }
 
 test.beforeAll(async ({ request }) => {
-  // The builder may only edit, so its commands ask. The lead and the captain (who runs the chat task)
-  // may edit and run commands.
+  // The builder may only edit. What stays inside the task never asks; a merge asks below Full.
   await setPerms(request, "acme-builder", ["edit"]);
 });
 
 test("a command the agent may not run asks inline: Deny fails the tool and the turn goes on", {
   tag: "@smoke",
 }, async ({ page }) => {
-  await startTask(page, "tidy the readme in backend @acme-builder");
+  await startTask(page, "tidy the readme in backend @acme-builder, then merge it");
   const log = messages(page);
-  const prompt = room(page).getByRole("region", { name: "Permission: Run npm test" });
+  const prompt = room(page).getByRole("region", { name: "Permission: Run gh pr merge 7" });
   await expect(prompt).toBeVisible();
   await expect(prompt.getByRole("button", { name: "Deny" })).toBeVisible();
-  await expect(prompt.getByRole("button", { name: "Allow for this task" })).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Allow in this task" })).toBeVisible();
   await shot(page, "room-permission");
 
   await prompt.getByRole("button", { name: "Deny" }).click();
   await expect(prompt).toBeHidden();
-  await expect(verdict(log, "Denied", "Run npm test")).toBeVisible();
-  await expect(log.getByRole("button", { name: /Run npm test.*failed/ })).toBeVisible();
+  await expect(verdict(log, "Denied", "Run gh pr merge 7")).toBeVisible();
+  await expect(log.getByRole("button", { name: /Run gh pr merge 7.*failed/ })).toBeVisible();
   await expect(log.getByText(/I could not run the tests\./)).toBeVisible();
   await expectIdle(page);
 });
 
 test("Allow for this task answers the next ask of that kind by itself", async ({ page }) => {
-  await startTask(page, "fix the typo in api @acme-builder");
+  await startTask(page, "fix the typo in api @acme-builder, then merge it");
   const log = messages(page);
-  const prompt = room(page).getByRole("region", { name: "Permission: Run npm test" });
-  await prompt.getByRole("button", { name: "Allow for this task" }).click();
+  const prompt = room(page).getByRole("region", { name: "Permission: Run gh pr merge 7" });
+  await prompt.getByRole("button", { name: "Allow in this task" }).click();
   await expect(log.getByText(/Tests passed\./)).toBeVisible();
   await expectIdle(page);
 
-  await composer(page).fill("run it once more");
+  await composer(page).fill("run it once more, then merge it");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(verdict(log, "Allowed by rule", "Run npm test").last()).toBeVisible({ timeout: 20_000 });
+  await expect(verdict(log, "Allowed by rule", "Run gh pr merge 7").last()).toBeVisible({ timeout: 20_000 });
   await expect(log.getByText(/Tests passed\./)).toHaveCount(2, { timeout: 20_000 });
-  await expect(room(page).getByRole("region", { name: "Permission: Run npm test" })).toHaveCount(0);
+  // The task's agent asked once. (The captain, who looks in on a task in review, is another agent with its own ask.)
+  await expect(
+    room(page)
+      .getByRole("region", { name: "Permission: Run gh pr merge 7" })
+      .filter({ hasText: "acme-builder" }),
+  ).toHaveCount(0);
   await expectIdle(page);
 });

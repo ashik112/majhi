@@ -527,21 +527,26 @@ export function serveAcp(o: ServeOptions): void {
       }
       if (await step()) return finish("cancelled");
 
+      // Running the tests stays inside the task, so it never asks. A task that says "then merge it" runs a
+      // merge instead, which the workspace's level does not cover below Full.
+      const brief = await readFile(join(s.cwd, "TASK.md"), "utf8").catch(() => "");
+      const command =
+        brief.includes("then merge it") || text.includes("then merge it") ? "gh pr merge 7" : "npm test";
       await update(sessionId, {
         sessionUpdate: "tool_call",
         toolCallId: "t-exec",
-        title: "Run npm test",
+        title: `Run ${command}`,
         kind: "execute",
         status: "pending",
-        rawInput: { command: "npm test" },
+        rawInput: { command },
       });
       const answer = await conn.requestPermission({
         sessionId,
         toolCall: {
           toolCallId: "t-exec",
-          title: "Run npm test",
+          title: `Run ${command}`,
           kind: "execute",
-          rawInput: { command: "npm test" },
+          rawInput: { command },
         },
         options: [
           { optionId: "allow", name: "Allow", kind: "allow_once" },
