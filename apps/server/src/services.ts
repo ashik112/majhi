@@ -176,7 +176,7 @@ import { incidentLines } from "./ops/digest-lines.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
 import type { OwnerTelegram } from "./ops/telegram-owner.ts";
-import type { OpsWatch } from "./ops/watch.ts";
+import { type OpsWatch, renderTimeline } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -453,6 +453,8 @@ export interface Services {
   chat: ClientChat;
   /** The parts behind it, for the tests that drive them. */
   chatParts: ClientChatParts;
+  /** The incident engine: the one place incidents are opened and joined. */
+  incidentEngine: IncidentEngine;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
@@ -2171,6 +2173,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    incidentDetail: (f) => {
+      const inc = opsWatch?.incidentOfFinding(f.id);
+      return inc === undefined ? undefined : renderTimeline(inc);
+    },
     // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
     // A client's message has its own triage (chat/triage.ts), which has no tools and never dismisses by Laya's word.
     triage: (f) =>
@@ -3475,6 +3481,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     chat: chatParts.chat,
     chatParts,
+    incidentEngine: incidentEngineNow,
     outcomes,
     handoff,
     deploy: deployWorld,

@@ -42,6 +42,8 @@ export type FindingActor =
 export interface FindingsDeps {
   repo: FindingsRepo;
   now?: () => Date;
+  /** What an incident finding says in its detail, read from the incident itself so nothing is stored twice. */
+  incidentDetail?: ((finding: Finding) => string | undefined) | undefined;
   /** Makes the finding's task in the inbox, not started. */
   createTask(input: {
     org: string;
@@ -323,6 +325,11 @@ export class FindingsService {
     return this.repo.list({ org, statuses: ["open"], limit: 500 }).length;
   }
 
+  private withIncidentDetail(f: Finding): Finding {
+    const detail = this.deps.incidentDetail?.(f);
+    return detail === undefined ? f : { ...f, detail };
+  }
+
   list(input: FindingsListInput, actor: FindingActor): FindingsList {
     this.sync();
     const org = this.scopeOf(actor, input.org);
@@ -338,7 +345,7 @@ export class FindingsService {
     const open = this.repo.list({ org, statuses: ["open"], limit: 500 });
     const since = this.now().getTime() - DAY_MS;
     return {
-      findings,
+      findings: findings.map((f) => (f.source === "incident" ? this.withIncidentDetail(f) : f)),
       open: open.length,
       fresh: open.filter((f) => Date.parse(f.createdAt) >= since).length,
     };

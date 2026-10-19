@@ -687,7 +687,7 @@ export class OpsWatch {
       org: inc.org,
       source: "incident" as const,
       title,
-      detail: renderTimeline(inc),
+      detail: "",
       evidence,
       severity: inc.severity,
       playbook: "ops-uptime",
@@ -746,10 +746,7 @@ export class OpsWatch {
       })();
     if (next.finding !== undefined && !hasTask) {
       try {
-        this.deps.findings.update(
-          { id: next.finding, status: "fixed", detail: renderTimeline(next) },
-          { kind: "captain", org: next.org },
-        );
+        this.deps.findings.update({ id: next.finding, status: "fixed" }, { kind: "captain", org: next.org });
       } catch {
         // The finding moved on (dismissed, or already fixed): the incident's own timeline stands.
       }
