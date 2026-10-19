@@ -45,6 +45,7 @@ function make(openTasks: string[]): ContainerService {
     task: (id) =>
       ({ id, folder: folderOf(id), repos: [{ project: id.toLowerCase() }], org: "acme" }) as unknown as Task,
     openTasks: () => openTasks,
+    queueWaitMs: async () => 30 * 60_000,
     allTasks: () => openTasks,
     settings: async () => settings,
     runnerNetwork: runners,

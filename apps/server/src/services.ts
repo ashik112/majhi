@@ -9,6 +9,7 @@ import {
   CLIENT_CHAT_BRIEF,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
+  durationMs,
   effectiveIncident,
   failureFromError,
   GLOBAL_CONNECTIONS,
@@ -875,6 +876,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     task: (id) => store.tasks.get(id),
     openTasks: () => [...store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),
     allTasks: () => [...store.tasks.statuses()].map(([id]) => id),
+    queueWaitMs: async () => durationMs((await config.settings()).limits.env_wait),
     notify: (task, text) =>
       room.post(task as TaskId, `env-queue:${randomUUID()}`, { type: "system", level: "info", text }),
     settings: async () => (await config.settings()).containers,

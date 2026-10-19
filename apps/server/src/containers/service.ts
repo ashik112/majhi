@@ -110,8 +110,8 @@ export interface ContainerServiceDeps {
   allTasks: () => string[];
   /** A line for a task's room (its place in the queue, its turn). */
   notify?: (task: string, text: string) => void;
-  /** How long a call waits in the queue before it gives up and says so. Default 30 minutes. */
-  queueWaitMs?: number;
+  /** How long a call waits in the queue for a project's environment before it gives up (`limits.env_wait`). */
+  queueWaitMs: () => Promise<number>;
   settings: () => Promise<ContainersSettings>;
   /** The network runners are on. A preview joins it. */
   runnerNetwork: string;
@@ -160,8 +160,6 @@ const PORT_POLL_MS = 400;
 /** A dropped copy of a database is tried this many times, this far apart, while its server starts. */
 const FLUSH_TRIES = 8;
 const FLUSH_WAIT_MS = 1_500;
-/** How long a call waits for a project's environment before it gives up: the place is lost, the task is told. */
-const ENV_WAIT_MS = 30 * 60_000;
 /** The most docker calls of one task that may wait at once (`wait`, `exec`, a build, a compose up). */
 const MAX_WAITING_CALLS = 16;
 /** Calls of a task read at once: each starts `docker image ls` and up to `MAX_ID_LOOKUPS` `docker inspect`. */
@@ -318,6 +316,8 @@ export class ContainerService {
     const docker = this.need();
     const t = this.task(task);
     const names = this.names(task);
+    // Read now: a build outlives the call, and its callbacks run when the task may be gone.
+    const org = names.org;
     const settings = await this.deps.settings();
     await this.starting;
     await this.holdEnv(task);
@@ -369,7 +369,7 @@ export class ContainerService {
           409,
         );
       }
-      this.builds.set(this.orgOf(task), (this.builds.get(this.orgOf(task)) ?? 0) + 1);
+      this.builds.set(org, (this.builds.get(org) ?? 0) + 1);
       try {
         await this.ensureBuilder(docker, safety, settings);
         const info = await this.deps.processes.start({
@@ -398,7 +398,7 @@ export class ContainerService {
                 );
                 spawned.child.once("exit", () => {
                   void snapshot.cleanup();
-                  void this.buildEnded(this.orgOf(task));
+                  void this.buildEnded(org);
                 });
                 return spawned;
               } catch (err) {
@@ -411,7 +411,7 @@ export class ContainerService {
         this.deps.changed?.();
         return info;
       } catch (err) {
-        void this.buildEnded(this.orgOf(task));
+        void this.buildEnded(org);
         throw err;
       }
     });
@@ -617,16 +617,16 @@ export class ContainerService {
               await this.startHolder(docker, safety, settings, holder);
               try {
                 const spawned = await docker.attached(parts, safety, { cwd: t.folder });
-                spawned.child.once("close", () => this.dropHolder(docker, task, input.name));
+                spawned.child.once("close", () => this.dropHolder(docker, names.holder(input.name)));
                 return {
                   ...spawned,
                   kill: () => {
                     spawned.kill();
-                    this.dropHolder(docker, task, input.name);
+                    this.dropHolder(docker, names.holder(input.name));
                   },
                 };
               } catch (err) {
-                this.dropHolder(docker, task, input.name);
+                this.dropHolder(docker, names.holder(input.name));
                 throw err;
               }
             },
@@ -1111,6 +1111,7 @@ export class ContainerService {
     args: string[],
   ): Promise<TaskDockerResult> {
     const task = safety.task;
+    const org = safety.env.org;
     const snapshot = await this.snapshotBuild(
       docker,
       safety,
@@ -1127,11 +1128,11 @@ export class ContainerService {
             409,
           );
         }
-        this.builds.set(this.orgOf(task), (this.builds.get(this.orgOf(task)) ?? 0) + 1);
+        this.builds.set(org, (this.builds.get(org) ?? 0) + 1);
         try {
           await this.ensureBuilder(docker, safety, settings);
         } catch (err) {
-          void this.buildEnded(this.orgOf(task));
+          void this.buildEnded(org);
           throw err;
         }
       });
@@ -1143,7 +1144,7 @@ export class ContainerService {
         );
         return this.scriptResult(task, out);
       } finally {
-        void this.buildEnded(this.orgOf(task));
+        void this.buildEnded(org);
       }
     } finally {
       await snapshot.cleanup();
@@ -1441,8 +1442,8 @@ export class ContainerService {
   }
 
   /** Removes a holder, quietly: its container ended or never ran. */
-  private dropHolder(docker: ContainerDocker, task: string, name: string): void {
-    void this.quietly(() => docker.exec(["rm", "-f", "-v", this.names(task).holder(name)]));
+  private dropHolder(docker: ContainerDocker, holder: string): void {
+    void this.quietly(() => docker.exec(["rm", "-f", "-v", holder]));
   }
 
   /**
@@ -1717,9 +1718,13 @@ export class ContainerService {
       ]);
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
-    // The preview's throwaway folder goes with the preview.
-    await this.quietly(() => docker.exec(["volume", "rm", "-f", names.volume(PREVIEW_SCRATCH)]));
     if (this.queue.holder(names.key) === task) {
+      // The preview's throwaway folder goes with the preview. Only the holder's: it is the environment's.
+      const scratch = names.volume(PREVIEW_SCRATCH);
+      const found = await this.lines(docker, ["volume", "ls", "-q", "--filter", `name=${scratch}`]).catch(
+        (): string[] => [],
+      );
+      if (found.includes(scratch)) await this.quietly(() => docker.exec(["volume", "rm", "-f", scratch]));
       // A runner of the task that is still up must not keep a range the next network may be given.
       await this.quietly(async () => {
         const runners = await this.lines(docker, [
@@ -2028,7 +2033,7 @@ export class ContainerService {
   /**
    * Holds the project's environment for the task, or waits in line for it. The caller has not taken the
    * task's lock: a task that waits must still be able to pause, stop and end. The wait ends with a clear
-   * answer when the task leaves the line, the caller aborts, or `queueWaitMs` passes.
+   * answer when the task leaves the line, the caller aborts, or `limits.env_wait` passes.
    */
   private async holdEnv(task: string, signal?: AbortSignal): Promise<void> {
     const scope = this.scope(task);
@@ -2041,7 +2046,7 @@ export class ContainerService {
       `Waiting for the ${where} environment, which ${holder} uses now. ${task} is number ${got.place} in line and starts when it is free.`,
     );
     this.deps.changed?.();
-    const limit = this.deps.queueWaitMs ?? ENV_WAIT_MS;
+    const limit = await this.deps.queueWaitMs();
     let timer: NodeJS.Timeout | undefined;
     const gaveUp = new Promise<never>((_, reject) => {
       timer = setTimeout(

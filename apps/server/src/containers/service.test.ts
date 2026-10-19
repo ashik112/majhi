@@ -23,6 +23,7 @@ function build(withDocker: ContainerDocker | undefined): ContainerService {
     processes,
     task: (id) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => openTasks,
+    queueWaitMs: async () => 30 * 60_000,
     allTasks: () => ["ACM-1", "ACM-2", "ACM-3", "ACM-4", "ACM-5", "ACM-6", "ACM-9"],
     settings: async () => settings,
     runnerNetwork: "majhi-runners",

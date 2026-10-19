@@ -228,6 +228,7 @@ describe("machine-wide run cap", () => {
       tasks_running: 4,
       open_by_others: 5,
       worktrees: 15,
+      env_wait: "30m",
     };
     expect(runsTotal({ agents_max: 6, ...rest }, 24)).toBe(6);
     expect(runsTotal({ agents_max: 6, ...rest, runs_total: 9 }, 24)).toBe(6);

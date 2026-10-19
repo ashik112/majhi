@@ -3971,9 +3971,9 @@ export class TaskService {
         else if (ctx.ending === true) await this.deps.containers?.taskEnded(id);
         else await this.deps.containers?.taskPaused(id);
         // Not awaited: removing folders is not part of changing the task's state.
-        void this.deps.tidyFolders?.(effect.op !== "runAgain" && ctx.ending === true ? id : undefined).catch(
-          (err: unknown) => console.error(`Task folders: ${errorMessage(err)}`),
-        );
+        void this.deps
+          .tidyFolders?.(effect.op !== "runAgain" && ctx.ending === true ? id : undefined)
+          .catch((err: unknown) => console.error(`Task folders: ${errorMessage(err)}`));
         return;
       case "processes.stop":
         await this.deps.processes?.stopTask(id);

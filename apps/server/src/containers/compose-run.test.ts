@@ -38,6 +38,7 @@ function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
     processes,
     task: (id: string) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => open,
+    queueWaitMs: async () => 30 * 60_000,
     allTasks: () => open,
     settings: async () => settings,
     runnerNetwork: "majhi-runners",

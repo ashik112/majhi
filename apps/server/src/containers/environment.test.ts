@@ -64,6 +64,7 @@ beforeEach(async () => {
     processes,
     task: (id) => (TASKS[id] === undefined ? undefined : task(id)),
     openTasks: () => open,
+    queueWaitMs: async () => 30 * 60_000,
     allTasks: () => Object.keys(TASKS),
     notify: (t, text) => said.push({ task: t, text }),
     settings: async () => settings,

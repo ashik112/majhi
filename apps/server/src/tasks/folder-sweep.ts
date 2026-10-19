@@ -46,6 +46,8 @@ export const DEPS_DROPPED_FILE = ".majhi-deps-dropped";
 
 /** Folders of a task that are never searched. */
 const SKIPPED = new Set([".git", "attachments"]);
+/** What stays of a task folder that is retired: its report and what the owner attached in its room. */
+const KEPT_WITH_TASK: readonly string[] = [REPORT_FILE, "attachments"];
 /** How deep under a task folder a rebuildable folder is looked for (task/repo/packages/x/node_modules is 4). */
 const MAX_DEPTH = 7;
 
@@ -361,9 +363,9 @@ export class TaskFolderSweep {
         return `worktree ${repo.project} stays: ${errorMessage(err)}`;
       }
     }
-    // What is left of the folder: attachments, notes, caches. The report stays with the task.
+    // What is left of the folder: notes, caches. The report and the attachments stay with the task.
     for (const name of await readdir(root).catch(() => [] as string[])) {
-      if (name === REPORT_FILE) continue;
+      if (KEPT_WITH_TASK.includes(name)) continue;
       await rm(join(root, name), { recursive: true, force: true }).catch(() => undefined);
     }
     if ((await readdir(root).catch(() => [] as string[])).length === 0)

@@ -874,7 +874,7 @@ function checkNetworkCreate(parts: DockerParts, s: Safety): void {
   if (parts.image === containerNames(s).hostNetwork) {
     if (is(flags, "--internal") || one(flags, "--driver") !== "bridge" || parts.command.length > 0)
       refuse("The forwarder network is a plain bridge.");
-    checkLabels(flags, s, ["network"]);
+    checkLabels(flags, s, ["hostnetwork"]);
     return;
   }
   // Internal: no route out, so a service cannot reach the internet or the host.
@@ -1251,7 +1251,7 @@ export function hostNetworkCreateArgs(s: Safety): DockerParts {
   return safe(
     {
       verb: ["network", "create"],
-      flags: ["--driver", "bridge", ...containerNames(s).labelFlags("network")],
+      flags: ["--driver", "bridge", ...containerNames(s).labelFlags("hostnetwork")],
       image: containerNames(s).hostNetwork,
       command: [],
     },

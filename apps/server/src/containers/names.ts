@@ -56,10 +56,11 @@ export type ObjectKind =
   | "builderguard"
   | "image"
   | "network"
+  | "hostnetwork"
   | "volume";
 
-/** The kinds that belong to the project's environment and carry no task: they outlive the task that made them. */
-const ENV_KINDS: readonly ObjectKind[] = ["image", "network", "volume"];
+/** The kinds that belong to the project's environment and carry no task: they outlive the task that holds it. An image names the task that built it. */
+const ENV_KINDS: readonly ObjectKind[] = ["network", "hostnetwork", "volume"];
 
 /** Every docker name majhi uses for the objects of one task in one project environment. */
 export interface ContainerNames {
