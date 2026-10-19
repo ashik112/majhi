@@ -380,7 +380,7 @@ function PendingPause({
               disabled={unblock.isPending}
               onClick={() => unblock.mutate(fix.tasks)}
             >
-              Remove link to {fix.tasks.join(", ")}
+              {fix.tasks.length === 1 ? "Remove link" : "Remove links"}
             </Button>
           )}
           {fix?.kind === "raise-budget" && (
