@@ -83,6 +83,8 @@ export interface ClearReading {
   anyAccountUp?: boolean | undefined;
   /** When an agent last spoke in the task or a message last arrived for it. */
   lastActivityAt?: string | undefined;
+  /** Tasks that no longer hold anything back: gone, or met. A dependency hold whose blockers are all in here has nothing left to wait for. */
+  resolvedTasks?: readonly string[] | undefined;
 }
 
 /** A typed condition under which majhi lifts a hold on its own. */
@@ -95,7 +97,9 @@ export type AutoClear =
   | { kind: "step-or-autopilot-on" }
   | { kind: "slot-free" }
   | { kind: "any-account-available"; accounts: readonly string[] }
-  | { kind: "activity-after"; at: string };
+  | { kind: "activity-after"; at: string }
+  /** Every one of these tasks is gone or met, so a link to it holds nothing. */
+  | { kind: "dependencies-resolved"; ids: readonly string[] };
 
 /** Whether `condition` holds in `reading`. Pure. */
 export function conditionMet(condition: AutoClear, reading: ClearReading): boolean {
@@ -124,6 +128,8 @@ export function conditionMet(condition: AutoClear, reading: ClearReading): boole
       );
     case "activity-after":
       return reading.lastActivityAt !== undefined && reading.lastActivityAt > condition.at;
+    case "dependencies-resolved":
+      return condition.ids.every((id) => reading.resolvedTasks?.includes(id) === true);
   }
 }
 
@@ -227,13 +233,14 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
     sentence: (h) => `Nothing is moving and nobody is left to wake. ${sentenceEnd(h.why)}`,
   },
   "dependency-closed": {
-    lifters: () => ["owner"],
-    autoClears: () => ({ kind: "never" }),
+    // The owner removes the link or merges the blocker; majhi lifts it when the blocker no longer exists.
+    lifters: () => ["owner", "majhi"],
+    autoClears: (h) => ({ kind: "dependencies-resolved", ids: h.on }),
     sentence: (h) => `${h.on.join(", ")} was closed without merging. Merge it or remove the link.`,
   },
   "dependency-removed": {
-    lifters: () => ["owner"],
-    autoClears: () => ({ kind: "never" }),
+    lifters: () => ["owner", "majhi"],
+    autoClears: (h) => ({ kind: "dependencies-resolved", ids: h.on }),
     sentence: () => "A task it waited for was removed. Start it or remove the link.",
   },
 };

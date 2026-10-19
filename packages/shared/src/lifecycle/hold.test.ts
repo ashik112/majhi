@@ -61,8 +61,8 @@ const LIFTERS: Record<HoldCause, Lifter[]> = {
   idle: ["owner", "captain", "majhi"],
   preempted: ["majhi", "owner"],
   "agents-down": ["majhi", "owner"],
-  "dependency-closed": ["owner"],
-  "dependency-removed": ["owner"],
+  "dependency-closed": ["owner", "majhi"],
+  "dependency-removed": ["owner", "majhi"],
 };
 
 describe("hold table", () => {

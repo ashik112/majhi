@@ -389,6 +389,7 @@ export class TaskService {
       rows: deps.store.lifecycle,
       now: this.now,
       unmetDeps: (id) => deps.store.tasks.unmetDependencies(id),
+      blockers: (id) => deps.store.tasks.heldBy(id),
       hasLiveRun: (id) => deps.runs.working(id).length > 0,
       runner: { run: (id, effect, ctx, states) => this.runEffect(id, effect, ctx, states) },
     });
@@ -3467,6 +3468,7 @@ export class TaskService {
     // Removing the last thing a task waited for, or the last unfinished child, can release it.
     await this.linksChanged([input.task, input.target]);
     if (input.type === "depends-on") {
+      await this.reconcileDependencyHolds();
       await this.orchestrator.advance();
     } else if (input.type === "parent") {
       await this.finishParentIfDone(input.target);
@@ -3616,7 +3618,7 @@ export class TaskService {
     await this.close(parent, { by: "majhi", whenUnshipped: "stay" });
   }
 
-  /** A task other tasks pointed at is gone: children become top-level, waiting tasks ask the owner. */
+  /** A task other tasks pointed at is gone: children become top-level, and tasks that waited for it stop waiting. */
   private async afterRemoval(
     removed: Task,
     held: readonly { task: string; type: TaskLink["type"] }[],
@@ -3629,25 +3631,59 @@ export class TaskService {
       const waiting = store.tasks.get(l.task);
       if (waiting === undefined) continue;
       if (waiting.status !== "inbox" && waiting.status !== "ready" && waiting.status !== "paused") continue;
-      await this.lifecycle.apply(
-        waiting.id,
-        { type: "dependencyChanged", change: "removed", on: [removed.id], at: this.now().toISOString() },
-        { ctx: { by: "majhi" }, skip: ["card", "publishTask"] },
-      );
+      // Nothing is left to wait for: the link went with the task. Say so, and lift a hold that named it.
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
-        level: "error",
-        text: `${removed.id} was removed, and this task was waiting for it. Start it anyway, or link it to another task?`,
+        level: "info",
+        text: `${removed.id} was removed, so this task no longer waits for it.`,
       });
-      this.deps.room.publishTask(this.get(waiting.id));
     }
+    await this.reconcileDependencyHolds();
     const parent = removed.links.find((l) => l.type === "parent")?.task;
     if (parent !== undefined) {
       touched.push(parent);
       await this.finishParentIfDone(parent);
     }
-    await this.refreshBriefs(touched);
-    this.deps.events.emit(["tasks"], { tasks: touched });
+    // A task that waited only for this one is free now: let the line take it.
+    await this.orchestrator.advance();
+    await this.linksChanged(touched);
+  }
+
+  /**
+   * Links to tasks that do not exist are removed, and a dependency hold whose blockers no longer hold
+   * anything back (gone, or met) is lifted. Nothing else can lift them: the owner cannot merge or
+   * unlink a task that is not there. Runs at start, after a task is removed and after a link is removed.
+   */
+  async reconcileDependencyHolds(): Promise<void> {
+    const { store } = this.deps;
+    const known = new Set(store.tasks.statuses().keys());
+    for (const l of store.tasks.allLinks()) {
+      if (!known.has(l.task) || !known.has(l.other)) store.tasks.removeLink(l.task, l.type, l.other);
+    }
+    const at = this.now().toISOString();
+    const lifted: string[] = [];
+    for (const [id, status] of store.tasks.statuses()) {
+      if (status !== "paused") continue;
+      const hold = this.lifecycle.state(id)?.hold;
+      if (hold?.cause !== "dependency-closed" && hold?.cause !== "dependency-removed") continue;
+      const stillHeld = store.tasks.heldBy(id);
+      const resolved = hold.on.filter((t) => !stillHeld.some((u) => u === t));
+      const out = await this.lifecycle.apply(
+        id,
+        {
+          type: "holdCleared",
+          by: "majhi",
+          reading: { ...assertedReading(hold, at), resolvedTasks: resolved },
+        },
+        { ctx: { by: "majhi", settle: "Nothing it waited for is left" }, skip: ["publishTask"] },
+      );
+      if (wasRefused(out)) continue;
+      lifted.push(id);
+      this.deps.room.publishTask(this.get(id));
+    }
+    if (lifted.length === 0) return;
+    await this.orchestrator.advance();
+    await this.linksChanged(lifted);
   }
 
   private async linksChanged(ids: readonly string[]): Promise<void> {

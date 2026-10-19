@@ -23,7 +23,7 @@ export function DockBar({
   lamp: LampState;
   /** What it is, in a few words: "Ready to ship", "@acme-builder wants to run a command". */
   title: ReactNode;
-  /** One short line after the title; it wraps. */
+  /** The reason, under the title at full width; it wraps. */
   line?: ReactNode;
   /** Primary and secondary buttons. */
   actions?: ReactNode;
@@ -42,20 +42,15 @@ export function DockBar({
       aria-label={label}
       className="flex min-w-0 flex-col gap-1.5 py-2 outline-none"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-        <div className="flex min-w-0 flex-1 basis-[240px] items-center gap-2">
-          <Lamp state={lamp} size={8} />
-          <span className="max-w-[60%] shrink-0 truncate text-base font-medium text-fg">{title}</span>
-          {line !== undefined && (
-            <span
-              title={typeof line === "string" ? line : undefined}
-              className="min-w-0 flex-1 break-words text-sm text-fg-muted"
-            >
-              {line}
-            </span>
-          )}
+      <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-1 basis-[240px] items-start gap-2">
+          <Lamp state={lamp} size={8} className="mt-[7px]" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-base font-medium break-words text-fg">{title}</span>
+            {line !== undefined && <span className="text-sm break-words text-fg-muted">{line}</span>}
+          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
           {actions}
           {details !== undefined && (
             <button

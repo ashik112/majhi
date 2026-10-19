@@ -24,6 +24,8 @@ export interface LifecycleDeps {
   now: () => Date;
   /** Dependencies the task still waits for. Read only for `start`. */
   unmetDeps: (id: string) => readonly string[];
+  /** What holds the task back: dependencies not met, and links to tasks that are gone. Named by a dependency hold. */
+  blockers?: ((id: string) => readonly string[]) | undefined;
   /** A run of the task is live. */
   hasLiveRun: (id: string) => boolean;
 }
@@ -59,9 +61,15 @@ export const wasRefused = (o: Outcome): o is Refusal => "refused" in o;
 function stateOf(
   id: string,
   row: LoadedRow,
-  extra: { unmetDeps: readonly string[]; hasLiveRun: boolean },
+  extra: { unmetDeps: readonly string[]; hasLiveRun: boolean; blockers: () => readonly string[] },
 ): TaskState {
-  const lc = lifecycle.fromStored(row.stored, { at: row.at, resumedAt: row.stored.resumedAt });
+  // A dependency hold is not stored with its blockers: they are the task's links that still hold it back.
+  const blocked = row.stored.status === "paused" && row.stored.pausedReason === "blocked";
+  const lc = lifecycle.fromStored(row.stored, {
+    at: row.at,
+    resumedAt: row.stored.resumedAt,
+    ...(blocked ? { on: extra.blockers() } : {}),
+  });
   return {
     id,
     status: lc.status,
@@ -93,6 +101,7 @@ export class TaskLifecycle {
     return stateOf(id, row, {
       unmetDeps: withDeps ? this.deps.unmetDeps(id) : [],
       hasLiveRun: this.deps.hasLiveRun(id),
+      blockers: () => this.deps.blockers?.(id) ?? this.deps.unmetDeps(id),
     });
   }
 
@@ -111,6 +120,7 @@ export class TaskLifecycle {
     const read = stateOf(id, row, {
       unmetDeps: event.type === "start" ? this.deps.unmetDeps(id) : [],
       hasLiveRun: this.deps.hasLiveRun(id),
+      blockers: () => this.deps.blockers?.(id) ?? this.deps.unmetDeps(id),
     });
     const before =
       options.holdAs !== undefined && read.hold?.cause === "owner-stop"
@@ -198,7 +208,11 @@ export class TaskLifecycle {
         this.deps.rows.settle(row.id, []);
         continue;
       }
-      const state = stateOf(row.task, row0, { unmetDeps: [], hasLiveRun: this.deps.hasLiveRun(row.task) });
+      const state = stateOf(row.task, row0, {
+        unmetDeps: [],
+        hasLiveRun: this.deps.hasLiveRun(row.task),
+        blockers: () => this.deps.blockers?.(row.task) ?? this.deps.unmetDeps(row.task),
+      });
       try {
         for (const item of row.items) {
           await this.deps.runner.run(row.task, item.effect, item.ctx, { before: state, after: state });

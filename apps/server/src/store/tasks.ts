@@ -671,6 +671,14 @@ export class TaskRepo {
     );
   }
 
+  /** What holds a task back: its `depends-on` targets that are not met, and those that no longer exist. */
+  heldBy(id: string): TaskId[] {
+    const own = this.allLinks().filter((l) => l.task === id && l.type === "depends-on");
+    const statuses = this.statuses();
+    const unmet = new Set<string>(this.unmetDependencies(id));
+    return own.filter((l) => !statuses.has(l.other) || unmet.has(l.other)).map((l) => l.other as TaskId);
+  }
+
   /** Post tasks that are not done and have fields: the ones that may wait for an approval to publish. */
   openPosts(): string[] {
     return this.db
