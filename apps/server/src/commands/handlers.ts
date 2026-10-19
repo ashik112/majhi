@@ -373,6 +373,7 @@ export function createHandlers({
       watch: services.ops.watch,
       engine: services.ops.engine,
       phone: services.ops.phone,
+      telegram: services.ops.telegram,
       playbooks: services.playbooks,
       repo: services.ops.repo,
       findings: services.findings,

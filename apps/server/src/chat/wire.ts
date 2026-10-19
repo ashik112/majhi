@@ -1,6 +1,7 @@
 import {
   type AuthorityChoice,
   type ChatApp,
+  type ChatEnvelope,
   type ConnectionConfig,
   effectiveHolds,
   type Holds,
@@ -84,6 +85,8 @@ export interface ClientChatWiring {
   deleteWebhook: ClientChatDeps["deleteWebhook"];
   saveUserToken: ClientChatDeps["saveUserToken"];
   majhiHome: string;
+  /** Offered every delivery before it is stored; true when it is not a client's (the owner's own Telegram). */
+  intercept?: ((connection: string, envelope: ChatEnvelope) => Promise<boolean>) | undefined;
   /** Whether the read loops run: only the real server's. */
   polling: boolean;
   changed: () => void;
@@ -176,6 +179,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
         w.store.client.setNotes(connection, notes, (w.now?.() ?? new Date()).toISOString()),
     },
     deliver: async (conn, envelope) => {
+      if ((await w.intercept?.(conn.id, envelope)) === true) return;
       if (ingest === undefined) throw new Error("Chats are not ready.");
       await ingest.deliver(conn, envelope);
     },

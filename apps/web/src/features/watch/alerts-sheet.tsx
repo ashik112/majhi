@@ -1,4 +1,10 @@
-import type { OpsActions, OpsPhoneSetupResult, OpsPhoneStatus, OpsSettings } from "@majhi/shared";
+import type {
+  OpsActions,
+  OpsPhoneSetupResult,
+  OpsPhoneStatus,
+  OpsSettings,
+  OpsTelegramStatus,
+} from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -16,6 +22,9 @@ import {
   usePhoneSet,
   usePhoneSetup,
   usePhoneTest,
+  useTelegramForget,
+  useTelegramSetup,
+  useTelegramTest,
   useWatchSettings,
 } from "@/lib/watch-queries";
 import { QrCode } from "./qr";
@@ -270,6 +279,111 @@ function PhoneOn({
   );
 }
 
+/** The owner's Telegram: the same single ping as the phone push. Paired here, never by a config edit. */
+function TelegramSection({ telegram }: { telegram: OpsTelegramStatus }) {
+  const setup = useTelegramSetup();
+  const test = useTelegramTest();
+  const forget = useTelegramForget();
+  const toast = useToast();
+  const [bot, setBot] = useState(telegram.connection ?? telegram.bots[0]?.connection ?? "");
+  const fail = (e: unknown) => toast("Could not change it", { detail: describeError(e), tone: "error" });
+  return (
+    <section aria-label="Telegram" className="flex flex-col gap-3 border-t border-line pt-4">
+      <h3 className="m-0 text-base font-semibold text-fg">Telegram</h3>
+      {telegram.state === "on" && (
+        <>
+          <p className="m-0 text-base text-fg-soft text-pretty">
+            Incident pings also go to your chat with {telegram.account}. It is the same single ping as the
+            phone push.
+          </p>
+          {telegram.lastError !== undefined && (
+            <p role="alert" className="m-0 text-sm text-amber text-pretty">
+              {telegram.lastError}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={test.isPending}
+              onClick={() =>
+                test.mutate(undefined, {
+                  onSuccess: (r) =>
+                    toast(r.sent ? "Test ping sent" : "The test did not go out", {
+                      ...(r.error === undefined ? {} : { detail: r.error }),
+                      ...(r.sent ? {} : { tone: "error" as const }),
+                    }),
+                })
+              }
+            >
+              Send a test
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={forget.isPending}
+              onClick={() => forget.mutate(undefined, { onError: fail })}
+            >
+              Turn off and forget
+            </Button>
+          </div>
+        </>
+      )}
+      {telegram.state === "waiting" && (
+        <>
+          <p className="m-0 text-base text-fg-soft text-pretty">
+            One step left. Open Telegram and send this message to the bot. majhi learns your chat from it and
+            starts pinging. The code works for 15 minutes.
+          </p>
+          <code className="block rounded-md border border-line-strong bg-sunken px-2.5 py-1.5 font-mono text-sm break-all select-all text-fg">
+            {telegram.step}
+          </code>
+          <div>
+            <Button
+              variant="ghost"
+              disabled={forget.isPending}
+              onClick={() => forget.mutate(undefined, { onError: fail })}
+            >
+              Cancel
+            </Button>
+          </div>
+        </>
+      )}
+      {telegram.state === "off" && (
+        <>
+          <p className="m-0 text-base text-fg-soft text-pretty">
+            Get the same ping in Telegram. Pick one of your Telegram bots (a bot of your own is best, not a
+            client's). A ping holds only the workspace name and one line.
+          </p>
+          {telegram.bots.length === 0 ? (
+            <p className="m-0 text-sm text-fg-faint text-pretty">
+              No Telegram bot is connected yet. Add one under Connections first.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="Bot">
+                {(p) => (
+                  <Select {...p} value={bot} onChange={(e) => setBot(e.target.value)}>
+                    {telegram.bots.map((b) => (
+                      <option key={b.connection} value={b.connection}>
+                        {b.account}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Button
+                variant="primary"
+                disabled={setup.isPending || bot === ""}
+                onClick={() => setup.mutate({ connection: bot }, { onError: fail })}
+              >
+                Set up Telegram
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 /** How long an unanswered high incident waits, and how long checks stay green before one closes. */
 function Timing({ settings }: { settings: OpsSettings }) {
   const save = useWatchSettings();
@@ -327,10 +441,12 @@ function Timing({ settings }: { settings: OpsSettings }) {
 /** Alerts and the phone push: the one place for how majhi reaches the owner about an outage. */
 export function AlertsSheet({
   phone,
+  telegram,
   settings,
   onClose,
 }: {
   phone: OpsPhoneStatus;
+  telegram: OpsTelegramStatus;
   settings: OpsSettings;
   onClose: () => void;
 }) {
@@ -348,6 +464,7 @@ export function AlertsSheet({
         ) : (
           <PhoneOn phone={phone} onSetup={setFresh} />
         )}
+        <TelegramSection telegram={telegram} />
       </div>
     </Sheet>
   );

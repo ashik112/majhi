@@ -16,11 +16,14 @@ import {
   type OpsServiceView,
   type OpsSettings,
   type OpsTimelineEntry,
+  type PingCause,
   PRIVATE,
+  pingFor,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { PhoneChannel } from "./phone.ts";
+import type { IncidentPings } from "./ping.ts";
 import {
   dnsProbe,
   httpProbe,
@@ -31,6 +34,7 @@ import {
   urlProblem,
 } from "./probes.ts";
 import type { CheckState, OpsRepo, StoredIncident, StoredService } from "./repo.ts";
+import type { OwnerTelegram } from "./telegram-owner.ts";
 
 /**
  * The ops watch (SPEC 5.18): the owner's services, the checks, flapping protection, incidents and their
@@ -72,6 +76,10 @@ export interface OpsDeps {
   findings: FindingsService;
   ports: ProbePorts;
   phone: PhoneChannel;
+  /** The phone channels of an incident ping (ntfy, Telegram). */
+  pings: IncidentPings;
+  /** The owner's Telegram channel, for its status in the overview. */
+  telegram: OwnerTelegram;
   /** Desktop and open tabs. High incidents are never held for quiet hours: that is this port's rule to keep. */
   notify: (n: IncidentNotice) => Promise<void>;
   /** Wakes the workspace's captain lane with news. */
@@ -594,7 +602,7 @@ export class OpsWatch {
       if (raised) {
         next.timeline.push({ at, kind: "note", text: `Now ${severity}` });
         this.deps.repo.saveIncident(next);
-        await this.alert(next, subject, false);
+        await this.alert(next, subject, "raised");
       }
       this.deps.changed();
       return raised;
@@ -625,7 +633,7 @@ export class OpsWatch {
       this.deps.repo.saveIncident(next);
       const refiled = await this.reportFinding(subject, next, title, evidence);
       // Failing again is news: it alerts again, and the captain hears of it with the same task.
-      await this.alert(refiled, subject, false);
+      await this.alert(refiled, subject, "reopened");
       const note = await this.incidentTask(refiled, subject, evidence, true);
       await this.wake(refiled, subject, evidence, note, true);
       this.deps.changed();
@@ -646,7 +654,7 @@ export class OpsWatch {
     const id = this.deps.repo.insertIncident(draft);
     let inc: StoredIncident = { ...draft, id };
     inc = await this.reportFinding(subject, inc, title, evidence);
-    await this.alert(inc, subject, false);
+    await this.alert(inc, subject, "opened");
     const note = await this.incidentTask(inc, subject, evidence, false);
     await this.wake(inc, subject, evidence, note, false);
     this.deps.changed();
@@ -752,17 +760,24 @@ export class OpsWatch {
 
   // Alerts and escalation -------------------------------------------------------
 
-  /** The first alert of an incident: desktop for high and medium, and the phone for high. */
-  private async alert(inc: StoredIncident, subject: Subject, repeat: boolean): Promise<void> {
-    if (inc.severity === "low" || this.off(inc.org, "ops-alert")) return;
+  /**
+   * A ping for an incident, if `pingFor` says there is one: the desktop for high and medium, and every phone channel
+   * (ntfy, Telegram) for high. Nothing else decides whether the owner is pinged.
+   */
+  private async alert(inc: StoredIncident, subject: Subject, cause: PingCause): Promise<void> {
+    const plan = pingFor(cause, inc.severity);
+    if ((!plan.desktop && !plan.phone) || this.off(inc.org, "ops-alert")) return;
+    const repeat = cause === "escalated";
     const ws = await this.deps.orgName(inc.org);
     const text = repeat
       ? `${ws}: an incident has not been acknowledged yet`
       : `${ws}: incident, ${inc.severity}. Open Watch.`;
     // A failing notification must never stop the rest: ntfy down, no helper, a closed tab.
-    await this.deps
-      .notify({ id: inc.id, org: inc.org, severity: inc.severity, text, repeat })
-      .catch(() => undefined);
+    if (plan.desktop) {
+      await this.deps
+        .notify({ id: inc.id, org: inc.org, severity: inc.severity, text, repeat })
+        .catch(() => undefined);
+    }
     const stored = this.deps.repo.incident(inc.id) ?? inc;
     const next: StoredIncident = { ...stored, timeline: [...stored.timeline] };
     next.timeline.push({
@@ -770,8 +785,8 @@ export class OpsWatch {
       kind: repeat ? "escalated" : "alerted",
       text: repeat ? "Not acknowledged: alerted again" : "Alerted you",
     });
-    if (inc.severity === "high") {
-      const sent = await this.deps.phone.pushIncident(inc, repeat).catch(() => ({ sent: false }));
+    if (plan.phone) {
+      const sent = await this.deps.pings.send(inc, repeat);
       if (sent.sent) {
         if (repeat) next.phoneEscalatedAt = this.at();
         else next.phoneAt = this.at();
@@ -849,10 +864,10 @@ export class OpsWatch {
             next = { ...next, escalatedAt: this.at() };
             touched = true;
             this.deps.repo.saveIncident(next);
-            await this.alert(next, subject, true);
+            await this.alert(next, subject, "escalated");
           } else if (next.phoneAt === undefined && next.escalatedAt === undefined) {
             // The phone was down at the start, or set up since: try again.
-            const sent = await this.deps.phone.pushIncident(next, false).catch(() => ({ sent: false }));
+            const sent = await this.deps.pings.send(next, false);
             if (sent.sent) {
               touched = true;
               this.deps.repo.saveIncident({
@@ -861,7 +876,7 @@ export class OpsWatch {
               });
             }
           } else if (next.escalatedAt !== undefined && next.phoneEscalatedAt === undefined) {
-            const sent = await this.deps.phone.pushIncident(next, true).catch(() => ({ sent: false }));
+            const sent = await this.deps.pings.send(next, true);
             if (sent.sent) {
               touched = true;
               this.deps.repo.saveIncident({
@@ -946,7 +961,7 @@ export class OpsWatch {
     };
     this.deps.repo.saveIncident(next);
     this.deps.phone.voidFor(`incident:${id}`);
-    await this.alert(next, await this.subjectOfIncident(next), false);
+    await this.alert(next, await this.subjectOfIncident(next), "raised");
     this.deps.changed();
   }
 
@@ -1161,6 +1176,7 @@ export class OpsWatch {
         })),
       ),
       phone: await this.deps.phone.status(),
+      telegram: await this.deps.telegram.status(),
       settings: this.settings(),
     };
   }

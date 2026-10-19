@@ -175,6 +175,7 @@ import { createWatchHost } from "./ops/anything/host.ts";
 import { incidentLines } from "./ops/digest-lines.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
+import type { OwnerTelegram } from "./ops/telegram-owner.ts";
 import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
@@ -2779,10 +2780,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     announce: {
       wake: (org, text) => autonomy.news(text, org),
-      notice: (_org, incident, text) =>
-        void notifier
-          .incident({ id: -incident, text, severity: "medium", repeat: false })
-          .catch(() => undefined),
     },
     watchProject: (inc) =>
       inc.watch !== undefined
@@ -2824,6 +2821,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   incidentEngine = incidentEngineNow;
+  let ownerTelegram: OwnerTelegram | undefined;
+  /** The Telegram bots that are connected, for the owner's Telegram ping. */
+  const telegramBots = async (): Promise<{ connection: string; account: string }[]> =>
+    Object.entries(connectionScopes(await config.sections())).flatMap(([, entry]) =>
+      Object.entries(entry.connections ?? {}).flatMap(([id, connection]) =>
+        connection.type === "chat" && connection.fields?.service === "telegram"
+          ? [{ connection: id, account: connection.fields?.account ?? id }]
+          : [],
+      ),
+    );
   const chatParts = createClientChat({
     store,
     room,
@@ -2846,6 +2853,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
       ),
     secretOf: connectionSecret,
+    intercept: async (connection, envelope) => (await ownerTelegram?.claims(connection, envelope)) === true,
     housekeeper: reactingHousekeeper,
     blocked: () => autonomy.reactingBlocked(),
     wake: (org, text, settled, job) => lanes.tell(org, text, settled, job),
@@ -3174,6 +3182,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   const ops = createOps({
     db: store.raw,
+    telegram: {
+      bots: telegramBots,
+      send: async (account, chat, text) => {
+        await chatParts.hub.send(
+          "telegram",
+          account,
+          { chat },
+          { body: [{ t: "paragraph", children: [{ t: "text", text }] }], people: () => undefined },
+        );
+      },
+    },
     findings,
     secrets,
     notifier,
@@ -3199,7 +3218,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     host: watchHost,
     fixLive: (inc) => incidentEngine?.fixLive(inc) ?? Promise.resolve(false),
-    incidentResolved: (inc, told) => void incidentEngine?.fixRecovered(inc, told),
+    incidentResolved: (inc) => void incidentEngine?.fixRecovered(inc),
     incidentMeta: async (inc) => {
       const quiet = await autonomy.quietWhy(inc.org);
       const task =
@@ -3271,6 +3290,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
   });
+  ownerTelegram = ops.telegram;
   admin.useScript({
     run: runScript,
     holds: async (org, id) => {

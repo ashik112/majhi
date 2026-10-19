@@ -193,6 +193,26 @@ export const OpsPhoneStatusSchema = z.object({
 });
 export type OpsPhoneStatus = z.infer<typeof OpsPhoneStatusSchema>;
 
+/**
+ * The owner's Telegram channel: a bot (one of the workspace's Telegram chat connections) and the owner's private
+ * chat with it. It gets the same single ping as the phone push. Pairing is done in Settings: `waiting` shows the
+ * exact message to send to the bot, and the bot answers once it has the owner's chat.
+ */
+export const OpsTelegramStatusSchema = z.object({
+  /** off: not set up. waiting: the bot is waiting for the message shown in `step`. on: pings go out. */
+  state: z.enum(["off", "waiting", "on"]),
+  /** The Telegram bot connections that could carry it. */
+  bots: z.array(z.object({ connection: z.string(), account: z.string() })),
+  connection: z.string().optional(),
+  account: z.string().optional(),
+  /** While waiting: the exact message to send to the bot. */
+  step: z.string().optional(),
+  lastSentAt: z.string().optional(),
+  lastError: z.string().optional(),
+});
+export type OpsTelegramStatus = z.infer<typeof OpsTelegramStatusSchema>;
+export const OpsTelegramSetupInputSchema = z.object({ connection: z.string().trim().min(1).max(100) });
+
 export const OpsSettingsSchema = z.object({
   /** An unanswered high incident alerts again after this many minutes. */
   escalateMin: z.number().int().min(1).max(240),
@@ -207,6 +227,7 @@ export const OpsOverviewSchema = z.object({
   /** Open ones first, then the 30 most recent resolved. */
   incidents: z.array(OpsIncidentSchema),
   phone: OpsPhoneStatusSchema,
+  telegram: OpsTelegramStatusSchema,
   settings: OpsSettingsSchema,
 });
 export type OpsOverview = z.infer<typeof OpsOverviewSchema>;

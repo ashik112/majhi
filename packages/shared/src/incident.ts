@@ -300,3 +300,30 @@ export const IncidentEditReportInputSchema = z.object({
   text: ReportTextSchema.partial(),
 });
 export const IncidentSendReportInputSchema = z.object({ task: TaskIdSchema, room: TaskIdSchema });
+
+// ---------------------------------------------------------------------------
+// The ping
+
+/** Why majhi is considering a ping for an incident. */
+export const PING_CAUSES = ["opened", "raised", "reopened", "escalated"] as const;
+export const PingCauseSchema = z.enum(PING_CAUSES);
+export type PingCause = z.infer<typeof PingCauseSchema>;
+
+/** Which channels a ping goes to. `desktop` is the banner and open tabs, `phone` is every phone channel (ntfy, Telegram). */
+export interface PingPlan {
+  desktop: boolean;
+  phone: boolean;
+}
+
+/**
+ * The one decision about pinging the owner for an incident; every channel follows it. An incident pings when it
+ * opens, once more when it grows worse, and once more when a severity 1 stays unacknowledged. Failing again inside
+ * the reopen window is the same incident and never pings. A low incident never pings. The phone channels carry
+ * severity 1 (high) only.
+ */
+export function pingFor(cause: PingCause, severity: "high" | "medium" | "low"): PingPlan {
+  if (severity === "low" || cause === "reopened") return { desktop: false, phone: false };
+  const high = severity === "high";
+  if (cause === "escalated") return { desktop: high, phone: high };
+  return { desktop: true, phone: high };
+}

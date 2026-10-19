@@ -7,6 +7,7 @@ import type { PlaybookService } from "../playbooks/service.ts";
 import type { WatchEngine } from "./anything/engine.ts";
 import type { PhoneChannel } from "./phone.ts";
 import type { OpsRepo } from "./repo.ts";
+import type { OwnerTelegram } from "./telegram-owner.ts";
 import type { OpsWatch } from "./watch.ts";
 
 type OpsCommand =
@@ -16,6 +17,9 @@ type OpsCommand =
   | "ops.checkNow"
   | "ops.ack"
   | "ops.settings"
+  | "ops.telegramSetup"
+  | "ops.telegramTest"
+  | "ops.telegramForget"
   | "ops.phoneSetup"
   | "ops.phoneSet"
   | "ops.phoneTest"
@@ -34,6 +38,7 @@ export interface OpsHandlerDeps extends FindingsHandlerDeps {
   watch: OpsWatch;
   engine: WatchEngine;
   phone: PhoneChannel;
+  telegram: OwnerTelegram;
   playbooks: PlaybookService;
   repo: Pick<OpsRepo, "service" | "incident">;
 }
@@ -48,7 +53,7 @@ export const WATCH_PLAYBOOK = "ops-uptime";
  * only tell: no fix, no action, no phone page. Those stay the owner's, also on a watch the owner made.
  */
 export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsCommand> {
-  const { watch, phone, playbooks, engine } = deps;
+  const { watch, phone, telegram, playbooks, engine } = deps;
   const owner = (ctx: CommandContext): void => {
     if (ctx.meta.actor.kind === "agent") {
       throw new UserError(
@@ -137,6 +142,18 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     "ops.phoneForget": async (_input, ctx) => {
       owner(ctx);
       return phone.forget();
+    },
+    "ops.telegramSetup": async (input, ctx) => {
+      owner(ctx);
+      return telegram.setup(input.connection);
+    },
+    "ops.telegramTest": async (_input, ctx) => {
+      owner(ctx);
+      return telegram.test();
+    },
+    "ops.telegramForget": async (_input, ctx) => {
+      owner(ctx);
+      return telegram.forget();
     },
     "watch.overview": async (input) => engine.overview(input.org),
     "watch.plan": async (input) => {

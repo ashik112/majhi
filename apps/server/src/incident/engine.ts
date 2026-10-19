@@ -86,10 +86,9 @@ export interface EngineDeps {
     /** Adds a line to the watch incident's "What happened", once per text. */
     note?(id: number, text: string, at?: string): void;
   };
-  /** The captain hears of news for a workspace, and the owner gets one notice. */
+  /** The captain hears of news for a workspace. */
   announce?: {
     wake(org: string, text: string): void;
-    notice(org: string, incident: number, text: string): void;
   };
   /** The project a watch incident is about, when it has one. */
   watchProject: (incident: OpsIncident) => string | undefined;
@@ -633,10 +632,9 @@ export class IncidentEngine {
 
   /**
    * A watch closed because its checks went green. When a fix had shipped, the timeline says so, the captain is woken
-   * once to confirm and close out (the client update and the report are written from the recorded facts), and the owner
-   * gets one notice, unless the watch already told them. A pause or a removal is not a recovery. Never throws.
+   * once to confirm and close out (the client update and the report are written from the recorded facts). A pause or a removal is not a recovery. Never throws.
    */
-  async fixRecovered(inc: OpsIncident, told: boolean): Promise<void> {
+  async fixRecovered(inc: OpsIncident): Promise<void> {
     try {
       if (inc.timeline.findLast((t) => t.kind === "resolved")?.closedBy === "stopped") return;
       const task = this.taskOfWatch(inc);
@@ -652,13 +650,6 @@ export class IncidentEngine {
           `Confirm it and close out ${task.id}: record the cause with majhi_incident_cause if you have not, because the client update and the report are written from it, and leave the report for the owner to approve. Close ${task.id} when nothing is left.`,
         ].join("\n"),
       );
-      if (!told) {
-        this.deps.announce?.notice(
-          task.org ?? inc.org,
-          inc.id,
-          `${inc.title} is back to normal. The fix in ${task.id} is live.`,
-        );
-      }
     } catch {
       // The next sweep still closes the task from the same facts.
     }
