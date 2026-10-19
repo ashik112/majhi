@@ -1,5 +1,7 @@
+import { dockerRunArgs, NETGUARD, NETGUARD_CAPS } from "@majhi/acp";
 import { describe, expect, it } from "vitest";
 import { BrowserService } from "./service.ts";
+import { TestBrowserService } from "./test-service.ts";
 
 /** A docker that records `run` calls and answers the few reads the service makes. */
 function fakeDocker() {
@@ -80,5 +82,69 @@ describe("a workspace's browser container", () => {
     expect(await service.endpoint("ACM-1", "acme", "globex-web")).toEqual({
       problem: "globex-web has no browser here.",
     });
+  });
+});
+
+/** The flags that decide what a container may reach: what it keeps, and what runs first inside it. */
+function guardOf(run: string[], image: string) {
+  const values = (flag: string) => run.filter((_, i) => run[i - 1] === flag);
+  const at = run.indexOf(image);
+  return {
+    drop: values("--cap-drop"),
+    add: values("--cap-add"),
+    security: values("--security-opt"),
+    entry: run.slice(at + 1, at + 3),
+    // Nothing private is let through for a container without a task network or a server.
+    allowed: values("--allow"),
+    privileged: run.includes("--privileged"),
+  };
+}
+
+describe("the containers that run a browser", () => {
+  it("start under the same private-range guard as a runner, so none reaches the LAN, the VPN or metadata", async () => {
+    const runner = {
+      docker: "docker",
+      cliEnv: {},
+      user: "501:20",
+      majhiHome: "/Users/owner/.majhi",
+      protectedPaths: ["/Users/owner/.config/majhi/secrets.key"],
+    };
+    const fromRunner = dockerRunArgs(
+      { command: { command: "agent", args: [] }, env: {}, cwd: "/tmp", scratch: true },
+      { ...runner, image: "majhi-runner:dev", network: "majhi-runners" },
+      "majhi-run-1",
+    );
+
+    const { docker, runs } = fakeDocker();
+    await new BrowserService({
+      image: "majhi-browser:dev",
+      runner: () => runner,
+      profiles: async () => [{ id: "acme-web", dir: "/Users/owner/.majhi/connections/acme-web/profile" }],
+      prepareDir: async () => undefined,
+      docker,
+    }).endpoint("ACM-1", "acme", "acme-web");
+    const testRuns: string[][] = [];
+    await new TestBrowserService({
+      image: "majhi-testbrowser:dev",
+      network: "majhi-runners",
+      runner: () => runner,
+      orgOf: () => "acme",
+      docker: async (args) => {
+        if (args[0] === "run") testRuns.push(args);
+        return args[0] === "logs" ? "majhi-testbrowserd ready" : "";
+      },
+    }).ensureFor("ACM-1");
+
+    const expected = guardOf(fromRunner, "majhi-runner:dev");
+    expect(expected).toEqual({
+      drop: ["ALL"],
+      add: NETGUARD_CAPS,
+      security: ["no-new-privileges"],
+      entry: [NETGUARD, "501:20"],
+      allowed: [],
+      privileged: false,
+    });
+    expect(guardOf(runs[0] ?? [], "majhi-browser:dev")).toEqual(expected);
+    expect(guardOf(testRuns[0] ?? [], "majhi-testbrowser:dev")).toEqual(expected);
   });
 });
