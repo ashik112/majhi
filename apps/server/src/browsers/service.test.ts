@@ -62,8 +62,14 @@ describe("a workspace's browser container", () => {
 
     expect(a).toEqual({ endpoint: "http://majhi-browser-acme:9300" });
     expect(g).toEqual({ endpoint: "http://majhi-browser-globex:9300" });
-    expect(runs.map((r) => r[r.indexOf("--name") + 1])).toEqual(["majhi-browser-acme", "majhi-browser-globex"]);
-    expect(runs.map((r) => r[r.indexOf("--network") + 1])).toEqual(["majhi-browser-acme", "majhi-browser-globex"]);
+    expect(runs.map((r) => r[r.indexOf("--name") + 1])).toEqual([
+      "majhi-browser-acme",
+      "majhi-browser-globex",
+    ]);
+    expect(runs.map((r) => r[r.indexOf("--network") + 1])).toEqual([
+      "majhi-browser-acme",
+      "majhi-browser-globex",
+    ]);
     expect(mounts(runs[0] ?? [])).toEqual(["source=/Users/owner/.majhi/connections/acme-web/profile"]);
     expect(mounts(runs[1] ?? [])).toEqual(["source=/Users/owner/.majhi/connections/globex-web/profile"]);
     expect(service.networksOf("ACM-1")).toEqual(["majhi-browser-acme"]);
