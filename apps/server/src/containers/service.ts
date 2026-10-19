@@ -3,6 +3,7 @@ import { basename, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { Spawned } from "@majhi/acp";
 import type {
+  BranchDbInput,
   ContainerInfo,
   ContainersSettings,
   PreviewBuildInput,
@@ -40,6 +41,7 @@ import {
   taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import { BranchLedger, branchName } from "./branch-db.ts";
 import { type DockerfileSnapshot, snapshotDockerfile } from "./build-snapshot.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
@@ -94,7 +96,7 @@ export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 /** The docker calls the service makes. A test gives it a fake. */
 export type ContainerDocker = Pick<
   DockerCli,
-  "exec" | "connect" | "guard" | "guardBuilder" | "create" | "attached" | "task" | "hold"
+  "exec" | "connect" | "guard" | "guardBuilder" | "create" | "attached" | "task" | "hold" | "copyDatabase"
 >;
 
 export interface ContainerServiceDeps {
@@ -155,6 +157,9 @@ export interface Restarted {
 }
 
 const PORT_POLL_MS = 400;
+/** A dropped copy of a database is tried this many times, this far apart, while its server starts. */
+const FLUSH_TRIES = 8;
+const FLUSH_WAIT_MS = 1_500;
 /** How long a call waits for a project's environment before it gives up: the place is lost, the task is told. */
 const ENV_WAIT_MS = 30 * 60_000;
 /** The most docker calls of one task that may wait at once (`wait`, `exec`, a build, a compose up). */
@@ -252,8 +257,12 @@ export class ContainerService {
   /** Names of the task containers a script is starting or running in the foreground, by task. */
   private readonly scripted = new Map<string, Set<string>>();
 
+  /** The task copies of a project's database, until they are dropped. */
+  private readonly copies: BranchLedger;
+
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
+    this.copies = new BranchLedger(deps.paths.majhiHome);
   }
 
   available(): boolean {
@@ -624,6 +633,8 @@ export class ContainerService {
           },
         });
         this.remember(task, input.name, { kind: "service", agent, input });
+        // Copies of the project's database that tasks made and closed since this service last ran go now.
+        void this.flushCopies(task, input.name);
         this.deps.changed?.();
         return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
       });
@@ -730,6 +741,94 @@ export class ContainerService {
     }
     this.deps.changed?.();
     return stopped;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A task's own copy of the project's database
+
+  /**
+   * `CREATE DATABASE <task> TEMPLATE <dev>` in the task's Postgres service, for a task that changes the
+   * schema: the task migrates its own copy and the project's dev data stays as it was. The copy is
+   * written down and dropped when the task closes (`dropCopies`). Asking twice returns the same copy.
+   */
+  async branchDb(task: string, input: BranchDbInput): Promise<{ database: string; template: string }> {
+    const docker = this.need();
+    const names = this.names(task);
+    await this.starting;
+    return this.locked(task, async () => {
+      this.assertOpen(task);
+      if (this.queue.holder(names.key) !== task || this.running(task, "service", input.service) === undefined) {
+        throw new UserError(
+          `Start the Postgres service ${input.service} with service_start first: the copy is made inside it.`,
+          409,
+        );
+      }
+      const spec = this.specs.get(task)?.get(input.service);
+      const env = spec?.kind === "service" ? (spec.input.env ?? {}) : {};
+      const user = env.POSTGRES_USER ?? "postgres";
+      const template = input.template ?? env.POSTGRES_DB ?? "postgres";
+      const database = branchName(task);
+      const made = (await this.copies.list()).find((b) => b.env === names.key && b.database === database);
+      if (made !== undefined) return { database, template: made.template };
+      try {
+        await docker.copyDatabase(names.service(input.service), { user, database, template });
+      } catch (err) {
+        throw new UserError(
+          `Could not copy ${template} to ${database}: ${errorMessage(err)} Nothing may be connected to ${template} while it is copied.`,
+        );
+      }
+      await this.copies.add({ env: names.key, service: input.service, user, database, template, task });
+      return { database, template };
+    });
+  }
+
+  /**
+   * Drops the copies a closing task made, in the service that holds them. A copy whose service is not
+   * running stays written down, and the next start of that service drops it (`flushCopies`).
+   */
+  private async dropCopies(task: string): Promise<void> {
+    const docker = this.docker;
+    if (docker === undefined) return;
+    const names = this.names(task);
+    for (const copy of await this.copies.list()) {
+      if (copy.task !== task || copy.env !== names.key) continue;
+      if (this.running(task, "service", copy.service) === undefined) continue;
+      await this.quietly(async () => {
+        await docker.copyDatabase(names.service(copy.service), {
+          user: copy.user,
+          database: copy.database,
+          drop: true,
+        });
+        await this.copies.remove(copy);
+      });
+    }
+  }
+
+  /**
+   * A service of the project started: the copies of tasks that closed meanwhile go now. The server needs
+   * a moment to accept connections, so it is tried a few times, once each.
+   */
+  private async flushCopies(task: string, service: string): Promise<void> {
+    const docker = this.docker;
+    if (docker === undefined) return;
+    const names = this.names(task);
+    const open = new Set(this.deps.openTasks());
+    for (const copy of await this.copies.list()) {
+      if (copy.env !== names.key || copy.service !== service || open.has(copy.task)) continue;
+      for (let attempt = 0; attempt < FLUSH_TRIES; attempt++) {
+        try {
+          await docker.copyDatabase(names.service(service), {
+            user: copy.user,
+            database: copy.database,
+            drop: true,
+          });
+          await this.copies.remove(copy);
+          break;
+        } catch {
+          await new Promise((done) => setTimeout(done, FLUSH_WAIT_MS));
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1664,6 +1763,7 @@ export class ContainerService {
       this.specs.delete(task);
       this.stacks.delete(task);
       this.parkedStacks.delete(task);
+      await this.dropCopies(task);
       await this.removeTaskContainers(task);
       await this.removeTaskState(task);
     });

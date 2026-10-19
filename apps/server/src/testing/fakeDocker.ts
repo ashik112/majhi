@@ -225,6 +225,22 @@ export class FakeDocker implements ContainerDocker {
     return { stdout: "", stderr: "" };
   }
 
+  /** The statements run in Postgres containers, as `create <db> from <template> in <container>` and `drop <db> in <container>`. */
+  copyCalls: string[] = [];
+
+  async copyDatabase(
+    container: string,
+    action: { user: string; database: string } & ({ template: string } | { drop: true }),
+  ): Promise<{ stdout: string; stderr: string }> {
+    if (!this.containers.has(container)) throw new Error(`No such container: ${container}`);
+    this.copyCalls.push(
+      "template" in action
+        ? `create ${action.database} from ${action.template} in ${container}`
+        : `drop ${action.database} in ${container}`,
+    );
+    return { stdout: "", stderr: "" };
+  }
+
   async connect(network: string, container: string): Promise<{ stdout: string; stderr: string }> {
     this.calls.push(`network connect ${network} ${container}`);
     if (container === "majhi-preview-acm-1" && !this.containers.has(container))

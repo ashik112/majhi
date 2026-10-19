@@ -1,4 +1,5 @@
 import {
+  BranchDbInputSchema,
   type ContainerInfo,
   ContainerListInputSchema,
   ContainerLogsInputSchema,
@@ -49,6 +50,12 @@ const TOOLS = [
     description:
       "Stop a service container, or remove a container a script started. Its named volumes keep their data until the task is done.",
     input: ServiceStopInputSchema,
+  },
+  {
+    name: "branch_db",
+    description:
+      "For a task that changes the database schema: make this task's own copy of the project's dev database inside its running Postgres service (CREATE DATABASE <task> TEMPLATE <dev>), so migrations never touch the dev data other tasks use. Returns the database name to connect to. majhi drops the copy when the task closes. Nothing may be connected to the template while it is copied.",
+    input: BranchDbInputSchema,
   },
   {
     name: "list",
@@ -158,6 +165,13 @@ export function containersServer(caller: ToolCaller, deps: ContainersMcpDeps): S
             if (removed !== undefined) return ok(`Removed ${scriptLine(removed)}.`);
           }
           return ok(`Stopped ${containerLine(await containers.stop(task, input.name, "agent"))}.`);
+        }
+        case "branch_db": {
+          const input = parsed.data as z.infer<typeof BranchDbInputSchema>;
+          const copy = await containers.branchDb(task, input);
+          return ok(
+            `Your copy of ${copy.template} is the database ${copy.database} in ${input.service}. Connect to ${copy.database} and migrate it. majhi drops it when this task closes.`,
+          );
         }
         case "list": {
           const all = containers.list(task);

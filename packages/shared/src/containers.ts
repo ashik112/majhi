@@ -207,6 +207,23 @@ export type ServiceStartInput = z.infer<typeof ServiceStartInputSchema>;
 
 export const ServiceStopInputSchema = z.object({ name: ContainerNameSchema });
 
+/** A Postgres user or database name majhi will put in a statement: lowercase letters, digits and `_`. */
+export const SqlNameSchema = z
+  .string()
+  .regex(/^[a-z_][a-z0-9_]{0,62}$/, "Use lowercase letters, digits and underscores, starting with a letter");
+
+/**
+ * `branch_db`: a task that changes the database schema works on its own copy of the project's dev
+ * database, `CREATE DATABASE <task> TEMPLATE <template>`. majhi drops the copy when the task closes.
+ */
+export const BranchDbInputSchema = z.object({
+  service: ContainerNameSchema.describe("The running Postgres service of this task"),
+  template: SqlNameSchema.optional().describe(
+    "The database to copy. Default: the service's POSTGRES_DB, else postgres. Nothing may be connected to it",
+  ),
+});
+export type BranchDbInput = z.infer<typeof BranchDbInputSchema>;
+
 /** Service names, and `preview` for the preview. */
 
 export const ContainerListInputSchema = z.object({});

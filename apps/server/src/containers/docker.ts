@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, killTree, type Spawned } from "@majhi/acp";
+import { SqlNameSchema } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import {
   assertNoHostPaths,
@@ -15,6 +16,7 @@ import {
   type Safety,
   takeEnv,
 } from "./args.ts";
+import { LABEL } from "./names.ts";
 import { writePrivateFile } from "./private-file.ts";
 import { assertTaskArgv } from "./task-docker.ts";
 
@@ -60,8 +62,6 @@ const GUARD_TIMEOUT_MS = 60_000;
 const HOLD_POLL_MS = 120;
 
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
-/** The network of a task, like `majhi-prv-53`. Not the runner network, not a preview. */
-const TASK_NETWORK = /^majhi-[a-z][a-z0-9]{0,9}-[1-9][0-9]*$/;
 
 /** Calls that only read. */
 const READ_VERBS = new Set([
@@ -233,12 +233,39 @@ export class DockerCli {
   }
 
   /** Puts a container on the network of its task. Nothing else can be connected. */
-  connect(network: string, container: string): Promise<DockerResult> {
-    if (!TASK_NETWORK.test(network)) throw new ContainerRefused(`${network} is not the network of a task.`);
+  async connect(network: string, container: string): Promise<DockerResult> {
+    if (!OWN_NAME.test(network)) throw new ContainerRefused(`${network} is not a network of majhi's.`);
     if (!OWN_NAME.test(container) && !CONTAINER_ID.test(container)) {
       throw new ContainerRefused(`${container} cannot be connected.`);
     }
+    // Only a project's environment network, found by its label: never the runners' network or a preview's.
+    const kind = (
+      await this.raw(["network", "inspect", "--format", `{{index .Labels "${LABEL.container}"}}`, network])
+    ).stdout.trim();
+    if (kind !== "network") throw new ContainerRefused(`${network} is not the network of a project.`);
     return this.raw(["network", "connect", network, container]);
+  }
+
+  /**
+   * Makes or drops a task's copy of a project's database inside one of majhi's Postgres containers
+   * (`branch-db.ts`). The statement is fixed here; only the container, the role and two database names
+   * vary, and each is checked.
+   */
+  copyDatabase(
+    container: string,
+    action: { user: string; database: string } & ({ template: string } | { drop: true }),
+  ): Promise<DockerResult> {
+    if (!OWN_NAME.test(container)) throw new ContainerRefused(`${container} is not a container of majhi's.`);
+    const user = SqlNameSchema.parse(action.user);
+    const database = SqlNameSchema.parse(action.database);
+    const sql =
+      "template" in action
+        ? `CREATE DATABASE "${database}" TEMPLATE "${SqlNameSchema.parse(action.template)}"`
+        : `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`;
+    return this.raw(
+      ["exec", container, "psql", "-U", user, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql],
+      EXEC_TIMEOUT_MS,
+    );
   }
 
   /**

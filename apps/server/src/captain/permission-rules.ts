@@ -58,7 +58,7 @@ export function permissionVerdict(title: string): PermissionVerdict {
 }
 
 /** majhi's container tools: they act on this task's own previews and services only. */
-const TASK_CONTAINER_TOOL = /^(preview_build|preview_run|preview_stop|service_start|service_stop|list|logs)$/;
+const TASK_CONTAINER_TOOL = /^(preview_build|preview_run|preview_stop|service_start|service_stop|branch_db|list|logs)$/;
 
 /**
  * Whether a rule covers this tool for the whole task, so one "Allow for this task" settles every later
