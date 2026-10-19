@@ -1,7 +1,7 @@
 # Releases majhi on every push to main (docs/DECISIONS.md, "Automated releases"):
 #   1. version: the next version from the conventional commits since the last release
 #      (scripts/next-version.sh). No feat, fix, perf or breaking change: nothing else runs.
-#   2. build: the server, runner and Laya images for linux/amd64 and linux/arm64, each CPU on its own
+#   2. build: the server, runner, browser and Laya images for linux/amd64 and linux/arm64, each CPU on its own
 #      runner, natively, pushed by digest only: no version tag yet.
 #   3. release, only when every build passed: tags the images ghcr.io/<owner>/majhi-*:<version>,
 #      publishes runtime assets to majhi-releases, whose workflow creates the public release,
@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [server, runner, laya, laya-cuda]
+        image: [server, runner, browser, laya, laya-cuda]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -76,6 +76,10 @@ jobs:
             name: majhi-runner
             file: Dockerfile
             target: runner-build
+          - image: browser
+            name: majhi-browser
+            file: Dockerfile
+            target: browser-build
           - image: laya
             name: majhi-laya
             file: docker/laya.Dockerfile
@@ -199,6 +203,7 @@ jobs:
           }
           publish server majhi-server "$VERSION"
           publish runner majhi-runner "$VERSION"
+          publish browser majhi-browser "$VERSION"
           publish laya majhi-laya "$VERSION" "$VERSION-cpu"
           publish laya-cuda majhi-laya "$VERSION-cuda"
 

@@ -1,9 +1,8 @@
-import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { looksExpired, SignInExpired } from "../auth-failure.ts";
-import { killTree } from "../exec.ts";
+import { startTool, type ToolProcess } from "../tool-process.ts";
 import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
@@ -70,29 +69,31 @@ export function mapCodexRateLimits(result: unknown, now: Date = new Date()): Acc
  * Talks JSON-RPC to `codex app-server` over stdio: `initialize`, `initialized`,
  * then `account/rateLimits/read`. Kills the process group at the end.
  */
-function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
-  const { adapter, env, timeoutMs } = ctx;
+async function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
+  const { adapter, env, timeoutMs, account, options } = ctx;
+  const tool: ToolProcess = await startTool(
+    options,
+    account,
+    { command: adapter.command, args: [...adapter.args, "cli", "app-server"] },
+    env,
+  );
+  const { child } = tool;
   return new Promise((resolve, reject) => {
-    let child: ChildProcess;
     let settled = false;
     const done = (fn: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      killTree(child);
+      void tool.close();
       fn();
     };
-    child = spawn(adapter.command, [...adapter.args, "cli", "app-server"], {
-      env,
-      detached: true,
-      stdio: ["pipe", "pipe", "ignore"],
-    });
     const timer = setTimeout(
       () => done(() => reject(new Error(`Timed out after ${Math.round(timeoutMs / 1000)}s`))),
       timeoutMs,
     );
     const send = (message: object) => child.stdin?.write(`${JSON.stringify(message)}\n`);
     child.stdin?.on("error", () => {});
+    child.stderr?.resume();
     child.on("error", (err: NodeJS.ErrnoException) =>
       done(() =>
         reject(new Error(err.code === "ENOENT" ? `Command not found: ${adapter.command}` : err.message)),

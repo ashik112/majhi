@@ -114,10 +114,13 @@ export interface ContainerNames {
   expectedLabels(kind: ObjectKind): Map<string, string>;
 }
 
+/** The kinds of the workspace's browser: its container and the network only that container and its runners share. */
+export type BrowserKind = "browser" | "browsernet";
+
 /** Docker filters that find objects by label. */
 export const select = {
   /** The container, network, volume or image kind. */
-  kind: (kind: ObjectKind): string => `label=${LABEL.container}=${kind}`,
+  kind: (kind: ObjectKind | BrowserKind): string => `label=${LABEL.container}=${kind}`,
   /** Anything labelled with a `majhi.container` at all. */
   anyKind: `label=${LABEL.container}`,
   /** What the task holds now (containers, and images it built). */
@@ -139,6 +142,28 @@ export function orgNames(org: string) {
     /** The one-shot guard that closes the builder's network, `majhi-build-<org>-bg-<id>`. */
     builderGuard: (id: string): string => `${builder}-bg-${id}`,
     builderGuardPrefix: `${builder}-bg-`,
+  };
+}
+
+/**
+ * What belongs to a workspace's browser (Chromium, in its own image): one container and one network per
+ * workspace, named and labelled from the workspace alone, so a browser container can never be found,
+ * joined or mounted by another workspace. The profiles it mounts are that workspace's connections' own.
+ */
+export function browserNames(org: string) {
+  const id = IdSchema.parse(org);
+  return {
+    org: id,
+    container: `majhi-browser-${id}`,
+    network: `majhi-browser-${id}`,
+    /** The name runners of the workspace reach it by on the network. */
+    alias: "browser",
+    labelFlags: (kind: BrowserKind): string[] => [
+      "--label",
+      `${LABEL.container}=${kind}`,
+      "--label",
+      `${LABEL.org}=${id}`,
+    ],
   };
 }
 

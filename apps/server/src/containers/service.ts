@@ -16,13 +16,7 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import {
-  IdSchema,
-  imageAllowed,
-  PRIVATE,
-  reservedNameReason,
-  type TaskDockerErrorCode,
-} from "@majhi/shared";
+import { IdSchema, imageAllowed, PRIVATE, reservedNameReason, type TaskDockerErrorCode } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
@@ -130,6 +124,8 @@ export interface ContainerServiceDeps {
   paths: HostPaths;
   /** Tells the Hub that the list of containers changed. */
   changed?: () => void;
+  /** A task is done: whatever else holds something for it (the workspace's browser network) lets go. */
+  ended?: (task: string) => void;
   /** How long a preview gets to show its port on the host, in ms. */
   portWaitMs?: number;
 }
@@ -1805,6 +1801,7 @@ export class ContainerService {
    */
   async taskEnded(task: string): Promise<void> {
     this.queue.leave(task);
+    this.deps.ended?.(task);
     // One step under the task's lock: a start that waits behind it finds the task closed and refuses.
     await this.locked(task, async () => {
       this.parked.delete(task);

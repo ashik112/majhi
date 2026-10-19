@@ -32,12 +32,26 @@ export function exec(
   env: Record<string, string>,
   timeoutMs: number,
 ): Promise<ExecResult> {
+  const child = spawn(command, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  return collect(child, () => killTree(child), command, timeoutMs);
+}
+
+/**
+ * Waits for a started process to end, with a timeout, and gathers what it printed. Never rejects.
+ * `kill` stops it (and, for a runner container, removes the container). `name` is what a missing
+ * program is called in the message.
+ */
+export function collect(
+  child: ChildProcess,
+  kill: () => void,
+  name: string,
+  timeoutMs: number,
+): Promise<ExecResult> {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let error: string | undefined;
     let settled = false;
-    const child = spawn(command, args, { env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     const finish = (code: number | null) => {
       if (settled) return;
       settled = true;
@@ -46,16 +60,17 @@ export function exec(
     };
     const timer = setTimeout(() => {
       error = `Timed out after ${Math.round(timeoutMs / 1000)}s`;
-      killTree(child);
+      kill();
     }, timeoutMs);
-    child.stdout.on("data", (d: Buffer) => {
+    child.stdin?.end();
+    child.stdout?.on("data", (d: Buffer) => {
       if (stdout.length < MAX_OUTPUT) stdout += d.toString();
     });
-    child.stderr.on("data", (d: Buffer) => {
+    child.stderr?.on("data", (d: Buffer) => {
       if (stderr.length < MAX_OUTPUT) stderr += d.toString();
     });
     child.on("error", (err: NodeJS.ErrnoException) => {
-      error = err.code === "ENOENT" ? `Command not found: ${command}` : err.message;
+      error = err.code === "ENOENT" ? `Command not found: ${name}` : err.message;
       finish(null);
     });
     child.on("close", (code) => finish(error ? null : code));

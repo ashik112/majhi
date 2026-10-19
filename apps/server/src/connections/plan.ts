@@ -9,6 +9,7 @@ import {
   type ConnectionType,
   cliRunEnv,
   cliTool,
+  GLOBAL_CONNECTIONS,
   hostPorts,
   type ServiceProduct,
   serviceByUrl,
@@ -68,6 +69,13 @@ export interface PlanDeps {
   connectionDir: (id: string) => string;
   /** PLAYWRIGHT_BROWSERS_PATH of runs, for browser servers. */
   browsersPath?: string | undefined;
+  /**
+   * Where a browser connection's browser runs: the workspace's browser container, started when asked. Absent
+   * without a runner (tests and development): the MCP server then starts its own browser on the profile.
+   */
+  browser?:
+    | ((org: string, connection: string) => Promise<{ endpoint: string } | { problem: string }>)
+    | undefined;
   /**
    * The bearer token of a connection signed in with OAuth (Connect, 5.14), renewed when it ends soon.
    * The run gets it as a header at session start; the refresh token never leaves majhi.
@@ -276,14 +284,36 @@ export async function planConnections(
       case "browser": {
         const server = browserServer(textValue(c, "server"));
         const profile = join(deps.connectionDir(h.id), "profile");
-        plan.profiles.push(profile);
-        plan.servers.push({
-          type: "stdio",
-          name: h.id,
-          command: server.command,
-          args: [...server.args(profile)],
-          env: deps.browsersPath === undefined ? {} : { PLAYWRIGHT_BROWSERS_PATH: deps.browsersPath },
-        });
+        if (deps.browser === undefined) {
+          plan.profiles.push(profile);
+          plan.servers.push({
+            type: "stdio",
+            name: h.id,
+            command: server.command,
+            args: [...server.args(profile)],
+            env: deps.browsersPath === undefined ? {} : { PLAYWRIGHT_BROWSERS_PATH: deps.browsersPath },
+          });
+        } else {
+          // A browser belongs to one workspace: a connection of no workspace has no browser container to live in.
+          if (h.org === GLOBAL_CONNECTIONS) {
+            plan.problems.push(
+              `${h.id} belongs to no workspace, so it has no browser of its own. Make it a connection of one workspace.`,
+            );
+            break;
+          }
+          const answer = await deps.browser(h.org, h.id);
+          if ("problem" in answer) {
+            plan.problems.push(`${h.id}: ${answer.problem} The run does not get it.`);
+            break;
+          }
+          plan.servers.push({
+            type: "stdio",
+            name: h.id,
+            command: server.command,
+            args: [...server.attach(answer.endpoint)],
+            env: {},
+          });
+        }
         gate(h, {
           server: h.id,
           readTools: [...server.reads, ...words(textValue(c, "read_tools"))],

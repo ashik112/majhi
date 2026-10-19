@@ -111,6 +111,8 @@ export {
   MAJHI_HOOKS_DIR,
   MAJHI_RUN_CONNECTIONS_DIR,
   MountRefused,
+  NETGUARD,
+  NETGUARD_CAPS,
   orphanRuns,
   type RunnerConfig,
   type RunnerSpawner,

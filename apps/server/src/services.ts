@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
+import { type Command, dockerTty, localSpawner, orphanRuns, type RuntimeOptions } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
   CLIENT_CHAT_BRIEF,
@@ -48,6 +48,7 @@ import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
+import { BrowserService } from "./browsers/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
@@ -88,7 +89,7 @@ import { type GitProvider, type PlanDeps, planConnections } from "./connections/
 import { redactSecrets } from "./connections/redact.ts";
 import type { RemoteRunFn } from "./connections/remote.ts";
 import { sweepRunFiles } from "./connections/run-files.ts";
-import { ConnectionService, connectionDir } from "./connections/service.ts";
+import { ConnectionService, connectionDir, ownerOnlyDir } from "./connections/service.ts";
 import { ConnectionTester } from "./connections/tester.ts";
 import { TOOLS_TARGET } from "./containers/args.ts";
 import { DockerCli } from "./containers/docker.ts";
@@ -340,6 +341,8 @@ export interface Services {
   deploy: DeployWorld;
   config: ConfigService;
   runtime: AcpRuntime;
+  /** What agent CLIs run with: through the runner when there is one, so version checks, probes and usage reads need no CLI in this image. */
+  runtimeOptions: RuntimeOptions;
   secrets: SecretStore;
   /** The passphrase-protected export of the secrets key, and which key it was. */
   keyExports: KeyExports;
@@ -546,17 +549,52 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const agentStore = new AgentStore(env.majhiHome);
   const events = new EventHub();
   const terminals = new TerminalManager(options.terminalTimers);
+  // The workspaces' browser containers (built below, once the runner's config exists).
+  const browsersRef: { current: BrowserService | undefined } = { current: undefined };
+  const runner = runnerSetup(
+    env,
+    options.runnerInspect,
+    (task) => [...containers.taskNetworks(task), ...(browsersRef.current?.networksOf(task) ?? [])],
+    {
+      taskSubnets: (task) => [
+        ...containers.taskSubnets(task),
+        ...(browsersRef.current?.subnetsOf(task) ?? []),
+      ],
+      // Runners reach majhi by its name on their network, on the port it listens on (main.ts sets the MCP address).
+      server: () => ({
+        host: env.runner.mcpHost,
+        port: Number(new URL(adminTokens.mcpUrl).port) || env.port,
+      }),
+    },
+  );
+  const sessionOptions = runner.sessionOptions;
+  const runnerConfig = runner.runner?.config;
+  const browsers =
+    runnerConfig === undefined
+      ? undefined
+      : new BrowserService({
+          image: env.runner.browserImage,
+          runner: () => runnerConfig,
+          profiles: async (org) => {
+            const sections = await config.sections();
+            return Object.entries(sections.orgs[org]?.connections ?? {})
+              .filter(([, c]) => c.type === "browser")
+              .map(([id]) => ({ id, dir: join(connectionDir(env.majhiHome, id), "profile") }));
+          },
+          prepareDir: ownerOnlyDir,
+        });
+  browsersRef.current = browsers;
   const usage = new AccountUsageReader({
     majhiHome: env.majhiHome,
     runtime,
-    options: env.runtime,
+    options: sessionOptions,
     cache,
     onChanged: () => events.emit(["accounts"]),
   });
   const probes = new AccountProbes({
     majhiHome: env.majhiHome,
     runtime,
-    options: env.runtime,
+    options: sessionOptions,
     secrets,
     cache,
     usage,
@@ -570,7 +608,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     probes,
     usage,
     runtime,
-    options: env.runtime,
+    options: sessionOptions,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
     onChanged: () => {
       events.emit(["accounts"]);
@@ -638,12 +676,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
     toolsChanged: (agent) => runs.remountAgent(agent),
   });
-  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task), {
-    taskSubnets: (task) => containers.taskSubnets(task),
-    // Runners reach majhi by its name on their network, on the port it listens on (main.ts sets the MCP address).
-    server: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
-  });
-  const sessionOptions = runner.sessionOptions;
   const fallbackRunMemory = runner.runner?.config.memory;
   /** The memory limit of the next run: Settings, else what the server started with. Runs already going keep theirs. */
   const applyRunMemory = async (): Promise<void> => {
@@ -829,6 +861,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     browsersPath:
       sessionOptions.base.PLAYWRIGHT_BROWSERS_PATH ??
       (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
+    browser:
+      browsers === undefined
+        ? undefined
+        : (task: string, org: string, id: string) => browsers.endpoint(task, org, id),
   };
   // No run is alive yet: every connection folder left from before goes.
   background.run(() => sweepRunFiles(env.majhiHome));
@@ -908,11 +944,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ownPorts,
     paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
     changed: () => events.emit(["containers"]),
+    ended: (task) => browsers?.forget(task),
   });
   taskNetwork.ensure = (task) => containers.ensureTaskNetwork(task);
   taskNetwork.taken = (task, name) => containers.hostNameTaken(task, name);
   background.run(
-    () => containers.startup(),
+    async () => {
+      await browsers?.reset();
+      await containers.startup();
+    },
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
   );
   const skillStore = new SkillStore(env.majhiHome);
@@ -3313,6 +3353,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     applyRunMemory,
     runtime,
+    runtimeOptions: sessionOptions,
     secrets,
     keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
@@ -3493,8 +3534,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           accounts,
           terminals,
           runtime,
-          options: env.runtime,
+          options: sessionOptions,
           onFinished: () => events.emit(["accounts"]),
+          tty: runner.runner === undefined ? undefined : dockerTty(runner.runner.config),
         },
         id,
       ),
