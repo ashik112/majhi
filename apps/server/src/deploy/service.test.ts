@@ -45,5 +45,22 @@ describe("deploy", () => {
       await r.service.idle();
       expect(r.store.deploys.get(production?.id ?? 0)).toMatchObject({ state: "live", commit: C1 });
     });
+
+    it("opens one incident for a production deploy whose check fails, after staging went live, and tells the owner", async () => {
+      const { records } = await planBoth();
+      const [staging, production] = records;
+      await r.service.deploy({ record: staging?.id ?? 0 }, "captain");
+      await r.service.idle();
+      r.health.status = 503;
+      await r.service.deploy({ record: production?.id ?? 0 }, "captain");
+      await r.service.idle();
+      const failed = r.store.deploys.get(production?.id ?? 0);
+      expect(failed?.state === "failed" || failed?.state === "rolled-back").toBe(true);
+      expect(failed?.incident).toBe("ACM-77");
+      expect(r.incidents.map((i) => [i.record.env, i.title])).toEqual([
+        ["production", "Deploy of storefront to production failed at 1111111"],
+      ]);
+      expect(r.tell).toHaveLength(1);
+    });
   });
 });
