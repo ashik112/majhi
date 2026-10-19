@@ -597,7 +597,7 @@ function mountsOf(
     } else if (entry.type === "tmpfs") {
       mounts.push({ arg: `type=tmpfs,target=${entry.target}` });
     } else if ((entry.source ?? "") === "") {
-      mounts.push(mountOf(entry.target, ctx, dir));
+      mounts.push(mountOf(entry.target, ctx, dir, service));
     } else {
       const spec = `${entry.source}:${entry.target}${entry.read_only === true ? ":ro" : ""}`;
       mounts.push(composeMount(service, spec, dir, declared, ctx, entry.type === "bind"));
@@ -645,7 +645,7 @@ function composeMount(
     assertReadable(absolute, ctx.safety, `volume source of ${service}`, "compose_mount_outside");
     // Docker's own `-v` makes a missing folder; the long form and `docker run --mount` do not.
     if (!existsSync(absolute)) makeFolder(absolute, ctx, service);
-    return mountOf(`${absolute}:${spec.split(":").slice(1).join(":")}`, ctx, dir);
+    return mountOf(`${absolute}:${spec.split(":").slice(1).join(":")}`, ctx, dir, service);
   }
   if (!declared.has(volumeKey(source) ?? "")) {
     return refuse(
@@ -653,7 +653,7 @@ function composeMount(
       "compose_invalid",
     );
   }
-  return mountOf(spec, ctx, dir);
+  return mountOf(spec, ctx, dir, service);
 }
 
 function dependsOf(file: ServiceFile): ComposeDependency[] {
@@ -851,7 +851,7 @@ async function serviceOf(
     assertReadable(dockerfile, ctx.safety, `Dockerfile of ${name}`, "compose_build_outside");
     // The image keeps the name the file gives it when that is a name a task may build; otherwise the service's.
     const tag =
-      image !== undefined && localImage(ctx.safety.task, image) !== undefined && !image.includes("/")
+      image !== undefined && localImage(ctx.safety, image) !== undefined && !image.includes("/")
         ? image
         : name;
     build = { tag, context, dockerfile, target: b.target, args: envPairs(b.args) };

@@ -235,12 +235,16 @@ export interface TaskDeps {
   processes?: ProcessManager;
   /**
    * Previews and services (PRV-53): they stop while the task does not run (review, paused) and
-   * start again when it runs. Their volumes go when it is done or removed.
+   * start again when it runs. The project's volumes stay with the project.
    */
   containers?: {
     taskPaused(id: string, options?: { keepUnsaved?: boolean }): Promise<{ kept: string[] }>;
-    taskRunning(id: string): Promise<{ started: string[]; failed: string[] }>;
-    taskEnded(id: string, keepVolumes?: boolean): Promise<void>;
+    taskRunning(id: string): Promise<{
+      started: string[];
+      failed: string[];
+      queued?: { place: number; holder: string };
+    }>;
+    taskEnded(id: string): Promise<void>;
   };
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
   terminals?: TerminalManager;
@@ -3958,7 +3962,7 @@ export class TaskService {
         return;
       case "containers":
         if (effect.op === "runAgain") await this.containersRunAgain(id);
-        else if (ctx.ending === true) await this.deps.containers?.taskEnded(id, true);
+        else if (ctx.ending === true) await this.deps.containers?.taskEnded(id);
         else await this.deps.containers?.taskPaused(id);
         return;
       case "processes.stop":
@@ -4027,7 +4031,13 @@ export class TaskService {
     const containers = this.deps.containers;
     if (containers === undefined) return;
     try {
-      const { started, failed } = await containers.taskRunning(id);
+      const { started, failed, queued } = await containers.taskRunning(id);
+      if (queued !== undefined) {
+        this.note(
+          id as TaskId,
+          `Its services start when the project's environment is free: ${queued.holder} uses it now, and ${id} is number ${queued.place} in line.`,
+        );
+      }
       if (started.length > 0) this.note(id as TaskId, `Started ${started.join(", ")} again.`);
       if (failed.length > 0) this.warn(id, `Did not start again: ${failed.join("; ")}`);
     } catch (err) {

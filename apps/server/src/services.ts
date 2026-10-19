@@ -874,6 +874,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processes,
     task: (id) => store.tasks.get(id),
     openTasks: () => [...store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),
+    allTasks: () => [...store.tasks.statuses()].map(([id]) => id),
+    notify: (task, text) =>
+      room.post(task as TaskId, `env-queue:${randomUUID()}`, { type: "system", level: "info", text }),
     settings: async () => (await config.settings()).containers,
     runnerNetwork: env.runner.network,
     runnerImage: env.runner.image,

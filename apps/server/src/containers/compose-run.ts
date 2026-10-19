@@ -2,7 +2,7 @@ import type { TaskDockerErrorCode, TaskDockerResult } from "@majhi/shared";
 import { ContainerRefused, type Safety, shown } from "./args.ts";
 import { type ComposeProject, type ComposeService, loadCompose } from "./compose.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
-import { containerNames } from "./names.ts";
+import { containerNames, select } from "./names.ts";
 import {
   buildRunPlan,
   ImageNotAllowed,
@@ -54,7 +54,7 @@ export interface ComposeHost {
 const ok = (stdout: string, stderr = ""): TaskDockerResult => ({ code: 0, stdout, stderr });
 
 function fail(host: ComposeHost, code: TaskDockerErrorCode, message: string): TaskDockerResult {
-  const shownMessage = showUserNames(host.task, message);
+  const shownMessage = showUserNames(host.safety, message);
   return {
     code: 1,
     stdout: "",
@@ -67,7 +67,7 @@ const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /** One service's container, `majhi-<key>-c-<name>`, as docker names it. */
 const containerOf = (host: ComposeHost, service: string): string =>
-  containerNames(host.task).service(service);
+  containerNames(host.safety).service(service);
 
 /** The compose containers of the task by name, running or not, with their state. */
 async function composeContainers(
@@ -78,9 +78,9 @@ async function composeContainers(
     "ps",
     ...(all ? ["-a"] : []),
     "--filter",
-    "label=majhi.container=taskrun",
+    select.kind("taskrun"),
     "--filter",
-    `label=majhi.task=${host.task}`,
+    select.project(host.safety.env.key),
     "--filter",
     "label=majhi.compose",
     "--format",
@@ -179,7 +179,7 @@ async function up(
     const future =
       service.build === undefined
         ? ctx.builtImages
-        : new Set([...ctx.builtImages, localImage(host.task, service.build.tag) ?? ""]);
+        : new Set([...ctx.builtImages, localImage(host.safety, service.build.tag) ?? ""]);
     try {
       buildRunPlan(service.spec, { ...ctx, builtImages: future });
     } catch (err) {
@@ -296,7 +296,7 @@ async function down(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDock
   }
   await host.reap();
   if (inv.volumes && wanted.length === 0) {
-    const names = containerNames(host.task);
+    const names = containerNames(host.safety);
     try {
       const ctx = await host.context(inv.cwd);
       const project = await loadCompose(inv, ctx);
@@ -317,7 +317,7 @@ async function ps(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDocker
   );
   if (inv.servicesOnly) return ok(rows.map((r) => `${r.service}\n`).join(""));
   if (inv.quiet) return ok(rows.map((r) => `${r.name}\n`).join(""));
-  const shownRows = rows.map((r) => [r.service, showUserNames(host.task, r.image), r.status]);
+  const shownRows = rows.map((r) => [r.service, showUserNames(host.safety, r.image), r.status]);
   const width = (i: number) =>
     Math.max(...[["SERVICE", "IMAGE", "STATUS"], ...shownRows].map((r) => (r[i] ?? "").length));
   const line = (r: string[]) =>

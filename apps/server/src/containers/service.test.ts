@@ -23,6 +23,7 @@ function build(withDocker: ContainerDocker | undefined): ContainerService {
     processes,
     task: (id) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => openTasks,
+    allTasks: () => ["ACM-1", "ACM-2", "ACM-3", "ACM-4", "ACM-5", "ACM-6", "ACM-9"],
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
     runnerImage: "majhi-runner:dev",
@@ -41,7 +42,7 @@ const task = (id: string): Task =>
     id,
     folder: join(dir, "tasks", id),
     team: ["acme-builder"],
-    repos: [{ project: "api", worktree: join(dir, "tasks", id, "api") }],
+    repos: [{ project: id.toLowerCase(), worktree: join(dir, "tasks", id, "api") }],
     // ACM-3 was done just now; every other task a month ago.
     updatedAt: id === "ACM-3" ? new Date().toISOString() : "2026-01-01T00:00:00.000Z",
   }) as unknown as Task;
@@ -234,14 +235,15 @@ describe("ContainerService", () => {
     });
 
     it("starts a preview's holder on the task network, which it makes first, and names it preview there", async () => {
-      docker.images.add("majhi-preview-acm-1");
+      docker.images.add("majhi-acm-1-preview");
+      docker.imageTasks.set("majhi-acm-1-preview", "ACM-1");
       const info = await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
       expect(info.url).toBe("http://preview:7070");
       expect(service.taskSubnets("ACM-1")).toEqual(["192.168.171.0/24"]);
       const holder = [...docker.containers.values()].find(
         (c) => c.labels["majhi.container"] === "previewhold",
       );
-      expect(holder?.name).toBe("majhi-preview-acm-1");
+      expect(holder?.name).toBe("majhi-acm-1-preview");
       expect(service.taskSubnets("ACM-2")).toEqual([]);
     });
 
@@ -260,15 +262,16 @@ describe("ContainerService", () => {
     async function upWithPreview(): Promise<void> {
       await service.serviceStart("ACM-1", "acme-builder", withVolume);
       await service.serviceStart("ACM-1", "acme-builder", { name: "cache", image: "redis:7-alpine" });
-      docker.images.add("majhi-preview-acm-1");
+      docker.images.add("majhi-acm-1-preview");
+      docker.imageTasks.set("majhi-acm-1-preview", "ACM-1");
       await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
       expect([...docker.containers.keys()].sort()).toEqual([
         "majhi-acm-1-c-cache",
         "majhi-acm-1-c-db",
         "majhi-acm-1-h-cache",
         "majhi-acm-1-h-db",
-        "majhi-preview-acm-1",
-        "majhi-preview-acm-1-app",
+        "majhi-acm-1-preview",
+        "majhi-acm-1-preview-app",
       ]);
     }
 
@@ -288,11 +291,12 @@ describe("ContainerService", () => {
         "majhi-acm-1-c-db",
         "majhi-acm-1-h-cache",
         "majhi-acm-1-h-db",
-        "majhi-preview-acm-1",
-        "majhi-preview-acm-1-app",
+        "majhi-acm-1-preview",
+        "majhi-acm-1-preview-app",
       ]);
       // The same volume, with its data, and the task network made again.
-      expect(docker.calls.filter((c) => c === "volume create")).toHaveLength(1);
+      // pgdata once; the preview's throwaway folder is new for each run of the preview.
+      expect(docker.calls.filter((c) => c === "volume create")).toHaveLength(3);
       expect(service.taskNetworks("ACM-1")).toEqual(["majhi-acm-1"]);
       expect(service.list("ACM-1").filter((c) => c.status === "running")).toHaveLength(3);
       // Once: a second resume starts nothing.
@@ -345,8 +349,8 @@ describe("ContainerService", () => {
       expect(docker.networks.size).toBe(0);
       // The builder of the open task stops, and starts again on its next build; the others are gone.
       expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
-      // ACM-1 is open and ACM-3 was done just now, so their volumes stay; ACM-2 is done for a month and ACM-9 is gone.
-      expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x", "majhi-acm-3-data-x"]);
+      // The old model's volumes of tasks that are not open go; the open task's stay.
+      expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x"]);
       expect([...docker.builders]).toEqual(["majhi-preview-acm-1"]);
       expect([...docker.images]).toEqual(["majhi-preview-acm-1"]);
     });

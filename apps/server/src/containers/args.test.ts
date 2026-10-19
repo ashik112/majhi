@@ -23,6 +23,7 @@ import {
   taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import { envRef } from "./names.ts";
 
 let root: string;
 let safety: Safety;
@@ -43,6 +44,7 @@ beforeEach(async () => {
   await writeFile(join(root, "keys", "secrets.key"), "AGE-SECRET-KEY-1TEST\n");
   safety = {
     task: "ACM-1",
+    env: envRef("acme", "acm-1"),
     runnerNetwork: "majhi-runners",
     majhiHome: join(hostHome, ".majhi"),
     hostHome,
@@ -113,10 +115,12 @@ describe("what majhi builds for containers", () => {
     }
   });
 
-  it("mounts only named volumes of the task, or one anonymous folder in a preview", () => {
+  it("mounts only named volumes of the project, never an anonymous one, in a service or a preview", () => {
     const mounts = values(service(), "--mount");
     expect(mounts).toEqual([`type=volume,source=majhi-acm-1-data-pgdata,target=/var/lib/postgresql/data`]);
-    expect(values(preview(), "--mount")).toEqual(["type=volume,target=/preview"]);
+    expect(values(preview(), "--mount")).toEqual([
+      "type=volume,source=majhi-acm-1-data-preview-scratch,target=/preview",
+    ]);
   });
 
   it("gives every container the same caps, limits, labels and removal", () => {
@@ -134,10 +138,10 @@ describe("what majhi builds for containers", () => {
     }
   });
 
-  it("builds on the task's own builder, never the default one, with nothing else granted", () => {
+  it("builds on the workspace's own builder, never the default one, with nothing else granted", () => {
     const b = build();
-    expect(values(b, "--builder")).toEqual(["majhi-preview-acm-1"]);
-    expect(values(b, "--tag")).toEqual(["majhi-preview-acm-1"]);
+    expect(values(b, "--builder")).toEqual(["majhi-build-acme"]);
+    expect(values(b, "--tag")).toEqual(["majhi-acm-1-preview"]);
     expect(b.image).toBe(repo);
     for (const flag of [
       "--secret",
@@ -267,10 +271,10 @@ describe("the guard of a task's builder", () => {
 
   it("shares only the builder's network namespace, adds NET_ADMIN and runs only the network guard", () => {
     const g = guard();
-    expect(values(g, "--network")).toEqual(["container:buildx_buildkit_majhi-preview-acm-10"]);
+    expect(values(g, "--network")).toEqual(["container:buildx_buildkit_majhi-build-acme0"]);
     expect(values(g, "--cap-add")).toEqual(["NET_ADMIN"]);
     for (const bad of [
-      replaced(g, "--network", "container:buildx_buildkit_majhi-preview-acm-20"),
+      replaced(g, "--network", "container:buildx_buildkit_majhi-build-globex0"),
       replaced(g, "--network", "container:majhi-server"),
       replaced(g, "--network", "host"),
       plus(g, "--mount", "type=volume,target=/x"),

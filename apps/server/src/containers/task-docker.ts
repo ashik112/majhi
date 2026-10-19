@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import {
   ContainerNameSchema,
@@ -34,7 +34,7 @@ import {
 } from "./args.ts";
 import { type ComposeInvocation, parseCompose } from "./compose-cli.ts";
 import type { EnvFileRead } from "./env-file.ts";
-import { containerNames } from "./names.ts";
+import { containerNames, LABEL, type NameScope, select } from "./names.ts";
 import { flag, has, type Parsed, parseFlagsOf, single, type UserTable, values } from "./user-flags.ts";
 
 /**
@@ -172,7 +172,7 @@ const parseUser = (argv: readonly string[], table: UserTable): Parsed =>
 // Names and images
 
 function containerOperand(arg: string, ctx: TaskDockerContext): string {
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   const byId = ctx.ids.get(arg);
   if (byId !== undefined) return byId;
   if (USER_NAME.test(arg)) return `${names.containerPrefix}${arg}`;
@@ -180,16 +180,16 @@ function containerOperand(arg: string, ctx: TaskDockerContext): string {
 }
 
 /** `acme/web:1` to `majhi-<key>-img-acme--web:1`, or undefined when it is not shaped like a local name. */
-export function localImage(task: string, ref: string): string | undefined {
+export function localImage(scope: NameScope, ref: string): string | undefined {
   const match = LOCAL_IMAGE.exec(ref);
   if (match === null) return undefined;
   const name = (match[1] ?? "").replaceAll("/", "--");
-  return `${taskNames(task).imagePrefix}${name}:${match[2] ?? "latest"}`;
+  return `${taskNames(scope).imagePrefix}${name}:${match[2] ?? "latest"}`;
 }
 
 function runImage(ref: string, ctx: TaskDockerContext, service: string | undefined): string {
   if (!matches(ImageRefSchema, ref)) return refuse(`The image ${shown(ref)} is not allowed.`);
-  const local = localImage(ctx.safety.task, ref);
+  const local = localImage(ctx.safety, ref);
   if (local !== undefined && ctx.builtImages.has(local)) return local;
   if (ctx.allowedImages.some((image) => sameImage(image, ref))) return ref;
   throw new ImageNotAllowed(ref, service);
@@ -257,9 +257,20 @@ export function volumeKey(source: string): string | undefined {
   return matches(ContainerNameSchema, key) ? key : undefined;
 }
 
-/** What `-v` (or a compose `volumes:` entry) names: a folder of the task, a volume of the task, or an anonymous volume. */
-export function mountOf(spec: string, ctx: TaskDockerContext, from: string = ctx.cwd): Mount {
-  const names = taskNames(ctx.safety.task);
+/**
+ * The named volume an unnamed mount becomes: one per container and path, so two containers of a project
+ * never share one by accident, and cleanup finds it by its labels.
+ */
+export function anonymousVolume(owner: string, target: string): string {
+  return `anon-${createHash("sha256").update(`${owner}\0${target}`).digest("hex").slice(0, 10)}`;
+}
+
+/**
+ * What `-v` (or a compose `volumes:` entry) names: a folder of the task or a volume of the project. A mount
+ * with no source (an anonymous volume) becomes a named, labelled volume of the project (`anonymousVolume`).
+ */
+export function mountOf(spec: string, ctx: TaskDockerContext, from: string, owner: string): Mount {
+  const names = taskNames(ctx.safety);
   const parts = spec.split(":");
   if (parts.length > 3) return refuse(`The volume ${shown(spec)} is not allowed.`);
   const [source, target, opts] = parts.length === 1 ? [undefined, parts[0], undefined] : parts;
@@ -268,7 +279,10 @@ export function mountOf(spec: string, ctx: TaskDockerContext, from: string = ctx
   const readonly = mode === "ro" ? ",readonly" : "";
   if (!matches(ContainerPathSchema, target ?? ""))
     return refuse(`The mount path ${shown(target ?? "")} is not allowed.`);
-  if (source === undefined) return { arg: `type=volume,target=${target}${readonly}` };
+  if (source === undefined) {
+    const key = anonymousVolume(owner, target ?? "");
+    return { arg: `type=volume,source=${names.volume(key)},target=${target}${readonly}`, volume: key };
+  }
   if (source.startsWith("/") || source.startsWith(".")) {
     if (source.includes("docker.sock"))
       return refuse("A container cannot use the Docker socket.", "socket_mount");
@@ -367,7 +381,7 @@ export function buildRunPlan(
   ctx: TaskDockerContext,
   notes: readonly string[] = [],
 ): Extract<TaskDockerPlan, { kind: "run" }> {
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   if (!USER_NAME.test(spec.name)) return refuse(`The container name ${shown(spec.name)} is not allowed.`);
   if (spec.mounts.length > MAX_MOUNTS) return refuse(`At most ${MAX_MOUNTS} volumes.`);
   if (spec.user !== undefined && !USER_SPEC.test(spec.user))
@@ -378,7 +392,7 @@ export function buildRunPlan(
     return refuse(`The --shm-size ${shown(spec.shmSize)} is not allowed.`);
   checkHealth(spec.health);
   const image = runImage(spec.image, ctx, spec.anonymous === true ? undefined : spec.name);
-  const aliases = taskAliases(ctx.safety.task, spec.name, spec.aliases);
+  const aliases = taskAliases(ctx.safety, spec.name, spec.aliases);
   const container = names.service(spec.name);
   const args = [
     "run",
@@ -386,10 +400,7 @@ export function buildRunPlan(
     ...(spec.detach ? ["--detach"] : []),
     "--name",
     container,
-    "--label",
-    `majhi.container=${TASK_RUN_KIND}`,
-    "--label",
-    `majhi.task=${ctx.safety.task}`,
+    ...names.labelFlags(TASK_RUN_KIND),
     ...(spec.compose === undefined ? [] : ["--label", `majhi.compose=${spec.compose}`]),
     "--cap-drop",
     "ALL",
@@ -456,7 +467,7 @@ function translateRun(argv: readonly string[], ctx: TaskDockerContext): TaskDock
   const userName = typedName ?? `r${randomBytes(4).toString("hex")}`;
   if (!USER_NAME.test(userName)) return refuse(`The container name ${shown(userName)} is not allowed.`);
   const notes: string[] = [];
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   for (const network of values(parsed, "network")) {
     if (network === "host") {
       return refuse(
@@ -499,7 +510,7 @@ function translateRun(argv: readonly string[], ctx: TaskDockerContext): TaskDock
     readOnly: has(parsed, "read-only"),
     env: [...envFiles, ...values(parsed, "env")],
     mounts: [
-      ...values(parsed, "volume").map((v) => mountOf(v, ctx)),
+      ...values(parsed, "volume").map((v) => mountOf(v, ctx, ctx.cwd, userName)),
       ...values(parsed, "tmpfs").map((target): Mount => {
         if (!matches(ContainerPathSchema, target))
           return refuse(`The mount path ${shown(target)} is not allowed.`);
@@ -545,7 +556,7 @@ const BUILD_USER: UserTable = {
 };
 
 function translateBuild(argv: readonly string[], ctx: TaskDockerContext): TaskDockerPlan {
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   const parsed = parseUser(argv, BUILD_USER);
   const [context, ...extra] = parsed.rest;
   if (context === undefined || extra.length > 0) return refuse("docker build needs one folder to build.");
@@ -553,7 +564,7 @@ function translateBuild(argv: readonly string[], ctx: TaskDockerContext): TaskDo
     return refuse("A build reads a folder of the task, not a URL or stdin.");
   }
   const tag = single(parsed, "tag");
-  const real = tag === undefined ? undefined : localImage(ctx.safety.task, tag);
+  const real = tag === undefined ? undefined : localImage(ctx.safety, tag);
   if (real === undefined) return refuse("Name the image with -t, like -t web:test.");
   const root = resolve(ctx.cwd, context);
   const file = single(parsed, "file");
@@ -573,10 +584,7 @@ function translateBuild(argv: readonly string[], ctx: TaskDockerContext): TaskDo
     ...(target === undefined ? [] : ["--target", target]),
     ...values(parsed, "build-arg").flatMap((a) => ["--build-arg", a]),
     ...(has(parsed, "no-cache") ? ["--no-cache"] : []),
-    "--label",
-    "majhi.container=image",
-    "--label",
-    `majhi.task=${ctx.safety.task}`,
+    ...names.labelFlags("image"),
     root,
   ];
   assertTaskArgv(args, ctx.safety, ctx.allowedImages);
@@ -631,7 +639,7 @@ function operands(rest: readonly string[], ctx: TaskDockerContext, verb: string)
 }
 
 function translateOther(verb: string, argv: readonly string[], ctx: TaskDockerContext): TaskDockerPlan {
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   switch (verb) {
     case "exec": {
       const p = parseUser(argv, EXEC_USER);
@@ -674,9 +682,11 @@ function translateOther(verb: string, argv: readonly string[], ctx: TaskDockerCo
         ...(has(p, "all") ? ["-a"] : []),
         ...(has(p, "quiet") ? ["-q"] : []),
         "--filter",
-        `label=majhi.container=${TASK_RUN_KIND}`,
+        select.kind(TASK_RUN_KIND),
         "--filter",
-        `label=majhi.task=${ctx.safety.task}`,
+        select.task(ctx.safety.task),
+        "--filter",
+        select.project(ctx.safety.env.key),
         ...values(p, "filter").flatMap((f) => {
           const [key, ...rest] = f.split("=");
           const value = rest.join("=");
@@ -771,7 +781,7 @@ export function translateTaskDocker(argv: readonly string[], ctx: TaskDockerCont
  * `network create` and `--network` mean that one. Nothing is made and nothing can join another.
  */
 function networkText(rest: readonly string[], ctx: TaskDockerContext): TaskDockerPlan {
-  const names = taskNames(ctx.safety.task);
+  const names = taskNames(ctx.safety);
   const [verb, ...more] = rest;
   const one = `The containers of ${ctx.safety.task} share one network, ${names.network}. They reach each other by name.\n`;
   switch (verb) {
@@ -796,8 +806,8 @@ function networkText(rest: readonly string[], ctx: TaskDockerContext): TaskDocke
 }
 
 /** Takes the task's prefixes off what comes back, so the script sees the names it typed. */
-export function showUserNames(task: string, text: string): string {
-  const names = taskNames(task);
+export function showUserNames(scope: NameScope, text: string): string {
+  const names = taskNames(scope);
   return text.replaceAll(names.containerPrefix, "").replaceAll(names.imagePrefix, "");
 }
 
@@ -873,7 +883,7 @@ const MOUNT_TARGET = (target: string) => matches(ContainerPathSchema, target);
 
 /** One `--mount` of a task: a bind mount inside the task folder, a volume of the task, or a memory folder. */
 function checkMount(spec: string, s: Safety): void {
-  const names = taskNames(s.task);
+  const names = taskNames(s);
   const bind = /^type=bind,source=([^,]+),target=([^,]+)(,readonly)?$/.exec(spec);
   if (bind !== null) {
     const [, source = "", target = ""] = bind;
@@ -897,23 +907,24 @@ function checkMount(spec: string, s: Safety): void {
     }
     return;
   }
-  const anonymous = /^type=(volume|tmpfs),target=([^,]+)(,readonly)?$/.exec(spec);
-  if (anonymous === null || !MOUNT_TARGET(anonymous[2] ?? ""))
+  // A memory folder is the one mount with no source. An anonymous volume is refused: mountOf names it.
+  const anonymous = /^type=tmpfs,target=([^,]+)(,readonly)?$/.exec(spec);
+  if (anonymous === null || !MOUNT_TARGET(anonymous[1] ?? ""))
     refuse(`The mount ${shown(spec)} is not allowed.`);
 }
 
 function checkOwnContainer(name: string, s: Safety): void {
-  const prefix = taskNames(s.task).containerPrefix;
+  const prefix = taskNames(s).containerPrefix;
   if (!name.startsWith(prefix) || !USER_NAME.test(name.slice(prefix.length))) {
     refuse(`${shown(name)} is not a container of ${s.task}.`);
   }
 }
 
-/** The `majhi.*` labels a task container may carry: its kind, its task and, in compose, its service. */
-const TASK_LABEL_KEYS = new Set(["majhi.container", "majhi.task", "majhi.compose"]);
+/** The `majhi.*` labels a task container may carry: its kind, task, workspace and project and, in compose, its service. */
+const TASK_LABEL_KEYS = new Set<string>([LABEL.container, LABEL.task, LABEL.org, LABEL.project, LABEL.compose]);
 
 function checkRun(args: readonly string[], s: Safety, allowedImages: readonly string[]): void {
-  const names = taskNames(s.task);
+  const names = taskNames(s);
   const { flags: raw, rest } = split(args.slice(1), RUN_FLAGS);
   const flags: Flag[] = parseFlags(raw, RUN_FLAGS);
   const name = one(flags, "--name");
@@ -989,7 +1000,7 @@ function checkRun(args: readonly string[], s: Safety, allowedImages: readonly st
 }
 
 function checkBuild(args: readonly string[], s: Safety): void {
-  const names = taskNames(s.task);
+  const names = taskNames(s);
   const { flags: raw, rest } = split(args.slice(2), BUILD_FLAGS);
   const flags = parseFlags(raw, BUILD_FLAGS);
   if (one(flags, "--builder") !== names.builder) refuse(`A build runs on its own builder, ${names.builder}.`);
@@ -1018,20 +1029,18 @@ function checkFormat(flags: Flag[]): void {
 }
 
 function checkPs(args: readonly string[], s: Safety): void {
-  const names = taskNames(s.task);
+  const names = taskNames(s);
   const { flags: raw, rest } = split(args.slice(1), PS_FLAGS);
   if (rest.length > 0) refuse("docker ps takes flags only.");
   const flags = parseFlags(raw, PS_FLAGS);
   const filters = all(flags, "--filter");
-  if (
-    !filters.includes(`label=majhi.container=${TASK_RUN_KIND}`) ||
-    !filters.includes(`label=majhi.task=${s.task}`)
-  ) {
+  const required = [select.kind(TASK_RUN_KIND), select.task(s.task), select.project(s.env.key)];
+  if (!required.every((f) => filters.includes(f))) {
     refuse("docker ps lists the containers of the task only.");
   }
   for (const f of filters) {
     if (f.startsWith("label=")) {
-      if (f !== `label=majhi.container=${TASK_RUN_KIND}` && f !== `label=majhi.task=${s.task}`) {
+      if (!required.includes(f)) {
         refuse(`The ps filter ${shown(f)} is not allowed.`);
       }
     } else if (f.startsWith("name=")) {

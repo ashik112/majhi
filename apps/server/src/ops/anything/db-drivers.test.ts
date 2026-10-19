@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ContainerRefused, dbCheckRunArgs, dockerArgv } from "../../containers/args.ts";
 import { refused } from "./db-drivers.ts";
 import { realWatchPorts } from "./real-ports.ts";
+import { envRef } from "../../containers/names.ts";
 
 const ports = realWatchPorts({
   fetch,
@@ -61,6 +62,7 @@ describe("image checks", () => {
     hostHome: "/Users/owner",
     protectedPaths: ["/Users/owner/keys/secrets.key"],
     task: "WATCH-1",
+    env: envRef("private", undefined),
     runnerNetwork: "",
     taskFolder: "/",
   };

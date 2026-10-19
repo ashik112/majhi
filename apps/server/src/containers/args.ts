@@ -14,7 +14,7 @@ import {
   type TaskDockerErrorCode,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { containerNames } from "./names.ts";
+import { containerNames, type EnvRef, type NameScope, type ObjectKind } from "./names.ts";
 
 /**
  * The docker calls majhi makes for agents (PRV-53), as arguments. Agents never get the Docker
@@ -98,8 +98,10 @@ export interface HostPaths {
 
 /** What a task's docker calls are checked against. */
 export interface Safety extends HostPaths {
-  /** The task key, like `PRV-53`. */
+  /** The task key, like `PRV-53`: the task that holds the environment now. */
   task: string;
+  /** The project environment (and workspace) every name and label of these calls belongs to. */
+  env: EnvRef;
   /** The network runners are on. Previews join it. */
   runnerNetwork: string;
   /** The task folder. Builds read only from inside it. */
@@ -227,7 +229,14 @@ export function checkLabels(flags: Flag[], s: Safety, kinds: string[]): string {
   const labels = labelsOf(flags);
   const kind = labels.get("majhi.container") ?? "";
   if (!kinds.includes(kind)) return refuse(`The label majhi.container must be ${kinds.join(" or ")}.`);
-  if (labels.get("majhi.task") !== s.task) return refuse(`The label majhi.task must be ${s.task}.`);
+  // Exactly the labels this kind of object carries: its workspace and project always, the task unless it belongs to the environment.
+  const wanted = containerNames(s).expectedLabels(kind as ObjectKind);
+  for (const [key, value] of wanted) {
+    if (labels.get(key) !== value) return refuse(`The label ${key} must be ${value}.`);
+  }
+  if (labels.get("majhi.task") !== undefined && !wanted.has("majhi.task")) {
+    return refuse(`A ${kind} carries no majhi.task label.`);
+  }
   return kind;
 }
 
@@ -298,7 +307,8 @@ const RUN_FLAGS: FlagTable = {
 };
 
 const PUBLISH = /^127\.0\.0\.1::([1-9][0-9]{0,4})$/;
-const ANONYMOUS_MOUNT = /^type=volume,target=([^,]+)$/;
+/** The preview's throwaway folder: a named volume of the project, removed when the preview ends. */
+export const PREVIEW_SCRATCH = "preview-scratch";
 const NAMED_MOUNT = /^type=volume,source=([^,]+),target=([^,]+)$/;
 const DBCHECK_NAME = /^majhi-dbcheck-[a-z0-9]{8,16}$/;
 const DBCHECK_TMPFS = "/tmp:rw,noexec,nosuid,size=16m";
@@ -324,7 +334,7 @@ function isToolsMount(mount: string, s: Safety): boolean {
 }
 
 function checkRun(parts: DockerParts, s: Safety): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   const flags = parseFlags(parts.flags, RUN_FLAGS);
 
   // Every container: no capabilities but the few, no new privileges, limits, removal and labels.
@@ -431,11 +441,11 @@ function checkRun(parts: DockerParts, s: Safety): void {
       refuse(`A preview runs in the network of ${names.previewContainer}, and no other.`);
     }
     if (publishes.length > 0) refuse("A preview's port is published by its holder.");
-    // The throwaway folder: one anonymous volume.
+    // The throwaway folder: one named volume of the project, never an anonymous one.
     if (mounts.length > 1) refuse("A preview has one throwaway folder and no other mount.");
     for (const mount of mounts) {
-      const target = ANONYMOUS_MOUNT.exec(mount)?.[1];
-      if (target === undefined || !matches(ContainerPathSchema, target))
+      const match = NAMED_MOUNT.exec(mount);
+      if (match?.[1] !== names.volume(PREVIEW_SCRATCH) || !matches(ContainerPathSchema, match[2] ?? ""))
         refuse(`The mount ${shown(mount)} is not allowed.`);
     }
     return;
@@ -492,7 +502,7 @@ function checkPreviewHold(
     pull: string | undefined;
   },
 ): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   if (found.name !== names.previewContainer)
     refuse(`The preview's holder must be named ${names.previewContainer}.`);
   if (found.pull !== "never") refuse("A preview's holder must run with --pull never.");
@@ -532,7 +542,6 @@ function checkPreviewHold(
 }
 
 /** The container docker-container builds a builder in: `buildx_buildkit_<builder>0`. */
-export const builderContainer = (task: string): string => `buildx_buildkit_${containerNames(task).builder}0`;
 
 /**
  * The one-shot guard of a task's builder: a container in the builder's own network namespace (where
@@ -551,9 +560,9 @@ function checkBuilderGuard(
     pull: string | undefined;
   },
 ): void {
-  const names = containerNames(s.task);
-  if (!found.name.startsWith(`majhi-${names.key}-bg-`))
-    refuse(`A builder guard is named majhi-${names.key}-bg-<id>.`);
+  const names = containerNames(s);
+  if (!found.name.startsWith(names.builderGuardPrefix))
+    refuse(`A builder guard is named ${names.builderGuardPrefix}<id>.`);
   if (found.pull !== "never") refuse("A builder guard must run with --pull never.");
   if (found.mounts.length > 0 || found.publishes.length > 0)
     refuse("A builder guard has no mount and publishes no port.");
@@ -561,9 +570,9 @@ function checkBuilderGuard(
   if (all(flags, "--cap-add").join() !== "NET_ADMIN") refuse("A builder guard adds NET_ADMIN, nothing else.");
   if (all(flags, "--env").length > 0 || is(flags, "--add-host") || is(flags, "--tmpfs"))
     refuse("A builder guard takes no environment, host name or scratch folder.");
-  if (found.networks.length !== 1 || found.networks[0] !== `container:${builderContainer(s.task)}`) {
+  if (found.networks.length !== 1 || found.networks[0] !== `container:${containerNames(s).builderContainer}`) {
     refuse(
-      `A builder guard joins the network of ${builderContainer(s.task)}, and no other.`,
+      `A builder guard joins the network of ${containerNames(s).builderContainer}, and no other.`,
       "network_not_allowed",
     );
   }
@@ -574,15 +583,15 @@ function checkBuilderGuard(
 
 /** The builder guard's call: see `checkBuilderGuard`. */
 export function builderGuardRunArgs(s: Safety, spec: { image: string; id: string }): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["run"],
       flags: [
         "--rm",
         "--name",
-        `majhi-${names.key}-bg-${spec.id}`,
-        ...labelFlags("builderguard", s.task),
+        names.builderGuard(spec.id),
+        ...names.labelFlags("builderguard"),
         "--cap-drop",
         "ALL",
         "--cap-add",
@@ -599,7 +608,7 @@ export function builderGuardRunArgs(s: Safety, spec: { image: string; id: string
         "--pull",
         "never",
         "--network",
-        `container:${builderContainer(s.task)}`,
+        `container:${containerNames(s).builderContainer}`,
       ],
       image: spec.image,
       command: ["node", GUARD_SCRIPT],
@@ -629,7 +638,7 @@ function checkTaskHold(
     pull: string | undefined;
   },
 ): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   const user = found.name.startsWith(names.holderPrefix) ? found.name.slice(names.holderPrefix.length) : "";
   if (!ALIAS.test(user)) refuse(`A holder is named ${names.holderPrefix}<name>.`);
   if (found.pull !== "never") refuse("A holder must run with --pull never.");
@@ -696,7 +705,7 @@ function checkHostForward(
     pull: string | undefined;
   },
 ): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   const prefix = `majhi-${names.key}-host-`;
   const id = found.name.startsWith(prefix) ? found.name.slice(prefix.length) : "";
   if (!matches(IdSchema, id)) refuse(`A forwarder is named ${prefix}<connection>.`);
@@ -813,7 +822,7 @@ const BUILD_FLAGS: FlagTable = {
 };
 
 function checkBuild(parts: DockerParts, s: Safety): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   const flags = parseFlags(parts.flags, BUILD_FLAGS);
   // Never the default builder: a build shares its cache folders with every other build on it.
   if (one(flags, "--builder") !== names.builder)
@@ -841,7 +850,7 @@ const DRIVER_OPTS: Record<string, RegExp> = {
 
 function checkBuilderCreate(parts: DockerParts, s: Safety): void {
   const flags = parseFlags(parts.flags, BUILDER_FLAGS);
-  if (one(flags, "--name") !== containerNames(s.task).builder) refuse("The builder must be the task's own.");
+  if (one(flags, "--name") !== containerNames(s).builder) refuse("The builder must be the task's own.");
   if (one(flags, "--driver") !== "docker-container")
     refuse("The builder must use the docker-container driver.");
   for (const opt of all(flags, "--driver-opt")) {
@@ -859,7 +868,7 @@ const NETWORK_FLAGS: FlagTable = { "--internal": false, "--driver": true, "--lab
 function checkNetworkCreate(parts: DockerParts, s: Safety): void {
   const flags = parseFlags(parts.flags, NETWORK_FLAGS);
   // A forwarder's own network is the one network with a route out, and only forwarders join it.
-  if (parts.image === containerNames(s.task).hostNetwork) {
+  if (parts.image === containerNames(s).hostNetwork) {
     if (is(flags, "--internal") || one(flags, "--driver") !== "bridge" || parts.command.length > 0)
       refuse("The forwarder network is a plain bridge.");
     checkLabels(flags, s, ["network"]);
@@ -869,13 +878,13 @@ function checkNetworkCreate(parts: DockerParts, s: Safety): void {
   if (!is(flags, "--internal")) refuse("The task network must be --internal.");
   if (one(flags, "--driver") !== "bridge") refuse("The task network must use the bridge driver.");
   checkLabels(flags, s, ["network"]);
-  if (parts.image !== containerNames(s.task).network || parts.command.length > 0) {
-    refuse(`The task network is named ${containerNames(s.task).network}.`);
+  if (parts.image !== containerNames(s).network || parts.command.length > 0) {
+    refuse(`The task network is named ${containerNames(s).network}.`);
   }
 }
 
 function checkVolumeCreate(parts: DockerParts, s: Safety): void {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   // No --opt, no --driver: a volume with driver options can point at any folder of the host.
   const flags = parseFlags(parts.flags, { "--label": true });
   checkLabels(flags, s, ["volume"]);
@@ -908,21 +917,6 @@ export function assertSafe(parts: DockerParts, s: Safety): void {
 // ---------------------------------------------------------------------------
 // Builders
 
-const labelFlags = (
-  kind:
-    | ContainerKind
-    | "taskrun"
-    | "dbcheck"
-    | "hostfwd"
-    | "previewhold"
-    | "taskhold"
-    | "builderguard"
-    | "image"
-    | "network"
-    | "volume",
-  task: string,
-): string[] => ["--label", `majhi.container=${kind}`, "--label", `majhi.task=${task}`];
-
 function safe(parts: DockerParts, s: Safety): DockerParts {
   assertSafe(parts, s);
   return parts;
@@ -939,7 +933,7 @@ function containerFlags(
     "--rm",
     "--name",
     name,
-    ...labelFlags(kind, s.task),
+    ...containerNames(s).labelFlags(kind),
     "--cap-drop",
     "ALL",
     ...CAPS.flatMap((cap) => ["--cap-add", cap]),
@@ -965,7 +959,7 @@ export function builderCreateArgs(s: Safety, limits: Limits): DockerParts {
       verb: ["buildx", "create"],
       flags: [
         "--name",
-        containerNames(s.task).builder,
+        containerNames(s).builder,
         "--driver",
         "docker-container",
         "--driver-opt",
@@ -995,7 +989,7 @@ export interface BuildSpec {
 
 /** `docker buildx build` of the task's preview image, on the task's builder, loaded into the local image store. */
 export function buildArgs(s: Safety, spec: BuildSpec): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["buildx", "build"],
@@ -1011,7 +1005,7 @@ export function buildArgs(s: Safety, spec: BuildSpec): DockerParts {
         resolve(spec.context, spec.dockerfile),
         ...(spec.target === undefined ? [] : ["--target", spec.target]),
         ...Object.entries(spec.buildArgs ?? {}).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
-        ...labelFlags("image", s.task),
+        ...names.labelFlags("image"),
       ],
       image: resolve(spec.context),
       command: [],
@@ -1041,7 +1035,7 @@ export interface PreviewHoldSpec {
  * The preview app runs in its network namespace (`previewRunArgs`).
  */
 export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldSpec): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["run"],
@@ -1049,7 +1043,7 @@ export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldS
         "--rm",
         "--name",
         names.previewContainer,
-        ...labelFlags("previewhold", s.task),
+        ...names.labelFlags("previewhold"),
         "--cap-drop",
         "ALL",
         "--cap-add",
@@ -1081,7 +1075,7 @@ export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldS
 
 /** The preview: the task's own image in its holder's network, one throwaway folder. */
 export function previewRunArgs(s: Safety, limits: Limits, spec: PreviewRunSpec): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["run"],
@@ -1092,7 +1086,7 @@ export function previewRunArgs(s: Safety, limits: Limits, spec: PreviewRunSpec):
         "--network",
         `container:${names.previewContainer}`,
         "--mount",
-        `type=volume,target=${spec.scratch}`,
+        `type=volume,source=${names.volume(PREVIEW_SCRATCH)},target=${spec.scratch}`,
         ...envFlags(spec.env),
       ],
       image: names.previewImage,
@@ -1114,8 +1108,8 @@ export interface TaskHoldSpec {
 }
 
 /** The names a task container answers to on the task network: its own, its docker name and what it asked for, once each. */
-export function taskAliases(task: string, name: string, extra: readonly string[] = []): string[] {
-  const names = containerNames(task);
+export function taskAliases(scope: NameScope, name: string, extra: readonly string[] = []): string[] {
+  const names = containerNames(scope);
   for (const alias of [name, ...extra]) {
     // The container's own docker name is the one name starting with majhi- it may answer to.
     if (alias === names.service(name)) continue;
@@ -1127,8 +1121,8 @@ export function taskAliases(task: string, name: string, extra: readonly string[]
 
 /** The holder of one task container: detached, on the runner network (the guarded route out) and the task network. */
 export function taskHoldRunArgs(s: Safety, limits: Limits, spec: TaskHoldSpec): DockerParts {
-  const names = containerNames(s.task);
-  const aliases = taskAliases(s.task, spec.name, spec.aliases);
+  const names = containerNames(s);
+  const aliases = taskAliases(s, spec.name, spec.aliases);
   return safe(
     {
       verb: ["run"],
@@ -1137,7 +1131,7 @@ export function taskHoldRunArgs(s: Safety, limits: Limits, spec: TaskHoldSpec): 
         "--detach",
         "--name",
         names.holder(spec.name),
-        ...labelFlags("taskhold", s.task),
+        ...names.labelFlags("taskhold"),
         "--cap-drop",
         "ALL",
         "--cap-add",
@@ -1175,7 +1169,7 @@ export interface ServiceRunSpec {
 
 /** A service: in its holder's network namespace (the task network under its own name, guarded), no published port, only the task's volumes. */
 export function serviceRunArgs(s: Safety, limits: Limits, spec: ServiceRunSpec): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["run"],
@@ -1211,7 +1205,7 @@ export interface HostForwardSpec {
 
 /** The forwarder of a service on the owner's computer. See `checkHostForward`. */
 export function hostForwardRunArgs(s: Safety, limits: Limits, spec: HostForwardSpec): DockerParts {
-  const names = containerNames(s.task);
+  const names = containerNames(s);
   return safe(
     {
       verb: ["run"],
@@ -1219,7 +1213,7 @@ export function hostForwardRunArgs(s: Safety, limits: Limits, spec: HostForwardS
         "--rm",
         "--name",
         names.hostForward(spec.id),
-        ...labelFlags("hostfwd", s.task),
+        ...names.labelFlags("hostfwd"),
         "--cap-drop",
         "ALL",
         "--cap-add",
@@ -1254,8 +1248,8 @@ export function hostNetworkCreateArgs(s: Safety): DockerParts {
   return safe(
     {
       verb: ["network", "create"],
-      flags: ["--driver", "bridge", ...labelFlags("network", s.task)],
-      image: containerNames(s.task).hostNetwork,
+      flags: ["--driver", "bridge", ...containerNames(s).labelFlags("network")],
+      image: containerNames(s).hostNetwork,
       command: [],
     },
     s,
@@ -1267,8 +1261,8 @@ export function networkCreateArgs(s: Safety): DockerParts {
   return safe(
     {
       verb: ["network", "create"],
-      flags: ["--internal", "--driver", "bridge", ...labelFlags("network", s.task)],
-      image: containerNames(s.task).network,
+      flags: ["--internal", "--driver", "bridge", ...containerNames(s).labelFlags("network")],
+      image: containerNames(s).network,
       command: [],
     },
     s,
@@ -1280,8 +1274,8 @@ export function volumeCreateArgs(s: Safety, name: string): DockerParts {
   return safe(
     {
       verb: ["volume", "create"],
-      flags: labelFlags("volume", s.task),
-      image: containerNames(s.task).volume(name),
+      flags: containerNames(s).labelFlags("volume"),
+      image: containerNames(s).volume(name),
       command: [],
     },
     s,
