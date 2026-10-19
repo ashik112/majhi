@@ -1,6 +1,6 @@
 import { PAGE_PATH } from "@majhi/shared";
 import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { StaleBuildBar } from "@/components/shell/stale-build";
@@ -18,11 +18,13 @@ import { GlobalFileViewer } from "@/features/viewer/global-file-viewer";
 import { useAttentionBadge } from "@/lib/browser-notify";
 import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
+import { preloadOpenOnDemand } from "@/lib/preload";
 import { useServerEvents } from "@/lib/use-server-events";
 import { useArrivalNewTask } from "@/onboarding/arrive";
 
 // What opens on demand is read when it first opens, so the first screen carries only the console.
-const Palette = lazy(() => import("@/features/search/palette").then((m) => ({ default: m.Palette })));
+const loadPalette = () => import("@/features/search/palette").then((m) => ({ default: m.Palette }));
+const Palette = lazy(loadPalette);
 const TaskDrawer = lazy(() =>
   import("@/features/task-drawer/task-drawer").then((m) => ({ default: m.TaskDrawer })),
 );
@@ -78,6 +80,7 @@ function Frame() {
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
   useArrivalNewTask(newTask.open);
   useAdoptOrgParam();
+  useEffect(preloadOpenOnDemand, []);
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });
   useAttentionBadge(useNeedsYou() ?? 0);
   // The page fades in when the section changes (a page, a task), not on every task switch.
