@@ -57,6 +57,7 @@ const create = (as: { task: string; agent: string }, input: Record<string, unkno
     as,
     "tasks.create",
     {
+      name: "Session drop",
       text: "Fix the session drop on api",
       repos: [{ project: "acme-api" }],
       start: false,
@@ -145,6 +146,9 @@ describe("a chat's agent and the separate task it made", () => {
     });
     expect(made.isError).toBe(false);
     const task = JSON.parse(made.text) as Task;
+    // What an agent files is an idea: it runs once the owner starts it.
+    expect(task.idea).toBe("agent-made");
+    expect((await cmd("tasks.start", { id: task.id })).status).toBe(200);
     await until(() => prompts.some((p) => p.task === task.id), "the task's first turn");
     return { chat, as, task, release };
   }
@@ -240,6 +244,7 @@ describe("a chat's agent and the separate task it made", () => {
     const made = await create(as, { separate: true, start: true });
     const task = JSON.parse(made.text) as Task;
     expect(task.repos.map((r) => r.project)).toEqual(["acme-api"]);
+    expect((await cmd("tasks.start", { id: task.id })).status).toBe(200);
     const added = await run(as, "tasks.addRepo", { id: task.id, project: "acme-web" });
     expect(added.isError).toBe(false);
     const after = await get(task.id);

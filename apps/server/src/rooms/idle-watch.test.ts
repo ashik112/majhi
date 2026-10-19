@@ -99,9 +99,10 @@ async function parentWorld(scripts: Record<string, Turns>, opts: { opus?: string
   });
   // A subtask nobody started: it does not move by itself, so ACM-1 stays running.
   if (opts.alone !== true) {
-    await must("tasks.split", {
-      task: "ACM-1",
-      children: [{ text: "add docs/export.md to api", repos: [{ project: "acme-api" }] }],
+    await must("tasks.create", {
+      text: "add docs/export.md to api",
+      repos: [{ project: "acme-api" }],
+      parent: "ACM-1",
       start: false,
     });
   }

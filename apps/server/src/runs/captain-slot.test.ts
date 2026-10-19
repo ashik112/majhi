@@ -29,7 +29,7 @@ function gated(): { open: Map<string, (() => void)[]>; release: (task: string) =
   };
 }
 
-const startsIn = (task: string) => w.h.runtime.starts.filter((s) => s.cwd.endsWith(`/${task}`)).length;
+const startsIn = (task: string) => w.h.runtime.starts.filter((s) => s.cwd === w.taskDir(task)).length;
 const live = (task: string, agent: string) => w.h.majhi.services.room.getLive(task, agent);
 
 describe("the captain's own slot", () => {

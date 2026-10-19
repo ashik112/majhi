@@ -61,14 +61,14 @@ describe("protected projects", () => {
     await world();
     const res = await cmd(
       "tasks.create",
-      { text: "update api and ops", repos: [{ project: "acme-api" }, { project: "acme-ops" }], start: false },
+      { name: "Update api", text: "update api and ops", repos: [{ project: "acme-api" }, { project: "acme-ops" }], start: false },
       AGENT,
     );
     expect(res.status).toBe(200);
     expect((res.body as Task).repos.map((r) => r.project)).toEqual(["acme-api"]);
     const alone = await cmd(
       "tasks.create",
-      { text: "change ops", repos: [{ project: "acme-ops" }], start: false },
+      { name: "Change ops", text: "change ops", repos: [{ project: "acme-ops" }], start: false },
       AGENT,
     );
     expect(alone.status).toBe(409);

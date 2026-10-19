@@ -19,7 +19,7 @@ describe("the approval policy", () => {
     const caller = { task: task.id, agent: "acme-builder" };
     const { admin } = h.majhi.services;
 
-    const created = await admin.call(caller, "majhi_tasks_create", {
+    const created = await admin.call(caller, "majhi_tasks_create", { name: "Test task",
       text: "write notes",
       start: false,
       ...plain,

@@ -28,7 +28,7 @@ describe("an agent saying the owner asked", () => {
     // Low risk: an org's name, a task with no repo. They run at once.
     const renamed = await admin.call(caller, "majhi_orgs_update", { id: "acme", name: "Acme Co", ...asked });
     expect(renamed.text).not.toBe(WAITING_TEXT);
-    const chat = await admin.call(caller, "majhi_tasks_create", {
+    const chat = await admin.call(caller, "majhi_tasks_create", { name: "Test task",
       text: "write release notes",
       start: false,
       ...asked,
@@ -42,7 +42,7 @@ describe("an agent saying the owner asked", () => {
       ["majhi_projects_update", { id: "acme-api", org: "acme", aliases: ["api"] }],
       ["majhi_projects_remove", { id: "acme-api" }],
       ["majhi_workspaces_set", { workspaces: ["/Users/owner"] }],
-      ["majhi_tasks_create", { text: "fix the login bug", repos: [{ project: "acme-api" }], start: true }],
+      ["majhi_tasks_create", { name: "Test task", text: "fix the login bug", repos: [{ project: "acme-api" }], start: true }],
       ["majhi_tasks_start", { id: task.id }],
     ] as const;
     for (const [tool, input] of waiting) {
