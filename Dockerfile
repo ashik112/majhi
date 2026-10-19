@@ -7,13 +7,31 @@
 ARG SERVER_FROM
 ARG RUNNER_FROM
 
-FROM node:22-bookworm-slim AS build
+# Pins used by more than one stage live here, once; a stage that uses one says `ARG NAME`. A pin used by
+# one stage sits in that stage, with how to raise it.
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG PNPM_VERSION=11.21.0
+ARG UV_VERSION=0.12.21
+ARG DOCKER_CLI_VERSION=29.8.1
+ARG PLAYWRIGHT_MCP_VERSION=0.0.83
+
+# Images that only hand over a static binary.
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+FROM docker:${DOCKER_CLI_VERSION}-cli AS docker-cli
+
+# Image size (docs/DECISIONS.md, "Lean images"): build tools, caches and downloads live only in the
+# stages below that are not the last of a chain. The two images (`runtime-build`, `runner-build`) are
+# assembled from COPY --from of those stages and from one apt layer. What the two share (Node, git,
+# gh, glab and the agent adapters) is the `base` stage, so those layers are stored once.
+
+FROM ${NODE_IMAGE} AS build
+ARG PNPM_VERSION
 # node-pty has no Linux prebuilds, so it compiles from source.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN corepack enable && corepack prepare pnpm@11.21.0 --activate
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts/fix-node-pty.mjs scripts/
 COPY apps/host/package.json apps/host/
@@ -28,9 +46,15 @@ COPY apps apps
 RUN pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm --filter @majhi/host build
 # esbuild cannot bundle a .node file, so the server build leaves node-pty, better-sqlite3, sqlite-vec and
 # @huggingface/transformers (onnxruntime-node) external.
-# Keep the compiled node-pty for the runtime image. better-sqlite3 ships Linux prebuilds, so only its
-# JavaScript and the prebuilds for this image are needed: not the SQLite sources.
-RUN mkdir /pty && cp -rL apps/server/node_modules/node-pty /pty/node-pty
+# node-pty: only what Linux loads (its JavaScript and the binary compiled above), not the macOS and
+# Windows prebuilds, the C++ sources or the build files.
+RUN P=apps/server/node_modules/node-pty; mkdir -p /pty/node-pty/build/Release \
+  && cp -L $P/package.json /pty/node-pty/ \
+  && cp -rL $P/lib /pty/node-pty/lib \
+  && cp -L $P/build/Release/pty.node /pty/node-pty/build/Release/ \
+  && find /pty -name '*.test.*' -delete
+# better-sqlite3 ships Linux prebuilds, so only its JavaScript and the prebuilds for this image are needed:
+# not the SQLite sources.
 RUN mkdir /sqlite \
   && cp -rL apps/server/node_modules/better-sqlite3 /sqlite/better-sqlite3 \
   && rm -rf /sqlite/better-sqlite3/deps /sqlite/better-sqlite3/src /sqlite/better-sqlite3/prebuilds/darwin-* /sqlite/better-sqlite3/prebuilds/win32-*
@@ -41,27 +65,36 @@ RUN F=apps/server/node_modules/@fontsource; \
   && cp -L $F/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2 $F/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2 /fonts/ibm-plex-sans/files/ \
   && cp -L $F/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2 /fonts/ibm-plex-mono/files/
 
-# What the server and the runner share: Node, git, the agent CLIs and ACP adapters. The owner's
-# passwd entry comes last (`runtime`, `runner`), so these layers are the same on every computer.
-FROM node:22-bookworm-slim AS base
+# The two native libraries of the memory store (SPEC 5.6): sqlite-vec (a prebuilt vec0 library per CPU, from its
+# sqlite-vec-linux-<arch> package) and transformers.js with onnxruntime-node. npm installs the build for this
+# image's CPU, so amd64 and arm64 both work. The versions come from apps/server/package.json, so there is one pin.
+# onnxruntime-node ships every platform's binary: keep only this CPU's. onnxruntime-web (the WebAssembly build,
+# 143 MB, a dependency of transformers.js for browsers) is never loaded by the Node build: removed. The model
+# itself is downloaded on first use into ~/.majhi/cache/models, so the image stays small.
+FROM ${NODE_IMAGE} AS server-deps
+COPY apps/server/package.json /tmp/server-package.json
+RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit --no-fund \
+      $(node -e "const d=require('/tmp/server-package.json').dependencies;console.log(['sqlite-vec','@huggingface/transformers'].map((n)=>n+'@'+d[n]).join(' '))") \
+  && ARCH="$(node -p process.arch)" \
+  && for d in /app/node_modules/onnxruntime-node/bin/napi-v*; do \
+       rm -rf "$d/darwin" "$d/win32"; \
+       for a in "$d"/linux/*; do [ "$(basename "$a")" = "$ARCH" ] || rm -rf "$a"; done; \
+     done \
+  && rm -rf /app/node_modules/onnxruntime-web \
+  && npm cache clean --force \
+  && rm -rf /root/.npm
+
+# One download stage for the pinned static tools below: curl once, not in each.
+FROM debian:bookworm-slim AS fetch
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-# The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
-RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
-  && npm cache clean --force
-ENV GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0=safe.directory \
-    GIT_CONFIG_VALUE_0=*
 
 # kubectl for kubectl connections (SPEC 5.14): agent runs and each connection's Test run it in the runner.
 # Pinned by version and by the SHA-256 per CPU. To update, change the version and take the sums from
 # https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256.
-FROM debian:bookworm-slim AS kubectl
+FROM fetch AS kubectl
 ARG TARGETARCH
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   KUBECTL_VERSION=v1.37.1; \
   case "$TARGETARCH" in \
@@ -79,11 +112,8 @@ RUN set -eu; \
 # binary, pinned by version and by the SHA-256 of each release asset, per CPU. To update, change the version
 # and take the sums from the release page (github.com/owasp-noir/noir/releases); raise `NOIR_VERSION` in
 # `apps/server/src/reader/run.ts` with it.
-FROM debian:bookworm-slim AS noir
+FROM fetch AS noir
 ARG TARGETARCH
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   NOIR_VERSION=v1.4.0; \
   case "$TARGETARCH" in \
@@ -96,20 +126,12 @@ RUN set -eu; \
   chmod 755 /noir; \
   /noir --version
 
-# Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
-# task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
-# real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
-# libraries. The browsers live outside any home, and PLAYWRIGHT_BROWSERS_PATH is one of the few
-# variables passed to agent runs (see packages/acp BaseEnv).
 # The GitHub and GitLab command line tools majhi uses to open and merge merge requests (5.5). Pinned
 # by version and by the SHA-256 of each release archive, per CPU. To update, change the versions and
 # take the sums from `gh_<version>_checksums.txt` (github.com/cli/cli releases) and `checksums.txt`
 # (gitlab.com/gitlab-org/cli releases). The server runs them for merge requests; runs use them through `git` connections.
-FROM debian:bookworm-slim AS host-clis
+FROM fetch AS host-clis
 ARG TARGETARCH
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   GH_VERSION=2.102.0; GLAB_VERSION=1.120.0; \
   case "$TARGETARCH" in \
@@ -132,11 +154,8 @@ RUN set -eu; \
 # in the runner (`doctl databases connection`, `doctl databases user get`). Pinned by version and by the
 # SHA-256 of each release archive, per CPU. To update, change the version and take the sums from
 # `doctl-<version>-checksums.sha256` (github.com/digitalocean/doctl releases).
-FROM debian:bookworm-slim AS doctl
+FROM fetch AS doctl
 ARG TARGETARCH
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   DOCTL_VERSION=1.177.0; \
   case "$TARGETARCH" in \
@@ -150,112 +169,170 @@ RUN set -eu; \
   tar -xzf doctl.tgz -C /out doctl; \
   /out/doctl version
 
-FROM base AS runner-build
+# Playwright's Chromium (SPEC 5.14, and the browsers a repo's own Playwright tests use), downloaded here so
+# the download, npm and its caches never reach the runner image. The browsers live outside any home, and
+# PLAYWRIGHT_BROWSERS_PATH is one of the few variables passed to agent runs (see packages/acp BaseEnv).
+# The revision is the one Playwright MCP wants (it brings its own Playwright). The old runner image also
+# installed `playwright@1.63.0`'s revision first; Playwright then deleted it when Playwright MCP's install ran,
+# but it stayed in a lower layer: 690 MB that no run could see. `chromium` is the full browser, which both
+# browser MCP servers launch; `chromium_headless_shell` is what Playwright's own tests launch by default;
+# both are kept (docs/DECISIONS.md, "Lean images"). The chmod (the browser's `extensions` folder is owner-only,
+# and runs are the owner's uid) is in the same layer as the install: a later `chmod -R` over the tree copies every
+# file into a new layer (it was 700 MB).
+FROM ${NODE_IMAGE} AS browsers
+ARG PLAYWRIGHT_MCP_VERSION
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ curl \
-  && npm install -g pnpm@11.21.0 \
-  && npx -y playwright@1.63.0 install --with-deps chromium \
-  && chmod -R a+rX /opt/ms-playwright \
-  && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
-# Browser connections (SPEC 5.14): the agent CLI starts one of these MCP servers in the runner, with
-# the connection's own profile. Pinned: raise them here and in apps/server/src/connections/browser.ts
-# together. Playwright MCP brings its own Playwright, whose Chromium is installed next to the one
-# above; Chrome DevTools MCP uses that Chromium through /usr/local/bin/chromium.
-RUN npm install -g @playwright/mcp@0.0.83 chrome-devtools-mcp@1.10.1 \
+RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
   && node /usr/local/lib/node_modules/@playwright/mcp/node_modules/playwright/cli.js install chromium \
-  && ln -sf "$(find /opt/ms-playwright -path '*/chrome-linux*/chrome' -type f | sort | tail -n 1)" /usr/local/bin/chromium \
-  && test -x /usr/local/bin/chromium \
-  && chmod -R a+rX /opt/ms-playwright \
   && npm cache clean --force \
-  && rm -rf /root/.npm /root/.cache
+  && rm -rf /root/.npm /root/.cache \
+  && chmod -R a+rX /opt/ms-playwright \
+  && test -z "$(find /opt/ms-playwright ! -perm -o+r -print -quit)"
+
+# Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
+# runner, one per task worktree (`apps/server/src/runs/serena.ts`). Installed with uv, which is
+# mounted for these steps only and not left in the image, and with no uv cache (it was 270 MB of the layer).
+# Python 3.13 and the package live under /opt/serena, readable by the owner's uid. Pinned: raise
+# `serena-agent` here and SERENA_VERSION in `runs/serena.ts` together. Serena downloads the language
+# server of each language on first use, into the account's home, so the first use of a language needs
+# network.
+# graphify: reads a project's code into a graph for `code_graph` and the wiki, with no model and no network, in a
+# throwaway runner container that sees the project's source export read-only (`apps/server/src/reader/`). Installed with uv
+# into its own venv under /opt/graphify, on the Python that Serena installed. Pinned: raise
+# `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/reader/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
+# stops its CLI from rewriting the agent skill folders of the home it runs in.
+FROM ${NODE_IMAGE} AS python-tools
+ENV UV_NO_CACHE=1 UV_COMPILE_BYTECODE=1 UV_PYTHON_INSTALL_DIR=/opt/serena/python
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+  UV_TOOL_DIR=/opt/serena/tools UV_TOOL_BIN_DIR=/opt/serena/bin uv tool install -p 3.13 serena-agent==1.7.0 \
+  && uv venv -p 3.13 /opt/graphify \
+  && uv pip install --python /opt/graphify/bin/python graphifyy==0.9.77 \
+  && chmod -R a+rX /opt/serena /opt/graphify \
+  && /opt/serena/bin/serena --version \
+  && GRAPHIFY_NO_AUTO_REFRESH=1 /opt/graphify/bin/graphify --help > /dev/null
+
+# What the server and the runner share: Node, git, the GitHub and GitLab tools and the agent adapters. The
+# owner's passwd entry comes last (`runtime`, `runner`), so these layers are the same on every computer.
+# Both images start from here, so these layers are on disk once.
+FROM ${NODE_IMAGE} AS base
+# No documentation, man pages or translations from any package installed in this image or the ones above it
+# (the copyright files stay, as in Debian's own images).
+RUN printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*/copyright' \
+      'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/info/*' 'path-exclude=/usr/share/locale/*' \
+      > /etc/dpkg/dpkg.cfg.d/majhi-lean \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
+# The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
+# Codex ships a voice host (67 MB) for its realtime voice feature, which an ACP session never starts: removed
+# in this layer (a later `rm` would not shrink the image). Its coding CLI and code-mode host stay.
+RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
+  && find /usr/local/lib/node_modules/@agentclientprotocol -name codex-voice-host -type f -delete \
+  && npm cache clean --force \
+  && rm -rf /root/.npm
+ENV GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0=*
+# /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
+# process has no path to root.
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+
+# Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
+# task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
+# real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
+# libraries.
+FROM base AS runner-build
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    GRAPHIFY_NO_AUTO_REFRESH=1
+# One apt layer, no recommends, lists removed.
+#  - python3, make, g++, curl: native modules and scripts of the projects agents work on. A non-root run cannot
+#    apt install, so these stay baked in.
+#  - iptables: majhi-netguard (below). psql and redis-cli (clients only) are for the services a task starts:
+#    the agent's shell checks a database or a cache it reaches by name.
+#  - The rest is what headless Chromium needs: the list of `npx playwright install-deps --dry-run chromium`
+#    without `xvfb` (nothing here runs a headed browser, and xvfb pulls Mesa's software renderer and LLVM,
+#    155 MB: headless Chromium draws with its bundled SwiftShader). Checked by the `ldd` and launch test below,
+#    which fails the build on a missing library.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       python3 make g++ curl iptables postgresql-client redis-tools \
+       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
+       libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 \
+       libxext6 libxfixes3 libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
+       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
+       fonts-tlwg-loma-otf fonts-freefont-ttf \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=browsers /opt/ms-playwright /opt/ms-playwright
+# pnpm, and the three npm tools. Browser connections (SPEC 5.14): the agent CLI starts one of these MCP servers in the
+# runner, with the connection's own profile. Pinned: raise them here and in apps/server/src/connections/browser.ts
+# together. Playwright MCP brings its own Playwright, which uses the Chromium installed above; Chrome DevTools
+# MCP uses that Chromium through /usr/local/bin/chromium.
 # Vercel `skills` CLI (SPEC 5.2, Phase 6): majhi installs skills by running `skills add <source> -y --copy
 # --agent claude-code codex` here, in a throwaway folder, and moves the result into its own store.
 # Pinned: raise it here and SKILLS_CLI_VERSION in apps/server/src/skills/cli.ts together.
-RUN npm install -g skills@1.7.0 \
+ARG PNPM_VERSION
+ARG PLAYWRIGHT_MCP_VERSION
+RUN npm install -g pnpm@${PNPM_VERSION} @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} chrome-devtools-mcp@1.10.1 skills@1.7.0 \
+  && ln -sf "$(find /opt/ms-playwright -path '*/chrome-linux*/chrome' -type f | sort | tail -n 1)" /usr/local/bin/chromium \
+  && test -x /usr/local/bin/chromium \
+  && test "$(ls -d /opt/ms-playwright/chromium-* | wc -l)" = 1 \
   && skills --help > /dev/null \
   && npm cache clean --force \
-  && rm -rf /root/.npm /root/.cache
-# Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
-# runner, one per task worktree (`apps/server/src/runs/serena.ts`). Installed with uv, which is
-# mounted for this step only and not left in the image. Python 3.13 and the package live under
-# /opt/serena, readable by the owner's uid. Pinned: raise `serena-agent` here and SERENA_VERSION in
-# `runs/serena.ts` together. Serena downloads the language server of each language on first use,
-# into the account's home, so the first use of a language needs network.
-RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/uv \
-  UV_TOOL_DIR=/opt/serena/tools UV_TOOL_BIN_DIR=/opt/serena/bin UV_PYTHON_INSTALL_DIR=/opt/serena/python \
-  UV_COMPILE_BYTECODE=1 uv tool install -p 3.13 serena-agent==1.7.0 \
-  && chmod -R a+rX /opt/serena \
-  && /opt/serena/bin/serena --version
-# graphify: reads a project's code into a graph for `code_graph` and the wiki, with no model and no network, in a
-# throwaway runner container that sees the project's source export read-only (`apps/server/src/reader/`). Installed with uv
-# into its own venv under /opt/graphify, on the Python that Serena installed above. Pinned: raise
-# `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/reader/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
-# stops its CLI from rewriting the agent skill folders of the home it runs in.
-RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/uv \
-  UV_PYTHON_INSTALL_DIR=/opt/serena/python UV_COMPILE_BYTECODE=1 uv venv -p 3.13 /opt/graphify \
-  && UV_PYTHON_INSTALL_DIR=/opt/serena/python UV_COMPILE_BYTECODE=1 uv pip install --python /opt/graphify/bin/python graphifyy==0.9.77 \
-  && chmod -R a+rX /opt/graphify \
-  && GRAPHIFY_NO_AUTO_REFRESH=1 /opt/graphify/bin/graphify --help > /dev/null
-ENV GRAPHIFY_NO_AUTO_REFRESH=1
+  && rm -rf /root/.npm /root/.cache \
+  && test -z "$(find /opt/ms-playwright ! -perm -o+r -print -quit)"
+# Fails the build when Chromium or the headless shell lacks a library, or cannot start, or the compiler broke.
+RUN set -eu; \
+  for b in /usr/local/bin/chromium $(find /opt/ms-playwright -name chrome-headless-shell -type f); do \
+    if ldd "$b" | grep -q "not found"; then echo "$b misses a library" >&2; ldd "$b" >&2; exit 1; fi; \
+    "$b" --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q "<html>"; \
+  done; \
+  printf 'int main(void){return 0;}' | g++ -x c++ - -o /tmp/g++-check && rm /tmp/g++-check
+# Serena and graphify (the python-tools stage above).
+COPY --from=python-tools /opt/serena /opt/serena
+COPY --from=python-tools /opt/graphify /opt/graphify
+RUN /opt/serena/bin/serena --version && /opt/graphify/bin/graphify --help > /dev/null
 COPY --chmod=0755 docker/wiki_facts.py /usr/local/lib/majhi/wiki_facts.py
 COPY --chmod=0644 docker/wiki_calls.py /usr/local/lib/majhi/wiki_calls.py
 COPY --chmod=0644 docker/map_inside.py /usr/local/lib/majhi/map_inside.py
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # Noir, for the wiki's facts (see its stage above).
 COPY --from=noir /noir /usr/local/bin/noir
-# glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
-COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
 # doctl for `digitalocean` connections: the run, and majhi's script fetches and watches, get DIGITALOCEAN_ACCESS_TOKEN.
 COPY --from=doctl /out/doctl /usr/local/bin/doctl
+# gh and glab for `git` connections (SPEC 5.14) come from `base`: the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
+# setuid and setgid bits again, for what the packages above brought (`base` did the rest).
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 # `docker` for scripts in a run (a repo's hand-off check, tests): a shim that sends the call to majhi,
 # which runs the task's own containers (apps/server/src/containers/task-docker.ts). No Docker, no socket.
 COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker
 # Every run starts through majhi-netguard (SPEC 6): as root with a few capabilities it closes the
 # container's route to services on the owner's own computer (iptables), then drops to the owner's
-# uid with no capabilities. See docker/netguard.mjs. psql and redis-cli (clients only) are for the services
-# a task starts: the agent's shell checks a database or a cache it reaches by name.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends iptables postgresql-client redis-tools \
-  && rm -rf /var/lib/apt/lists/*
+# uid with no capabilities. See docker/netguard.mjs.
 COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
 COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
 # A service on the owner's computer (SPEC 5.14) reaches a task through a forwarder that runs this
 # script from the same image, on the task's network. See docker/portforward.mjs.
 COPY --chmod=0755 docker/portforward.mjs /usr/local/lib/majhi/portforward.mjs
-# /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
-# process has no path to root.
-RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /tmp
 CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
 
 FROM base AS runtime-build
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.
-COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 # The buildx plugin builds agents' previews, each on its own builder (PRV-53).
-COPY --from=docker:29.8.1-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
-COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
-RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 WORKDIR /app
-# Memory (5.6): sqlite-vec (a prebuilt vec0 library per CPU, from its sqlite-vec-linux-<arch> package) and
-# transformers.js with onnxruntime-node. npm installs the build for this image's CPU, so amd64 and arm64
-# both work. Keep the versions in step with apps/server/package.json. onnxruntime-node ships every
-# platform's binary: keep only this CPU's. The model itself is downloaded on first use into
-# ~/.majhi/cache/models, so the image stays small.
-RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit --no-fund \
-      sqlite-vec@0.1.9 @huggingface/transformers@4.3.0 \
-  && ARCH="$(node -p process.arch)" \
-  && for d in /app/node_modules/onnxruntime-node/bin/napi-v*; do \
-       rm -rf "$d/darwin" "$d/win32"; \
-       for a in "$d"/linux/*; do [ "$(basename "$a")" = "$ARCH" ] || rm -rf "$a"; done; \
-     done \
-  && npm cache clean --force
-COPY --from=build /src/apps/server/dist ./dist
+# Memory (5.6): the native libraries from the `server-deps` stage, and the two compiled in `build`.
+COPY --from=server-deps /app/node_modules ./node_modules
 COPY --from=build /pty/node-pty ./node_modules/node-pty
 COPY --from=build /sqlite/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=build /fonts ./node_modules/@fontsource
-# The memory store needs both native libraries to load in this image.
-RUN node -e "const D=require('/app/node_modules/better-sqlite3'),v=require('/app/node_modules/sqlite-vec');const db=new D(':memory:');v.load(db);console.log('sqlite-vec',db.prepare('select vec_version() v').get().v)"
+# The memory store needs both native libraries and the model runtime to load in this image.
+RUN node -e "const D=require('/app/node_modules/better-sqlite3'),v=require('/app/node_modules/sqlite-vec');const db=new D(':memory:');v.load(db);console.log('sqlite-vec',db.prepare('select vec_version() v').get().v)" \
+  && node -e "require('/app/node_modules/onnxruntime-node');import('@huggingface/transformers').then(()=>console.log('transformers ok'))"
+# What changes with every commit comes last, so an update adds only these layers.
+COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /src/apps/web/dist ./web
 # The host helper runs on the owner's machine, not here. `make up` copies it out of the image.
 COPY --from=build /src/apps/host/dist/majhi-host.mjs ./host/majhi-host.mjs
