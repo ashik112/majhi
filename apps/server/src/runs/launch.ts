@@ -222,7 +222,13 @@ export async function launch(
   const rooms = deps.rooms?.attach(caller, gated);
   // Scripts in this run's shell call `docker`: the shim in the runner reaches this task's containers through majhi.
   const dockerShim = on(CONTAINERS_SERVER_NAME) ? deps.rooms?.attachDocker(caller) : undefined;
-  const roomTokens = [...(rooms?.tokens ?? []), ...(dockerShim === undefined ? [] : [dockerShim.entry])];
+  // A repo's own `playwright test` in this run gets the workspace's test browser (started when a test first connects).
+  const testBrowser = deps.rooms?.attachTestBrowser(caller);
+  const roomTokens = [
+    ...(rooms?.tokens ?? []),
+    ...(dockerShim === undefined ? [] : [dockerShim.entry]),
+    ...(testBrowser === undefined ? [] : [testBrowser.entry]),
+  ];
   // Before the mounts: they read each worktree's entry in its repo.
   const notices: string[] = await repairWorktrees(task);
   let serena: StdioServerSpec | undefined;
@@ -276,9 +282,15 @@ export async function launch(
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
       ...(mcpServers.length === 0 ? {} : { mcpServers }),
-      ...(held === undefined && packages === undefined && tools === undefined && dockerShim === undefined
+      ...(held === undefined &&
+      packages === undefined &&
+      tools === undefined &&
+      dockerShim === undefined &&
+      testBrowser === undefined
         ? {}
-        : { env: { ...packages?.env, ...held?.env, ...tools?.env, ...dockerShim?.env } }),
+        : {
+            env: { ...packages?.env, ...held?.env, ...tools?.env, ...dockerShim?.env, ...testBrowser?.env },
+          }),
       ...(run.budget === undefined || run.budget.cap <= 0
         ? {}
         : { contextCap: { tokens: run.budget.cap, compactAt: run.budget.compactAt } }),

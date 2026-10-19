@@ -252,6 +252,15 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         events: services.events,
         build,
         terminals: services.terminals,
+        ...(services.testBrowser === undefined
+          ? {}
+          : {
+              testBrowser: {
+                caller: (token) => services.roomAccess.testBrowser.lookup(token),
+                open: (caller, req, socket, head) =>
+                  services.testBrowser?.open(caller, req, socket, head) ?? Promise.resolve(),
+              },
+            }),
         rooms: {
           snapshot: (id) => services.tasks.snapshot(id),
           subscribe: (id, fn) => services.room.subscribe(id, fn),
