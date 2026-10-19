@@ -18,6 +18,7 @@ import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./
 import { CommitsPatchSchema } from "./settings.ts";
 import { SkillNameSchema } from "./skills.ts";
 import { HoldViewSchema } from "./task-hold.ts";
+import { TaskLineSchema, TaskNameSchema } from "./task-name.ts";
 import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
 import { TrailSchema } from "./task-trail.ts";
 import { TaskFieldsSchema, TaskTypingSchema } from "./task-type.ts";
@@ -350,10 +351,29 @@ export const ReadMountSchema = z.object({
 });
 export type ReadMount = z.infer<typeof ReadMountSchema>;
 
+/**
+ * Why a task is an idea: filed, not started, and never started except by the owner (workflow reset,
+ * Step 1). `agent-made`: an agent, a scan or a finding made it. `open-cap`: its workspace already
+ * had `limits.open_by_others` open tasks the owner did not start.
+ */
+export const IdeaReasonSchema = z.enum(["agent-made", "open-cap"]);
+export type IdeaReason = z.infer<typeof IdeaReasonSchema>;
+
 export const TaskSchema = z.object({
   id: TaskIdSchema,
   /** One line, from the first line of the brief. */
   title: z.string(),
+  /**
+   * 2 to 4 words, at most 32 characters: what the owner sees, as `project · Name`. Absent on tasks
+   * made before names; readers use `taskNameOf`.
+   */
+  name: TaskNameSchema.optional(),
+  /** The three lines the task's agent keeps current (`majhi-tasks.status`). Absent until it sets them. */
+  now: TaskLineSchema.optional(),
+  next: TaskLineSchema.optional(),
+  doneWhen: TaskLineSchema.optional(),
+  /** Set while the task is an idea: an inbox task only the owner starts. Cleared when the owner starts it. */
+  idea: IdeaReasonSchema.optional(),
   /** What the owner typed, verbatim. */
   brief: z.string(),
   kind: TaskKindSchema,
@@ -548,6 +568,11 @@ export function chatTitleFrom(text: string): string | undefined {
 export const TaskSummarySchema = TaskSchema.pick({
   id: true,
   title: true,
+  name: true,
+  now: true,
+  next: true,
+  doneWhen: true,
+  idea: true,
   kind: true,
   typing: true,
   org: true,

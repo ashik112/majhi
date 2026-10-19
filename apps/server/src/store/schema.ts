@@ -44,6 +44,14 @@ export const tasks = sqliteTable("tasks", {
   fields: text("fields"),
   /** JSON StoredOrigin: where the task came from. NULL for tasks made before origins and for chats (migration 176). */
   origin: text("origin"),
+  /** The short name the owner sees, 2 to 4 words (migration 191). NULL on tasks made before names. */
+  name: text("name"),
+  /** The three lines the task's agent keeps current (migration 191). NULL until it sets them. */
+  now: text("now"),
+  next: text("next"),
+  doneWhen: text("done_when"),
+  /** `agent-made` or `open-cap` while the task is an idea; NULL otherwise (migration 191). */
+  idea: text("idea"),
   /** The owner marked it Not for autonomous mode (migration 114). */
   noAutonomy: integer("no_autonomy", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),

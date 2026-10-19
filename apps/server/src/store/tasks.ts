@@ -257,6 +257,11 @@ export class TaskRepo {
         .values({
           id: task.id,
           title: task.title,
+          name: task.name ?? null,
+          now: task.now ?? null,
+          next: task.next ?? null,
+          doneWhen: task.doneWhen ?? null,
+          idea: task.idea ?? null,
           brief: task.brief,
           kind: task.kind,
           type: task.typing?.type ?? null,
@@ -532,6 +537,11 @@ export class TaskRepo {
         if (kids !== undefined)
           summary.children = { total: kids.length, done: kids.filter((k) => k.status === "done").length };
         if (row.org !== null) summary.org = row.org;
+        if (row.name !== null) summary.name = row.name;
+        if (row.now !== null) summary.now = row.now;
+        if (row.next !== null) summary.next = row.next;
+        if (row.doneWhen !== null) summary.doneWhen = row.doneWhen;
+        if (row.idea !== null) summary.idea = TaskSchema.shape.idea.unwrap().parse(row.idea);
         if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
         if (isCaptainThread({ kind: summary.kind, brief: row.brief })) summary.lane = true;
         if (row.pausedReason !== null)
@@ -722,6 +732,35 @@ export class TaskRepo {
     const statuses = this.statuses();
     const kids = this.allLinks().filter((l) => l.type === "parent" && l.other === parent);
     return parentIsComplete(kids.flatMap((k) => statuses.get(k.task) ?? []));
+  }
+
+  /** Sets the lines a task's agent keeps current. A line that is undefined stays; null clears it. */
+  setStatusLines(
+    id: string,
+    lines: {
+      now?: string | null | undefined;
+      next?: string | null | undefined;
+      doneWhen?: string | null | undefined;
+    },
+    at: string,
+  ): void {
+    const set: { now?: string | null; next?: string | null; doneWhen?: string | null; updatedAt: string } = {
+      updatedAt: at,
+    };
+    if (lines.now !== undefined) set.now = lines.now;
+    if (lines.next !== undefined) set.next = lines.next;
+    if (lines.doneWhen !== undefined) set.doneWhen = lines.doneWhen;
+    this.db.update(tasks).set(set).where(eq(tasks.id, id)).run();
+  }
+
+  /** Renames a task. Its branch and folder stay as they were. */
+  setName(id: string, name: string, at: string): void {
+    this.db.update(tasks).set({ name, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  /** Takes the idea mark off: the owner started or accepted the task. */
+  clearIdea(id: string): void {
+    this.db.update(tasks).set({ idea: null }).where(eq(tasks.id, id)).run();
   }
 
   startWhenReady(id: string): boolean {
@@ -1327,7 +1366,8 @@ function taskStatements(db: Db) {
       .select({ id: tasks.id })
       .from(tasks)
       .where(and(inArray(tasks.status, ["inbox", "ready"]), sql`start_when_ready = 1`))
-      .orderBy(asc(tasks.updatedAt), asc(tasks.id))
+      // High priority first (a severity-1 incident), then the oldest wish: the line the running cap holds.
+      .orderBy(sql`case when priority = 'high' then 0 else 1 end`, asc(tasks.updatedAt), asc(tasks.id))
       .prepare(),
     runningIds: db
       .select({ id: tasks.id })
@@ -1409,6 +1449,11 @@ function buildTask(
   return TaskSchema.parse({
     id: row.id,
     title: row.title,
+    ...(row.name === null ? {} : { name: row.name }),
+    ...(row.now === null ? {} : { now: row.now }),
+    ...(row.next === null ? {} : { next: row.next }),
+    ...(row.doneWhen === null ? {} : { doneWhen: row.doneWhen }),
+    ...(row.idea === null ? {} : { idea: row.idea }),
     brief: row.brief,
     kind: row.kind,
     ...(typing === undefined ? {} : { typing }),
