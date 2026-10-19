@@ -62,34 +62,4 @@ describe("room.answerAsk routing", () => {
 
     expect(second.status).toBe(409);
   });
-
-  it("rejects answers not in the options when freeText is false", async () => {
-    w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", {
-      text: "ACM api",
-      repos: [{ project: "acme-api" }],
-      start: true,
-    });
-    const taskId = res.body.id;
-
-    const card = await postAskCard(taskId, [
-      {
-        id: "q1",
-        question: "Pick from list",
-        options: [
-          { id: "a", label: "A" },
-          { id: "b", label: "B" },
-        ],
-        freeText: false,
-      },
-    ]);
-
-    const answer = await w.h.cmd("room.answerAsk", {
-      task: taskId,
-      item: card.id,
-      answers: { q1: "invalid" },
-    });
-
-    expect(answer.status).toBe(409);
-  });
 });

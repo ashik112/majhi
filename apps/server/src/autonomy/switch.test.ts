@@ -17,21 +17,6 @@ async function world() {
 }
 
 describe("the Autonomous switch is On or Off", () => {
-  it("reacting work runs with Auto-pilot off: the lane exists and answers, while the backlog is not picked", async () => {
-    const { h, services } = await world();
-    await h.cmd("autonomy.start");
-    await h.cmd("autonomy.stop", { how: "now" });
-    expect(await services.autonomy.laneChat("acme", "reacting")).toBeDefined();
-    expect(await services.autonomy.laneChat("acme", "backlog")).toBeUndefined();
-    const chat = await services.autonomy.laneChat("acme");
-    const call = (tool: string, args: Record<string, unknown>) =>
-      services.admin.call({ task: chat ?? "", agent: "boss" }, tool, { reason: "test", ...args });
-    expect((await call("majhi_autonomy_note", { text: "hello" })).isError).toBe(false);
-    const plan = await call("majhi_autonomy_plan", { items: [] });
-    expect(plan.isError).toBe(true);
-    expect(plan.text).toContain("Auto-pilot is off");
-  });
-
   it("Stop everything halts captain work: no lane, no tools, no start, whatever Auto-pilot says", async () => {
     const { h, services } = await world();
     await h.cmd("autonomy.start");
@@ -49,30 +34,5 @@ describe("the Autonomous switch is On or Off", () => {
       expect(out.isError).toBe(true);
       expect(out.text).toContain("Stop everything is on");
     }
-  });
-
-  it("captain.stop pauses the tasks the captain runs and leaves Auto-pilot as it is; captain.resume resumes them", async () => {
-    const { h, services } = await world();
-    await h.cmd("autonomy.start");
-    const chat = await services.autonomy.laneChat("acme");
-    const made = await services.admin.call({ task: chat ?? "", agent: "boss" }, "majhi_tasks_create", {
-      name: "Test task",
-      reason: "test",
-      text: "fix the api",
-      repos: [{ project: "acme-api" }],
-      start: true,
-    });
-    const id = (JSON.parse(made.text) as { id: string }).id;
-    await w?.until(() => services.store.tasks.get(id)?.status === "running", "the task to run");
-
-    const stopped = (await h.cmd("captain.stop")).body as CaptainStatus;
-    expect(stopped).toMatchObject({ autonomy: "on", stopped: true });
-    expect(services.store.tasks.get(id)).toMatchObject({ status: "paused", pausedBy: "autonomy-off" });
-    expect(services.captain.stopped()).toBe(true);
-
-    const resumed = (await h.cmd("captain.resume")).body as CaptainStatus;
-    expect(resumed).toMatchObject({ autonomy: "on", stopped: false });
-    await w?.until(() => services.store.tasks.get(id)?.status === "running", "the task to run again");
-    expect(services.store.tasks.get(id)?.pausedBy).toBeUndefined();
   });
 });

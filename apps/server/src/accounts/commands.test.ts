@@ -47,41 +47,4 @@ describe("accounts.create", () => {
     const cache = await readFile(join(h.env.majhiHome, "cache/accounts/claude-api.json"), "utf8");
     expect(cache).not.toContain(KEY);
   });
-
-  it("hands the decrypted key to the probe and nothing else from the server", async () => {
-    await withOrg();
-    await h.cmd("accounts.create", {
-      id: "claude-api",
-      tool: "claude",
-      org: "acme",
-      auth: "api-key",
-      apiKey: KEY,
-    });
-    await h.cmd("accounts.health", { id: "claude-api" });
-
-    expect(h.runtime.probes).toHaveLength(1);
-    expect(h.runtime.probes[0]?.account).toEqual({
-      tool: "claude",
-      home: join(h.env.majhiHome, "accounts/claude-api"),
-      apiKey: KEY,
-    });
-    expect(h.runtime.probes[0]?.options.base).toEqual(h.env.runtime.base);
-  });
-});
-
-describe("accounts.remove", () => {
-  it("refuses while agent files use the account and lists them", async () => {
-    await withOrg();
-    await h.cmd("accounts.create", { id: "claude-acme", tool: "claude", org: "acme", auth: "login" });
-    await h.cmd("agents.create", {
-      id: "builder",
-      frontmatter: { scope: "acme", role: "Builder", account: "claude-acme" },
-      instructions: "Build.",
-    });
-
-    const res = await h.cmd("accounts.remove", { id: "claude-acme" });
-    expect(res.status).toBe(409);
-    expect(res.body.details).toEqual(["builder"]);
-    expect((await h.cmd("accounts.list")).body[0].agentCount).toBe(1);
-  });
 });

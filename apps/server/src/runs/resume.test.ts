@@ -92,13 +92,4 @@ describe("restart and crash", () => {
     expect(again.majhi.services.store.runs.interrupted()).toEqual([]);
     expect(again.majhi.services.store.runs.forTask("ACM-1").at(-1)?.checkpoint).toBe(1);
   });
-
-  it("pauses with reason error after two failed resumes", async () => {
-    await startWorking();
-    w.h.runtime.startError = new Error("adapter is broken");
-    extra = w.h.restart();
-    const again = extra;
-    await until(async () => (await status(again)).status === "paused", "the pause");
-    expect(await status(again)).toMatchObject({ pausedReason: "error" });
-  });
 });

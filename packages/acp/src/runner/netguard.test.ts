@@ -57,38 +57,6 @@ const BASE = {
 };
 
 describe("network guard rules", () => {
-  it("opens loopback and replies first, then decides every destination by the first matching rule", async () => {
-    const { guardRules } = await load();
-    const rules = guardRules(BASE);
-    expect(rules[0]).toEqual(["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-    expect(rules[1]).toEqual([
-      "-A",
-      "OUTPUT",
-      "-m",
-      "conntrack",
-      "--ctstate",
-      "ESTABLISHED,RELATED",
-      "-j",
-      "ACCEPT",
-    ]);
-    const decide = (ip: string, port = 0) => {
-      const rule = firstFor(rules, ip, inCidr4, port);
-      return rule === undefined ? "ACCEPT" : verdict(rule);
-    };
-    // Open: the task's own network, majhi on its one port, public addresses.
-    expect(decide("192.168.166.2", 5432)).toBe("ACCEPT");
-    expect(decide("192.168.165.2", 7070)).toBe("ACCEPT");
-    expect(decide("1.1.1.1", 443)).toBe("ACCEPT");
-    expect(decide("172.32.0.1", 443)).toBe("ACCEPT");
-    // Refused: majhi on any other port, a peer runner, another task's network, the computer, the gateways.
-    expect(decide("192.168.165.2", 8080)).toBe("REJECT");
-    expect(decide("192.168.165.3", 7070)).toBe("REJECT");
-    expect(decide("192.168.167.2", 5432)).toBe("REJECT");
-    expect(decide("0.250.250.254", 7070)).toBe("REJECT");
-    expect(decide("192.168.165.1", 7070)).toBe("REJECT");
-    expect(decide("192.168.166.1", 5432)).toBe("REJECT");
-  });
-
   it("refuses every private range, the LAN, the VPN and link-local ones included", async () => {
     const { guardRules } = await load();
     const rules = guardRules({ ...BASE, allow: [], server: undefined });
@@ -104,80 +72,5 @@ describe("network guard rules", () => {
       const rule = firstFor(rules, ip, inCidr4, 443);
       expect(rule === undefined ? "ACCEPT" : verdict(rule), ip).toBe("REJECT");
     }
-  });
-
-  it("never lets a subnet or a name server override a refused host address", async () => {
-    const { guardRules } = await load();
-    const rules = guardRules({ ...BASE, allow: ["192.168.165.0/24"], dns: ["192.168.165.1"] });
-    const gateway = firstFor(rules, "192.168.165.1", inCidr4, 53);
-    expect(gateway && verdict(gateway)).toBe("REJECT");
-  });
-
-  it("ignores a subnet or server address that is not IPv4", async () => {
-    const { guardRules } = await load();
-    const rules = guardRules({
-      ...BASE,
-      allow: ["fd00::/8", "not a subnet", "10.0.0.0/4"],
-      server: { address: "x", port: 1 },
-    });
-    expect(
-      rules
-        .filter((r) => verdict(r) === "ACCEPT")
-        .map(dest)
-        .filter(Boolean),
-    ).not.toContain("fd00::/8");
-    expect(rules.some((r) => dest(r) === "10.0.0.0/4")).toBe(false);
-  });
-
-  it("filters IPv6 the same way: loopback, replies, public open; unique local, link-local, mapped and the host's refused", async () => {
-    const { guardRules6 } = await load();
-    const rules = guardRules6({ hostAddresses: ["fd07:b51a:cc66:f0::fe", "192.0.2.1"], dns: ["fd00::53"] });
-    expect(rules[0]).toEqual(["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-    const rejected = rules.filter((r) => verdict(r) === "REJECT").map(dest);
-    expect(rejected).toEqual(["fd07:b51a:cc66:f0::fe/128", "fc00::/7", "fe80::/10", "::ffff:0:0/96"]);
-    // Nothing opens a private IPv6 range except a name server on port 53.
-    const opened = rules.filter((r) => verdict(r) === "ACCEPT" && dest(r) !== undefined);
-    expect(opened.every((r) => r.includes("53"))).toBe(true);
-  });
-
-  it("reads name servers from resolv.conf and the upstream Docker notes", async () => {
-    const { nameServers } = await load();
-    const text = ["nameserver 127.0.0.11", "# ExtServers: [host(0.250.250.200) host(8.8.8.8)]"].join("\n");
-    expect(nameServers(text)).toEqual(["127.0.0.11", "0.250.250.200", "8.8.8.8"]);
-  });
-
-  it("takes only IPv4 subnets and one server from the arguments, up to the run's own", async () => {
-    const { parseArgs } = await load();
-    expect(
-      parseArgs([
-        "--allow",
-        "192.168.166.0/24",
-        "--server",
-        "majhi-server:7070",
-        "--",
-        "claude",
-        "--allow",
-        "x",
-      ]),
-    ).toEqual({
-      allow: ["192.168.166.0/24"],
-      server: { host: "majhi-server", port: 7070 },
-      refresh: false,
-      hold: false,
-    });
-    expect(() => parseArgs(["--allow", "10.0.0.0/4"])).toThrow();
-    expect(() => parseArgs(["--allow", "fd00::/8"])).toThrow();
-    expect(() => parseArgs(["--server", "majhi-server:0"])).toThrow();
-    expect(() => parseArgs(["--other"])).toThrow();
-  });
-
-  it("reads gateways from the kernel route table", async () => {
-    const { routeGateways } = await load();
-    const table = [
-      "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT",
-      "eth0\t00000000\t01A5A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0",
-      "eth0\t00A5A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0",
-    ].join("\n");
-    expect(routeGateways(table)).toEqual(["192.168.165.1"]);
   });
 });

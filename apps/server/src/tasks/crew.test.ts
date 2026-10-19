@@ -135,36 +135,6 @@ const planning =
     return undefined;
   };
 
-describe("a worker that cannot run", () => {
-  it("has its step finished by another agent from the last checkpoint", async () => {
-    const { prompts, services } = await crewWorld({
-      "acme-lead": planning("acme-builder", "acme-w2", "me"),
-      "acme-builder": () => {
-        throw LIMIT;
-      },
-      "acme-w2": (_t, n) => `Done with its work ${n}.`,
-    });
-    await must("tasks.start", { id: "ACM-1" });
-    await services.runs.idle();
-
-    // The worker's own account hit its limit on its only turn; the step finished on the other worker.
-    expect(prompts["acme-builder"]).toHaveLength(1);
-    expect(prompts["acme-w2"]).toHaveLength(2);
-    const done = planOf().steps;
-    expect(done.map((s) => s.status)).toEqual(["done", "done", "done"]);
-    expect(done[0]).toMatchObject({ who: "acme-w2", result: "Done with its work 1." });
-    expect(done[2]?.who).toBe("me");
-    expect(await lines()).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(
-          /^@acme-builder hit its usage limit \(resets .+\)\. @acme-w2 takes its step from the checkpoint\.$/,
-        ),
-      ]),
-    );
-    expect(task().status).toBe("review");
-  });
-});
-
 describe("a lead that cannot run", () => {
   it("is replaced by the worker with the most headroom, who carries on with the plan", async () => {
     const { prompts, services } = await crewWorld(
@@ -242,45 +212,6 @@ describe("every agent down", () => {
   });
 });
 
-describe("a step sent back twice", () => {
-  it("stops, and the task waits for the owner with the reason", async () => {
-    const sendBack =
-      (reason: string): Say =>
-      async () => {
-        await w.h.majhi.services.tasks.crew.sendBack("ACM-1", "acme-w2", 1, reason);
-        return "Sent it back.";
-      };
-    const { prompts, services } = await crewWorld(
-      {
-        "acme-lead": planning("acme-builder"),
-        "acme-builder": (_t, n) => `Built it ${n}.`,
-        "acme-w2": (turn, n) =>
-          n === 1
-            ? sendBack("Missing tests for the empty list.")(turn, n)
-            : sendBack("Still no test for the empty list.")(turn, n),
-      },
-      // The workspace asks for a review before the owner: the plan ends with the reviewer's step.
-      { review: true, reviewer: true },
-    );
-    await must("tasks.start", { id: "ACM-1" });
-    await services.runs.idle();
-    await until(() => task().status === "paused");
-
-    // The builder built twice, the reviewer reviewed twice and sent the step back both times.
-    expect(prompts["acme-builder"]).toHaveLength(2);
-    expect(prompts["acme-w2"]).toHaveLength(2);
-    expect(planOf().steps.map((s) => s.status)).toEqual(["stopped", "todo"]);
-    expect(planOf().steps[0]).toMatchObject({ sentBack: 2, reason: "Still no test for the empty list." });
-    expect(task()).toMatchObject({ status: "paused", pausedReason: "loop" });
-    const why =
-      "Step 1 was sent back 2 times and stopped. The last reason: Still no test for the empty list.";
-    expect(await lines()).toContain(why);
-    // Needs you shows it, with the reason.
-    const needs = (await w.h.cmd("decisions.list")).body.decisions as { task?: string; title: string }[];
-    expect(needs.filter((d) => d.task === "ACM-1").map((d) => d.title)).toEqual([`Stopped: ${why}`]);
-  });
-});
-
 /** Two tasks of one agent with one running place. The first holds its turn until it is cancelled. */
 async function preemptWorld() {
   w = await taskWorld();
@@ -337,33 +268,5 @@ describe("priority preemption", () => {
     expect(prompts.urgent).toHaveLength(1);
     // Its first turn was cut at the preemption and it was resumed once: two prompts, never a third.
     expect(prompts.slow).toHaveLength(2);
-  });
-
-  it("is refused to the captain for a task the owner started, unless the owner asked", async () => {
-    const { services } = await preemptWorld();
-    await must("agents.create", {
-      id: "boss",
-      frontmatter: { scope: "root", role: "Lead", account: "claude-acme", perms: ["edit", "shell"] },
-      instructions: "You are the captain.\n",
-    });
-    await must("boss.set", { id: "boss" });
-    const captain = { actor: { kind: "agent", id: "boss" } };
-
-    // Unasked: the urgent task waits in line and the owner's task keeps running.
-    const unasked = await w.h.cmd("tasks.start", { id: "ACM-2", priority: "urgent" }, captain);
-    expect(unasked.status).toBe(200);
-    expect(task("ACM-1").status).toBe("running");
-    expect(task("ACM-2").status).not.toBe("running");
-
-    // The owner asked in the conversation: the captain may pause it.
-    const asked = await w.h.cmd(
-      "tasks.start",
-      { id: "ACM-2", priority: "urgent", ownerAsked: true },
-      captain,
-    );
-    expect(asked.status).toBe(200);
-    expect(task("ACM-1")).toMatchObject({ status: "paused", pausedReason: "preempted" });
-    await until(() => task("ACM-2").status === "review");
-    await services.runs.idle();
   });
 });

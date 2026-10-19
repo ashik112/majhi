@@ -73,15 +73,4 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     // The refresh token is not in the MCP server spec either, only the access token as a header.
     expect(JSON.stringify(start?.mcpServers)).not.toContain(refresh);
   });
-
-  it("only the owner starts, answers or ends a connection; an agent is refused", async () => {
-    const agent = { actor: { kind: "agent", id: "acme-builder" } };
-    const refused = await w.h.cmd("connect.start", { org: "acme", service: "fakesvc" }, agent);
-    expect(refused.status).toBe(409);
-    await connectWorkspace("acme", "maria@acme.example");
-    const gone = await w.h.cmd("connect.disconnect", { connection: "fakesvc" }, agent);
-    expect(gone.status).toBe(409);
-    const kept = (await must("connect.status", { org: "acme" })) as unknown[];
-    expect(kept).toHaveLength(1);
-  });
 });

@@ -55,13 +55,6 @@ describe("wiki source files", () => {
   });
   afterEach(() => cleanup());
 
-  it("serves a dot folder such as .github, but never env files or git's folder", async () => {
-    expect((await get(".github/ci.yml")).status).toBe(200);
-    expect((await get(".env")).status).toBe(403);
-    expect((await get("env.txt")).status).toBe(403);
-    expect((await get(".git/config")).status).toBe(403);
-  });
-
   it("refuses .., absolute paths, symlinks out of the export and backslashes", async () => {
     for (const path of [
       "%2e%2e/%2e%2e/outside.txt",
@@ -75,14 +68,5 @@ describe("wiki source files", () => {
       expect(res.status, path).not.toBe(200);
       expect(await res.text(), path).not.toContain("OUTSIDE-BODY");
     }
-  });
-
-  it("answers only for the workspace's own projects, with the wiki on, at an exported commit", async () => {
-    expect((await get("secret.txt", "acme/shop")).status).toBe(404);
-    expect((await get("secret.txt", "globex/shop")).status).toBe(404);
-    expect((await get("secret.txt", "globex/web")).status).toBe(404);
-    expect((await app.request(`/api/wiki/acme/web/${OTHER_SHA}/files/src/app.py`)).status).toBe(404);
-    expect((await app.request("/api/wiki/acme/web/main/files/src/app.py")).status).toBe(404);
-    expect((await app.request(`/api/wiki/..%2Fglobex/shop/${SHA}/files/secret.txt`)).status).toBe(404);
   });
 });

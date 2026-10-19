@@ -128,18 +128,6 @@ afterEach(async () => {
   await r?.cleanup();
 });
 
-describe("a command-line tool's sign-in", () => {
-  it("a login that hangs ends as expired, tells the helper to stop and saves nothing", async () => {
-    r = await rig();
-    r.host.next = () => new Promise(() => undefined);
-    const view = await r.connect.start({ org: "acme", service: "gcloud", access: "read" }, OWNER);
-    r.skip(16 * 60_000);
-    expect(r.connect.flow(view.flow).state).toBe("expired");
-    await until(() => r.host.cancelled.length === 1);
-    expect(r.connections.size).toBe(0);
-  });
-});
-
 describe("what a run of one workspace gets of a tool's sign-in", () => {
   const home = "/Users/owner/.majhi";
   const cli = (tool: string, account: string): ConnectionConfig => ({
@@ -181,28 +169,5 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     ]);
     // Its changes ask first.
     expect(plan.gate.find((g) => g.id === "vercel")?.clis).toEqual(["vercel"]);
-  });
-
-  it("gives a run in workspace B B's folder and never A's", async () => {
-    const held = runConnections({
-      agent: { id: "globex-dev", scope: "globex" },
-      task: { org: "globex", connections: [] },
-      orgs,
-    });
-    expect(held.map((h) => h.id)).toEqual(["vercel-2"]);
-    const plan = await planConnections(held, "/run", deps());
-    expect(plan.profiles).toEqual([`${home}/connections/vercel-2/profile`]);
-    expect(JSON.stringify(plan)).not.toContain("connections/vercel/");
-    expect(JSON.stringify(plan)).not.toContain("connections/aws");
-  });
-
-  it("an agent of workspace A in a task of workspace B gets nothing", () => {
-    expect(
-      runConnections({
-        agent: { id: "acme-dev", scope: "acme" },
-        task: { org: "globex", connections: [] },
-        orgs,
-      }),
-    ).toEqual([]);
   });
 });

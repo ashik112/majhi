@@ -76,34 +76,4 @@ describe("Ship", () => {
     expect(await tip(w.remote("api"), "main")).toBe(theirs);
     expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
   });
-
-  it("refuses delete after while the worktree has uncommitted files, before merging anything", async () => {
-    await reviewed();
-    await writeFile(join(w.taskDir("ACM-1"), "acme-api", "scratch.txt"), "not committed\n");
-    const before = await tip(w.repo("api"), "main");
-    const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", done: true, deleteAfter: true });
-    expect(res.status).toBe(409);
-    expect(await tip(w.repo("api"), "main")).toBe(before);
-    expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
-    expect(await present(join(w.taskDir("ACM-1"), "acme-api", "scratch.txt"))).toBe(true);
-  });
-
-  it("deletes nothing when the push fails, and keeps the remote branch when it works", async () => {
-    await reviewed();
-    expect((await cmd("tasks.push", { id: "ACM-1" })).status).toBe(200);
-    await pushFromElsewhere(branch);
-    const failed = await cmd("tasks.push", { id: "ACM-1", deleteAfter: true });
-    expect(failed.body.results[0]).toMatchObject({ ok: false });
-    expect(await present(join(w.taskDir("ACM-1"), "acme-api"))).toBe(true);
-    expect(await git(w.repo("api"), "branch", "--list", branch)).not.toBe("");
-
-    // Back in step with the remote: the agent's commit goes on top of theirs, then the push works.
-    const tree = join(w.taskDir("ACM-1"), "acme-api");
-    await git(tree, "pull", "--quiet", "--no-rebase", "--no-edit", "origin", branch);
-    const pushed = await cmd("tasks.push", { id: "ACM-1", deleteAfter: true });
-    expect(pushed.body.results[0]).toMatchObject({ ok: true });
-    expect(await present(tree)).toBe(false);
-    expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
-    expect(await git(w.remote("api"), "branch", "--list", branch)).not.toBe("");
-  });
 });

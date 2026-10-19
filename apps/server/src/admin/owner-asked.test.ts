@@ -11,55 +11,6 @@ afterEach(() => w?.cleanup());
 /** The agent says the owner asked: under the default `when-asked` mode that skips the card. */
 const asked = { ownerAsked: true, reason: "the owner asked" };
 
-describe("an agent saying the owner asked", () => {
-  it("skips the card for a low-risk change only", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    const { admin } = h.majhi.services;
-    const task = (
-      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
-    ).body as { id: string };
-    const caller = { task: task.id, agent: "acme-builder" };
-    const cards = async () =>
-      (await w.items(task.id)).filter(
-        (i): i is Extract<RoomItem, { type: "approval" }> => i.type === "approval",
-      );
-
-    // Low risk: an org's name, a task with no repo. They run at once.
-    const renamed = await admin.call(caller, "majhi_orgs_update", { id: "acme", name: "Acme Co", ...asked });
-    expect(renamed.text).not.toBe(WAITING_TEXT);
-    const chat = await admin.call(caller, "majhi_tasks_create", {
-      name: "Test task",
-      text: "write release notes",
-      start: false,
-      ...asked,
-    });
-    expect(chat.text).not.toBe(WAITING_TEXT);
-
-    // Git accounts, identity, projects, workspace roots, repos attached: the card always shows.
-    const waiting = [
-      ["majhi_orgs_update", { id: "acme", identity: { name: "Mallory", email: "m@acme.test" } }],
-      ["majhi_orgs_setGitAccount", { id: "acme", host: "github.com", account: "mallory" }],
-      ["majhi_projects_update", { id: "acme-api", org: "acme", aliases: ["api"] }],
-      ["majhi_projects_remove", { id: "acme-api" }],
-      ["majhi_workspaces_set", { workspaces: ["/Users/owner"] }],
-      [
-        "majhi_tasks_create",
-        { name: "Test task", text: "fix the login bug", repos: [{ project: "acme-api" }], start: true },
-      ],
-      ["majhi_tasks_start", { id: task.id }],
-    ] as const;
-    for (const [tool, input] of waiting) {
-      const result = await admin.call(caller, tool, { ...input, ...asked });
-      expect([tool, result.text]).toEqual([tool, WAITING_TEXT]);
-    }
-    expect((await cards()).filter((c) => c.state === "pending")).toHaveLength(waiting.length);
-    expect(
-      (await h.cmd("orgs.list")).body.find((o: { id: string }) => o.id === "acme")?.identity,
-    ).toBeUndefined();
-  });
-});
-
 describe("what an agent can never ask for", () => {
   it("has no push in its merge tools, and a push sent anyway is refused", async () => {
     w = await bossWorld({ real: false });

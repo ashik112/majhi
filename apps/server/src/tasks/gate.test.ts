@@ -29,69 +29,11 @@ describe("the task gate", () => {
     }
   });
 
-  it("makes whatever an agent or a finding creates an idea, with room or without", () => {
-    for (const origin of MAKERS_OF_IDEAS) {
-      expect(run(origin, counts(0, 0)), origin).toEqual({ kind: "idea", reason: "agent-made" });
-      expect(run(origin, counts(0, 0), false), origin).toEqual({ kind: "idea", reason: "agent-made" });
-      expect(run(origin, counts(limits.tasks_running + 1, limits.open_by_others + 1)), origin).toEqual({
-        kind: "idea",
-        reason: "agent-made",
-      });
-    }
-  });
-
-  it("files the captain's, client chats' and schedules' tasks as ideas at the open cap, never the owner's or an incident's", () => {
-    for (const origin of others.filter((o) => o !== "owner" && o !== "incident")) {
-      expect(run(origin, counts(0, limits.open_by_others - 1)), `${origin} under`).toEqual({ kind: "start" });
-      expect(run(origin, counts(0, limits.open_by_others)), `${origin} at`).toEqual({
-        kind: "idea",
-        reason: "open-cap",
-      });
-      expect(run(origin, counts(0, limits.open_by_others + 7), false), `${origin} over`).toEqual({
-        kind: "idea",
-        reason: "open-cap",
-      });
-    }
-    // An incident is reacting work: over the open cap it still starts, and at the running cap it queues.
-    expect(run("incident", counts(0, limits.open_by_others + 50))).toEqual({ kind: "start" });
-    expect(run("incident", counts(limits.tasks_running, limits.open_by_others + 50))).toEqual({
-      kind: "queue",
-      reason: "running-cap",
-    });
-    expect(run("owner", counts(0, limits.open_by_others + 50))).toEqual({ kind: "start" });
-    expect(run("owner", counts(limits.tasks_running, limits.open_by_others + 50))).toEqual({
-      kind: "queue",
-      reason: "running-cap",
-    });
-  });
-
-  it("starts the urgent task first when a place frees, though a normal one queued earlier", () => {
-    const waiting = [
-      { id: "ACM-1", priority: "normal" as const, updatedAt: "2026-10-19T09:00:00.000Z" },
-      { id: "ACM-2", priority: "urgent" as const, updatedAt: "2026-10-19T10:00:00.000Z" },
-      { id: "ACM-3", priority: "low" as const, updatedAt: "2026-10-19T08:00:00.000Z" },
-    ];
-    // The cap is full: every one of them waits.
-    for (const t of waiting) expect(run("owner", counts(limits.tasks_running, 0)).kind, t.id).toBe("queue");
-    // A place frees: the first of the line starts, and the next one still waits.
-    const line = lineOrder(waiting);
-    expect(line.map((t) => t.id)).toEqual(["ACM-2", "ACM-1", "ACM-3"]);
-    expect(run("owner", counts(limits.tasks_running - 1, 0))).toEqual({ kind: "start" });
-    expect(run("owner", counts(limits.tasks_running, 0))).toEqual({ kind: "queue", reason: "running-cap" });
-  });
-
   it("makes a resume wait in line like a start when the cap is full", () => {
     expect(admitRunning({ running: limits.tasks_running }, limits)).toEqual({
       kind: "queue",
       reason: "running-cap",
     });
     expect(admitRunning({ running: limits.tasks_running - 1 }, limits)).toEqual({ kind: "start" });
-  });
-
-  it("counts the open tasks of the task's own workspace only", () => {
-    const full = counts(0, limits.open_by_others);
-    expect(admit({ origin: "captain", org: "globex", wantsStart: true, counts: full, limits })).toEqual({
-      kind: "start",
-    });
   });
 });

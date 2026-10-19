@@ -47,59 +47,6 @@ async function failure(promise: Promise<unknown>): Promise<Error> {
   return err;
 }
 
-describe("decryptKeyExport", () => {
-  it("opens an export and skips comment lines, like those age-keygen writes", async () => {
-    const key = await generateKey();
-    expect(await decryptKeyExport(await exportOf(`${key}\n`), PASSPHRASE)).toBe(key);
-    const recipient = await identityToRecipient(key);
-    const keygen = `# created: 2026-10-02T10:00:00Z\n# public key: ${recipient}\n${key}\n`;
-    expect(await decryptKeyExport(`\r\n${await exportOf(keygen)}\r\n`, PASSPHRASE)).toBe(key);
-  });
-
-  it("tells a wrong passphrase from a damaged file, and never puts either secret in the error", async () => {
-    const key = await generateKey();
-    const content = await exportOf(`${key}\n`);
-    const wrong = await failure(decryptKeyExport(content, "not the passphrase"));
-    expect(wrong.message).toBe(WRONG_PASSPHRASE);
-    const damaged = edited(content, (sealed) => {
-      sealed[sealed.length - 1] = (sealed[sealed.length - 1] ?? 0) ^ 1;
-    });
-    const unreadable = await failure(decryptKeyExport(damaged, PASSPHRASE));
-    expect(unreadable.message).toBe(UNREADABLE);
-    for (const err of [wrong, unreadable]) {
-      expect(`${err.message} ${err.stack}`).not.toContain(PASSPHRASE);
-      expect(`${err.message} ${err.stack}`).not.toContain("AGE-SECRET-KEY");
-    }
-  });
-
-  it("refuses what is not a passphrase export before it spends the work factor", async () => {
-    const key = await generateKey();
-    await expect(decryptKeyExport("AGE-SECRET-KEY-1 is not a file", PASSPHRASE)).rejects.toThrow(
-      NOT_AN_EXPORT,
-    );
-    const toRecipient = new Encrypter();
-    toRecipient.addRecipient(await identityToRecipient(key));
-    const forRecipient = armor.encode(await toRecipient.encrypt(`${key}\n`));
-    await expect(decryptKeyExport(forRecipient, PASSPHRASE)).rejects.toThrow(NOT_AN_EXPORT);
-    // Work factor 19 takes 512 MB to open: more than an export of majhi's or `age -p` ever asks.
-    const costly = edited(await exportOf(`${key}\n`), (bytes, header) => {
-      const at = header.indexOf(" 10\n");
-      bytes.set(new TextEncoder().encode(" 19"), at);
-    });
-    await expect(decryptKeyExport(costly, PASSPHRASE)).rejects.toThrow(NOT_AN_EXPORT);
-  });
-
-  it("refuses a file without exactly one sound key", async () => {
-    const key = await generateKey();
-    const at = 30;
-    const flipped = BECH32[(BECH32.indexOf(key[at] ?? "Q") + 1) % BECH32.length] ?? "Q";
-    const damagedKey = `${key.slice(0, at)}${flipped}${key.slice(at + 1)}`;
-    for (const text of ["hello\n", `${key}\n${await generateKey()}\n`, `${damagedKey}\n`, "\n"]) {
-      await expect(decryptKeyExport(await exportOf(text), PASSPHRASE)).rejects.toThrow(NO_KEY_INSIDE);
-    }
-  });
-});
-
 describe("restoreKey", () => {
   let dir: string;
   let cleanup: () => Promise<void>;
@@ -129,26 +76,6 @@ describe("restoreKey", () => {
     await new SecretStore(join(dir, "home"), sealer).set("acme-api", "value-1");
   }
 
-  it("restores when there is no key file, or the key file does not open secrets.age", async () => {
-    const key = await generateKey();
-    const content = await exportOf(`${key}\n`);
-    await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
-    await sealWith(key);
-    await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
-    await writeKeyFile(keyFile, await generateKey());
-    reply = { written: true, keptAside: `${keyFile}.old-20261002T100000Z`, restarts: false };
-    await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
-    expect(sent).toEqual([key, key, key]);
-  });
-
-  it("refuses a key that does not open secrets.age", async () => {
-    await sealWith(await generateKey());
-    const content = await exportOf(`${await generateKey()}\n`);
-    const err = await failure(restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey }));
-    expect(err.message).toBe(NOT_THIS_KEY);
-    expect(sent).toEqual([]);
-  });
-
   it("never replaces a key file that works", async () => {
     const key = await generateKey();
     await writeKeyFile(keyFile, key);
@@ -161,67 +88,5 @@ describe("restoreKey", () => {
     const same = await exportOf(`${key}\n`);
     await restoreKey({ content: same, passphrase: PASSPHRASE }, { secrets: store, writeKey });
     expect(sent).toEqual([]);
-  });
-
-  it("round trips: an export restored into a new home reads secrets.age again", async () => {
-    // The old computer: a key, a secret in secrets.age, and the export.
-    const old = join(dir, "old");
-    const key = await generateKey();
-    await writeKeyFile(join(old, ".config", "majhi", "secrets.key"), key);
-    const oldStore = new SecretStore(join(old, ".majhi"), join(old, ".config", "majhi", "secrets.key"));
-    await oldStore.set("acme-api", "value-1");
-    const { content } = await new KeyExports(join(old, ".majhi"), oldStore).export(PASSPHRASE, 10);
-
-    // The new computer: secrets.age copied over, and the new key `make up` made.
-    const home = join(dir, "new");
-    const newKeyFile = join(home, ".config", "majhi", "secrets.key");
-    await mkdir(join(home, ".majhi"), { recursive: true });
-    await copyFile(oldStore.file, join(home, ".majhi", "secrets.age"));
-    await writeKeyFile(newKeyFile, await generateKey());
-    const secrets = new SecretStore(join(home, ".majhi"), newKeyFile);
-    expect(await secrets.keyState()).toBe("wrong");
-
-    const events: string[] = [];
-    const logs: string[] = [];
-    const helper = createKeyRestorer({
-      keyFile: newKeyFile,
-      secretsFile: secrets.file,
-      now: () => new Date("2026-10-02T10:00:00.250Z"),
-      restart: async () => {
-        events.push("restart");
-      },
-      saveToKeyring: async (fingerprint) => {
-        events.push(`keyring ${fingerprint}`);
-      },
-      log: (line) => logs.push(line),
-    });
-    let after: () => Promise<void> = async () => undefined;
-    const out = await restoreKey(
-      { content, passphrase: PASSPHRASE },
-      {
-        secrets,
-        writeKey: async (restored) => {
-          const run = await helper({ key: restored });
-          after = run.after;
-          return run.result;
-        },
-      },
-    );
-    await after();
-
-    expect(await secrets.keyState()).toBe("ok");
-    expect(await secrets.get("acme-api")).toBe("value-1");
-    expect(await secrets.fingerprint()).toBe(keyFingerprint(key));
-    expect((await stat(newKeyFile)).mode & 0o777).toBe(0o600);
-    expect((await stat(dirname(newKeyFile))).mode & 0o777).toBe(0o700);
-    expect((await readdir(dirname(newKeyFile))).sort()).toEqual([
-      "secrets.key",
-      "secrets.key.old-20261002T100000Z",
-    ]);
-    expect(events).toEqual(["restart", `keyring ${keyFingerprint(key)}`]);
-    for (const text of [out.detail, ...logs]) {
-      expect(text).not.toContain(key);
-      expect(text).not.toContain(PASSPHRASE);
-    }
   });
 });

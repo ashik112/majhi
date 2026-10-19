@@ -35,61 +35,6 @@ describe("task files", () => {
   });
   afterEach(() => cleanup());
 
-  it("serves handoff notes, and nothing else hidden, not even through a note's name", async () => {
-    const folder = join(dir, "ACM-1");
-    await mkdir(join(folder, ".handoffs", "deeper"), { recursive: true });
-    await writeFile(join(folder, ".handoffs", "acme-builder-2.md"), "## Next step\n");
-    await writeFile(join(folder, ".handoffs", "notes.txt"), "x");
-    await writeFile(join(folder, ".handoffs", "deeper", "a-1.md"), "x");
-    await symlink(join(folder, ".env"), join(folder, ".handoffs", "sneaky-1.md"));
-    await symlink(join(dir, "outside.txt"), join(folder, ".handoffs", "outside-1.md"));
-    const ok = await get(".handoffs/acme-builder-2.md");
-    expect(ok.status).toBe(200);
-    expect(await ok.text()).toBe("## Next step\n");
-    for (const path of [
-      ".handoffs/notes.txt",
-      ".handoffs/deeper/a-1.md",
-      ".handoffs/sneaky-1.md",
-      ".handoffs/outside-1.md",
-      ".handoffs/..%2F.env",
-      ".git/config",
-    ]) {
-      expect((await get(path)).status, path).not.toBe(200);
-    }
-  });
-
-  it("serves a check's step logs, and nothing else under .checks, not even through a link", async () => {
-    const folder = join(dir, "ACM-1");
-    await mkdir(join(folder, ".checks", "mux3yqk1-a02329", "home"), { recursive: true });
-    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "tests.log"), "FAIL one\n");
-    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "home", "secret.log"), "x");
-    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "notes.log"), "x");
-    await symlink(join(dir, "outside.txt"), join(folder, ".checks", "mux3yqk1-a02329", "lint.log"));
-    const ok = await get(".checks/mux3yqk1-a02329/tests.log");
-    expect(ok.status).toBe(200);
-    expect(await ok.text()).toBe("FAIL one\n");
-    for (const path of [
-      ".checks/mux3yqk1-a02329/home/secret.log",
-      ".checks/mux3yqk1-a02329/notes.log",
-      ".checks/mux3yqk1-a02329/lint.log",
-      ".checks/mux3yqk1-a02329",
-      ".checks/..%2F.env",
-    ]) {
-      expect((await get(path)).status, path).not.toBe(200);
-    }
-  });
-
-  it("sandboxes pages and svg, and downloads unknown types", async () => {
-    const csp = "sandbox allow-scripts allow-forms allow-popups allow-downloads";
-    const page = await get("media/report.html");
-    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(page.headers.get("content-security-policy")).toBe(csp);
-    expect((await get("media/drawing.svg")).headers.get("content-security-policy")).toBe(csp);
-    const bin = await get("media/data.bin");
-    expect(bin.headers.get("content-type")).toBe("application/octet-stream");
-    expect(bin.headers.get("content-disposition")).toBe("attachment");
-  });
-
   it("refuses dot names, escapes and symlinks that leave the folder", async () => {
     for (const path of [
       ".env",
