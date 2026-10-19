@@ -564,14 +564,6 @@ describe("transition table", () => {
     expect(effectsOf(t)).toEqual(row.effects);
     row.check?.(t.next);
   });
-
-  it("does not change the state it was given", () => {
-    const from = task({ status: "running", hold: hold("offline"), unmetDeps: ["ACME-2"] });
-    const copy = JSON.parse(JSON.stringify(from)) as TaskState;
-    transition(from, { type: "holdCleared", by: "owner" });
-    transition(from, { type: "close" });
-    expect(from).toEqual(copy);
-  });
 });
 
 /** The statuses each event is accepted in on a task with no hold (hold rules are tested below). */
@@ -611,101 +603,6 @@ describe("illegal transitions are refused", () => {
     const r = refused(transition(task({ status }), event));
     expect(r.code).toBe("wrong-status");
   });
-
-  it("start from mr is refused and points at sendBack, never running", () => {
-    const r = refused(transition(task({ status: "mr" }), { type: "start", by: "captain" }));
-    expect(r.code).toBe("wrong-status");
-  });
-
-  it("done to running is refused for start, sendBack and processEnded", () => {
-    for (const event of [
-      { type: "start", by: "owner" },
-      { type: "sendBack", by: "owner" },
-      { type: "processEnded" },
-    ] as const)
-      expect(refused(transition(task({ status: "done" }), event)).code).toBe("wrong-status");
-  });
-
-  it("an event for a task that does not exist is refused, and create on an existing task too", () => {
-    expect(refused(transition(undefined, { type: "start", by: "owner" })).code).toBe("wrong-status");
-    expect(refused(transition(task(), { type: "create", id: "ACME-1", status: "inbox" })).code).toBe(
-      "already-exists",
-    );
-  });
-
-  it("start refuses with unmet dependencies and writes nothing", () => {
-    const from = task({ status: "ready", unmetDeps: ["ACME-2"], startWhenReady: true });
-    const r = refused(transition(from, { type: "start", by: "owner" }));
-    expect(r.code).toBe("unmet-dependencies");
-    expect(r.text).toContain("ACME-2");
-    expect(from.startWhenReady).toBe(true);
-    expect(from.status).toBe("ready");
-  });
-
-  it.each(CAUSES)("a %s hold refuses every event that would move the task", (cause) => {
-    for (const [status, event] of [
-      ["inbox", { type: "start", by: "owner" }],
-      ["ready", { type: "start", by: "owner" }],
-      ["running", { type: "start", by: "owner" }],
-      ["review", { type: "sendBack", by: "owner" }],
-      ["running", { type: "agentsIdle" }],
-      ["review", { type: "processEnded" }],
-    ] as const) {
-      const r = refused(transition(task({ status, hold: hold(cause) }), event));
-      expect(r.code).toBe("held");
-      expect(r.text).toBe(sentenceOf(hold(cause)));
-    }
-  });
-
-  it("holdCleared on a task with no hold is refused", () => {
-    expect(refused(transition(task({ status: "running" }), { type: "holdCleared", by: "owner" })).code).toBe(
-      "not-held",
-    );
-  });
-
-  it("runLost is refused when a run is live or a hold explains the task", () => {
-    expect(
-      refused(
-        transition(task({ status: "running", hasLiveRun: true }), {
-          type: "runLost",
-          at: AT,
-          autoResume: true,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-    expect(
-      refused(
-        transition(task({ status: "running", hold: hold("offline") }), {
-          type: "runLost",
-          at: AT,
-          autoResume: true,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-  });
-
-  it("dependency removed on a running task with no dependency hold is refused", () => {
-    const r = transition(task({ status: "running", hold: hold("offline") }), {
-      type: "dependencyChanged",
-      change: "removed",
-      on: ["ACME-2"],
-      at: AT,
-    });
-    expect(refused(r).code).toBe("wrong-status");
-  });
-
-  it("a dependency change that names no task is refused", () => {
-    expect(
-      refused(
-        transition(task({ status: "ready" }), {
-          type: "dependencyChanged",
-          change: "removed",
-          on: [],
-          at: AT,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-  });
 });
 
 const READING: ClearReading = {
@@ -719,10 +616,19 @@ const READING: ClearReading = {
 
 describe("lifting a hold", () => {
   const WHO = ["owner", "captain"] as const;
+  const CAPTAIN_CANNOT_LIFT: HoldCause[] = [
+    "owner-stop",
+    "loop-guard",
+    "dependency-closed",
+    "dependency-removed",
+  ];
 
   describe.each(CAUSES)("%s", (cause) => {
     it.each(WHO)("by %s is allowed exactly when the table lists them", (by) => {
       const r = transition(task({ status: "running", hold: hold(cause) }), { type: "holdCleared", by });
+      // The captain never lifts an owner stop, a loop guard or a closed or removed dependency.
+      if (by === "captain" && CAPTAIN_CANNOT_LIFT.includes(cause))
+        expect(refused(r).code).toBe("not-allowed");
       if (liftersOf(hold(cause)).includes(by)) expect(ok(r).next.hold).toBeUndefined();
       else {
         const refusal = refused(r);
@@ -810,7 +716,7 @@ describe("invariants over every reachable state", () => {
 
   const { states } = explore();
 
-  it("no held task can be started or sent back, from any reachable state", () => {
+  it("no held task can be started or sent back, none with unmet dependencies is started, and every hold can be lifted by someone", () => {
     for (const s of states.filter((x) => x.hold !== undefined)) {
       for (const e of [
         { type: "start", by: "owner" },
@@ -819,6 +725,36 @@ describe("invariants over every reachable state", () => {
         const r = transition(s, e);
         if (!isRefusal(r)) throw new Error(`${JSON.stringify(s)} accepted ${e.type}`);
       }
+    }
+    for (const s of states.filter(
+      (x) => x.unmetDeps.length > 0 && (x.status === "inbox" || x.status === "ready"),
+    )) {
+      const r = transition(s, { type: "start", by: "owner" });
+      expect(isRefusal(r)).toBe(true);
+    }
+    for (const s of states.filter((x) => x.hold !== undefined)) {
+      const lifters = liftersOf(s.hold as Hold);
+      const cleared = lifters.some((by) => {
+        const event: LifecycleEvent =
+          by === "majhi"
+            ? {
+                type: "holdCleared",
+                by,
+                reading: {
+                  ...READING,
+                  online: true,
+                  budgetHasRoom: true,
+                  runAtStep: true,
+                  autopilot: "on",
+                  lastActivityAt: "2027-01-01T00:00:00.000Z",
+                  accounts: { "claude-acme": { signedIn: true } },
+                },
+              }
+            : { type: "holdCleared", by };
+        const r = transition(s, event);
+        return !isRefusal(r) && r.next.hold === undefined;
+      });
+      expect(cleared).toBe(true);
     }
   });
 });

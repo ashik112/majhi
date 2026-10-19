@@ -198,12 +198,59 @@ describe("connecting a remote MCP server with OAuth", () => {
   });
   afterEach(() => r.cleanup());
 
-  it("refuses a replayed answer: the state works once", async () => {
-    const { back } = await r.begin("maria@acme.example");
-    expect((await r.connect.callback(back)).ok).toBe(true);
-    const first = (await r.grants.get("fakesvc"))?.tokens.accessToken;
-    const replay = await r.connect.callback(back);
-    expect(replay.ok).toBe(false);
-    expect((await r.grants.get("fakesvc"))?.tokens.accessToken).toBe(first);
-  });
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a replayed answer: the state works once",
+      async () => {
+        const { back } = await r.begin("maria@acme.example");
+        expect((await r.connect.callback(back)).ok).toBe(true);
+        const first = (await r.grants.get("fakesvc"))?.tokens.accessToken;
+        const replay = await r.connect.callback(back);
+        expect(replay.ok).toBe(false);
+        expect((await r.grants.get("fakesvc"))?.tokens.accessToken).toBe(first);
+      },
+    ],
+    [
+      "an answer for another workspace's attempt",
+      async () => {
+        const a = await r.begin("maria@acme.example", { org: "acme" });
+        const b = await r.begin("bob@globex.example", { org: "globex" });
+        // Acme's code under Globex's state: the code was made for Acme's PKCE challenge.
+        const mixed = new URLSearchParams(a.back);
+        mixed.set("state", b.back.get("state") ?? "");
+        expect((await r.connect.callback(mixed)).ok).toBe(false);
+        expect(r.connect.flow(b.flow).state).toBe("failed");
+        expect(r.connections.has("fakesvc-2")).toBe(false);
+        // The service burned the code when it saw it presented with the wrong verifier.
+        expect((await r.connect.callback(a.back)).ok).toBe(false);
+        expect(r.connections.size).toBe(0);
+        expect(await r.grants.connections()).toEqual([]);
+      },
+    ],
+    [
+      "an answer that names another issuer",
+      async () => {
+        const { back } = await r.begin("maria@acme.example");
+        const odd = new URLSearchParams(back);
+        odd.set("iss", "https://evil.example");
+        expect((await r.connect.callback(odd)).ok).toBe(false);
+        expect(r.connections.size).toBe(0);
+      },
+    ],
+    [
+      "an answer after the page timed out",
+      async () => {
+        const { flow, back } = await r.begin("maria@acme.example");
+        r.skip(FLOW_TTL_MS + 1000);
+        expect((await r.connect.callback(back)).ok).toBe(false);
+        expect(r.connect.flow(flow).state).toBe("expired");
+        expect(r.connections.size).toBe(0);
+      },
+    ],
+  ])(
+    "accepts a sign-in answer once and only for the workspace and issuer that began it: refuses %s",
+    async (_name, run) => {
+      await run();
+    },
+  );
 });

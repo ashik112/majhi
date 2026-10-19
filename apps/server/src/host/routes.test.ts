@@ -59,18 +59,33 @@ describe("host helper link over HTTP", () => {
     return HostJobSchema.parse(await res.json());
   };
 
-  it("requires the token from host.token", async () => {
-    const noToken = await app.request("/api/host/poll", {
-      method: "POST",
-      headers: { [HOST_INFO_HEADER]: JSON.stringify(CAN_REMOUNT) },
-    });
-    expect(noToken.status).toBe(401);
-    expect((await poll(CAN_REMOUNT, { authorization: `Bearer ${TOKEN}x` })).status).toBe(401);
-    expect((await poll(CAN_REMOUNT, { authorization: TOKEN })).status).toBe(401);
-    expect((await reply({ id: "x", ok: true, result: {} })).status).toBe(204);
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a request without the token from host.token",
+      async () => {
+        const noToken = await app.request("/api/host/poll", {
+          method: "POST",
+          headers: { [HOST_INFO_HEADER]: JSON.stringify(CAN_REMOUNT) },
+        });
+        expect(noToken.status).toBe(401);
+        expect((await poll(CAN_REMOUNT, { authorization: `Bearer ${TOKEN}x` })).status).toBe(401);
+        expect((await poll(CAN_REMOUNT, { authorization: TOKEN })).status).toBe(401);
+        expect((await reply({ id: "x", ok: true, result: {} })).status).toBe(204);
 
-    await rm(join(env.majhiHome, HOST_TOKEN_FILE));
-    expect((await quickPoll()).status).toBe(401);
-    expect((await reply({ id: "x", ok: true, result: {} })).status).toBe(401);
+        await rm(join(env.majhiHome, HOST_TOKEN_FILE));
+        expect((await quickPoll()).status).toBe(401);
+        expect((await reply({ id: "x", ok: true, result: {} })).status).toBe(401);
+      },
+    ],
+    [
+      "a browser request, even from a local page with the right token",
+      async () => {
+        await writeFile(join(env.majhiHome, HOST_TOKEN_FILE), `${TOKEN}\n`);
+        const res = await poll(CAN_REMOUNT, { origin: "http://127.0.0.1:7070" });
+        expect(res.status).toBe(403);
+      },
+    ],
+  ])("answers only requests with its token, and never a browser: refuses %s", async (_name, run) => {
+    await run();
   });
 });

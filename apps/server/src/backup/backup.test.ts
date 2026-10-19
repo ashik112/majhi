@@ -149,20 +149,95 @@ describe("a backup", () => {
 });
 
 describe("restore", () => {
-  it("changes nothing when the backup is damaged", async () => {
-    const name = await backup.now();
-    const file = join(home, "backups", name);
-    const bytes = readFileSync(file);
-    writeFileSync(file, bytes.subarray(0, bytes.length - 40));
+  /** A restore that is refused: nothing pending, no restart, the live config as it was, no safety backup taken. */
+  const refusedAndUntouched = async (service: BackupService, name: string) => {
     const before = readFileSync(join(home, "majhi.yaml"), "utf8");
-    await expect(backup.restore(name)).rejects.toThrow();
+    await expect(service.restore(name)).rejects.toThrow();
     expect(readPending(home)).toBeUndefined();
     expect(restarts).toBe(0);
     expect(readFileSync(join(home, "majhi.yaml"), "utf8")).toBe(before);
     expect(await readdir(join(home, "restore-staging")).catch(() => [])).toEqual([]);
-    // It did not even take the safety backup.
     expect((await backup.list()).backups.filter((b) => b.kind === "before-restore")).toEqual([]);
-  });
+  };
+
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a cut-off archive",
+      async () => {
+        const name = await backup.now();
+        const file = join(home, "backups", name);
+        const bytes = readFileSync(file);
+        writeFileSync(file, bytes.subarray(0, bytes.length - 40));
+        await refusedAndUntouched(backup, name);
+      },
+    ],
+    [
+      "a flipped bit",
+      async () => {
+        const name = await backup.now();
+        const file = join(home, "backups", name);
+        const flipped = Buffer.from(readFileSync(file));
+        const at = Math.floor(flipped.length * 0.7);
+        flipped[at] = (flipped[at] ?? 0) ^ 0x01;
+        writeFileSync(file, flipped);
+        await refusedAndUntouched(backup, name);
+      },
+    ],
+    [
+      "a backup sealed for another key",
+      async () => {
+        const name = await backup.now();
+        await refusedAndUntouched(makeService({ key: async () => generateKey() }), name);
+      },
+    ],
+    [
+      "a backup from a newer migration",
+      async () => {
+        const future: DbSource[] = [
+          {
+            rel: "majhi.db",
+            backup: async (dest) => {
+              await store.raw.backup(dest);
+              const copy = new Database(dest);
+              copy
+                .prepare(
+                  "INSERT INTO migrations (id, name, applied_at) VALUES (99999, 'from the future', 'x')",
+                )
+                .run();
+              copy.close();
+            },
+          },
+        ];
+        const name = await makeService({ databases: () => future }).now();
+        await refusedAndUntouched(backup, name);
+      },
+    ],
+    [
+      "a database that fails SQLite's own integrity check",
+      async () => {
+        const broken: DbSource[] = [
+          {
+            rel: "majhi.db",
+            backup: async (dest) => {
+              await store.raw.backup(dest);
+              // Overwrite part of the file after the first page: the copy opens but is not whole.
+              const bytes = readFileSync(dest);
+              for (let i = 4096 * 2; i < Math.min(bytes.length, 4096 * 6); i++) bytes[i] = 0xab;
+              writeFileSync(dest, bytes);
+            },
+          },
+        ];
+        // The check at backup time already refuses to store a copy that does not pass.
+        await expect(makeService({ databases: () => broken }).now()).rejects.toThrow();
+        expect(await archives()).toEqual([]);
+      },
+    ],
+  ])(
+    "changes nothing when the backup is damaged, too new or sealed for another key: %s",
+    async (_name, run) => {
+      await run();
+    },
+  );
 
   it("blocks migration when its safety backup cannot be written", async () => {
     const old = mkdtempSync(join(tmpdir(), "majhi-premigrate-fail-"));

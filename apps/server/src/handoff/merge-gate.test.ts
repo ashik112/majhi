@@ -4,10 +4,15 @@ import {
   type HandoffResult,
   type HandoffState,
   type HandoffStep,
+  type MergeChecks,
   mergeVerdictAction,
+  type QueuedMerge,
   type Task,
 } from "@majhi/shared";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
+import { MIGRATIONS } from "../store/migrations.ts";
+import { type QueuedMergePorts, QueuedMerges } from "../tasks/queued-merge.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
 import { decideMerge } from "./merge-gate.ts";
@@ -82,45 +87,95 @@ const handoff = async (id: string) =>
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
 
 describe("the merge rule", { timeout: 90_000 }, () => {
-  it("refuses a failed check, cannot be overridden by an agent or a wrong sha, and lets the owner confirm the head", async () => {
-    const { h, id, repo } = await reviewed('\t@test ! -f work.txt || { echo "FAIL: nope"; exit 1; }');
-    const options = (await h.cmd("tasks.shipOptions", { id })).body;
-    expect(options.checks.verdict).toEqual({ kind: "failed", check: "test" });
-    const head = options.checks.head as string;
-    const before = await tip(repo, "main");
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a failed check, an agent, a wrong sha",
+      async () => {
+        const { h, id, repo } = await reviewed('\t@test ! -f work.txt || { echo "FAIL: nope"; exit 1; }');
+        const options = (await h.cmd("tasks.shipOptions", { id })).body;
+        expect(options.checks.verdict).toEqual({ kind: "failed", check: "test" });
+        const head = options.checks.head as string;
+        const before = await tip(repo, "main");
 
-    // The owner without a confirmation, the captain and an agent: refused as the failed test check.
-    const plain = await h.cmd("tasks.merge", { id, into: "main", done: true });
-    expect(plain.status).toBe(409);
-    expect(plain.body.error).toContain("The test check failed on this commit.");
-    for (const actor of [
-      { kind: "agent", id: "acme-builder" },
-      { kind: "agent", id: "boss" },
-    ]) {
-      const agent = await h.cmd("tasks.merge", { id, into: "main", done: true }, { actor, task: id });
-      expect(agent.status).toBe(409);
-      expect(agent.body.error).toContain("The test check failed on this commit.");
-      // They cannot send the confirmation either.
-      const forced = await h.cmd(
-        "tasks.merge",
-        { id, into: "main", done: true, confirmChecks: head },
-        { actor, task: id },
-      );
-      expect(forced.status).toBe(409);
-      expect(forced.body.error).toBe("Only the owner can merge past a failed check.");
-    }
-    expect(await tip(repo, "main")).toBe(before);
+        // The owner without a confirmation, the captain and an agent: refused as the failed test check.
+        const plain = await h.cmd("tasks.merge", { id, into: "main", done: true });
+        expect(plain.status).toBe(409);
+        expect(plain.body.error).toContain("The test check failed on this commit.");
+        for (const actor of [
+          { kind: "agent", id: "acme-builder" },
+          { kind: "agent", id: "boss" },
+        ]) {
+          const agent = await h.cmd("tasks.merge", { id, into: "main", done: true }, { actor, task: id });
+          expect(agent.status).toBe(409);
+          expect(agent.body.error).toContain("The test check failed on this commit.");
+          // They cannot send the confirmation either.
+          const forced = await h.cmd(
+            "tasks.merge",
+            { id, into: "main", done: true, confirmChecks: head },
+            { actor, task: id },
+          );
+          expect(forced.status).toBe(409);
+          expect(forced.body.error).toBe("Only the owner can merge past a failed check.");
+        }
+        expect(await tip(repo, "main")).toBe(before);
 
-    // A wrong sha is refused.
-    const wrong = await h.cmd("tasks.merge", { id, into: "main", done: true, confirmChecks: "api@000000" });
-    expect(wrong.status).toBe(409);
-    expect(await tip(repo, "main")).toBe(before);
+        // A wrong sha is refused.
+        const wrong = await h.cmd("tasks.merge", {
+          id,
+          into: "main",
+          done: true,
+          confirmChecks: "api@000000",
+        });
+        expect(wrong.status).toBe(409);
+        expect(await tip(repo, "main")).toBe(before);
 
-    // The owner with the head of this merge: it merges, and the override is in the trail.
-    const ok = await h.cmd("tasks.merge", { id, into: "main", done: true, confirmChecks: head });
-    expect(ok.status).toBe(200);
-    expect(await tip(repo, "main")).not.toBe(before);
-    const audit = await h.cmd("audit.list", { task: id });
-    expect(JSON.stringify(audit.body)).toContain("merge-override");
+        // The owner with the head of this merge: it merges, and the override is in the trail.
+        const ok = await h.cmd("tasks.merge", { id, into: "main", done: true, confirmChecks: head });
+        expect(ok.status).toBe(200);
+        expect(await tip(repo, "main")).not.toBe(before);
+        const audit = await h.cmd("audit.list", { task: id });
+        expect(JSON.stringify(audit.body)).toContain("merge-override");
+      },
+    ],
+    [
+      "a head that moved after the merge was queued, even when the new head is green",
+      async () => {
+        const db = new Database(":memory:");
+        const table = MIGRATIONS.find((m) => m.name === "queued merges");
+        if (table === undefined) throw new Error("no migration");
+        db.exec(table.sql);
+        const merged: QueuedMerge[] = [];
+        const refused: string[] = [];
+        let checks: MergeChecks = { head: "api@aaaaaaaaaaaa", verdict: { kind: "running" } };
+        const ports: QueuedMergePorts = {
+          task: (id) => ({ id, status: "review", repos: 1 }),
+          checks: async () => checks,
+          run: async (q) => {
+            merged.push(q);
+            return undefined;
+          },
+          say: () => undefined,
+          refuse: (_t, text) => refused.push(text),
+          changed: () => undefined,
+          now: () => new Date("2026-01-01T00:00:00.000Z"),
+        };
+        const queued = new QueuedMerges(db, ports);
+        await queued.request({
+          task: "ACM-1",
+          action: "merge",
+          into: "main",
+          method: "merge",
+          deleteAfter: false,
+          by: "owner",
+        });
+        checks = { head: "api@bbbbbbbbbbbb", verdict: { kind: "ok" } };
+        await queued.evaluate("ACM-1");
+        expect(merged).toHaveLength(0);
+        expect(queued.get("ACM-1")).toBeUndefined();
+        expect(refused).toHaveLength(1);
+      },
+    ],
+  ])("merges only with green checks on the exact head: refuses %s", async (_name, run) => {
+    await run();
   });
 });

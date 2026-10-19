@@ -73,9 +73,18 @@ describe("decideAutonomously: the authority level", () => {
   const at = (level: "ask" | "routine" | "full"): PolicyContext =>
     ctx({ settings: AutonomySettingsSchema.parse({ orgs: { acme: { level } } }) });
 
-  it("merges at Full only", () => {
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("full"))).toBe("approved");
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("routine"))).toBe("left");
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), at("ask"))).toBe("left");
-  });
+  it.each<[command: CommandName, ask: string, routine: string, full: string]>([
+    ["tasks.start", "left", "approved", "approved"],
+    ["tasks.push", "left", "approved", "approved"],
+    ["tasks.openMrs", "left", "approved", "approved"],
+    ["tasks.merge", "left", "left", "approved"],
+  ])(
+    "%s: the captain's decision at Ask me is %s, at Routine %s, at Full %s",
+    (command, ask, routine, full) => {
+      const call_ = call(command, { id: "ACM-1" });
+      expect(decide(call_, at("ask"))).toBe(ask);
+      expect(decide(call_, at("routine"))).toBe(routine);
+      expect(decide(call_, at("full"))).toBe(full);
+    },
+  );
 });

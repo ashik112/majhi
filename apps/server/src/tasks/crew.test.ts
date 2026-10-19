@@ -135,38 +135,75 @@ const planning =
     return undefined;
   };
 
-describe("a lead that cannot run", () => {
-  it("is replaced by the worker with the most headroom, who carries on with the plan", async () => {
-    const { prompts, services } = await crewWorld(
-      {
-        "acme-lead": async (turn, n) => {
-          if (n === 1) return planning("me", "acme-builder", "me")(turn, n);
-          throw LIMIT;
-        },
-        "acme-builder": (_t, n) => `Built ${n}.`,
-        "acme-w2": (_t, n) => `Led ${n}.`,
-      },
-      // The first worker is nearly out; the second has most of its window left.
-      { usages: { "acme-builder": 90, "acme-w2": 20 } },
-    );
-    await must("tasks.start", { id: "ACM-1" });
-    await services.runs.idle();
+describe("an agent that cannot run", () => {
+  it.each<[string, () => Promise<void>]>([
+    [
+      "a lead is replaced by the worker with the most headroom, who carries on with the plan",
+      async () => {
+        const { prompts, services } = await crewWorld(
+          {
+            "acme-lead": async (turn, n) => {
+              if (n === 1) return planning("me", "acme-builder", "me")(turn, n);
+              throw LIMIT;
+            },
+            "acme-builder": (_t, n) => `Built ${n}.`,
+            "acme-w2": (_t, n) => `Led ${n}.`,
+          },
+          // The first worker is nearly out; the second has most of its window left.
+          { usages: { "acme-builder": 90, "acme-w2": 20 } },
+        );
+        await must("tasks.start", { id: "ACM-1" });
+        await services.runs.idle();
 
-    expect(task().team[0]).toBe("acme-w2");
-    expect(task().team).toContain("acme-lead");
-    expect(await lines()).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(
-          /^@acme-lead hit its usage limit .+@acme-w2, the worker with the most headroom, leads now/,
-        ),
-      ]),
-    );
-    const steps = planOf().steps;
-    expect(steps.map((s) => s.status)).toEqual(["done", "done", "done"]);
-    // Step 1 was the old lead's ("me"): the new lead finished it, and it leads step 3 too.
-    expect(prompts["acme-lead"]).toHaveLength(2);
-    expect(steps[0]?.result).toBe("Led 1.");
-    expect(steps[2]?.result).toBe("Led 2.");
+        expect(task().team[0]).toBe("acme-w2");
+        expect(task().team).toContain("acme-lead");
+        expect(await lines()).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(
+              /^@acme-lead hit its usage limit .+@acme-w2, the worker with the most headroom, leads now/,
+            ),
+          ]),
+        );
+        const steps = planOf().steps;
+        expect(steps.map((s) => s.status)).toEqual(["done", "done", "done"]);
+        // Step 1 was the old lead's ("me"): the new lead finished it, and it leads step 3 too.
+        expect(prompts["acme-lead"]).toHaveLength(2);
+        expect(steps[0]?.result).toBe("Led 1.");
+        expect(steps[2]?.result).toBe("Led 2.");
+      },
+    ],
+    [
+      "a worker has its step finished by another agent from the last checkpoint",
+      async () => {
+        const { prompts, services } = await crewWorld({
+          "acme-lead": planning("acme-builder", "acme-w2", "me"),
+          "acme-builder": () => {
+            throw LIMIT;
+          },
+          "acme-w2": (_t, n) => `Done with its work ${n}.`,
+        });
+        await must("tasks.start", { id: "ACM-1" });
+        await services.runs.idle();
+
+        // The worker's own account hit its limit on its only turn; the step finished on the other worker.
+        expect(prompts["acme-builder"]).toHaveLength(1);
+        expect(prompts["acme-w2"]).toHaveLength(2);
+        const done = planOf().steps;
+        expect(done.map((s) => s.status)).toEqual(["done", "done", "done"]);
+        expect(done[0]).toMatchObject({ who: "acme-w2", result: "Done with its work 1." });
+        expect(done[2]?.who).toBe("me");
+        expect(await lines()).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(
+              /^@acme-builder hit its usage limit \(resets .+\)\. @acme-w2 takes its step from the checkpoint\.$/,
+            ),
+          ]),
+        );
+        expect(task().status).toBe("review");
+      },
+    ],
+  ])("hands the work to another agent when an account hits its limit mid-run: %s", async (_name, run) => {
+    await run();
   });
 });
 

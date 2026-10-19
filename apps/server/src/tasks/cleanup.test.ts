@@ -129,19 +129,71 @@ describe("run", () => {
     expect(store.tasks.get("ACM-1")?.repos[0]?.worktree).toBe(worktree);
   });
 
-  it("keeps the branch of a merged MR when it holds commits that were never pushed", async () => {
+  /** Clean-up never deletes a branch whose commits exist nowhere else: the run skips it and the branch stays. */
+  const keepsBranch = async (branch: string, step: Record<string, unknown>) => {
+    const report = await service.run(["ACM-1"], 30, "owner");
+    expect(report.tasks[0]?.steps[1]).toMatchObject({ kind: "branch", action: "skip", ...step });
+    expect(await branches()).toContain(branch);
+  };
+  /** A merged task whose branch was pushed once and then got one more commit that was never pushed. */
+  const withLateCommit = async () => {
     await addRemote("origin");
     const { worktree, branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
     await git(source, "push", "--quiet", "origin", branch);
     await writeFile(join(worktree, "late.txt"), "late\n");
     await git(worktree, "add", ".");
     await git(worktree, "commit", "--quiet", "-m", "late");
-    const report = await service.run(["ACM-1"], 30, "owner");
-    expect(report.tasks[0]?.steps[1]).toMatchObject({
-      kind: "branch",
-      action: "skip",
-      reason: "it has commits that were never pushed",
-    });
-    expect(await branches()).toContain(branch);
+    return branch;
+  };
+
+  it.each<[string, () => Promise<void>]>([
+    [
+      "commits that were never pushed",
+      async () => {
+        await keepsBranch(await withLateCommit(), { reason: "it has commits that were never pushed" });
+      },
+    ],
+    [
+      "a branch that is not merged",
+      async () => {
+        const { branch } = await seed({ id: "ACM-1", ahead: true });
+        await keepsBranch(branch, {});
+      },
+    ],
+    [
+      "a remote that cannot be reached",
+      async () => {
+        await git(source, "remote", "add", "origin", join(dir, "missing.git"));
+        const { branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
+        await keepsBranch(branch, { reason: expect.stringContaining("could not fetch origin/main") });
+      },
+    ],
+    [
+      "a tracking ref that only claims the branch is pushed",
+      async () => {
+        const branch = await withLateCommit();
+        // A stale or moved tracking ref says the remote has the late commit too; it does not.
+        await git(source, "update-ref", `refs/remotes/origin/${branch}`, branch);
+        const tip = await git(source, "rev-parse", branch);
+        await keepsBranch(branch, {});
+        expect(await git(source, "rev-parse", branch)).toBe(tip);
+      },
+    ],
+    [
+      "a merge request that is still open",
+      async () => {
+        const { branch } = await seed({ id: "ACM-1", ahead: true, mr: "open" });
+        await keepsBranch(branch, {});
+      },
+    ],
+    [
+      "a branch the task did not create",
+      async () => {
+        const { branch } = await seed({ id: "ACM-1", createdBranch: false });
+        await keepsBranch(branch, { reason: "the task did not create it" });
+      },
+    ],
+  ])("keeps the branch when its commits exist nowhere else: %s", async (_name, run) => {
+    await run();
   });
 });

@@ -24,20 +24,28 @@ const kind = (line: string, connections: readonly GateConnection[] = held) =>
   classifyCommand(line, connections).kind;
 
 describe("classifyCommand: whole lines", () => {
-  it("reads inside $(...), backticks, sh -c, eval, watch, xargs and find -exec", () => {
-    expect(kind("echo $(kubectl delete pod api-7d9)")).toBe("write");
-    expect(kind("echo `kubectl delete ns api`")).toBe("write");
-    expect(kind('echo "pods: $(kubectl scale deploy/api --replicas=0)"')).toBe("write");
-    expect(kind('sh -c "kubectl delete pod api-7d9"')).toBe("write");
-    expect(kind("bash -lc 'kubectl get pods'")).toBe("read");
-    expect(kind('eval "kubectl scale deploy/api --replicas=0"')).toBe("write");
-    expect(kind("watch kubectl get pods")).toBe("read");
-    expect(kind('watch -n 5 "kubectl delete pod api-7d9"')).toBe("write");
-    expect(kind("kubectl get pods -o name | xargs kubectl delete")).toBe("write");
-    expect(kind("kubectl get pods -o name | xargs -I{} kubectl delete {}")).toBe("write");
-    expect(kind("timeout 30 kubectl delete pod api-7d9")).toBe("write");
-    expect(kind("find . -name '*.yaml' -exec kubectl apply -f {} \\;")).toBe("write");
-  });
+  it.each<[line: string, kind: "read" | "write"]>([
+    ["echo $(kubectl delete pod api-7d9)", "write"],
+    ["echo `kubectl delete ns api`", "write"],
+    ['echo "pods: $(kubectl scale deploy/api --replicas=0)"', "write"],
+    ['sh -c "kubectl delete pod api-7d9"', "write"],
+    ["bash -lc 'kubectl get pods'", "read"],
+    ['eval "kubectl scale deploy/api --replicas=0"', "write"],
+    ["watch kubectl get pods", "read"],
+    ['watch -n 5 "kubectl delete pod api-7d9"', "write"],
+    ["kubectl get pods -o name | xargs kubectl delete", "write"],
+    ["kubectl get pods -o name | xargs -I{} kubectl delete {}", "write"],
+    ["timeout 30 kubectl delete pod api-7d9", "write"],
+    ["find . -name '*.yaml' -exec kubectl apply -f {} \\;", "write"],
+    ["$KUBECTL delete pod api-7d9", "write"],
+    ['"$(which kubectl)" get pods', "write"],
+    ['kubectl get "pods', "write"],
+  ])(
+    "reads inside $(...), backticks, sh -c, eval, watch, xargs and find -exec, and counts what it cannot read as a write: %s is a %s",
+    (line, expected) => {
+      expect(kind(line)).toBe(expected);
+    },
+  );
 });
 
 describe("destructive writes", () => {
