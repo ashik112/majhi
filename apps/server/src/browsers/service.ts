@@ -166,7 +166,6 @@ export class BrowserService {
     // Ranges are taken one workspace at a time, so two workspaces never pick the same one.
     const subnet = await this.serialized("network", () => this.network(docker, names));
     const ip = hostOf(subnet, BROWSER_HOST);
-    const known = this.ready.get(org);
     const state = await docker([
       "inspect",
       "--format",
@@ -174,8 +173,11 @@ export class BrowserService {
       names.container,
     ]).catch(() => "");
     const [running = "", ...rest] = state.trim().split(" ");
-    if (running === "true" && rest.join(" ") === wanted && known !== undefined && known.ip === ip) {
-      return known;
+    if (running === "true" && rest.join(" ") === wanted) {
+      // Already running with these profiles (its ports follow from their order): use it.
+      const ready: Ready = { network: names.network, ip, ports };
+      this.ready.set(org, ready);
+      return ready;
     }
     await docker(["rm", "-f", names.container]).catch(() => "");
 

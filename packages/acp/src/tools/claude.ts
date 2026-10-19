@@ -84,7 +84,8 @@ export function mapClaudeUsage(json: unknown, now: Date = new Date()): AccountUs
 
 async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
   const helper = ctx.options.usage?.claude ?? {
-    command: process.execPath,
+    // In a runner container the host's node path does not exist; its PATH has node.
+    command: ctx.options.spawner === undefined ? process.execPath : "node",
     args: [
       "--input-type=module",
       "-e",
