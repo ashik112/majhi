@@ -133,6 +133,12 @@ One authority level per workspace (Ask me, Routine, Full), tools matched to the 
 
 Each update rebuilds about 7.8 GB of images on the owner's laptop. Cut the runner image to at most 2.5 GB and the server image to at most 600 MB: multi-stage builds, no build tools or caches in the final layer, shared base layers between runner and server, language toolchains installed once per workspace store instead of baked in where possible. Measure `docker images` before and after and the disk an update costs. Build at most twice while working and remove what you built; check free disk first (it was 19 GB).
 
+**Memory pass (part of 2b).** Node's own floor is about 57 MB; about 235 MB of the server's 293 MB is majhi's data. Profile it (`process.memoryUsage()`, a heap snapshot) and design it down: agent history and transcripts live in SQLite or on disk, not in memory; hard caps on caches and per-agent output buffers; no unbounded listener sets; a long-run check that memory stays flat over a day of tasks. Target 200 MB idle. Stay on Node (research 2026-10-19: Bun-based agent tools show repeated unbounded memory growth, and its compatibility with majhi's SQLite driver is unproven). Stack stays TypeScript; no full rewrite.
+
+## Step 2c: host helper in Go (after 2b)
+
+Rewrite `apps/host` (about 8.7k lines of Node) in Go as one signed binary of a few MB, so the Mac needs no Node for it. Keep its HTTP protocol with the server unchanged; its zod schemas in packages/shared stay the source of truth, and the Go side is checked against them in one contract test. Rust only if its macOS sandbox work needs APIs Go cannot reach.
+
 ## Step 1b: permissions by risk (after step 1)
 
 Owner, 2026-10-19: "for trivial things they ask permission. Then what is the use of an agentic system?" The live queue had 6 approval cards of 17: a `cd` into the task's own folder, the captain reading ship options, an official image pull, pushing the task's own branch. Cause: everything outside a short allow list is "unsettled" (captain/permission-rules.ts), and "Always" saves a rule per agent, command and task (admin/policy.ts), so 33 rules never generalise.
