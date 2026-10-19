@@ -166,7 +166,7 @@ export const HOLD_LABEL: Record<HoldClass, string> = {
 };
 
 /** The fixed holds: they have no switch. */
-export const FixedHoldSchema = z.enum(["secret", "other-client", "report", "unchecked"]);
+export const FixedHoldSchema = z.enum(["secret", "other-client", "report", "unchecked", "internal"]);
 export type FixedHold = z.infer<typeof FixedHoldSchema>;
 
 /** The Hold list of a workspace: `false` switches a class off. Absent means on. */
@@ -241,6 +241,8 @@ export const ClientRoomSchema = z.strictObject({
   /** Unlinked by the owner: its history stays under its workspace, read only, and nothing is read or sent. */
   archived: z.boolean().optional(),
   trouble: ChatTroubleSchema.optional(),
+  /** The chat hears about incidents of its workspace, also those nobody here reported. Off unless the owner turns it on. */
+  incidentUpdates: z.boolean().optional(),
 });
 export type ClientRoom = z.infer<typeof ClientRoomSchema>;
 
@@ -494,6 +496,7 @@ export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
   "other-client": "Names another client",
   report: "A report to a client",
   unchecked: "Not checked",
+  internal: "Names an internal id",
   promisedTime: "Mentions a time",
   firstContact: "First message to them",
   severalClients: "Several clients in the chat",
@@ -668,6 +671,8 @@ export const ChatSettingsViewSchema = z.object({
   repliesToday: z.number().int().nonnegative(),
   people: z.array(ChatPersonSchema),
   archived: z.boolean().optional(),
+  /** The chat gets incident updates (default off). */
+  incidentUpdates: z.boolean(),
 });
 export type ChatSettingsView = z.infer<typeof ChatSettingsViewSchema>;
 
@@ -691,6 +696,7 @@ export const ChatSettingsInputSchema = z.strictObject({
   holds: ChatHoldsChangeSchema.optional(),
   keep: KeepSchema.optional(),
   notify: NotifySchema.optional(),
+  incidentUpdates: z.boolean().optional(),
 });
 export type ChatSettingsInput = z.infer<typeof ChatSettingsInputSchema>;
 

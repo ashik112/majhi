@@ -64,6 +64,8 @@ export interface ClientChatWiring {
   /** The one reader of an incident's facts, and the engine that opens and joins incidents. */
   facts: IncidentFacts;
   engine: IncidentsDeps["engine"];
+  /** The workspace's Client update switch. */
+  clientUpdate: IncidentsDeps["clientUpdate"];
   /** Why nobody looked at a workspace's incidents, or undefined. */
   quiet?: IncidentsDeps["quiet"];
   /** A workspace's time zone. */
@@ -201,6 +203,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     w.blocked?.() === undefined ? "decide" : "ask";
   const holds = async (org: string): Promise<Holds> =>
     effectiveHolds((await w.config.settings()).autonomy.orgs[org]?.holds);
+  let incidentsRef: ClientIncidents | undefined;
   const replies = new ClientReplies({
     store: w.store,
     room: w.room,
@@ -209,6 +212,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     rooms,
     tell,
     holds,
+    internalMarks: (room) => incidentsRef?.internalMarks(room) ?? [],
+    incidentUpdate: async (room) => incidentsRef?.incidentUpdate(room),
     dayBegins: async (org) => dayBegins(w.now?.() ?? new Date(), await w.tz(org)),
     orgNames: async () =>
       new Map(
@@ -229,6 +234,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     store: w.store,
     room: w.room,
     replies,
+    clientUpdate: w.clientUpdate,
     gate: w.gate,
     findings: w.findings,
     watch: w.watch,
@@ -251,6 +257,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   });
+  incidentsRef = incidents;
   const work = new ChatWork({
     store: w.store,
     room: w.room,

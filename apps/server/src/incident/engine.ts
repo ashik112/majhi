@@ -95,6 +95,8 @@ export interface EngineDeps {
     /** Adds a line to the watch incident's "What happened", once per text. */
     note?(id: number, text: string, at?: string): void;
   };
+  /** A new incident task exists: the chats that get incident updates are linked to it. */
+  opened?: ((task: Task) => void) | undefined;
   /** The captain hears of news for a workspace. */
   announce?: {
     wake(org: string, text: string): void;
@@ -428,6 +430,7 @@ export class IncidentEngine {
       this.at(),
     );
     await this.adopt(task.id, source);
+    this.deps.opened?.(task);
     // The investigation reads only: it never waits for Auto-pilot or the Start row.
     const started = await this.tryStart(task.id, urgent);
     this.deps.changed();

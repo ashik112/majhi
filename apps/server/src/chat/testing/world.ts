@@ -54,6 +54,10 @@ export interface WorldOptions {
   holds?: HoldsPatch;
   /** The text a client reply holds, for the rails: sent through the hub. */
   failSend?: boolean;
+  /** Words that belong to majhi (a task id, a branch) and must never reach the client. */
+  internal?: string[];
+  /** The Client update switch of an incident update this room is due, when one is due. */
+  incidentUpdate?: "ask" | "sends";
 }
 
 /** Client chats around an in-memory store: real rooms, contacts, gate and replies; a hub that records what it sends. */
@@ -109,6 +113,8 @@ export function world(options: WorldOptions = {}) {
     rooms,
     tell: async () => state.tell,
     holds: async () => state.holds,
+    internalMarks: () => options.internal ?? [],
+    incidentUpdate: async () => options.incidentUpdate,
     orgNames: async () => ORGS,
     changed: () => undefined,
   });

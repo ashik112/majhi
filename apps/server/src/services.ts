@@ -1829,6 +1829,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
+      ...(clientChat?.incidents.decisions() ?? []),
       ...(clientChat?.waits.decisions() ?? []),
       ...(await payDecisions.decisions()),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
@@ -1842,7 +1843,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
     answering: (decision, option) => {
-      if (decision.incident === true && decision.kind === "ship" && option === "merge" && decision.task !== undefined) {
+      if (
+        decision.incident === true &&
+        decision.kind === "ship" &&
+        option === "merge" &&
+        decision.task !== undefined
+      ) {
         incidentEngine?.approveShip(decision.task);
       }
     },
@@ -2781,6 +2787,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const incidentEngineNow = new IncidentEngine({
     blocked: () => autonomy.reactingBlocked(),
+    opened: (task) => {
+      if (task.org !== undefined) clientChat?.incidents.linkSubscribers(task.id, task.org);
+    },
     store,
     facts: incidentFacts,
     room,
@@ -2866,6 +2875,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
       ),
     secretOf: connectionSecret,
+    clientUpdate: async (org) =>
+      (await config.settings()).autonomy.orgs[org]?.incident?.clientUpdate === "sends" ? "sends" : "ask",
     intercept: async (connection, envelope) => (await ownerTelegram?.claims(connection, envelope)) === true,
     housekeeper: reactingHousekeeper,
     blocked: () => autonomy.reactingBlocked(),

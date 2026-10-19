@@ -87,6 +87,38 @@ describe("a reply to a client", () => {
       },
     ],
     [
+      "when it names the incident's task id or branch, even under Captain sends",
+      async () => {
+        const t = await ready({
+          tell: "decide",
+          holds: { firstContact: false },
+          internal: ["ACM-12", "fix/checkout-timeout"],
+          incidentUpdate: "sends",
+        });
+        expect(await t.reply("We are working on ACM-12 now.")).toMatchObject({
+          state: "held",
+          why: "internal",
+        });
+        expect(await t.reply("The fix is on fix/checkout-timeout.")).toMatchObject({
+          state: "held",
+          why: "internal",
+        });
+        expect(t.w.sent).toEqual([]);
+      },
+    ],
+    [
+      "as an incident update under Client update Ask me, even when the chat lets the captain send",
+      async () => {
+        const t = await ready({ tell: "decide", holds: { firstContact: false }, incidentUpdate: "ask" });
+        expect(await t.reply("The checkout is back. We are watching it.")).toMatchObject({
+          state: "held",
+          why: "tell",
+        });
+        expect(t.w.sent).toEqual([]);
+        expect(t.drafts().map((d) => d.status)).toEqual(["pending"]);
+      },
+    ],
+    [
       "for the first message to a contact",
       async () => {
         const first = await ready({ tell: "decide" });

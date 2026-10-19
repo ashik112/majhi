@@ -166,7 +166,7 @@ export function actionOf(link: DecisionLink): BannerAction {
 export function openLabel(link: DecisionLink): string {
   switch (link.kind) {
     case "task":
-      return "Open task";
+      return link.label ?? "Open task";
     case "chat":
       return "Open chat";
     case "captain":

@@ -14,6 +14,7 @@ import {
  * Order, first that holds wins:
  *   1. a secret in the text, which is also taken out of it (fixed, no switch);
  *   2. another client's or another workspace's name in the text (fixed);
+ *   2b. an internal id, branch name, commit or checkpoint in the text (fixed);
  *   3. a report to a client, such as an RCA (fixed);
  *   4. Tell on Ask me: every reply waits (Tell does not wait for Auto-pilot: it is the row as the owner set it);
  *   5. under Captain decides, the classes of the Hold list the owner left on.
@@ -35,6 +36,8 @@ export interface RailsInput {
   afterGap: boolean;
   /** The text is a report, like an RCA. */
   report?: boolean;
+  /** Words that are majhi's own and a client must never read: a task id, a branch name, a commit, a checkpoint. */
+  internal?: readonly string[];
 }
 
 export type RailsVerdict =
@@ -72,6 +75,9 @@ export function railsFor(input: RailsInput): RailsVerdict {
   if (clean !== input.text) return { send: false, why: "secret", text: clean };
   if (input.others.some((name) => mentionsName(input.text, name))) {
     return { send: false, why: "other-client", text: input.text };
+  }
+  if (input.internal?.some((mark) => mentionsName(input.text, mark)) === true) {
+    return { send: false, why: "internal", text: input.text };
   }
   if (input.report === true) return { send: false, why: "report", text: input.text };
   if (input.tell !== "decide") return { send: false, why: "tell", text: input.text };

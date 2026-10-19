@@ -5,7 +5,9 @@ import {
   type IncidentEvent,
   type IncidentRoomView,
   type IncidentView,
+  incidentAskDecisionId,
   type OpsIncident,
+  type OwnerDecision,
   type ReportText,
   type RoomItem,
   reportMessage,
@@ -58,6 +60,8 @@ export interface IncidentsDeps {
   history?: ChatHistory | undefined;
   /** A model with no tools, for the report's words. Absent: the report is written in code from the facts. */
   write?: ((org: string, key: string, prompt: string) => Promise<string | undefined>) | undefined;
+  /** The workspace's Client update switch: who sends what clients are told. */
+  clientUpdate: (org: string) => Promise<"ask" | "sends">;
   /** Why nobody has looked at this workspace's incidents (Auto-pilot off, outside hours), or undefined. */
   quiet?: ((org: string) => Promise<string | undefined>) | undefined;
   changed: () => void;
@@ -319,6 +323,59 @@ export class ClientIncidents {
     return { task: taskId, reopened };
   }
 
+  /** What broke, in words safe to tell a client: the watched service's own title, else a plain phrase. Never the task's title. */
+  private whatBroke(read: Read): string {
+    if (read.watch !== undefined) return clip(read.watch.title, 120);
+    return read.task.origin?.kind === "deploy"
+      ? "a release did not go out as planned"
+      : "the problem you reported";
+  }
+
+  /** Words of majhi's own that a reply to a client never carries, besides the ids and branches of the incidents. */
+  private static readonly INTERNAL_WORDS = ["checkpoint"] as const;
+
+  /**
+   * Words a client must never read in a reply to this room: the task id, branch names and commits of the incidents
+   * the chat follows and of their fix tasks. Rails hold a reply that carries one.
+   */
+  internalMarks(room: string): string[] {
+    const marks = new Set<string>(ClientIncidents.INTERNAL_WORDS);
+    for (const incident of this.incidentsOf(room)) {
+      for (const task of [incident, ...this.deps.facts.fixTasks(incident.id)]) {
+        marks.add(task.id);
+        for (const repo of task.repos) {
+          marks.add(repo.branch);
+          for (const commit of [repo.landed?.commit, repo.shipped?.head]) {
+            if (commit === undefined) continue;
+            marks.add(commit);
+            marks.add(commit.slice(0, 7));
+          }
+        }
+      }
+    }
+    return [...marks].filter((m) => m.length >= 3);
+  }
+
+  /** The Client update switch of the update this chat is due (it was woken for one and has not answered yet), or undefined. */
+  async incidentUpdate(room: string): Promise<"ask" | "sends" | undefined> {
+    for (const task of this.incidentsOf(room)) {
+      const due = this.events(task.id).some(
+        (e) => e.detail.event === "told" && e.detail.room === room && e.detail.draft === undefined,
+      );
+      if (due && task.org !== undefined) return this.deps.clientUpdate(task.org);
+    }
+    return undefined;
+  }
+
+  /** Links the chats that get incident updates to a new incident of their workspace. */
+  linkSubscribers(incident: string, org: string): void {
+    for (const room of this.deps.store.client.rooms()) {
+      if (room.org !== org || room.chat.incidentUpdates !== true) continue;
+      if (room.chat.archived === true || room.chat.ignored === true) continue;
+      this.link(incident, room.id);
+    }
+  }
+
   /** The incident tasks a chat is linked to, whatever the task's own status: the client status says what is open. */
   private incidentsOf(room: string): Task[] {
     const out: Task[] = [];
@@ -445,6 +502,7 @@ export class ClientIncidents {
         if (result.status === "monitoring" && (await this.askCause(read))) changed = true;
         if (result.status === "resolved" && result.at.resolved !== undefined) {
           if (await this.ensureReport(read, result.at.resolved)) changed = true;
+          if (await this.settleReport(read)) changed = true;
         }
       } catch {
         // The next pass tries again.
@@ -497,8 +555,8 @@ export class ClientIncidents {
    * woken twice. The captain's reply, when it goes out, is added to the same record (`replied`).
    */
   private async tell(read: Read, result: ReturnType<typeof clientStatus>, room: RoomRow): Promise<boolean> {
-    // The owner holds the chat: the captain does not write in it.
-    if (room.chat.holder !== "captain") return false;
+    // The owner holds the chat: the captain does not write in it, unless the chat is set to get incident updates.
+    if (room.chat.holder !== "captain" && room.chat.incidentUpdates !== true) return false;
     const { status } = result;
     const told = this.toldOf(read, room.id);
     const now = this.now().getTime();
@@ -547,7 +605,11 @@ export class ClientIncidents {
     changed: boolean,
     to: { sender: string; thread?: string } | undefined,
   ): string {
-    const lines = [`Incident ${read.task.id}: ${clip(read.task.title, 120)}.`];
+    // What a client may be told is built from typed facts only: what broke, when it started, the status, the fix
+    // state. Never the task's id, title or branch, and never a client's own words.
+    const lines = [
+      `What broke: ${this.whatBroke(read)}. It started at ${this.clock(read.facts.openedAt, tz)}.`,
+    ];
     lines.push(
       `Status now: ${CLIENT_STATUS_WORD[result.status]}. This chat was last told: ${told === undefined ? "nothing yet" : CLIENT_STATUS_WORD[told.status]}.`,
     );
@@ -574,7 +636,7 @@ export class ClientIncidents {
     if (result.status === "monitoring" && result.at.monitoring !== undefined)
       lines.push(`The fix went live at ${this.clock(result.at.monitoring, tz)}.`);
     lines.push(
-      "Tell this chat what changed and what happens next, in plain words, with majhi_chat_reply. Say only what is listed here: no cause that is not given, no time you were not given.",
+      "Tell this chat what changed and what happens next, in plain words, with majhi_chat_reply. Say only what is listed here: no cause that is not given, and no time you were not given (mark a reply that names any time as promisedTime). Never write an internal id, a branch name, a commit, a checkpoint or a secret.",
     );
     if (to !== undefined)
       lines.push(`Reply to sender ${to.sender}${to.thread === undefined ? "" : ` in thread ${to.thread}`}.`);
@@ -832,6 +894,71 @@ export class ClientIncidents {
     return report;
   }
 
+  /** Incident tasks whose report waits for the owner: Review report rows. Rebuilt by every pass. */
+  private reviewing = new Set<string>();
+
+  /**
+   * The report follows the Client update switch. Captain sends: it goes to every chat the incident is told to, behind
+   * the rails (a secret, another client or an internal id still stops it). Ask me: it waits as a Review report row.
+   * True when something was sent.
+   */
+  private async settleReport(read: Read): Promise<boolean> {
+    const task = read.task.id;
+    const report = this.reports(task).at(-1);
+    if (report === undefined) return false;
+    const waiting: string[] = [];
+    for (const room of this.rooms(task)) {
+      if (report.sent.some((s) => s.room === room.id)) continue;
+      if ((await this.followed(room.id)) !== task) continue;
+      waiting.push(room.id);
+    }
+    if (waiting.length === 0) {
+      this.reviewing.delete(task);
+      return false;
+    }
+    if ((await this.deps.clientUpdate(read.org)) !== "sends") {
+      this.reviewing.add(task);
+      return false;
+    }
+    let sent = false;
+    let stuck = false;
+    for (const room of waiting) {
+      try {
+        await this.sendReport(task, room);
+        sent = true;
+      } catch {
+        stuck = true;
+      }
+    }
+    if (stuck) this.reviewing.add(task);
+    else this.reviewing.delete(task);
+    return sent;
+  }
+
+  /** What waits for the owner about incident reports: a Review report row for each, which opens the incident. */
+  decisions(): OwnerDecision[] {
+    const out: OwnerDecision[] = [];
+    for (const id of this.reviewing) {
+      const task = this.deps.store.tasks.get(id);
+      const report = this.reports(id).at(-1);
+      if (task === undefined || report === undefined || task.org === undefined) continue;
+      out.push({
+        id: incidentAskDecisionId("report", id),
+        kind: "incident",
+        org: task.org,
+        task: id as TaskId,
+        taskTitle: task.title,
+        title: `Review the report for ${clip(task.title, 120)}`,
+        sentence:
+          "The incident is resolved and its report is ready. Read it, edit what the client sees, then send it. Nothing goes out until you do.",
+        options: [],
+        at: report.at,
+        link: { kind: "task", id: id as TaskId, label: "Review report" },
+      });
+    }
+    return out;
+  }
+
   /** The owner changes the words of the report. Refused once it went to a room. */
   editReport(
     task: string,
@@ -870,7 +997,9 @@ export class ClientIncidents {
       throw new UserError(
         problem === "secret"
           ? "The client version holds what looks like a secret. Edit it first."
-          : "The client version names another client or workspace. Edit it first.",
+          : problem === "internal"
+            ? "The client version names an internal id or branch. Edit it first."
+            : "The client version names another client or workspace. Edit it first.",
         409,
       );
     }

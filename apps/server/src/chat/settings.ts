@@ -89,6 +89,7 @@ export class ChatSettings {
       me: { allowed: problem === undefined, ...(problem === undefined ? {} : { why: problem }) },
       repliesToday: await this.repliesToday(room),
       people: this.people(room),
+      incidentUpdates: room.chat.incidentUpdates === true,
       ...(room.chat.archived === true ? { archived: true as const } : {}),
     };
   }
@@ -101,6 +102,9 @@ export class ChatSettings {
     if (input.replyWhen !== undefined) change.replyWhen = input.replyWhen;
     if (input.dailyLimit !== undefined) change.dailyLimit = input.dailyLimit;
     if (input.notify !== undefined) change.notify = input.notify;
+    if (input.incidentUpdates !== undefined) {
+      change.incidentUpdates = input.incidentUpdates ? true : undefined;
+    }
     if (input.rules !== undefined) {
       const rules = input.rules.trim();
       if (detectSecrets(rules).length > 0) {
