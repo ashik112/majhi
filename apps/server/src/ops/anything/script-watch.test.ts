@@ -31,6 +31,15 @@ describe("script watches", () => {
       "glab mr list --output json",
       'python3 -c "import json,sys; print(42)"',
       "psql -c 'SELECT count(*) FROM orders' > /tmp/out && cat /tmp/out",
+      // Secret fetch scripts: pipes, substitutions, awk, a heredoc and a printed connection URL only read.
+      "doctl databases user get $(doctl databases list --format ID,Name --no-header | grep -w acme-db | cut -d' ' -f1) ro_user --format Password --no-header",
+      'doctl databases user get $(doctl databases list --format ID,Name --no-header | awk \'$2=="acme-db"{print $1}\') ro_user --format Password --no-header',
+      [
+        'id=$(doctl databases list --format ID,Name --no-header | awk \'$2=="acme-db"{print $1}\')',
+        "pw=$(doctl databases user get \"$id\" ro_user --format Password --no-header)",
+        'read -r host port db <<EOF\n$(doctl databases connection "$id" --format Host,Port,Database --no-header)\nEOF',
+        'printf "postgresql://ro_user:%s@%s:%s/%s\\n" "$pw" "$host" "$port" "$db"',
+      ].join("\n"),
       "doctl kubernetes cluster list -o json | jq '[.[] | select(.num_nodes > 1)] | length'",
     ]) {
       expect(scriptProblem(ok), ok).toBeUndefined();
