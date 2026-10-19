@@ -8,6 +8,7 @@ Rules for every step (owner, 2026-10-19):
 
 - **One source of truth.** Each fact lives in one place and everything else derives from it: a task's label, branch and folder come from its stored name through one function; docker names and labels come from one module; limits live only in `majhi.yaml` with their defaults in the zod schema. Extend existing models instead of adding parallel ones.
 - **No regex for decisions, no needless hardcoding.** Classify with typed data (enums, schemas, labels), never by matching text. Do not repeat names, ids or lists that already exist in config or schemas.
+- **Fast and light, measured.** Every step reports before and after numbers for what it touches and must not regress any of these. Baseline 2026-10-19: server 321 MB with agents running, runners 190 to 230 MB each, runner image 5.6 GB, server image 2.2 GB, main JS 214 KB gzip, `tasks.list` 20 ms and `decisions.list` 50 ms. Targets: server at most 200 MB idle and 300 MB with 4 tasks; a runner at most 150 MB and stopped when idle; runner image at most 2.5 GB and server image at most 600 MB; main JS at most 150 KB gzip with everything else loaded on demand; list commands at most 30 ms p95, with live updates pushed as changes instead of re-fetching whole lists; a keypress renders within one frame (16 ms) and a task switch under 50 ms; lists over 100 rows are virtualised. No polling where an event exists, no N+1 queries, no work repeated per request that can be cached and invalidated by an event.
 - **No useless tests.** Only the tests each step lists. Each asserts what the owner observes against literal values. Nothing for wiring, UI, copy, or mocks that would pass if the code returned undefined.
 
 ## Why
@@ -127,6 +128,10 @@ Who does the merge, the deploy and the client update is the owner's choice per w
 **One captain, one account** (owner, 2026-10-19). One captain replaces the per-workspace captain chats (root plus one per workspace today): one conversation, one name, answering about every workspace. By default one AI account (the owner's pick, for example their personal Claude) runs it everywhere. Access stays per workspace: a step in a workspace gets only that workspace's git, SSH, connections and wiki, and nothing from one client's workspace goes into a step for another. Each workspace can override with "Captain uses this workspace's account" (for contracts that require it). A fallback account takes over at the main one's limit; a workspace that cannot run says so in Needs you. The per-workspace chats' history becomes searchable in the one conversation, filtered by workspace.
 
 One authority level per workspace (Ask me, Routine, Full), tools matched to the three places, the owner's standing intent and the workspace wiki summary in every turn, read-only commands that work with Auto-pilot off, lane scoping by workspace id rather than by text. A morning brief per workspace and a weekly client report (what shipped, time and agent cost, incidents and uptime). Actions the CLAUDE.md "never" list reserves for the owner stay with the owner. Design note before building.
+
+## Step 2b: lean images (after step 2)
+
+Each update rebuilds about 7.8 GB of images on the owner's laptop. Cut the runner image to at most 2.5 GB and the server image to at most 600 MB: multi-stage builds, no build tools or caches in the final layer, shared base layers between runner and server, language toolchains installed once per workspace store instead of baked in where possible. Measure `docker images` before and after and the disk an update costs. Build at most twice while working and remove what you built; check free disk first (it was 19 GB).
 
 ## Step 1b: permissions by risk (after step 1)
 
