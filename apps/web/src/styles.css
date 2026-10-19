@@ -1,15 +1,18 @@
 @import "tailwindcss";
 
 /*
- * majhi design tokens: mission control. Blue-black glass over a faint radar grid (dark, the default)
- * or pale instrument glass over a cool gray grid (light). `data-theme` and `data-accent` on <html>
- * pick the palette; index.html sets them before the first paint from the owner's saved choice.
+ * majhi design tokens. Four themes (Graphite, the default; Warm; Focus; Mission), each in a light and
+ * a dark mode, and three densities. `data-theme`, `data-mode` (the resolved dark or light) and
+ * `data-density` on <html> pick them; index.html sets all three before the first paint from the
+ * owner's saved choice (apps/web/src/lib/look.ts saves it). Graphite, Warm and Focus are flat panels
+ * on a plain ground. Mission is the original look: blue-black glass over a radar grid.
  *
  * The palette lives in plain custom properties (--c-*). The Tailwind tokens below point at them, so
  * every class (bg-card, text-fg-muted, border-line-strong) follows the theme without code changes.
  * Default Tailwind colors, sizes and radii are cleared so every class maps to a token.
  *
- * Status lamps are law: one color per state, used for nothing else.
+ * Status lamps are law: one color per state, used for nothing else. Red is for incidents and for a
+ * task that waits for you; nothing else is red.
  *   working  cyan   an agent is working
  *   needs    red    the task waits for the owner (review, your turn)
  *   paused   magenta  stopped: usage limit, offline, error, or by the owner
@@ -18,7 +21,7 @@
  */
 
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="mission"][data-mode="dark"] {
   color-scheme: dark;
 
   /* Backdrop: the grid and the glow behind the glass */
@@ -43,6 +46,22 @@
   --c-shadow-pop:
     inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -18px rgb(0 0 0 / 0.85), 0 6px 16px -6px rgb(0 0 0 / 0.55);
   --c-scrim: rgb(2 4 8 / 0.62);
+
+  /* Materials: Mission keeps the blur, the glow around lamps and the breathing lamp. */
+  --glass-filter: blur(18px) saturate(1.35);
+  --glass-filter-strong: blur(24px) saturate(1.4);
+  --lamp-halo:
+    0 0 0 3px color-mix(in oklab, currentColor 16%, transparent),
+    0 0 9px color-mix(in oklab, currentColor 55%, transparent);
+  --lamp-animation: lamp 2.2s ease-in-out infinite;
+
+  /* Workspace identity colors, in the order workspaces are assigned them. */
+  --c-ws-0: #8ab8f5;
+  --c-ws-1: #c3a6f5;
+  --c-ws-2: #7fd1b9;
+  --c-ws-3: #f0b455;
+  --c-ws-4: #f59c7f;
+  --c-ws-5: #cfe0f8;
 
   /* Surfaces */
   --c-sunken: rgb(3 6 11 / 0.62);
@@ -95,18 +114,6 @@
   --c-pink: #e7a0c8;
   --c-violet: #c3a6f5;
 
-  /* What a task is: one color per type, on the type tile and chip */
-  --c-type-bug: #f07b6b;
-  --c-type-incident: #e9a23b;
-  --c-type-feature: #8ab8f5;
-  --c-type-request: #c3a6f5;
-  --c-type-research: #4db6ac;
-  --c-type-design: #f58fb8;
-  --c-type-test: #9bd36a;
-  --c-type-chore: #8d98a8;
-  --c-type-support: var(--c-coral);
-  --c-type-post: #8f9cf5;
-
   /* Status lamps */
   --c-lamp-working: #3fd4f5;
   --c-lamp-needs: #ff6868;
@@ -132,44 +139,8 @@
  * The accents sit between the lamps on the color wheel, never on one: amber (the brand), blue,
  * violet, lime and steel, against the lamps' red, cyan, green and magenta.
  */
-:root[data-theme="dark"][data-accent="blue"] {
-  --c-accent: #7ea6ff;
-  --c-accent-hover: #97b8ff;
-  --c-accent-press: #6690f2;
-  --c-accent-ink: #07112a;
-  --c-accent-wash: rgb(126 166 255 / 0.14);
-  --c-accent-line: rgb(126 166 255 / 0.4);
-  --c-accent-text: #a6c1ff;
-}
-:root[data-theme="dark"][data-accent="violet"] {
-  --c-accent: #a98bf5;
-  --c-accent-hover: #b9a0f7;
-  --c-accent-press: #9676ec;
-  --c-accent-ink: #150b2b;
-  --c-accent-wash: rgb(169 139 245 / 0.14);
-  --c-accent-line: rgb(169 139 245 / 0.4);
-  --c-accent-text: #c4b0f8;
-}
-:root[data-theme="dark"][data-accent="lime"] {
-  --c-accent: #b6dc4e;
-  --c-accent-hover: #c3e46a;
-  --c-accent-press: #a2c93a;
-  --c-accent-ink: #141c02;
-  --c-accent-wash: rgb(182 220 78 / 0.13);
-  --c-accent-line: rgb(182 220 78 / 0.4);
-  --c-accent-text: #c6e57a;
-}
-:root[data-theme="dark"][data-accent="steel"] {
-  --c-accent: #b8c4d6;
-  --c-accent-hover: #c8d2e1;
-  --c-accent-press: #a5b2c6;
-  --c-accent-ink: #0b111b;
-  --c-accent-wash: rgb(184 196 214 / 0.12);
-  --c-accent-line: rgb(184 196 214 / 0.38);
-  --c-accent-text: #cdd6e3;
-}
 
-:root[data-theme="light"] {
+:root[data-theme="mission"][data-mode="light"] {
   color-scheme: light;
 
   --c-base: #e5eaf0;
@@ -238,17 +209,6 @@
   --c-pink: #a83c78;
   --c-violet: #6d4bc4;
 
-  --c-type-bug: #c8372b;
-  --c-type-incident: #b06a05;
-  --c-type-feature: #1f5fb8;
-  --c-type-request: #6d46c2;
-  --c-type-research: #0e7c74;
-  --c-type-design: #c0306f;
-  --c-type-test: #47790f;
-  --c-type-chore: #5d6b7e;
-  --c-type-support: var(--c-coral);
-  --c-type-post: #4a55c4;
-
   --c-lamp-working: #0a7694;
   --c-lamp-needs: #cf2a2a;
   --c-lamp-paused: #a52a93;
@@ -264,41 +224,320 @@
   --c-accent-text: #8f5406;
 }
 
-:root[data-theme="light"][data-accent="blue"] {
-  --c-accent: #2f5fd6;
-  --c-accent-hover: #3d6ce0;
-  --c-accent-press: #264fb8;
-  --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(47 95 214 / 0.1);
-  --c-accent-line: rgb(47 95 214 / 0.36);
-  --c-accent-text: #244db3;
+/*
+ * Graphite, Warm and Focus: flat panels on a plain ground, no grid, rings, glow or blur. Each is
+ * set below as a handful of raw values; everything else (washes, soft tints, the amber caution
+ * family) is derived from them once, in the shared block, so a theme is about 35 lines.
+ * `data-mode` picks the dark or light block; index.html sets all three attributes before first paint.
+ */
+:root:not([data-theme="mission"]) {
+  --c-canvas: var(--c-base);
+  --c-glass: var(--c-panel);
+  --c-rail: var(--c-panel);
+  --c-sunken: var(--c-field);
+  --c-glass-hi: transparent;
+  --c-hair: var(--c-line-control);
+  --c-line-bright: var(--c-line-control);
+
+  --c-glow-a: transparent;
+  --c-glow-b: transparent;
+  --c-horizon: transparent;
+  --c-scope: transparent;
+  --c-grid: transparent;
+  --c-grid-major: transparent;
+  --c-ring: transparent;
+
+  --c-accent-press: color-mix(in oklab, var(--c-accent) 88%, black);
+  --c-accent-wash: color-mix(in oklab, var(--c-accent) 12%, transparent);
+  --c-accent-line: color-mix(in oklab, var(--c-accent) 38%, transparent);
+  --c-amber: var(--c-accent-text);
+  --c-amber-hover: var(--c-accent-hover);
+  --c-amber-press: var(--c-accent-press);
+  --c-amber-ink: var(--c-accent-ink);
+  --c-amber-wash: var(--c-accent-wash);
+  --c-amber-line: var(--c-accent-line);
+  --c-amber-soft: var(--c-accent-text);
+
+  --c-green: var(--c-lamp-done);
+  --c-red: var(--c-lamp-needs);
+  --c-blue-wash: color-mix(in oklab, var(--c-blue) 12%, transparent);
+  --c-blue-line: color-mix(in oklab, var(--c-blue) 32%, transparent);
+  --c-blue-soft: color-mix(in oklab, var(--c-blue) 65%, var(--c-fg));
+  --c-green-wash: color-mix(in oklab, var(--c-green) 12%, transparent);
+  --c-green-line: color-mix(in oklab, var(--c-green) 32%, transparent);
+  --c-green-soft: color-mix(in oklab, var(--c-green) 65%, var(--c-fg));
+  --c-red-wash: color-mix(in oklab, var(--c-red) 12%, transparent);
+  --c-red-line: color-mix(in oklab, var(--c-red) 34%, transparent);
+  --c-red-soft: color-mix(in oklab, var(--c-red) 65%, var(--c-fg));
+  --c-coral: color-mix(in oklab, var(--c-red) 55%, var(--c-accent));
+  --c-coral-soft: color-mix(in oklab, var(--c-coral) 65%, var(--c-fg));
+  --c-pink: color-mix(in oklab, var(--c-red) 50%, var(--c-violet));
+
+  /* Materials: only Mission keeps the blur, the glow around lamps and the breathing lamp. */
+  --glass-filter: none;
+  --glass-filter-strong: none;
+  --lamp-halo: none;
+  --lamp-animation: none;
 }
-:root[data-theme="light"][data-accent="violet"] {
-  --c-accent: #6f4fd6;
-  --c-accent-hover: #7d5fe0;
-  --c-accent-press: #5f40c4;
-  --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(111 79 214 / 0.1);
-  --c-accent-line: rgb(111 79 214 / 0.36);
-  --c-accent-text: #5a3cc0;
+
+:root[data-theme="graphite"][data-mode="dark"] {
+  color-scheme: dark;
+  --c-base: #161617;
+  --c-panel: #1c1c1e;
+  --c-glass-strong: #222224;
+  --c-card: #222224;
+  --c-field: #141415;
+  --c-raised: rgb(255 255 255 / 0.04);
+  --c-selected: rgb(255 255 255 / 0.075);
+  --c-glass-line: rgb(255 255 255 / 0.07);
+  --c-line: rgb(255 255 255 / 0.06);
+  --c-line-strong: rgb(255 255 255 / 0.08);
+  --c-line-control: rgb(255 255 255 / 0.13);
+  --c-line-hover: rgb(255 255 255 / 0.22);
+  --c-fg: #d6d6d9;
+  --c-fg-soft: #b8b8bd;
+  --c-fg-muted: #96969c;
+  --c-fg-faint: #88888e;
+  --c-fg-dim: #6e6e74;
+  --c-lamp-needs: #e07a6f;
+  --c-lamp-working: #78a8cc;
+  --c-lamp-done: #78b394;
+  --c-lamp-paused: #88888e;
+  --c-lamp-idle: #6e6e74;
+  --c-blue: #90b2d8;
+  --c-violet: #b3a6d6;
+  --c-accent: #e2ad5b;
+  --c-accent-hover: #ebbb70;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #e6b86e;
+  --c-shadow-glass: none;
+  --c-shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.6);
 }
-:root[data-theme="light"][data-accent="lime"] {
-  --c-accent: #9cc12b;
-  --c-accent-hover: #a9cc3c;
-  --c-accent-press: #88aa1f;
-  --c-accent-ink: #141c02;
-  --c-accent-wash: rgb(125 160 23 / 0.12);
-  --c-accent-line: rgb(110 140 20 / 0.4);
-  --c-accent-text: #4d6608;
+:root[data-theme="graphite"][data-mode="light"] {
+  color-scheme: light;
+  --c-base: #ececed;
+  --c-panel: #fbfbfb;
+  --c-glass-strong: #ffffff;
+  --c-card: #ffffff;
+  --c-field: #f2f2f3;
+  --c-raised: rgb(0 0 0 / 0.035);
+  --c-selected: rgb(0 0 0 / 0.065);
+  --c-glass-line: rgb(0 0 0 / 0.09);
+  --c-line: rgb(0 0 0 / 0.06);
+  --c-line-strong: rgb(0 0 0 / 0.09);
+  --c-line-control: rgb(0 0 0 / 0.15);
+  --c-line-hover: rgb(0 0 0 / 0.26);
+  --c-fg: #222224;
+  --c-fg-soft: #3b3b3f;
+  --c-fg-muted: #5a5a60;
+  --c-fg-faint: #626268;
+  --c-fg-dim: #8e8e94;
+  --c-lamp-needs: #c4483c;
+  --c-lamp-working: #2f75a3;
+  --c-lamp-done: #2e8459;
+  --c-lamp-paused: #76767c;
+  --c-lamp-idle: #8e8e94;
+  --c-blue: #2f6aa8;
+  --c-violet: #6650a8;
+  --c-accent: #c98a2b;
+  --c-accent-hover: #b97c22;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #94600f;
+  --c-shadow-glass: 0 1px 2px rgb(0 0 0 / 0.05);
+  --c-shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.22);
 }
-:root[data-theme="light"][data-accent="steel"] {
-  --c-accent: #475569;
-  --c-accent-hover: #52627a;
-  --c-accent-press: #3b4757;
-  --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(71 85 105 / 0.1);
-  --c-accent-line: rgb(71 85 105 / 0.34);
-  --c-accent-text: #3b4757;
+
+:root[data-theme="warm"][data-mode="dark"] {
+  color-scheme: dark;
+  --c-base: #1a1714;
+  --c-panel: #201c18;
+  --c-glass-strong: #26211c;
+  --c-card: #26211c;
+  --c-field: #171411;
+  --c-raised: rgb(255 240 220 / 0.04);
+  --c-selected: rgb(255 240 220 / 0.075);
+  --c-glass-line: rgb(255 240 220 / 0.07);
+  --c-line: rgb(255 240 220 / 0.06);
+  --c-line-strong: rgb(255 240 220 / 0.08);
+  --c-line-control: rgb(255 240 220 / 0.13);
+  --c-line-hover: rgb(255 240 220 / 0.22);
+  --c-fg: #ddd5c8;
+  --c-fg-soft: #c2b9ab;
+  --c-fg-muted: #a1988a;
+  --c-fg-faint: #928a7c;
+  --c-fg-dim: #766e63;
+  --c-lamp-needs: #dd7a66;
+  --c-lamp-working: #8aaab8;
+  --c-lamp-done: #93b28c;
+  --c-lamp-paused: #928a7c;
+  --c-lamp-idle: #766e63;
+  --c-blue: #9cb3c2;
+  --c-violet: #bfa9cf;
+  --c-accent: #d9a55a;
+  --c-accent-hover: #e3b46e;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #e0b06a;
+  --c-shadow-glass: none;
+  --c-shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.6);
+}
+:root[data-theme="warm"][data-mode="light"] {
+  color-scheme: light;
+  --c-base: #ede7dc;
+  --c-panel: #faf6ef;
+  --c-glass-strong: #fffdf8;
+  --c-card: #fffdf8;
+  --c-field: #f3eee5;
+  --c-raised: rgb(60 40 10 / 0.04);
+  --c-selected: rgb(60 40 10 / 0.07);
+  --c-glass-line: rgb(60 40 10 / 0.1);
+  --c-line: rgb(60 40 10 / 0.07);
+  --c-line-strong: rgb(60 40 10 / 0.1);
+  --c-line-control: rgb(60 40 10 / 0.16);
+  --c-line-hover: rgb(60 40 10 / 0.28);
+  --c-fg: #2a241c;
+  --c-fg-soft: #433b31;
+  --c-fg-muted: #5f5547;
+  --c-fg-faint: #685e50;
+  --c-fg-dim: #958a7b;
+  --c-lamp-needs: #b8452f;
+  --c-lamp-working: #3c6f8a;
+  --c-lamp-done: #3f7d4f;
+  --c-lamp-paused: #7d7366;
+  --c-lamp-idle: #958a7b;
+  --c-blue: #3a6a8c;
+  --c-violet: #6c5490;
+  --c-accent: #b9822c;
+  --c-accent-hover: #a87424;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #8a5d14;
+  --c-shadow-glass: 0 1px 2px rgb(60 40 10 / 0.06);
+  --c-shadow-pop: 0 16px 40px -12px rgb(60 40 10 / 0.22);
+}
+
+:root[data-theme="focus"][data-mode="dark"] {
+  color-scheme: dark;
+  --c-base: #13171d;
+  --c-panel: #181c23;
+  --c-glass-strong: #1d222a;
+  --c-card: #1d222a;
+  --c-field: #111419;
+  --c-raised: rgb(255 255 255 / 0.04);
+  --c-selected: rgb(255 255 255 / 0.075);
+  --c-glass-line: rgb(255 255 255 / 0.07);
+  --c-line: rgb(255 255 255 / 0.06);
+  --c-line-strong: rgb(255 255 255 / 0.08);
+  --c-line-control: rgb(255 255 255 / 0.13);
+  --c-line-hover: rgb(255 255 255 / 0.22);
+  --c-fg: #d3d9e1;
+  --c-fg-soft: #b6bfca;
+  --c-fg-muted: #949eab;
+  --c-fg-faint: #848e9b;
+  --c-fg-dim: #6c7582;
+  --c-lamp-needs: #e0796e;
+  --c-lamp-working: #6aaed0;
+  --c-lamp-done: #6fb894;
+  --c-lamp-paused: #848e9b;
+  --c-lamp-idle: #6c7582;
+  --c-blue: #8fb3dd;
+  --c-violet: #b5a3dc;
+  --c-accent: #e2ad5b;
+  --c-accent-hover: #ebbb70;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #e6b86e;
+  --c-shadow-glass: none;
+  --c-shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.6);
+}
+:root[data-theme="focus"][data-mode="light"] {
+  color-scheme: light;
+  --c-base: #eceef1;
+  --c-panel: #fafbfc;
+  --c-glass-strong: #ffffff;
+  --c-card: #ffffff;
+  --c-field: #f1f3f5;
+  --c-raised: rgb(20 30 45 / 0.04);
+  --c-selected: rgb(20 30 45 / 0.07);
+  --c-glass-line: rgb(20 30 45 / 0.1);
+  --c-line: rgb(20 30 45 / 0.07);
+  --c-line-strong: rgb(20 30 45 / 0.1);
+  --c-line-control: rgb(20 30 45 / 0.16);
+  --c-line-hover: rgb(20 30 45 / 0.28);
+  --c-fg: #1f2630;
+  --c-fg-soft: #38414d;
+  --c-fg-muted: #56606d;
+  --c-fg-faint: #5f6977;
+  --c-fg-dim: #8a939e;
+  --c-lamp-needs: #c4483c;
+  --c-lamp-working: #2f79a8;
+  --c-lamp-done: #2e8a5f;
+  --c-lamp-paused: #7a8491;
+  --c-lamp-idle: #8a939e;
+  --c-blue: #2f6db0;
+  --c-violet: #6b55b0;
+  --c-accent: #c98a2b;
+  --c-accent-hover: #b97c22;
+  --c-accent-ink: #1d1405;
+  --c-accent-text: #9a6414;
+  --c-shadow-glass: 0 1px 2px rgb(20 30 45 / 0.06);
+  --c-shadow-pop: 0 16px 40px -12px rgb(20 30 45 / 0.25);
+}
+
+/* The scrim behind a dialog: plain in the flat themes, Mission keeps its own. */
+:root[data-mode="dark"]:not([data-theme="mission"]) {
+  --c-scrim: rgb(0 0 0 / 0.55);
+}
+:root[data-mode="light"]:not([data-theme="mission"]) {
+  --c-scrim: rgb(30 34 44 / 0.35);
+}
+
+/*
+ * What a task is: one color per type, on the type tile and chip. By mode, shared by every theme.
+ * Workspace identity colors: six hues, assigned to workspaces in order, tuned for each mode so
+ * none reads as a status (red, cyan, green and magenta stay with the lamps).
+ */
+:root[data-mode="dark"] {
+  --c-type-bug: #f07b6b;
+  --c-type-incident: #e9a23b;
+  --c-type-feature: #8ab8f5;
+  --c-type-request: #c3a6f5;
+  --c-type-research: #4db6ac;
+  --c-type-design: #f58fb8;
+  --c-type-test: #9bd36a;
+  --c-type-chore: #8d98a8;
+  --c-type-support: var(--c-coral);
+  --c-type-post: #8f9cf5;
+}
+:root[data-mode="dark"]:not([data-theme="mission"]) {
+  --c-ws-0: #8fb0d6;
+  --c-ws-1: #b7a3dc;
+  --c-ws-2: #7fc0b0;
+  --c-ws-3: #d8b072;
+  --c-ws-4: #e09a84;
+  --c-ws-5: #a9b4c4;
+}
+:root[data-mode="light"] {
+  --c-type-bug: #c8372b;
+  --c-type-incident: #b06a05;
+  --c-type-feature: #1f5fb8;
+  --c-type-request: #6d46c2;
+  --c-type-research: #0e7c74;
+  --c-type-design: #c0306f;
+  --c-type-test: #47790f;
+  --c-type-chore: #5d6b7e;
+  --c-type-support: var(--c-coral);
+  --c-type-post: #4a55c4;
+  --c-ws-0: #2f64a6;
+  --c-ws-1: #6a4fae;
+  --c-ws-2: #1f7d6c;
+  --c-ws-3: #97661a;
+  --c-ws-4: #b2543a;
+  --c-ws-5: #55606e;
+}
+
+/* Flat themes have no backdrop: no grid, no rings, no glow. */
+:root:not([data-theme="mission"]) .app-backdrop,
+:root:not([data-theme="mission"]) .app-backdrop::before,
+:root:not([data-theme="mission"]) .app-backdrop::after {
+  background-image: none;
 }
 
 @theme static {
@@ -377,6 +616,14 @@
   --color-lamp-done: var(--c-lamp-done);
   --color-lamp-idle: var(--c-lamp-idle);
 
+  /* Workspace identity: six hues, never a status color */
+  --color-ws-0: var(--c-ws-0);
+  --color-ws-1: var(--c-ws-1);
+  --color-ws-2: var(--c-ws-2);
+  --color-ws-3: var(--c-ws-3);
+  --color-ws-4: var(--c-ws-4);
+  --color-ws-5: var(--c-ws-5);
+
   --font-sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
@@ -417,7 +664,7 @@
   --animate-spin: spin 0.9s linear infinite;
   --animate-fade-in: fade-in 0.2s var(--ease-out) both;
   --animate-rise: rise 0.28s var(--ease-out) both;
-  --animate-lamp: lamp 2.2s ease-in-out infinite;
+  --animate-lamp: var(--lamp-animation);
 
   @keyframes shimmer {
     0%,
@@ -1183,7 +1430,7 @@
   --rv-label-halo: rgb(2 5 11 / 0.9);
   background: #12205a;
 }
-:root[data-theme="light"] .rv-scene {
+:root[data-mode="light"] .rv-scene {
   --rv-painting: url("/onboarding/river-day.webp");
   --rv-flow: rgb(255 255 255 / 0.85);
   --rv-hull-shadow: rgb(10 40 120 / 0.28);
@@ -1331,4 +1578,26 @@
     opacity: 1;
     transform: scale(1.08);
   }
+}
+
+/* The theme swatches of the Appearance popover show a theme's light and dark panel side by side. */
+[data-look-swatch="graphite"] {
+  --sw-light: #fbfbfb;
+  --sw-dark: #1c1c1e;
+}
+[data-look-swatch="warm"] {
+  --sw-light: #faf6ef;
+  --sw-dark: #201c18;
+}
+[data-look-swatch="focus"] {
+  --sw-light: #fafbfc;
+  --sw-dark: #181c23;
+}
+[data-look-swatch="mission"] {
+  --sw-light: #d9e4ee;
+  --sw-dark: #0d131d;
+}
+:root:not([data-theme="mission"]) dialog::backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }

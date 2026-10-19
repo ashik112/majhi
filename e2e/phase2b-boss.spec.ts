@@ -12,7 +12,8 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screensh
 const SECRET = "nr-e2e-not-a-real-secret-4711";
 const API_KEY = `sk-ant-api03-${"Zq8Lm2".repeat(8)}`;
 
-const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain" });
+// The captain is the first chip of the console's Chat pane; Cmd J opens it from any page.
+const drawer = (page: Page) => page.getByRole("region", { name: "Chat" });
 const composer = (page: Page) => drawer(page).getByRole("textbox", { name: "Message the room" });
 const log = (page: Page) => drawer(page).getByRole("log", { name: "Room messages" });
 
@@ -67,12 +68,12 @@ async function openLastSteps(page: Page) {
 
 async function openBoss(page: Page) {
   // The key handler is part of the shell, which mounts after the config loads.
-  await expect(page.getByRole("complementary", { name: "Sidebar" })).toBeVisible();
+  await expect(page.getByRole("banner").first()).toBeVisible();
   await page.keyboard.press("Meta+j");
   await expect(drawer(page)).toBeVisible();
 }
 
-test("Cmd J opens the captain over any page; a change waits for approval, then applies and can be undone", {
+test("Cmd J opens the captain from any page; a change waits for approval, then applies and can be undone", {
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto("/agents");

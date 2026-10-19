@@ -67,7 +67,9 @@ const turns = (page: Page, n: number) => expect(log(page).getByText("Tests passe
 
 async function openChat(page: Page, agent: string): Promise<string> {
   const chat = await cmd<{ id: string }>(page.request, "chats.create", { agent });
+  // The address of a chat opens it in the console's Chat pane.
   await page.goto(`/chats/${chat.id}`);
+  await expect(page.getByTestId("tasks-home")).toBeVisible();
   await expect(composer(page)).toBeVisible();
   return chat.id;
 }
@@ -93,8 +95,8 @@ test("the chat becomes the task: one conversation, one row in the list", async (
   await approve(page);
 
   // Same chat: its header now shows the task and its state, and the earlier talk is still above.
-  const header = page.getByRole("banner").or(page.locator("header", { hasText: "Session drop" }));
-  await expect(header.getByRole("link", { name: /api · Session drop/ })).toBeVisible();
+  const chat = page.getByRole("region", { name: "Chat" });
+  await expect(chat.getByRole("link", { name: "Open api · Session drop" })).toBeVisible();
   await expect(log(page).getByText("The login on api drops the session after an hour")).toBeVisible();
   // The worktree comes a moment after the chat turns into the task.
   await expect
@@ -115,8 +117,10 @@ test("the chat becomes the task: one conversation, one row in the list", async (
   expect(rows.filter((r) => r.id === id)).toEqual([expect.objectContaining({ id, kind: "agent" })]);
   const tasks = await cmd<{ id: string; kind: string }[]>(page.request, "tasks.list", {});
   expect(tasks.filter((t) => t.kind === "code")).toHaveLength(1);
+  // The old Chats address opens the console, with the chat listed among its chips.
   await page.goto("/chats");
-  await expect(page.getByRole("navigation", { name: "Chats" })).toBeVisible();
+  await expect(page.getByTestId("tasks-home")).toBeVisible();
+  await expect(chat.getByRole("button", { name: /Session drop/ })).toBeVisible();
   await shot(page, "one-conversation-list");
 });
 

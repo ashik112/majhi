@@ -13,7 +13,8 @@ export function ChatRoom({ task, takeTyped = false }: { task: Task; takeTyped?: 
     if (!takeTyped) return undefined;
     const typed = typedWhileOpening;
     typedWhileOpening = "";
-    return typed;
+    // Nothing typed: no draft, so the box does not take the focus from the page it opened on.
+    return typed === "" ? undefined : typed;
   });
   return (
     <RoomPane

@@ -9,15 +9,7 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup =
-  | "Anywhere"
-  | "Go to"
-  | "Task"
-  | "Board"
-  | "Decisions"
-  | "Today"
-  | "Skills & MCP"
-  | "Message box";
+export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Console" | "Skills & MCP" | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -76,10 +68,8 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     group: "Go to",
     press: { key: "g" },
   },
-  go("y", PAGE_PATH.today, "Go to Today (brief, agenda, plan)"),
-  go("b", PAGE_PATH.board, "Go to the board"),
+  go("b", PAGE_PATH.board, "Go to the console"),
   go("a", PAGE_PATH.agents, "Go to agents"),
-  go("c", PAGE_PATH.chats, "Go to chats"),
   go("u", PAGE_PATH.accounts, "Go to accounts"),
   go("n", PAGE_PATH.connections, "Go to connections"),
   go("h", PAGE_PATH.usage, "Go to health and usage"),
@@ -90,8 +80,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("p", PAGE_PATH.projects, "Go to projects and links"),
   go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),
-  go("d", PAGE_PATH.decisions, "Go to decisions"),
-  go("j", PAGE_PATH.captain, "Go to the captain page"),
+  go("j", PAGE_PATH.captain, "Go to the captain page (rules, history, Auto-pilot)"),
   go("w", PAGE_PATH.watch, "Go to watch (services and incidents)"),
   go("r", PAGE_PATH.playbooks, "Go to playbooks"),
   { id: "next-task", keys: ["]"], what: "Next task", group: "Task", press: { key: "]" }, scope: "task" },
@@ -122,56 +111,23 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
-  {
-    id: "board-move",
-    keys: ["j", "k"],
-    what: "Move through the cards and rows of Tasks (arrows too)",
-    group: "Board",
-  },
-  {
-    id: "board-section",
-    keys: ["Shift", "J", "K"],
-    what: "Jump to the next or previous column",
-    group: "Board",
-  },
-  { id: "board-act", keys: ["1", "2", "3"], what: "Run the card's or row's numbered action", group: "Board" },
-  {
-    id: "board-select",
-    keys: ["x"],
-    what: "Select a card or row; 1 then runs on all selected",
-    group: "Board",
-  },
-  { id: "board-triage", keys: ["t"], what: "Show the Ideas column", group: "Board" },
-  { id: "board-filter", keys: ["/"], what: "Filter the cards and rows", group: "Board" },
-  {
-    id: "decisions-move",
-    keys: ["j", "k"],
-    what: "Next or previous decision (arrows too)",
-    group: "Decisions",
-  },
-  { id: "decisions-main", keys: ["Enter"], what: "Take the main action", group: "Decisions" },
-  {
-    id: "decisions-pick",
-    keys: ["1", "2", "3"],
-    what: "Pick the answer with that number",
-    group: "Decisions",
-  },
-  { id: "decisions-reply", keys: ["r"], what: "Write a reply", group: "Decisions" },
-  { id: "decisions-open", keys: ["o"], what: "Open the task", group: "Decisions" },
-  {
-    id: "decisions-select",
-    keys: ["x"],
-    what: "Select for a batch (Shift x: everything up to here)",
-    group: "Decisions",
-  },
-  { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
-  { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
-  { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
+  { id: "console-move", keys: ["j", "k"], what: "Move through the rows (arrows too)", group: "Console" },
+  { id: "console-pane", keys: ["Tab"], what: "Next pane: Needs you, Work, Chat", group: "Console" },
+  { id: "console-do", keys: ["a"], what: "Do the selected row's main button", group: "Console" },
+  { id: "console-group", keys: ["Shift", "A"], what: "Do it for the whole group", group: "Console" },
+  { id: "console-pick", keys: ["1", "2", "3"], what: "Pick the answer with that number", group: "Console" },
+  { id: "console-later", keys: ["e"], what: "Put it off for 4 hours", group: "Console" },
+  { id: "console-undo", keys: ["u"], what: "Take back the last action", group: "Console" },
+  { id: "console-open", keys: ["Enter"], what: "Open the row (a task opens its page)", group: "Console" },
+  { id: "console-stop", keys: ["s"], what: "Stop the selected task", group: "Console" },
+  { id: "console-start", keys: ["."], what: "Start the selected task now", group: "Console" },
+  { id: "console-fold", keys: ["["], what: "Fold the selected task's workspace", group: "Console" },
+  { id: "console-chat", keys: ["c"], what: "Write in the chat", group: "Console" },
+  { id: "console-esc", keys: ["Esc"], what: "Close the chat, or leave the message box", group: "Console" },
   { id: "skills-move", keys: ["j", "k"], what: "Next or previous row (arrows too)", group: "Skills & MCP" },
   { id: "skills-open", keys: ["Enter"], what: "Open the row's detail", group: "Skills & MCP" },
   { id: "skills-search", keys: ["/"], what: "Search skills and MCP servers", group: "Skills & MCP" },
   { id: "skills-add", keys: ["a"], what: "Add a skill or MCP server", group: "Skills & MCP" },
-  { id: "board-open", keys: ["Enter"], what: "Open the row, or a section", group: "Board" },
 ];
 
 /** The table row with this id. */

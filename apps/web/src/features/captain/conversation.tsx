@@ -117,7 +117,6 @@ function TalkActions() {
   const fresh = useNewBossChat();
   const chats = useChats();
   const navigate = useNavigate();
-  const { hide } = useBoss();
   const now = useNow(60_000);
   const boss = chat.data?.team[0];
   const past = (chats.data ?? [])
@@ -130,7 +129,7 @@ function TalkActions() {
         size="sm"
         disabled={fresh.isPending || !chat.data}
         onClick={() => fresh.mutate()}
-        title="Start a new conversation. This one stays in Chats"
+        title="Start a new conversation. This one stays in the chat list"
       >
         <SquarePen aria-hidden="true" />
         New chat
@@ -142,18 +141,8 @@ function TalkActions() {
           items={[
             ...past.map((t) => ({
               label: `${chatTitle(t)} · ${formatAgo(t.updatedAt, now)}`,
-              onSelect: () => {
-                hide();
-                void navigate({ to: "/chats/$taskId", params: { taskId: t.id } });
-              },
+              onSelect: () => void navigate({ to: "/", search: { chat: t.id } }),
             })),
-            {
-              label: "All chats",
-              onSelect: () => {
-                hide();
-                void navigate({ to: "/chats" });
-              },
-            },
           ]}
         />
       )}

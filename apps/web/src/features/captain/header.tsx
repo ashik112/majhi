@@ -1,5 +1,5 @@
 import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
-import { BarChart3, History, ShieldCheck } from "lucide-react";
+import { BarChart3, History, ScanSearch, ShieldCheck } from "lucide-react";
 import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { Segmented } from "@/components/ui/segmented";
@@ -27,6 +27,7 @@ export function CaptainHeader({
   onSummary,
   onResults,
   onHistory,
+  onFindings,
   view,
   onView,
 }: {
@@ -38,6 +39,7 @@ export function CaptainHeader({
   onSummary: () => void;
   onResults: () => void;
   onHistory: () => void;
+  onFindings: () => void;
   view: "dashboard" | "captain";
   onView: (view: "dashboard" | "captain") => void;
 }) {
@@ -104,6 +106,13 @@ export function CaptainHeader({
               label: "Results",
               icon: <BarChart3 aria-hidden="true" />,
               onSelect: onResults,
+            },
+            {
+              group: "Captain",
+              label: "Findings",
+              icon: <ScanSearch aria-hidden="true" />,
+              onSelect: onFindings,
+              disabled: captain === undefined,
             },
             {
               group: "Captain",

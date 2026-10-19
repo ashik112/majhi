@@ -8,10 +8,13 @@ import {
 } from "@majhi/shared";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  Activity,
+  Anchor,
   Bell,
   BookMarked,
   BookText,
   Brain,
+  Building2,
   Code,
   Container,
   Cpu,
@@ -25,9 +28,11 @@ import {
   type LucideIcon,
   Palette,
   Plug,
+  Radar,
   Repeat,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -65,6 +70,15 @@ const PAGE_ICON: Record<SettingsPage, LucideIcon> = {
   memory: Brain,
   limits: Wallet,
   audit: ScrollText,
+  accounts: KeyRound,
+  usage: Activity,
+  agents: Users,
+  skills: Sparkles,
+  wiki: BookText,
+  playbooks: Repeat,
+  orgs: Building2,
+  watch: Radar,
+  captain: Anchor,
 };
 const iconOf = (item: SettingsItem): LucideIcon =>
   item.kind === "page" ? PAGE_ICON[item.page] : SECTION_ICON[item.section];

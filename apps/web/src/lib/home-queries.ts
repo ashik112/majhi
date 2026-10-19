@@ -1,7 +1,6 @@
-import type { CommandOutput, HomeBackground, HomeCheck, HomeDeploy, lifecycle } from "@majhi/shared";
+import type { CiState, CommandOutput, HomeBackground, HomeCheck, HomeDeploy, lifecycle } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import type { DoingFact, MrFact } from "@/features/board/home-model";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -22,6 +21,22 @@ export function useBlockers(): ReadonlyMap<string, lifecycle.Blocker | null> {
     refetchIntervalInBackground: false,
   }).data;
   return useMemo(() => new Map((data ?? []).map((b) => [b.task, b.blocker])), [data]);
+}
+
+/** A task's open merge request and where its checks stand. */
+export interface MrFact {
+  project: string;
+  number: number;
+  url: string;
+  ci: CiState;
+}
+
+/** What a working agent does now, from `tasks.homeFacts`. */
+export interface DoingFact {
+  agent: string;
+  text?: string | undefined;
+  /** When the turn started (UTC ISO). */
+  since?: string | undefined;
 }
 
 export interface HomeFacts {

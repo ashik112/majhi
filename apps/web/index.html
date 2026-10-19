@@ -1,33 +1,40 @@
 <!doctype html>
-<html lang="en" data-theme="dark" data-accent="amber">
+<html lang="en" data-theme="graphite" data-mode="dark" data-density="comfortable">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <meta name="theme-color" content="#060a11" />
+    <meta name="theme-color" content="#161617" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>majhi</title>
     <script>
-      // The owner's theme and accent, applied before the first paint so the page never flashes.
-      // Mirrors src/lib/appearance.ts, which saves the choice.
+      // The owner's theme, mode and density, applied before the first paint so the page never flashes.
+      // Mirrors src/lib/look.ts, which saves the choice (and sets the tab color once the styles are in).
       (() => {
-        let theme = "dark";
-        let accent = "amber";
-        let saved = {};
+        let theme = "graphite";
+        let mode = "system";
+        let density = "comfortable";
+        let saved = null;
         try {
-          saved = JSON.parse(localStorage.getItem("majhi.appearance") || "{}") || {};
+          saved = JSON.parse(localStorage.getItem("majhi.look") || "null");
+          if (saved === null) {
+            // Before themes the key was majhi.appearance, with the mode under "theme".
+            const old = JSON.parse(localStorage.getItem("majhi.appearance") || "{}") || {};
+            saved = { mode: old.theme };
+          }
         } catch {}
-        if (saved.theme === "dark" || saved.theme === "light" || saved.theme === "system") theme = saved.theme;
-        if (["amber", "blue", "violet", "lime", "steel"].includes(saved.accent)) accent = saved.accent;
-        if (theme === "system") {
-          theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        saved = saved || {};
+        if (["graphite", "warm", "focus", "mission"].includes(saved.theme)) theme = saved.theme;
+        if (["light", "dark", "system"].includes(saved.mode)) mode = saved.mode;
+        if (["compact", "comfortable", "spacious"].includes(saved.density)) density = saved.density;
+        if (mode === "system") {
+          mode = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         }
         const root = document.documentElement;
         root.setAttribute("data-theme", theme);
-        root.setAttribute("data-accent", accent);
-        const meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.setAttribute("content", theme === "light" ? "#e5eaf0" : "#060a11");
+        root.setAttribute("data-mode", mode);
+        root.setAttribute("data-density", density);
       })();
     </script>
   </head>

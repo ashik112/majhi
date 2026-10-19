@@ -104,7 +104,10 @@ export async function boot(): Promise<World> {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addInitScript(() => {
     try {
-      localStorage.setItem("majhi.appearance", JSON.stringify({ theme: "light", accent: "blue" }));
+      localStorage.setItem(
+        "majhi.look",
+        JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
+      );
     } catch {
       // No storage: the default theme.
     }

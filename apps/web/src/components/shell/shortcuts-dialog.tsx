@@ -9,9 +9,7 @@ const GROUPS: readonly ShortcutGroup[] = [
   "Anywhere",
   "Task",
   "Message box",
-  "Board",
-  "Decisions",
-  "Today",
+  "Console",
   "Skills & MCP",
   "Go to",
 ];

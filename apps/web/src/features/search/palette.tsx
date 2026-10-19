@@ -279,13 +279,16 @@ export function Palette({ onClose }: { onClose: () => void }) {
   ];
 
   // Every page, found by its name once something is typed.
-  const pages: PaletteCommand[] = (Object.keys(PAGE_LABEL) as PageName[]).map((name) => ({
-    id: `page:${name}`,
-    name: PAGE_LABEL[name],
-    keywords: `page go open ${PAGE_KEYWORDS[name]}`,
-    hint: chordOf(PAGE_PATH[name]) ?? "Page",
-    run: () => go(PAGE_PATH[name]),
-  }));
+  // Today, Decisions and Chats are the console now: its entry stands for them.
+  const pages: PaletteCommand[] = (Object.keys(PAGE_LABEL) as PageName[])
+    .filter((name) => name !== "today" && name !== "decisions" && name !== "chats")
+    .map((name) => ({
+      id: `page:${name}`,
+      name: PAGE_LABEL[name],
+      keywords: `page go open ${PAGE_KEYWORDS[name]}`,
+      hint: chordOf(PAGE_PATH[name]) ?? "Page",
+      run: () => go(PAGE_PATH[name]),
+    }));
 
   const entries = ((): Entry[] => {
     const out: Entry[] = [];

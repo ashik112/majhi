@@ -18,7 +18,6 @@ import { DelegationSheet } from "./delegation";
 import { FindingsSheet } from "./findings";
 import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
-import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
 import { ScorecardSheet } from "./scorecard";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
@@ -36,8 +35,9 @@ function sheetOf(tab: string | undefined): Open | undefined {
 }
 
 /**
- * The Captain page, one screen and no tabs: the slim header with the Auto-pilot switch and spend, the conversation on the left, and what needs you, what runs, what is next and what the
- * captain did on the right. Delegation, the full log and yesterday's summary open in sheets. Old
+ * The Captain page, one screen and no tabs: the slim header with the Auto-pilot switch and spend, and the
+ * conversation under it. What needs you, what runs and what is done live in the console. Delegation,
+ * findings, the full log and yesterday's summary open in sheets. Old
  * links with `?tab=` land here and open the sheet they meant.
  */
 export function CaptainView() {
@@ -103,6 +103,7 @@ export function CaptainView() {
         onSummary={openSummary}
         onResults={() => setOpen("scorecard")}
         onHistory={() => setOpen("log")}
+        onFindings={() => setOpen("findings")}
         view={view}
         onView={(v) => {
           setPicked(v);
@@ -112,22 +113,12 @@ export function CaptainView() {
       {view === "dashboard" ? (
         <AutopilotDashboard autonomy={autonomy} now={now} />
       ) : (
-        <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
-          <section
-            aria-label="Conversation"
-            className={`flex min-h-0 min-w-0 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
-          >
-            <Conversation page />
-          </section>
-          <NowColumn
-            captain={status}
-            autonomy={autonomy}
-            now={now}
-            onLog={() => setOpen("log")}
-            onFindings={() => setOpen("findings")}
-            onSummary={summary === undefined ? undefined : openSummary}
-          />
-        </div>
+        <section
+          aria-label="Conversation"
+          className={`flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
+        >
+          <Conversation page />
+        </section>
       )}
       {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
       {open === "log" && status && (

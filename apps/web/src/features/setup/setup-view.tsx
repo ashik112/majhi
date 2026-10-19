@@ -28,7 +28,6 @@ import { useMountNow } from "@/features/roots/use-mount-now";
 import { useInSettingsFrame } from "@/features/settings/settings-frame";
 import { useWikiWorkspaces } from "@/features/wiki/use-wiki-switch";
 import { WikiSection } from "@/features/wiki/wiki-settings";
-import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
 import { useBackups } from "@/lib/backup-queries";
 import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
@@ -36,6 +35,7 @@ import { useContainers } from "@/lib/container-queries";
 import { useDecisionsStatus } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
+import { DENSITY_LABEL, MODE_LABEL, THEME_LABEL, useLook } from "@/lib/look";
 import { useConfig, useHostStatus, useRepos } from "@/lib/queries";
 import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
@@ -80,7 +80,7 @@ export function SetupView() {
   const containers = useContainers();
   const backups = useBackups();
   const wiki = useWikiWorkspaces();
-  const appearance = useAppearance();
+  const look = useLook();
   const boss = useBoss();
   const [param, setParam] = useSearchParam("section");
   const [editingRoots, setEditingRoots] = useState(false);
@@ -184,12 +184,12 @@ export function SetupView() {
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
     turns: s && turnsStatus(s.turns),
-    teams: s && `${s.rooms.review_rounds} review rounds`,
+    teams: s && "Lead and workers",
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
-    appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
+    appearance: `${THEME_LABEL[look.theme]}, ${MODE_LABEL[look.mode]}, ${DENSITY_LABEL[look.density]}`,
     backups: backupsStatus(backups.data),
     history: "Undo any change",
   };
@@ -249,8 +249,8 @@ export function SetupView() {
       {section === "containers" && <ContainersSection />}
       {section === "appearance" && (
         <DetailSection
-          title="Theme and accent"
-          note="The same as the sidebar's Appearance button"
+          title="Theme, mode and density"
+          note="The same as the sun button in the top bar"
           className="border-t-0"
         >
           <AppearanceControls className="max-w-[320px]" hint={false} />
@@ -269,7 +269,7 @@ export function SetupView() {
         title="Hub setup"
         subtitle="What majhi needs to run, and how it behaves. Every change is a commit you can undo."
       >
-        <Button onClick={() => boss.show("talk")} aria-pressed={boss.open}>
+        <Button onClick={() => boss.show("talk")}>
           <MessageSquare aria-hidden="true" />
           Ask the captain
           <Kbd className="ml-1">{MOD_KEY} J</Kbd>

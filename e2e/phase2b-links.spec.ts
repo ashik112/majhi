@@ -14,7 +14,7 @@ const taskIdOf = (page: Page) => new URL(page.url()).pathname.split("/").pop() a
 const status = async (request: APIRequestContext, id: string) =>
   (await cmd<{ status: string }>(request, "tasks.get", { id })).status;
 const dialog = (page: Page) => page.getByRole("dialog", { name: "New task" });
-const row = (page: Page, id: string) => page.locator(`[data-home-row="t:${id}"]`);
+const row = (page: Page, id: string) => page.locator(`[data-task="${id}"]`);
 
 /** Adds a task through the dialog. `chips` picks task ids under a group; resolves with the new id. */
 async function addTask(
@@ -44,7 +44,7 @@ async function addTask(
   return taskIdOf(page);
 }
 
-test("a task that depends on another waits, shows it on the board, and starts when it is done", {
+test("a task that depends on another waits, shows it under Up next, and starts when it is done", {
   tag: "@smoke",
 }, async ({ page, request }) => {
   const a = await addTask(page, "links alpha on api", { start: false });
@@ -53,9 +53,13 @@ test("a task that depends on another waits, shows it on the board, and starts wh
   await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
   expect(await status(request, b)).toBe("ready");
 
+  // A task that waits is under Up next, and says what it waits on by name.
   await page.goto("/");
-  await expect(row(page, b)).toContainText(a);
-  await page.screenshot({ path: "e2e/screenshots/links-board.png" });
+  await expectTasksHome(page);
+  await page.getByRole("button", { name: /Up next/ }).click();
+  const waitsOn = (await cmd<{ name: string }>(request, "tasks.get", { id: a })).name;
+  await expect(row(page, b)).toContainText(waitsOn);
+  await page.screenshot({ path: "e2e/screenshots/links-console.png" });
 
   // Starting by hand is refused while it waits.
   const refused = await request.post("/api/cmd/tasks.start", { data: { id: b } });

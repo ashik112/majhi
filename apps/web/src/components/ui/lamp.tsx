@@ -32,8 +32,9 @@ const LAMP_COLOR: Record<LampState, string> = {
 };
 
 /**
- * A round status lamp. Working breathes, needs-you and paused glow steady, done is a plain lit dot,
- * idle is an unlit ring. `dim` keeps the state's color but unlit, for a count of zero.
+ * A round status lamp. In Mission, working breathes and needs-you and paused glow steady; in the flat
+ * themes every lamp is a still dot (the halo and the breathing are theme tokens). Done is a plain lit
+ * dot, idle is an unlit ring. `dim` keeps the state's color but unlit, for a count of zero.
  */
 export function Lamp({
   state,
@@ -56,9 +57,7 @@ export function Lamp({
         state === "idle" ? "border-[1.5px] border-current" : "bg-current",
         dim && "opacity-35",
         !dim && state === "working" && "animate-lamp",
-        !dim &&
-          (state === "needs" || state === "paused") &&
-          "shadow-[0_0_0_3px_color-mix(in_oklab,currentColor_16%,transparent),0_0_9px_color-mix(in_oklab,currentColor_55%,transparent)]",
+        !dim && (state === "needs" || state === "paused") && "shadow-[var(--lamp-halo)]",
         className,
       )}
     />
