@@ -31,6 +31,7 @@ describe("script watches", () => {
       "glab mr list --output json",
       'python3 -c "import json,sys; print(42)"',
       "psql -c 'SELECT count(*) FROM orders' > /tmp/out && cat /tmp/out",
+      "doctl kubernetes cluster list -o json | jq '[.[] | select(.num_nodes > 1)] | length'",
     ]) {
       expect(scriptProblem(ok), ok).toBeUndefined();
     }
