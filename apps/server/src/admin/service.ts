@@ -717,7 +717,11 @@ export class AdminService {
     // rest go ahead only where the level or the owner's Always for that kind says so. The captain's and an
     // autonomous task's own ships follow the same level through `decideAutonomously`, which also holds the
     // ship guards, so only the sandbox short-circuits for them.
-    const level = ask.confirm === true ? undefined : this.levelVerdict(caller, command, parsed, settings);
+    // Not for a command that reaches repos, folders or accounts (`alwaysAsks`), nor one the owner set to
+    // confirm by name: those stay the owner's click whatever the level says.
+    const reaches = this.alwaysAsks(command, checked.data) || policy.commands[command] === "confirm";
+    const level =
+      ask.confirm === true || reaches ? undefined : this.levelVerdict(caller, command, parsed, settings);
     const goes = level?.go === true && (level.kind === "sandbox" || auto === undefined);
     const decision = goes ? "run" : decideMode(mode, ownerAsked);
     if (decision === "run") {
