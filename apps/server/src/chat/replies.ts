@@ -42,6 +42,8 @@ export interface RepliesDeps {
   internalMarks?: ((room: string) => string[]) | undefined;
   /** The Client update switch of the incident update this room is due, or undefined when it is due none. */
   incidentUpdate?: ((room: string) => Promise<"ask" | "sends" | undefined>) | undefined;
+  /** The incident task whose update a draft is, when it is one. */
+  incidentOfDraft?: ((draft: number) => string | undefined) | undefined;
   /** The names of the workspaces, to keep one workspace's name out of another's replies. */
   orgNames: () => Promise<ReadonlyMap<string, string>>;
   /** When today began in the workspace's time zone (ISO): the daily reply limit counts from it. Default: UTC midnight. */
@@ -79,6 +81,8 @@ export interface ClientDraftInfo {
   said?: string;
   /** Why it waits, in plain words. */
   hold?: string;
+  /** The incident task this reply is an update of: the owner sees it inside that incident's row. */
+  incident?: string;
 }
 
 export type ReplyResult =
@@ -405,6 +409,9 @@ export class ClientReplies {
       app: CHAT_APP_LABEL[room.chat.app],
       ...(client === undefined ? {} : { from: client.sender.name, said: this.plain(room, client.text) }),
       ...(mine?.hold === undefined ? {} : { hold: REPLY_HOLD_LABEL[mine.hold] }),
+      ...(this.deps.incidentOfDraft?.(draft.id) === undefined
+        ? {}
+        : { incident: this.deps.incidentOfDraft(draft.id) as string }),
     };
   }
 

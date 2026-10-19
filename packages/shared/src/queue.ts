@@ -1,4 +1,4 @@
-import type { OwnerDecision, OwnerDecisionKind } from "./inbox.ts";
+import { type OwnerDecision, type OwnerDecisionKind, parseDecisionId } from "./inbox.ts";
 
 /**
  * The Needs you queue of the console (docs/briefs/workflow-reset.md, step 3): the decisions the inbox
@@ -126,21 +126,29 @@ export function buildQueue(
   // An incident row leads with what decides the incident: its own card, then the fix to ship, then the rest.
   for (const row of rows.incident) {
     if (row.key?.kind !== "incident") continue;
-    const sorted = row.decisions.toSorted((a, b) => INCIDENT_RANK[a.kind] - INCIDENT_RANK[b.kind]);
+    const sorted = row.decisions.toSorted((a, b) => incidentRank(a) - incidentRank(b));
     row.decisions = sorted;
   }
   return rows;
 }
 
+/** What the incident waits for first: a start that needs the owner, then the rest by kind. */
+function incidentRank(d: Pick<OwnerDecision, "id" | "kind">): number {
+  const parsed = parseDecisionId(d.id);
+  if (parsed?.kind === "iask" && parsed.what === "start") return -1;
+  return INCIDENT_RANK[d.kind];
+}
+
 const INCIDENT_RANK: Record<OwnerDecisionKind, number> = {
   incident: 0,
-  ship: 1,
-  paused: 2,
-  question: 3,
-  approval: 3,
-  draft: 4,
-  reply: 4,
-  batch: 4,
+  // The update the client waits for goes before the fix to ship.
+  reply: 1,
+  draft: 1,
+  batch: 1,
+  ship: 2,
+  paused: 3,
+  question: 4,
+  approval: 4,
   publish: 5,
   budget: 5,
   "sign-in": 5,

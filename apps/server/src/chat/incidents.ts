@@ -367,6 +367,14 @@ export class ClientIncidents {
     return undefined;
   }
 
+  /** The incident task a reply draft is an update of: the one whose `told` record carries it. */
+  taskOfDraft(draft: number): string | undefined {
+    for (const id of this.incidentTasks()) {
+      if (this.events(id).some((e) => e.detail.event === "told" && e.detail.draft === draft)) return id;
+    }
+    return undefined;
+  }
+
   /** Links the chats that get incident updates to a new incident of their workspace. */
   linkSubscribers(incident: string, org: string): void {
     for (const room of this.deps.store.client.rooms()) {

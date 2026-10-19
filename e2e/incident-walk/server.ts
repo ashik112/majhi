@@ -32,6 +32,7 @@ const git = (cwd: string, ...args: string[]) =>
 
 const GITLAB = process.env.WALK_GITLAB ?? "127.0.0.1:7492";
 const SLACK_API = process.env.WALK_SLACK_API ?? "http://127.0.0.1:7491/api";
+const TELEGRAM_API = process.env.WALK_TELEGRAM_API ?? "http://127.0.0.1:7494";
 
 rmSync(E2E_ROOT, { recursive: true, force: true });
 const repo = join(HOST_HOME, "Work", "storefront");
@@ -61,12 +62,21 @@ config.orgs.acme = {
         SLACK_APP_TOKEN: { kind: "secret", value: "secret:slack-app" },
       },
     },
+    telegram: {
+      type: "chat",
+      name: "Telegram",
+      fields: { service: "telegram", account: "@acme_bot" },
+      vars: { TELEGRAM_BOT_TOKEN: { kind: "secret", value: "secret:tg-bot" } },
+    },
   },
 };
+// A run with one running place: a long task of the owner holds it, so a severity 1 incident asks to pause it.
+if (process.env.WALK_CAP === "1") config.limits = { ...(config.limits ?? {}), tasks_running: 1 };
 config.projects = { storefront: { org: "acme", path: "~/Work/storefront", base: "main" } };
 writeFileSync(file, stringify(config));
 const secrets = new SecretStore(MAJHI_HOME, SECRETS_KEY_FILE);
 await secrets.set("gl-token", "gl-fake-token-2222");
+await secrets.set("tg-bot", "123456:fake-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 await secrets.set("slack-bot", "xoxb-000000000000-fake-token-aaaaaaaaaaaaaaaaaaaa");
 await secrets.set("slack-app", "xapp-1-A000000-fake-token-aaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -78,7 +88,7 @@ const fakes = {
 const command = (tool: "claude" | "codex") => {
   const { command, args } = fakeAdapter(tool, {
     ...fakes,
-    slowMs: 0,
+    slowMs: Number(process.env.WALK_SLOW_MS ?? 0),
     ...(process.env.WALK_REPLIES === undefined ? {} : { replies: process.env.WALK_REPLIES }),
   });
   return JSON.stringify([command, ...args]);
@@ -92,6 +102,7 @@ Object.assign(process.env, gitEnv, {
   MAJHI_RUNNER: "local",
   MAJHI_CHATS: "on",
   MAJHI_SLACK_API: SLACK_API,
+  MAJHI_TELEGRAM_API: TELEGRAM_API,
   MAJHI_SECRETS_KEY_FILE: SECRETS_KEY_FILE,
   MAJHI_ADAPTER_CLAUDE: command("claude"),
   MAJHI_ADAPTER_CODEX: command("codex"),

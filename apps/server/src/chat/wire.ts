@@ -214,6 +214,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     holds,
     internalMarks: (room) => incidentsRef?.internalMarks(room) ?? [],
     incidentUpdate: async (room) => incidentsRef?.incidentUpdate(room),
+    incidentOfDraft: (draft) => incidentsRef?.taskOfDraft(draft),
     dayBegins: async (org) => dayBegins(w.now?.() ?? new Date(), await w.tz(org)),
     orgNames: async () =>
       new Map(

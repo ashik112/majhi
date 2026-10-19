@@ -15,12 +15,14 @@ import { FakeSlack } from "../../apps/server/src/chat/testing/fake-slack.ts";
 import { startFakeHosts } from "../../apps/server/src/deploy/testing/fake-hosts.ts";
 import { fakeAdapter } from "../../packages/acp/testing/index.ts";
 import { E2E_ROOT, HOST_HOME } from "../paths.ts";
+import { FakeTelegram } from "./fake-telegram.ts";
 
 /** The walk's ports: the majhi server, then the fake Slack, GitLab and database after it. `WALK_PORT` moves them all, so two walks can run side by side. */
 export const PORT = Number(process.env.WALK_PORT ?? 7490);
 export const SLACK_PORT = PORT + 1;
 export const GITLAB_PORT = PORT + 2;
 export const DB_PORT = PORT + 3;
+export const TELEGRAM_PORT = PORT + 4;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.WALK_SHOTS ?? join(E2E_ROOT, "..", `majhi-walk-shots-${PORT}`);
 const REPLIES = join(E2E_ROOT, "..", `majhi-walk-replies-${PORT}.json`);
@@ -66,6 +68,7 @@ export async function until<T>(
 
 export interface World {
   slack: FakeSlack;
+  telegram: FakeTelegram;
   hosts: Awaited<ReturnType<typeof startFakeHosts>>;
   db: { usage: number };
   dbServer: Server;
@@ -76,6 +79,7 @@ export interface World {
 
 export async function boot(): Promise<World> {
   const slack = await new FakeSlack().listen(SLACK_PORT);
+  const telegram = await new FakeTelegram().listen(TELEGRAM_PORT);
   slack.addUser({ id: "U0SARA", name: "sara", real_name: "Sara Client" });
   slack.addChannel({ id: "C0CLIENT", name: "acme-client" });
   const hosts = await startFakeHosts({ port: GITLAB_PORT });
@@ -98,6 +102,7 @@ export async function boot(): Promise<World> {
       WALK_REPLIES: REPLIES,
       WALK_GITLAB: `127.0.0.1:${GITLAB_PORT}`,
       WALK_SLACK_API: `http://127.0.0.1:${SLACK_PORT}/api`,
+      WALK_TELEGRAM_API: `http://127.0.0.1:${TELEGRAM_PORT}`,
     },
   });
   await until("the server", async () => (await fetch(`${BASE}/health`)).ok, 90_000);
@@ -122,6 +127,7 @@ export async function boot(): Promise<World> {
   const page = await context.newPage();
   return {
     slack,
+    telegram,
     hosts,
     db,
     dbServer,
@@ -134,6 +140,7 @@ export async function boot(): Promise<World> {
       } catch {}
       await hosts.close();
       await slack.close();
+      await telegram.close();
       dbServer.close();
     },
   };

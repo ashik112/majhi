@@ -518,13 +518,18 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
           ? ""
           : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
       const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
+      const sendOptions: DecisionOption[] =
+        client.incident === undefined
+          ? options
+          : options.map((o) => (o.id === "send" ? { ...o, label: "Send update" } : o));
       out.push({
         id,
         kind: "reply",
         org: d.org,
+        ...(client.incident === undefined ? {} : { task: client.incident as TaskId }),
         title: oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
         sentence: `A reply to ${who} in ${client.chat} (${client.app}) is ready.${said}${why} Nothing is sent until you approve it.`,
-        ...decorate(id, options, undefined, src.orgName?.(d.org)),
+        ...decorate(id, sendOptions, undefined, src.orgName?.(d.org)),
         at: d.createdAt,
         link: { kind: "chat", id: client.room as TaskId },
       });
