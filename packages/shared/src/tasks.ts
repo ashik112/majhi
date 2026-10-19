@@ -709,13 +709,20 @@ export const PermissionOptionSchema = z.object({
 export const PlanHowSchema = z.enum(["alone", "builders", "reviewer", "children", "parallel"]);
 export type PlanHow = z.infer<typeof PlanHowSchema>;
 
+/** The most steps a task's plan has (a split of a big task into steps). */
+export const PLAN_STEPS_MAX = 20;
+
+/** One step of a plan: who does it ("me", an @agent) and what. */
+export const PlanStepSchema = z.strictObject({
+  /** `me` unless a teammate does it. Default `me`. */
+  who: z.string().trim().min(1).max(80).default("me"),
+  what: z.string().trim().min(1).max(300),
+});
+
 /** The lead's plan for a task: who does what, in order, and why that is cheaper or faster. */
 export const TeamPlanSchema = z.strictObject({
-  /** In order. `who` is an @agent, "me", or "child tasks". */
-  steps: z
-    .array(z.strictObject({ who: z.string().trim().min(1).max(80), what: z.string().trim().min(1).max(300) }))
-    .min(1)
-    .max(8),
+  /** In order. `who` is an @agent or "me". */
+  steps: z.array(PlanStepSchema).min(1).max(PLAN_STEPS_MAX),
   /** Why this is cheaper or faster, in a line or two. */
   why: z.string().trim().min(1).max(600),
   how: z.array(PlanHowSchema).min(1).max(5),

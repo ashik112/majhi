@@ -356,7 +356,6 @@ function gitLimits({ command, input }: LimitCall, world: LimitWorld): string | u
 function joiningAgents(command: string, input: Record<string, unknown>): string[] {
   const named: unknown[] = [];
   if (command === "tasks.create") named.push(input.agent, ...(list(input.team) ?? []));
-  if (command === "tasks.split") named.push(...(list(input.children) ?? []).map((c) => record(c)?.agent));
   if (command === "team.add" || command === "tasks.addAgent" || command === "tasks.update")
     named.push(input.agent);
   if (command === "team.swap") named.push(input.with);

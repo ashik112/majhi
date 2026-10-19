@@ -232,6 +232,7 @@ import { TaskDetails } from "./tasks/detail.ts";
 import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
+import { gateOf } from "./tasks/provenance.ts";
 import { QueuedMerges } from "./tasks/queued-merge.ts";
 import { resumeSignedIn } from "./tasks/resume-signed-in.ts";
 import { TaskService } from "./tasks/service.ts";
@@ -2071,8 +2072,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         byOwner: n.byOwner,
         attachments: [],
         ...(n.followUpOf === undefined ? {} : { followUpOf: n.followUpOf }),
-        // A finding the captain turns into a task starts by the Start line of its workspace; the owner's own click makes a task for the owner.
-        start: !n.byOwner && (await autonomy.mayStartReacting(n.org)),
+        // A finding the captain turns into a task is an idea: the gate files it, and only the owner starts it.
+        start: false,
+        gate: n.byOwner ? "owner" : "finding",
         provenance: {
           kind: "ref",
           origin: {
@@ -2730,7 +2732,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           ? undefined
           : opsWatch?.projectOfService(inc.service),
     tasks: {
-      create: (input) => tasks.create(input),
+      create: (input) => tasks.create({ ...input, gate: gateOf(input.provenance) }),
       start: (id, by) => tasks.start(id, by),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
@@ -2804,7 +2806,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await tasks.reopen(task);
     },
     askLead: (task, text) => tasks.postFromScheduler({ task, text, from: "incident" }),
-    createTask: (input) => tasks.create(input),
+    createTask: (input) => tasks.create({ ...input, gate: gateOf(input.provenance) }),
     events,
     startTask: async (task) => {
       const blocked = autonomy.reactingBlocked();

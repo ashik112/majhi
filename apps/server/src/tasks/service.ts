@@ -20,8 +20,10 @@ import {
   didWords,
   didWordsInline,
   fieldsFit,
+  type GateOrigin,
   type HandoffFailed,
   handoffFailedFacts,
+  type IdeaReason,
   isOwnerChat,
   LOCAL_TASK_PREFIX,
   lifecycle,
@@ -29,12 +31,14 @@ import {
   MODE_LABELS,
   mayRetype,
   mergeCanBeOverridden,
+  nameFromTitle,
   OWNER,
   OWNER_HANDLE,
   type ParsedTask,
   type PendingNotice,
   type PendingShip,
   type PlanMember,
+  PRIVATE,
   type ProcessInfo,
   parseMentions,
   parsePathMentions,
@@ -53,6 +57,7 @@ import {
   type TaskId,
   type TaskKind,
   type TaskLink,
+  TaskNameSchema,
   type TaskPriority,
   type TaskRepo,
   type TaskSummary,
@@ -61,6 +66,7 @@ import {
   type TeamOverride,
   type TeamPlan,
   type TypeBy,
+  taskNameOf,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -106,7 +112,6 @@ import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
 import { firstTurn, type Member, unreviewed } from "../rooms/coordinate.ts";
-import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
 import { attributionOf } from "../runs/attribution.ts";
 import { commitAll, commitBy, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -144,6 +149,7 @@ import {
 } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
+import { type Admission, admit, admitRunning, type GateCounts, type GateLimits } from "./gate.ts";
 import { handoverNote } from "./handover.ts";
 import { holdViewOf } from "./hold-view.ts";
 import {
@@ -183,6 +189,7 @@ import {
   targetRefusal,
 } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
+import { claimTaskFolder, nameSlug, scopeSlug } from "./task-folder.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 import { chooseType, guessType, typeQuestion } from "./typing.ts";
@@ -274,6 +281,13 @@ export interface CreateInput {
   typing?: TaskTyping | undefined;
   /** Where the task came from. Every creator says (see `Provenance`). */
   provenance: Provenance;
+  /** Who is making it, for the gate (`admit`). Every creator says; there is no default. */
+  gate: GateOrigin;
+  /**
+   * What the task is called: 2 to 4 words, at most 32 characters. Absent: the first four meaningful words
+   * of the title. The captain and agents must give one (the command refuses a create without).
+   */
+  name?: string | undefined;
   /** An investigation: the named repos are mounted read-only, with no branch, worktree or Ship. */
   readOnly?: boolean | undefined;
   agent?: string | undefined;
@@ -321,6 +335,8 @@ export class TaskService {
   private readonly reviewWoken = new Set<string>();
   /** Tasks inside `start` (worktrees, memory) that have no run yet, and the ones the owner stopped there. */
   private readonly starting = new Set<string>();
+  /** Tasks the room was told wait for a free place, so it is said once. */
+  private readonly lineNoted = new Set<string>();
   private readonly startStopped = new Set<string>();
   /** Lead orchestration: the check before a waiting task starts, and the lead's side of a parent. */
   private readonly orchestrator: Orchestrator;
@@ -386,6 +402,7 @@ export class TaskService {
       planner: this.planner,
       host: {
         start: (id) => this.start(id),
+        noRoom: (id) => this.noRoom(id),
         swap: (id, agent, replacement) => this.swapInTeam(id, agent, replacement),
         linksChanged: (ids) => this.linksChanged(ids),
       },
@@ -531,6 +548,14 @@ export class TaskService {
     if (org !== undefined && sections.orgs[org] === undefined) {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
+    const name = this.nameFor(input.name, parsed.title);
+    // The one gate: chats are conversations, not tasks of the gate, and a promoted chat is the owner's own.
+    const admission =
+      promoting !== undefined || kind === "chat"
+        ? undefined
+        : await this.admission(input.gate, org ?? PRIVATE, input.start);
+    const idea = admission?.kind === "idea" ? admission.reason : undefined;
+    const wantsStart = input.start && idea === undefined;
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
       const named = Object.values(connectionScopes(sections)).find((o) => o.connections?.[id] !== undefined);
@@ -549,7 +574,7 @@ export class TaskService {
     const accountStatus = new Map(views.map((v) => [v.id, v.status]));
     const held = asked === undefined ? await this.heldAccounts(views) : undefined;
     const agent = asked?.[0] ?? pickDefaultAgent({ agents, org, boss: sections.boss, accountStatus, held });
-    if (agent === undefined && input.start) {
+    if (agent === undefined && wantsStart) {
       throw new UserError(
         org === undefined
           ? "No agent can run a task without an org. Create the captain on the Agents page."
@@ -576,23 +601,11 @@ export class TaskService {
             origin,
             branchType: input.branchType,
           })));
-    const folder = promoting?.folder ?? join(tasksDir, id);
-    const picked =
-      asked !== undefined
-        ? { team: asked, mode: input.mode ?? "lead", line: undefined }
-        : await this.pickTeam({
-            id,
-            kind,
-            parsed,
-            text: input.text,
-            agents,
-            org,
-            boss: sections.boss,
-            accountStatus,
-            orgTeam: org === undefined ? undefined : sections.orgs[org]?.team,
-            fallback: agent,
-            mode: input.mode,
-          });
+    // One agent by default. A team only when it was named: `team`, `agent`, or @mentions in the text.
+    const picked = {
+      team: asked ?? (agent === undefined ? [] : [agent]),
+      mode: input.mode ?? ("lead" as const),
+    };
     // A child ships where its parent does: a repo it shares with the parent and picks no base for takes the parent's.
     const bases = new Map(picks.bases);
     for (const r of parentTask?.repos ?? [])
@@ -605,18 +618,14 @@ export class TaskService {
           projects,
           bases,
           input.branchType ?? (typing === undefined ? undefined : BRANCH_TYPE_OF[typing.type]),
+          name,
         );
     const repos = repoPlan.repos.map((r) => (picks.writes.has(r.project) ? { ...r, writes: true } : r));
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
-    if (promoting === undefined) {
-      try {
-        await mkdir(folder);
-      } catch {
-        throw new UserError(`${folder} already exists. Move it away and try again.`, 409);
-      }
-    }
+    const folder =
+      promoting?.folder ?? (await this.claimFolder(tasksDir, id, kind, name, parsed, org, sections.orgs));
     try {
       const attachmentsDir = join(folder, "attachments");
       const files = await takePlanned(uploads, planned, attachmentsDir);
@@ -625,12 +634,14 @@ export class TaskService {
       const task: Task = {
         id,
         title: parsed.title,
+        name,
+        ...(idea === undefined ? {} : { idea }),
         brief: input.text,
         kind,
         ...(typing === undefined ? {} : { typing }),
         ...(origin === undefined ? {} : { origin }),
         ...(org === undefined ? {} : { org }),
-        status: promoting?.status ?? (input.start ? "ready" : "inbox"),
+        status: promoting?.status ?? (wantsStart ? "ready" : "inbox"),
         folder,
         repos,
         ...(investigation ? { readMounts: this.investigationMounts(parsed, projects, at) } : {}),
@@ -656,7 +667,7 @@ export class TaskService {
         store.tasks.insert(task);
         if (input.noAutonomy === true) store.tasks.setNoAutonomy(id, true);
         store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
-        if (input.start) store.tasks.setStartWhenReady(id, true);
+        if (wantsStart) store.tasks.setStartWhenReady(id, true);
       } else {
         // The same row, room and folder: only what makes it a task is added.
         store.tasks.promote(task);
@@ -682,7 +693,7 @@ export class TaskService {
         `Named in the text but not part of this task: ${picks.mentioned.join(", ")}. Agents can read ${picks.mentioned.length === 1 ? "it" : "them"}; nothing there gets a branch or ships.`,
       );
     }
-    if (picked.line !== undefined) this.note(id, picked.line);
+    if (idea !== undefined) this.note(id, ideaLine(idea, input.start));
     const linked = [input.parent, input.followUpOf].flatMap((t) => (t === undefined ? [] : [t]));
     if (linked.length > 0) await this.linksChanged(linked);
     let task = this.get(id);
@@ -691,9 +702,9 @@ export class TaskService {
     if (input.provenance.kind === "captain" || input.provenance.kind === "ref") this.deps.onOpened?.(task);
     // A task that waits stays ready and starts by itself when its dependencies are met.
     const waiting = store.tasks.unmetDependencies(id);
-    if (input.start && waiting.length > 0) {
+    if (wantsStart && waiting.length > 0) {
       this.note(id, `Waiting on ${waiting.join(", ")}. It starts when they are done.`);
-    } else if (input.start) {
+    } else if (wantsStart) {
       try {
         task = await this.start(id);
       } catch (err) {
@@ -859,75 +870,6 @@ export class TaskService {
     return team;
   }
 
-  /**
-   * The default team of a new task (Phase 3): the org's `team` when it has one; else, when more
-   * than one team is possible, the decision provider's pick with the decision recorded on the
-   * task; else the rules' single agent. Chat tasks always get one agent.
-   */
-  private async pickTeam(args: {
-    id: string;
-    kind: TaskKind;
-    parsed: ParsedTask;
-    text: string;
-    agents: readonly AgentFrontmatter[];
-    org: string | undefined;
-    boss: string | undefined;
-    accountStatus: ReadonlyMap<string, AccountStatus>;
-    orgTeam: readonly string[] | undefined;
-    fallback: string | undefined;
-    mode: CoordinationMode | undefined;
-  }): Promise<{
-    team: string[];
-    mode: CoordinationMode;
-    line: string | undefined;
-  }> {
-    const solo = {
-      team: args.fallback === undefined ? [] : [args.fallback],
-      mode: args.mode ?? ("lead" as const),
-    };
-    if (args.kind === "chat") return { ...solo, line: undefined };
-    const orgTeam = (args.orgTeam ?? []).filter((id) => {
-      const a = args.agents.find((x) => x.id === id);
-      return a !== undefined && canWorkIn(a, args.org);
-    });
-    if (orgTeam.length > 0) {
-      return {
-        team: orgTeam,
-        mode: args.mode ?? "lead",
-        line: `Team: the org's default team, ${orgTeam.map((a) => `@${a}`).join(", ")}.`,
-      };
-    }
-    const options = teamOptions(args);
-    if (options.length <= 1) return { ...solo, line: undefined };
-    const result = await this.deps.decisions
-      ?.decide(
-        teamQuestion(
-          {
-            title: args.parsed.title,
-            text: args.text,
-            kind: args.kind,
-            repos: args.parsed.repos.map((r) => r.project),
-          },
-          options,
-        ),
-        { use: "routing", task: args.id },
-      )
-      .catch(() => undefined);
-    const pick = chooseTeam(options, result);
-    if (pick === undefined) return { ...solo, line: undefined };
-    if (result !== undefined)
-      this.deps.decisions?.outcome(result.id, {
-        text: pick.line,
-        fellBack: pick.decision === undefined,
-        choices: options.map((o) => o.key),
-      });
-    return {
-      team: pick.option.team,
-      mode: args.mode ?? pick.option.mode,
-      line: pick.line,
-    };
-  }
-
   /** The checkouts an investigation reads, read-only, for every agent of the task. */
   private investigationMounts(parsed: ParsedTask, projects: readonly ProjectInfo[], at: string): ReadMount[] {
     const mounts: ReadMount[] = [];
@@ -1008,12 +950,82 @@ export class TaskService {
     return { type, ...(asks.length === task.repos.length ? {} : { only: asks }) };
   }
 
+  /** The name a new task gets: the one its creator gave (checked), else the first meaningful words of the title. */
+  private nameFor(given: string | undefined, title: string): string {
+    if (given === undefined) return nameFromTitle(title) || "Task";
+    const checked = TaskNameSchema.safeParse(given);
+    if (!checked.success) {
+      throw new UserError(
+        `The task name "${given}" does not fit: ${checked.error.issues[0]?.message ?? "invalid"}.`,
+      );
+    }
+    return checked.data;
+  }
+
+  /**
+   * What the gate says about a new task of this origin in this workspace. Reads the limits and counts
+   * what is running and open; the decision is `admit`'s alone.
+   */
+  private async admission(origin: GateOrigin, org: string, wantsStart: boolean): Promise<Admission> {
+    const limits = await this.gateLimits();
+    return admit({ origin, org, wantsStart, counts: this.gateCounts(undefined), limits });
+  }
+
+  private async gateLimits(): Promise<GateLimits> {
+    const { limits } = await this.deps.config.settings();
+    return { tasks_running: limits.tasks_running, open_by_others: limits.open_by_others };
+  }
+
+  /** What the gate counts now. `except`: a task that is about to start counts once, not twice. */
+  private gateCounts(except: string | undefined): GateCounts {
+    const running = new Set(this.deps.store.tasks.runningIds());
+    for (const id of this.starting) running.add(id);
+    if (except !== undefined) running.delete(except);
+    return { running: running.size, openByOthers: this.deps.store.tasks.openByOthers() };
+  }
+
+  /** Where in the line of waiting starts a task stands (1 is next), for the room's line. */
+  private placeInLine(id: string): number {
+    const line = this.deps.store.tasks.waitingToStart().map((t) => t.id);
+    const at = line.indexOf(id);
+    return at < 0 ? line.length + 1 : at + 1;
+  }
+
+  /**
+   * The folder of a new task, created: `<tasks_dir>/<project>/<name-slug>` (the first project, else the
+   * workspace's name), with a number when that is taken. A chat is not a piece of work: its folder
+   * stays `<tasks_dir>/<id>`.
+   */
+  private async claimFolder(
+    tasksDir: string,
+    id: string,
+    kind: TaskKind,
+    name: string,
+    parsed: ParsedTask,
+    org: string | undefined,
+    orgs: Record<string, { name?: string | undefined }>,
+  ): Promise<string> {
+    if (kind === "chat") {
+      const folder = join(tasksDir, id);
+      try {
+        await mkdir(folder);
+      } catch {
+        throw new UserError(`${folder} already exists. Move it away and try again.`, 409);
+      }
+      return folder;
+    }
+    const scope =
+      parsed.repos[0]?.project ?? scopeSlug(org === undefined ? PRIVATE : (orgs[org]?.name ?? org));
+    return claimTaskFolder(tasksDir, scope, nameSlug(name));
+  }
+
   private async planRepos(
     id: string,
     parsed: ParsedTask,
     projects: readonly ProjectInfo[],
     bases: ReadonlyMap<string, string> = new Map(),
     branchType?: BranchType,
+    name?: string,
   ): Promise<{ repos: TaskRepo[]; warnings: string[] }> {
     const repos: TaskRepo[] = [];
     const warnings: string[] = [];
@@ -1042,6 +1054,7 @@ export class TaskService {
       const wanted = branchName({
         id,
         title: parsed.title,
+        name,
         type: branchType ?? inferBranchType(parsed.title),
         ...(project.branchPattern === undefined
           ? styleOptions(style?.branches ?? { kind: "default" })
@@ -1109,21 +1122,73 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Start, stop, close, remove
 
-  /** Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. */
+  /**
+   * Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. Two
+   * rules of the gate sit here: an idea starts only when the owner starts it, and a task that has not
+   * run yet waits in line when `limits.tasks_running` tasks already run (the owner's `now` starts it
+   * anyway). A task that waits is returned as it is, `ready`; the line starts it when there is room.
+   */
   async start(
     id: string,
     by = "owner",
-    options: { gateReleased?: boolean; wake?: boolean } = {},
+    options: { gateReleased?: boolean; wake?: boolean; now?: boolean } = {},
   ): Promise<Task> {
     const task = this.get(id);
     await this.checkStartable(task);
+    if (task.idea !== undefined) {
+      if (by !== "owner")
+        throw new UserError(`${taskNameOf(task)} is an idea: only the owner starts it.`, 409);
+      this.deps.store.tasks.clearIdea(id);
+    }
+    const fresh = task.status === "inbox" || task.status === "ready";
+    const limits =
+      fresh && task.kind !== "chat" && options.now !== true ? await this.gateLimits() : undefined;
+    // No await from the count to `starting.add`: two starts at once cannot both take the last place.
+    if (limits !== undefined) {
+      const full = admitRunning({ running: this.gateCounts(id).running }, limits);
+      if (full.kind === "queue") return this.queueStart(task, limits.tasks_running);
+    }
     this.starting.add(id);
     try {
       return await this.startNow(id, task, by, options);
     } finally {
       this.starting.delete(id);
       this.startStopped.delete(id);
+      this.lineNoted.delete(id);
     }
+  }
+
+  /** The task waits for a free place: it stays `ready` with the wish to start, and the line takes it in turn. */
+  private async queueStart(task: Task, cap: number): Promise<Task> {
+    const out = await this.lifecycle.apply(
+      task.id,
+      { type: "wishStart" },
+      { ctx: { by: "owner" }, skip: ["publishTask"] },
+    );
+    if (!wasRefused(out)) {
+      this.deps.room.publishTask(this.get(task.id));
+      if (!this.lineNoted.has(task.id)) {
+        this.lineNoted.add(task.id);
+        this.note(task.id, `${this.fullLine(task.id, cap)} Place ${this.placeInLine(task.id)} in line.`);
+      }
+    }
+    return this.get(task.id);
+  }
+
+  /** Why a start waits: how many run and the limit. */
+  private fullLine(id: string, cap: number): string {
+    const running = this.gateCounts(id).running;
+    return `${running} ${running === 1 ? "task is" : "tasks are"} running (limit ${cap}), so this one waits its turn.`;
+  }
+
+  /**
+   * The orchestrator asks before it starts a waiting task: the line that says why there is no room,
+   * or undefined when there is.
+   */
+  async noRoom(id: string): Promise<string | undefined> {
+    const limits = await this.gateLimits();
+    if (admitRunning({ running: this.gateCounts(id).running }, limits).kind === "start") return undefined;
+    return `${this.fullLine(id, limits.tasks_running)} Place ${this.placeInLine(id)} in line.`;
   }
 
   private async startNow(
@@ -1918,68 +1983,27 @@ export class TaskService {
   }
 
   /**
-   * Splits a task into children (5.4a): each child is a full task under this one, and can wait
-   * for earlier children. Children are created in order, so a failure leaves the ones before it.
+   * Splits a task into steps: they are written into the task's plan (`task_plans`, shown in its room) and
+   * no task is made. The plan is the lead's, so a call from the owner records it for the lead. Child
+   * tasks that exist keep working; nothing makes new ones.
    */
   async split(input: {
     task: string;
-    /** The task of the agent that asked, for attachments by path. */
-    from?: string | undefined;
-    children: {
-      text: string;
-      repos?: readonly PickedRepo[] | undefined;
-      attachments?: string[] | undefined;
-      dependsOn: number[];
-      when?: "merged" | "ready" | undefined;
-      agent?: string | undefined;
-    }[];
-    start: boolean;
-  }): Promise<Task[]> {
-    const parent = this.get(input.task);
-    if (parent.status === "done") throw new UserError(`${parent.id} is done.`, 409);
-    input.children.forEach((c, i) => {
-      for (const d of c.dependsOn) {
-        if (d >= i)
-          throw new UserError(`Child ${i + 1} can only wait for children before it (got ${d + 1}).`);
-      }
+    /** The agent that asked: its plan. Absent: the task's lead. */
+    agent?: string | undefined;
+    steps: readonly { who?: string | undefined; what: string }[];
+    why?: string | undefined;
+  }): Promise<{ task: TaskId; steps: number }> {
+    const task = this.get(input.task);
+    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    const agent = input.agent ?? task.team[0];
+    if (agent === undefined) throw new UserError(`${task.id} has no agent whose plan this is.`, 409);
+    await this.recordPlan(task.id, agent, {
+      steps: input.steps.map((s) => ({ who: s.who ?? "me", what: s.what })),
+      why: input.why ?? "Split into steps.",
+      how: ["alone"],
     });
-    // Every entry is checked before the first child exists, so a bad one leaves nothing behind.
-    await this.checkAttachments(
-      input.children.flatMap((c) => c.attachments ?? []),
-      input.from,
-    );
-    const made: Task[] = [];
-    for (const child of input.children) {
-      const dependsOn = child.dependsOn.flatMap((d) => (made[d] === undefined ? [] : [made[d].id]));
-      made.push(
-        await this.create({
-          text: child.text,
-          repos: child.repos,
-          agent: child.agent,
-          attachments: child.attachments ?? [],
-          from: input.from,
-          start: false,
-          parent: parent.id,
-          provenance: { kind: "child" },
-          dependsOn,
-          dependsWhen: child.when,
-        }),
-      );
-    }
-    this.note(parent.id, `Split into ${made.map((t) => t.id).join(", ")}.`);
-    if (input.start) {
-      // The children start one by one as the plan allows: overlap, links and limits are checked first.
-      for (const t of made) {
-        await this.lifecycle.apply(
-          t.id,
-          { type: "wishStart" },
-          { ctx: { by: "owner" }, skip: ["publishTask"] },
-        );
-        this.deps.room.publishTask(this.get(t.id));
-      }
-      await this.orchestrator.advance();
-    }
-    return made.map((t) => this.get(t.id));
+    return { task: task.id, steps: input.steps.length };
   }
 
   /**
@@ -2253,6 +2277,7 @@ export class TaskService {
       attachments: [],
       start: false,
       provenance: { kind: "captain", reason: input.reason },
+      gate: "captain",
       typing: { type: "chore", by: "intake" },
     });
     const task = this.get(created.id);
@@ -4283,6 +4308,15 @@ export class TaskService {
       ...(action === undefined ? {} : { action }),
     });
   }
+}
+
+/** What the room says about a task filed as an idea. */
+function ideaLine(reason: IdeaReason, askedToStart: boolean): string {
+  const why =
+    reason === "agent-made"
+      ? "It was made by an agent or a scan, so it does not start by itself."
+      : "Its workspace already has the most open tasks you did not start.";
+  return `Filed as an idea${askedToStart ? " (it was not started)" : ""}. ${why} Start it when you want it done.`;
 }
 
 function briefTeam(task: Task, agents: readonly AgentFrontmatter[]): BriefAgent[] {

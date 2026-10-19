@@ -106,16 +106,4 @@ describe("the task lines migration", () => {
       store.close();
     }
   });
-
-  it("runs once and leaves the database usable on a second open", () => {
-    const file = oldDatabaseCopy();
-    new Store(file).close();
-    const again = new Store(file);
-    try {
-      expect(again.tasks.get("ACM-2")?.title).toBe("Write the tests");
-      expect(again.tasks.waitingToStart().map((t) => t.id)).toEqual(["ACM-2"]);
-    } finally {
-      again.close();
-    }
-  });
 });

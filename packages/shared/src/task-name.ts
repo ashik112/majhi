@@ -118,6 +118,40 @@ export function nameFromTitle(title: string): string {
   return name === "" ? "" : `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
 }
 
+/** The longest a slug made from a name is. */
+export const NAME_SLUG_MAX = 40;
+
+/**
+ * The slug of a name, for a branch (`feat/login-redirect`) and a folder: lowercase ASCII letters and
+ * digits joined by dashes, cut between words at 40 characters, never ending on a word that cannot end
+ * a name ("when", "the"). The one function both the branch and the folder derive from; empty only when
+ * the name has no letter or digit.
+ */
+export function slugOfName(name: string): string {
+  const words: string[] = [];
+  let word = "";
+  for (const ch of name.normalize("NFD").toLowerCase()) {
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")) word += ch;
+    else {
+      // Accents split off by NFD are marks, not separators.
+      const mark = ch >= "̀" && ch <= "ͯ";
+      if (!mark && word !== "") words.push(word);
+      if (!mark) word = "";
+    }
+  }
+  if (word !== "") words.push(word);
+  let slug = "";
+  for (const w of words) {
+    const next = slug === "" ? w : `${slug}-${w}`;
+    if (next.length > NAME_SLUG_MAX) break;
+    slug = next;
+  }
+  if (slug === "") return (words[0] ?? "").slice(0, NAME_SLUG_MAX);
+  const kept = slug.split("-");
+  while (kept.length > 1 && DANGLING_WORDS.has(kept[kept.length - 1] ?? "")) kept.pop();
+  return kept.join("-");
+}
+
 /** What a task is called: its name, or the first words of its title for a task made before names. */
 export function taskNameOf(task: { name?: string | undefined; title: string }): string {
   if (task.name !== undefined && task.name !== "") return task.name;

@@ -54,7 +54,7 @@ export type AutonomyVerdict =
 /** Calls that start agents working: they wait while a cap or a floor holds the work. */
 export function startsWork(command: string, input: Record<string, unknown>): boolean {
   if (command === "tasks.start" || command === "team.add" || command === "tasks.addAgent") return true;
-  return (command === "tasks.create" || command === "tasks.split") && input.start === true;
+  return command === "tasks.create" && input.start === true;
 }
 
 /** What the owner alone decides: which repos, folders and branches agents reach. */

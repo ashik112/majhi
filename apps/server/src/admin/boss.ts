@@ -84,6 +84,8 @@ export async function openChat({ config, store, tasks, agents }: BossChatDeps, a
     attachments: [],
     start: false,
     provenance: { kind: "chat" },
+    // A chat is a conversation, outside the gate.
+    gate: "owner",
   });
 }
 

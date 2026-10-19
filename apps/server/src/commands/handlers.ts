@@ -903,6 +903,7 @@ export function createHandlers({
         from: ctx.meta.task,
         byOwner: false,
         provenance: { kind: "captain", reason: "A bug in majhi's own code, reported by an agent" },
+        gate: "agent",
         typing: { type: "bug", by: "captain" },
       });
       noteSecrets(services, task.id, captured.saved);
@@ -919,6 +920,11 @@ export function createHandlers({
         // A secret in the task text must not reach TASK.md or the agent.
         const captured = await services.secretService.capture(input.text);
         const byOwner = ctx.meta.actor.kind === "owner";
+        const maker = await resolveActor(services, ctx.meta);
+        // The captain and agents name what they make: the name is what the owner reads, the id is internal.
+        if (maker.kind !== "owner" && input.name === undefined) {
+          throw new UserError('Give the task a short name in "name": 2 to 4 words, like "Login redirect".');
+        }
         const { type, separate, ...given } = input;
         // An agent that names another task as the parent files a follow-up: a backlog task linked to it, never a subtask
         // that would hold the source open. Only a lead splitting its own task makes subtasks.
@@ -940,6 +946,7 @@ export function createHandlers({
           text: captured.text,
           from: ctx.meta.task,
           byOwner,
+          gate: maker.kind === "owner" ? "owner" : maker.kind === "agent" ? "agent" : "captain",
           provenance:
             chat === undefined || joined
               ? createdBy(ctx, rest.parent !== undefined)
@@ -978,7 +985,9 @@ export function createHandlers({
     },
     "tasks.start": async (input, ctx) => {
       const by = ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner";
-      if (input.message === undefined) return services.tasks.start(input.id, by);
+      // Only the owner may start a task past the running limit.
+      const now = input.now === true && ctx.meta.actor.kind === "owner";
+      if (input.message === undefined) return services.tasks.start(input.id, by, { now });
       // The message starts the task and reaches its agent, in order: wait until it was delivered.
       await services.tasks.send({
         task: input.id,
@@ -1130,12 +1139,16 @@ export function createHandlers({
       return { removed: input.id };
     },
     "tasks.split": async (input, ctx) => {
-      const children = [];
-      for (const c of input.children) {
-        const captured = await services.secretService.capture(c.text);
-        children.push({ ...c, text: captured.text });
+      // A secret in a step must not reach the plan the room shows.
+      const steps = [];
+      for (const step of input.steps) {
+        steps.push({ ...step, what: (await services.secretService.capture(step.what)).text });
       }
-      return { children: await services.tasks.split({ ...input, children, from: ctx.meta.task }) };
+      return services.tasks.split({
+        ...input,
+        steps,
+        ...(ctx.meta.actor.kind === "agent" ? { agent: ctx.meta.actor.id } : {}),
+      });
     },
     "team.add": (input) =>
       services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),

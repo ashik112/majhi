@@ -11,15 +11,10 @@
  *  - Chat tasks (one agent, a conversation, the captain's lanes) are not tasks of this gate at all.
  */
 
-/** Who is making the task. */
-export type Origin = "owner" | "captain" | "agent" | "incident" | "client-chat" | "schedule" | "finding";
+import type { GateOrigin, LimitsSettings } from "@majhi/shared";
 
-export interface GateLimits {
-  /** `limits.tasks_running`: tasks running at once across every workspace. */
-  tasks_running: number;
-  /** `limits.open_by_others`: open tasks per workspace that the owner did not make. */
-  open_by_others: number;
-}
+/** The caps live in majhi.yaml `limits`; their defaults are in the schema, nowhere else. */
+export type GateLimits = Pick<LimitsSettings, "tasks_running" | "open_by_others">;
 
 export interface GateCounts {
   /** Tasks running now, chats left out, tasks that are starting included. */
@@ -48,7 +43,7 @@ export function admitRunning(
 }
 
 export function admit(input: {
-  origin: Origin;
+  origin: GateOrigin;
   /** The workspace the task is in: the key of `counts.openByOthers`. */
   org: string;
   wantsStart: boolean;

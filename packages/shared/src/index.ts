@@ -77,6 +77,7 @@ export * from "./settings.ts";
 export * from "./shell-parse.ts";
 export * from "./ship-rules.ts";
 export * from "./skills.ts";
+export * from "./task-gate.ts";
 export * from "./task-hold.ts";
 export * from "./task-name.ts";
 export * from "./task-origin.ts";

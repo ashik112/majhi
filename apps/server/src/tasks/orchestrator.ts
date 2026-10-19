@@ -12,6 +12,8 @@ import { findCycle } from "./relations.ts";
 export interface OrchestratorHost {
   /** Starts a task now, without asking the plan. */
   start(id: string): Promise<Task>;
+  /** Why there is no room to start `id` now (the running cap), or undefined when there is. */
+  noRoom(id: string): Promise<string | undefined>;
   /** Puts `replacement` in the place of `agent` in the task's team. */
   swap(id: string, agent: string, replacement: string): Promise<Task>;
   /** Links of these tasks changed: refresh their rooms and TASK.md. */
@@ -77,6 +79,11 @@ export class Orchestrator {
     if (store.tasks.unmetDependencies(task.id).length > 0) return;
 
     const verdict = plan.verdict;
+    // The running cap: a task waits in line, in order, until a place is free.
+    if (verdict.action === "start" || verdict.action === "switch") {
+      const full = await host.noRoom(task.id);
+      if (full !== undefined) return this.quiet(task, `${task.id} is queued: ${full}`);
+    }
     switch (verdict.action) {
       case "start":
         this.said.delete(task.id);

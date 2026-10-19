@@ -452,6 +452,38 @@ export class TaskRepo {
     );
   }
 
+  /** Ids of the tasks running now. Chats are conversations, not tasks of the task gate: left out. */
+  runningIds(): string[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.status, "running"), ne(tasks.kind, "chat")))
+      .all()
+      .map((r) => r.id);
+  }
+
+  /**
+   * Open tasks the owner did not make, per workspace (`private` for none): the ones their creator
+   * stored an origin other than the owner's for. Done tasks, chats and ideas are left out; a task made
+   * before origins has none and counts as the owner's.
+   */
+  openByOthers(): Record<string, number> {
+    const rows = this.db
+      .select({ org: sql<string>`coalesce(${tasks.org}, 'private')`, n: sql<number>`count(*)` })
+      .from(tasks)
+      .where(
+        and(
+          ne(tasks.status, "done"),
+          ne(tasks.kind, "chat"),
+          sql`${tasks.idea} IS NULL`,
+          sql`json_extract(${tasks.origin}, '$.kind') IN ('captain', 'chat', 'finding', 'watch', 'schedule', 'deploy', 'client')`,
+        ),
+      )
+      .groupBy(sql`coalesce(${tasks.org}, 'private')`)
+      .all();
+    return Object.fromEntries(rows.map((r) => [r.org, r.n]));
+  }
+
   /** Ids of the owner's chats and the captain's lanes. */
   chatIds(): string[] {
     return this.q.chatIds.all().map((r) => r.id);
