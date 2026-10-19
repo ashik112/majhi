@@ -987,6 +987,8 @@ export class OpsWatch {
     title: string;
     at: string;
     escalated: boolean;
+    /** The incident task opened for it, when there is one. */
+    task?: string;
     question?: { text: string; options: { id: string; label: string }[] };
   }[] {
     const out: ReturnType<OpsWatch["unacked"]> = [];
@@ -999,10 +1001,21 @@ export class OpsWatch {
         title: i.title,
         at: i.openedAt,
         escalated: i.escalatedAt !== undefined,
+        ...(this.taskOf(i) === undefined ? {} : { task: this.taskOf(i) as string }),
         ...(question === undefined ? {} : { question }),
       });
     }
     return out;
+  }
+
+  /** The incident task of an incident, through its finding. */
+  private taskOf(inc: StoredIncident): string | undefined {
+    if (inc.finding === undefined) return undefined;
+    try {
+      return this.deps.findings.get(inc.finding).task;
+    } catch {
+      return undefined;
+    }
   }
 
   /** One incident, open or closed. */

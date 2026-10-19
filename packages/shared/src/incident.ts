@@ -179,6 +179,8 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
     projectUnknown: z.literal(true).optional(),
     at: z.string(),
   }),
+  /** Another report joined this incident: a second watch, a failed deploy, a client message. Counted as an alert. */
+  z.object({ event: z.literal("joined"), source: z.enum(["watch", "client", "deploy"]), at: z.string() }),
   /**
    * A client room was woken to the captain for a status: it is never woken for that status again. `draft` is the
    * captain's reply that went out for it, when one did.
@@ -300,6 +302,28 @@ export const IncidentEditReportInputSchema = z.object({
   text: ReportTextSchema.partial(),
 });
 export const IncidentSendReportInputSchema = z.object({ task: TaskIdSchema, room: TaskIdSchema });
+
+const span = (ms: number): string => {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.round(minutes / 60)} h`;
+};
+
+/** "47 alerts in 12 min, last 20s ago": how often an incident fired. Empty for a single alert. */
+export function alertsLine(
+  repeats: { count: number; since: string; last: string } | undefined,
+  nowMs: number,
+): string {
+  if (repeats === undefined || repeats.count < 2) return "";
+  const lastMs = Date.parse(repeats.last);
+  const sinceMs = Date.parse(repeats.since);
+  if (Number.isNaN(lastMs) || Number.isNaN(sinceMs)) return `${repeats.count} alerts`;
+  const ago = Math.max(0, nowMs - lastMs);
+  const seconds = Math.round(ago / 1000);
+  const when = seconds < 60 ? `${seconds}s ago` : `${span(ago)} ago`;
+  return `${repeats.count} alerts in ${span(lastMs - sinceMs)}, last ${when}`;
+}
 
 // ---------------------------------------------------------------------------
 // The ping

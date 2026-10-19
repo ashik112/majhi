@@ -104,6 +104,10 @@ export const OwnerDecisionSchema = z.object({
   /** When it arrived (ISO). */
   at: z.string(),
   link: DecisionLinkSchema,
+  /** The decision belongs to an incident task: the queue shows every decision of one incident as one row. */
+  incident: z.literal(true).optional(),
+  /** How often the incident fired or was reported again: `count` alerts since `since`, the last at `last`. */
+  repeats: z.object({ count: z.number().int().positive(), since: z.string(), last: z.string() }).optional(),
 });
 export type OwnerDecision = z.infer<typeof OwnerDecisionSchema>;
 

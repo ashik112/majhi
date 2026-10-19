@@ -1,6 +1,8 @@
 import {
+  alertsLine,
   buildQueue,
   type DecisionGroup,
+  type MergeKey,
   type Notice,
   type OrgView,
   type OwnerDecision,
@@ -68,7 +70,7 @@ function rowOf(
   at: string,
   id: string,
   ctx: Context,
-  key: { kind: "signin" } | { kind: "blocker"; tasks: readonly string[] } | undefined,
+  key: MergeKey | undefined,
 ): NeedsRow {
   const first = decisions[0] as OwnerDecision;
   const org = first.org ?? (first.task === undefined ? undefined : (ctx.taskOrg(first.task) ?? PRIVATE));
@@ -114,6 +116,21 @@ function rowOf(
   }
   const label = labelOf(first.task === undefined ? undefined : ctx.task(first.task), ws);
   const lamp: Lamp = "needs";
+  if (key?.kind === "incident") {
+    // One incident is one row: its first decision leads, the alert count says how often it fired.
+    const repeats = decisions.find((d) => d.repeats !== undefined)?.repeats;
+    const others = decisions.slice(1).map((d) => d.title);
+    return {
+      ...base,
+      lamp,
+      prefix: label?.prefix ?? (org === undefined ? undefined : ws),
+      name: label?.name ?? first.taskTitle ?? afterLead(first),
+      gist: alertsLine(repeats, ctx.now) || gistOf(first),
+      count: repeats?.count ?? 1,
+      list: others.length === 0 ? undefined : others.join(". "),
+      quick: primaryOption(first, undefined)?.label ?? openLabel(first.link),
+    };
+  }
   // A question's answers can be whole paragraphs, so its quiet button says what it does.
   const quick =
     first.kind === "question" && first.options.length > 0
@@ -145,6 +162,8 @@ function rowOf(
 }
 
 interface Context {
+  /** The time the model is built at, for "last 20s ago". */
+  now: number;
   orgs: readonly OrgView[] | undefined;
   task: (id: string) => TaskSummary | undefined;
   taskOrg: (id: string) => string | undefined;
@@ -156,6 +175,7 @@ export function splitRow(
   input: { tasks: ReadonlyMap<string, TaskSummary>; orgs: readonly OrgView[] | undefined },
 ): NeedsRow[] {
   const ctx: Context = {
+    now: Date.now(),
     orgs: input.orgs,
     task: (id) => input.tasks.get(id),
     taskOrg: (id) => input.tasks.get(id)?.org,
@@ -179,6 +199,7 @@ export function buildNeeds(input: {
   orgs: readonly OrgView[] | undefined;
 }): Needs {
   const ctx: Context = {
+    now: Date.now(),
     orgs: input.orgs,
     task: (id) => input.tasks.get(id),
     taskOrg: (id) => input.tasks.get(id)?.org,

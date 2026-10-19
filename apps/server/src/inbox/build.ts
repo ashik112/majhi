@@ -83,6 +83,8 @@ export interface DecisionSources {
     title: string;
     at: string;
     escalated: boolean;
+    /** The incident task that carries it, when one was opened: the queue shows the task's decisions and this one as one row. */
+    task?: string | undefined;
     /** A fix the owner is asked to approve (Watch anything). */
     question?: { text: string; options: { id: string; label: string }[] } | undefined;
   }[];
@@ -574,6 +576,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       id,
       kind: "incident",
       org: inc.org,
+      ...(inc.task === undefined ? {} : { task: inc.task as TaskId }),
       title: oneLine(inc.escalated ? `${inc.title} (not acknowledged yet)` : inc.title),
       sentence:
         inc.question !== undefined
@@ -583,7 +586,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
             : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
       options,
       at: inc.at,
-      link: { kind: "watch" },
+      link: inc.task === undefined ? { kind: "watch" } : { kind: "task", id: inc.task as TaskId },
     });
   }
 

@@ -101,6 +101,8 @@ export interface InboxDeps {
   /** What a client reply draft answers, for its row. */
   clientDraft?: DecisionSources["clientDraft"];
   actions: DecisionActions;
+  /** The alerts of an incident task, or undefined when the task is not an incident: its decisions are one row. */
+  incidentOf?: (task: string) => { count: number; since: string; last: string } | undefined;
   /** Decisions the trust ladder and the money ceiling build themselves. */
   extras?: () => readonly OwnerDecision[] | Promise<readonly OwnerDecision[]>;
   /** The owner answered a decision: the scorecard learns whether the captain's opinion held. */
@@ -327,10 +329,33 @@ export class InboxService {
       extras,
     });
     await this.markStale(all, items);
+    this.markIncidents(all);
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
     this.lastDecisions = all;
     return all;
+  }
+
+  /** A decision of an incident task is tagged, so the queue shows the incident as one row, and carries the alert count. */
+  private markIncidents(all: OwnerDecision[]): void {
+    const of = this.deps.incidentOf;
+    if (of === undefined) return;
+    const cache = new Map<string, ReturnType<typeof of>>();
+    for (const [i, d] of all.entries()) {
+      if (d.task === undefined) continue;
+      if (!cache.has(d.task)) cache.set(d.task, of(d.task));
+      const repeats = cache.get(d.task);
+      if (repeats === undefined) continue;
+      all[i] = {
+        ...d,
+        incident: true,
+        repeats,
+        options:
+          d.kind === "ship"
+            ? d.options.map((o) => (o.id === "merge" ? { ...o, label: "Ship the fix" } : o))
+            : d.options,
+      };
+    }
   }
 
   /** A proposal whose setting changed since says so and offers only Reject: it needs a fresh proposal. */

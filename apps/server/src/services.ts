@@ -1677,6 +1677,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
+    incidentOf: (task) => incidentEngine?.alertsOf(task),
     incidentDetail: async (id) => {
       const inc = opsWatch?.incident(id);
       if (inc === undefined) return undefined;

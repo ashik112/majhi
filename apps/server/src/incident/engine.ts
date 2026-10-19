@@ -441,18 +441,7 @@ export class IncidentEngine {
       );
     }
     if (source.kind === "client" && task.status === "done") await this.deps.tasks.reopen(task.id);
-    this.deps.room.post(task.id as TaskId, `joined:${source.kind}:${at}`, {
-      type: "system",
-      level: "info",
-      text:
-        source.kind === "watch"
-          ? task.origin?.kind === "watch"
-            ? `The same watch fired again: ${source.incident.title}.`
-            : `A watch fired on the same project: ${source.incident.title}.`
-          : source.kind === "client"
-            ? "A client reported the same problem."
-            : `Another deploy failed on the same project: ${source.title}`,
-    });
+    this.record(task.id, { event: "joined", source: source.kind, at }, `joined:${source.kind}:${at}`);
     this.deps.changed();
   }
 
@@ -481,6 +470,24 @@ export class IncidentEngine {
       });
     }
     return out;
+  }
+
+  /**
+   * How often an incident fired or was reported: the finding's `seen` (bumped by every failing check while the incident
+   * is open) plus the reports that joined it. Undefined for a task that is not an incident. Cheap and synchronous:
+   * the queue asks it for every decision of an incident task.
+   */
+  alertsOf(taskId: string): { count: number; since: string; last: string } | undefined {
+    const task = this.deps.store.tasks.get(taskId);
+    if (task === undefined || !isIncidentTask(task)) return undefined;
+    const findings = this.deps.findings.ofTask(taskId);
+    const joined = this.deps.facts
+      .events(taskId)
+      .flatMap((e) => (e.detail.event === "joined" ? [e.detail.at] : []));
+    const seen = findings.reduce((most, f) => Math.max(most, f.seen), 1);
+    const last =
+      [task.createdAt, ...findings.map((f) => f.lastSeen), ...joined].toSorted().at(-1) ?? task.createdAt;
+    return { count: seen + joined.length, since: task.createdAt, last };
   }
 
   // ---------------------------------------------------------------------------
