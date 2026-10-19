@@ -1,7 +1,7 @@
 import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
 import { SignInExpired } from "../auth-failure.ts";
-import { exec } from "../exec.ts";
+import { execTool } from "../tool-process.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
 import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
@@ -93,7 +93,7 @@ async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
       String(Math.max(1000, ctx.timeoutMs - 2000)),
     ],
   };
-  const res = await exec(helper.command, helper.args, ctx.env, ctx.timeoutMs);
+  const res = await execTool(ctx.options, ctx.account, helper.command, helper.args, ctx.env, ctx.timeoutMs);
   if (res.error) throw new Error(res.error);
   if (res.code !== 0) {
     throw new Error(res.stderr.trim().split("\n").pop()?.trim() || `Usage read exited with code ${res.code}`);

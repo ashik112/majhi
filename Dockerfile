@@ -6,6 +6,7 @@
 # MAJHI_VERSION. Either way the last stage, the owner's user, is built here (docker/owner.sh).
 ARG SERVER_FROM
 ARG RUNNER_FROM
+ARG BROWSER_FROM
 
 # Pins used by more than one stage live here, once; a stage that uses one says `ARG NAME`. A pin used by
 # one stage sits in that stage, with how to raise it.
@@ -169,24 +170,22 @@ RUN set -eu; \
   tar -xzf doctl.tgz -C /out doctl; \
   /out/doctl version
 
-# Playwright's Chromium (SPEC 5.14, and the browsers a repo's own Playwright tests use), downloaded here so
-# the download, npm and its caches never reach the runner image. The browsers live outside any home, and
-# PLAYWRIGHT_BROWSERS_PATH is one of the few variables passed to agent runs (see packages/acp BaseEnv).
-# The revision is the one Playwright MCP wants (it brings its own Playwright). The old runner image also
-# installed `playwright@1.63.0`'s revision first; Playwright then deleted it when Playwright MCP's install ran,
-# but it stayed in a lower layer: 690 MB that no run could see. `chromium` is the full browser, which both
-# browser MCP servers launch; `chromium_headless_shell` is what Playwright's own tests launch by default;
-# both are kept (docs/DECISIONS.md, "Lean images"). The chmod (the browser's `extensions` folder is owner-only,
-# and runs are the owner's uid) is in the same layer as the install: a later `chmod -R` over the tree copies every
-# file into a new layer (it was 700 MB).
+# Playwright's Chromium for the browser image, downloaded here so the download, npm and its caches never reach it.
+# The revision is the one Playwright MCP wants (it brings its own Playwright). Only the full `chromium` is kept:
+# the browser container starts it headless itself (`docker/browserd.mjs`), so Playwright's separate headless shell
+# (280 MB) is deleted here. The chmod (the browser's `extensions` folder is owner-only, and the browser runs as the
+# owner's uid) is in the same layer as the install: a later `chmod -R` over the tree copies every file into a new layer.
 FROM ${NODE_IMAGE} AS browsers
 ARG PLAYWRIGHT_MCP_VERSION
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} \
   && node /usr/local/lib/node_modules/@playwright/mcp/node_modules/playwright/cli.js install chromium \
+  && rm -rf /opt/ms-playwright/chromium_headless_shell-* /opt/ms-playwright/ffmpeg-* \
+  && ln -s "$(find /opt/ms-playwright -path '*/chrome-linux*/chrome' -type f | sort | tail -n 1)" /opt/ms-playwright/chromium \
   && npm cache clean --force \
   && rm -rf /root/.npm /root/.cache \
   && chmod -R a+rX /opt/ms-playwright \
+  && test "$(ls -d /opt/ms-playwright/chromium-* | wc -l)" = 1 \
   && test -z "$(find /opt/ms-playwright ! -perm -o+r -print -quit)"
 
 # Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
@@ -224,13 +223,6 @@ RUN printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
-# The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
-# Codex ships a voice host (67 MB) for its realtime voice feature, which an ACP session never starts: removed
-# in this layer (a later `rm` would not shrink the image). Its coding CLI and code-mode host stay.
-RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
-  && find /usr/local/lib/node_modules/@agentclientprotocol -name codex-voice-host -type f -delete \
-  && npm cache clean --force \
-  && rm -rf /root/.npm
 ENV GIT_CONFIG_COUNT=1 \
     GIT_CONFIG_KEY_0=safe.directory \
     GIT_CONFIG_VALUE_0=*
@@ -239,55 +231,43 @@ ENV GIT_CONFIG_COUNT=1 \
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 
 # Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
-# task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
-# real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
-# libraries.
+# task folder, its repos' .git and the account's home. It has the dev toolchain agents need for real
+# projects: build tools for native modules and pnpm. It has no browser: browser connections reach the
+# workspace's browser container (the `browser-build` stage), and a run that needs another browser fetches it
+# into its package store.
 FROM base AS runner-build
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
-    GRAPHIFY_NO_AUTO_REFRESH=1
+ENV GRAPHIFY_NO_AUTO_REFRESH=1
+# The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
+# They are here and not in the server: sign-in, the CLI version, the probe and the usage read run in a runner
+# container too (packages/acp tool-process.ts). Codex ships a voice host (67 MB) for its realtime voice feature,
+# which an ACP session never starts: removed in this layer (a later `rm` would not shrink the image). Its coding
+# CLI and code-mode host stay.
+RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
+  && find /usr/local/lib/node_modules/@agentclientprotocol -name codex-voice-host -type f -delete \
+  && npm cache clean --force \
+  && rm -rf /root/.npm
 # One apt layer, no recommends, lists removed.
 #  - python3, make, g++, curl: native modules and scripts of the projects agents work on. A non-root run cannot
 #    apt install, so these stay baked in.
 #  - iptables: majhi-netguard (below). psql and redis-cli (clients only) are for the services a task starts:
 #    the agent's shell checks a database or a cache it reaches by name.
-#  - The rest is what headless Chromium needs: the list of `npx playwright install-deps --dry-run chromium`
-#    without `xvfb` (nothing here runs a headed browser, and xvfb pulls Mesa's software renderer and LLVM,
-#    155 MB: headless Chromium draws with its bundled SwiftShader). Checked by the `ldd` and launch test below,
-#    which fails the build on a missing library.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
        python3 make g++ curl iptables postgresql-client redis-tools \
-       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
-       libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 \
-       libxext6 libxfixes3 libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
-       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
-       fonts-tlwg-loma-otf fonts-freefont-ttf \
   && rm -rf /var/lib/apt/lists/*
-COPY --from=browsers /opt/ms-playwright /opt/ms-playwright
 # pnpm, and the three npm tools. Browser connections (SPEC 5.14): the agent CLI starts one of these MCP servers in the
-# runner, with the connection's own profile. Pinned: raise them here and in apps/server/src/connections/browser.ts
-# together. Playwright MCP brings its own Playwright, which uses the Chromium installed above; Chrome DevTools
-# MCP uses that Chromium through /usr/local/bin/chromium.
+# runner and it attaches to the workspace's browser container over CDP. Pinned: raise them here and in
+# apps/server/src/connections/browser.ts together.
 # Vercel `skills` CLI (SPEC 5.2, Phase 6): majhi installs skills by running `skills add <source> -y --copy
 # --agent claude-code codex` here, in a throwaway folder, and moves the result into its own store.
 # Pinned: raise it here and SKILLS_CLI_VERSION in apps/server/src/skills/cli.ts together.
 ARG PNPM_VERSION
 ARG PLAYWRIGHT_MCP_VERSION
 RUN npm install -g pnpm@${PNPM_VERSION} @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} chrome-devtools-mcp@1.10.1 skills@1.7.0 \
-  && ln -sf "$(find /opt/ms-playwright -path '*/chrome-linux*/chrome' -type f | sort | tail -n 1)" /usr/local/bin/chromium \
-  && test -x /usr/local/bin/chromium \
-  && test "$(ls -d /opt/ms-playwright/chromium-* | wc -l)" = 1 \
   && skills --help > /dev/null \
   && npm cache clean --force \
   && rm -rf /root/.npm /root/.cache \
-  && test -z "$(find /opt/ms-playwright ! -perm -o+r -print -quit)"
-# Fails the build when Chromium or the headless shell lacks a library, or cannot start, or the compiler broke.
-RUN set -eu; \
-  for b in /usr/local/bin/chromium $(find /opt/ms-playwright -name chrome-headless-shell -type f); do \
-    if ldd "$b" | grep -q "not found"; then echo "$b misses a library" >&2; ldd "$b" >&2; exit 1; fi; \
-    "$b" --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q "<html>"; \
-  done; \
-  printf 'int main(void){return 0;}' | g++ -x c++ - -o /tmp/g++-check && rm /tmp/g++-check
+  && printf 'int main(void){return 0;}' | g++ -x c++ - -o /tmp/g++-check && rm /tmp/g++-check
 # Serena and graphify (the python-tools stage above).
 COPY --from=python-tools /opt/serena /opt/serena
 COPY --from=python-tools /opt/graphify /opt/graphify
@@ -316,6 +296,35 @@ COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
 COPY --chmod=0755 docker/portforward.mjs /usr/local/lib/majhi/portforward.mjs
 WORKDIR /tmp
 CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
+
+# A workspace's browser (SPEC 4.5, "Browser container"): Chromium and the libraries it needs, started by the server
+# when a run first needs a browser connection and ended by its own idle timer. `docker/browserd.mjs` is its only
+# process; `majhi-netguard` starts it with the runner's guard (private networks closed, owner's uid, no capabilities).
+# Headless Chromium draws with its own SwiftShader, so Mesa and LLVM are not installed (155 MB). The list is
+# `npx playwright install-deps --dry-run chromium` without `xvfb`, checked by the `ldd` and launch test below,
+# which fails the build on a missing library.
+FROM ${NODE_IMAGE} AS browser-build
+RUN printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*/copyright' \
+      'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/info/*' 'path-exclude=/usr/share/locale/*' \
+      > /etc/dpkg/dpkg.cfg.d/majhi-lean \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends iptables \
+       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
+       libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 \
+       libxext6 libxfixes3 libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
+       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
+       fonts-tlwg-loma-otf fonts-freefont-ttf \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=browsers /opt/ms-playwright /opt/ms-playwright
+RUN ln -s /opt/ms-playwright/chromium /usr/local/bin/chromium \
+  && if ldd "$(readlink -f /usr/local/bin/chromium)" | grep -q "not found"; then ldd "$(readlink -f /usr/local/bin/chromium)" >&2; exit 1; fi \
+  && /usr/local/bin/chromium --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q "<html>"
+COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
+COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
+COPY --chmod=0755 docker/browserd.mjs /usr/local/lib/majhi/browserd.mjs
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+WORKDIR /tmp
+CMD ["node", "/usr/local/lib/majhi/browserd.mjs"]
 
 FROM base AS runtime-build
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.
@@ -360,6 +369,9 @@ ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_HOME=/home/majhi
 RUN --mount=type=bind,source=docker/owner.sh,target=/tmp/owner.sh sh /tmp/owner.sh
+
+# The browser image has no owner's user: it runs by uid, with HOME set (docker/browserd.mjs).
+FROM ${BROWSER_FROM:-browser-build} AS browser
 
 FROM ${SERVER_FROM:-runtime-build} AS runtime
 ARG HOST_UID=1000

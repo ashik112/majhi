@@ -679,7 +679,11 @@ async function checkTools(ctx: CheckContext): Promise<Check[]> {
       const base = { id: `tool:${tool.id}`, group: "majhi", name: `${tool.name} CLI` } as const;
       let check: Check;
       try {
-        check = { ...base, status: "pass", detail: await services.runtime.cliVersion(tool.id, env.runtime) };
+        check = {
+          ...base,
+          status: "pass",
+          detail: await services.runtime.cliVersion(tool.id, services.runtimeOptions),
+        };
       } catch (err) {
         const used = accounts.some((a) => a.tool === tool.id);
         check = {

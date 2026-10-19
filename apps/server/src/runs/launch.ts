@@ -127,7 +127,7 @@ export interface LaunchDeps {
   connectionFiles?:
     | Pick<
         RunFilesDeps,
-        "connectionDir" | "browsersPath" | "oauth" | "gitToken" | "connected" | "hostServices"
+        "connectionDir" | "browsersPath" | "oauth" | "gitToken" | "connected" | "hostServices" | "browser"
       >
     | undefined;
   /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */

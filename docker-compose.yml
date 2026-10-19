@@ -35,6 +35,7 @@ services:
       # Agents run in their own runner container per run, never in this one (Phase 2c).
       MAJHI_RUNNER: container
       MAJHI_RUNNER_IMAGE: majhi-runner:dev
+      MAJHI_BROWSER_IMAGE: majhi-browser:dev
       MAJHI_RUNNER_NETWORK: majhi-runners
       MAJHI_RUNNER_USER: "${HOST_UID:-1000}:${HOST_GID:-1000}"
       MAJHI_RUNNER_MCP_HOST: majhi-server
@@ -76,6 +77,19 @@ services:
         HOST_HOME: ${HOME}
         RUNNER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-runner:${MAJHI_VERSION}}
     image: majhi-runner:dev
+    profiles: [runner]
+
+  # The image of a workspace's browser (Chromium). Built with `--profile runner`, never started by compose: the
+  # server starts one container per workspace when a run first needs a browser connection.
+  browser:
+    build:
+      context: .
+      target: browser
+      labels:
+        majhi.owned: build
+      args:
+        BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-browser:${MAJHI_VERSION}}
+    image: majhi-browser:dev
     profiles: [runner]
 
   # Laya, the local decision model, on PyTorch CPU, or CUDA with an NVIDIA GPU (SPEC 5.12). For

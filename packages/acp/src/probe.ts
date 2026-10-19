@@ -1,8 +1,8 @@
 import type { HealthStep, ToolId } from "@majhi/shared";
 import { AcpAuthRequired, readSessionOptions } from "./acp-session.ts";
 import { buildEnv } from "./env.ts";
-import { exec } from "./exec.ts";
 import type { AccountProbe, AccountRuntime, Command, RuntimeOptions } from "./index.ts";
+import { execTool } from "./tool-process.ts";
 import { getTool } from "./tools/index.ts";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -37,7 +37,14 @@ export async function probeAccount(account: AccountRuntime, options: RuntimeOpti
   };
 
   // cli
-  const version = await exec(adapter.command, [...adapter.args, ...tool.versionArgs], env, timeoutMs);
+  const version = await execTool(
+    options,
+    account,
+    adapter.command,
+    [...adapter.args, ...tool.versionArgs],
+    env,
+    timeoutMs,
+  );
   if (version.code !== 0) {
     const why = version.error ?? (firstLine(version.stderr) || `exited with code ${version.code}`);
     steps.push({ name: "cli", ok: false, detail: `${tool.info.name} did not start. ${why}` });
@@ -51,7 +58,14 @@ export async function probeAccount(account: AccountRuntime, options: RuntimeOpti
     steps.push({ name: "auth", ok, detail: ok ? "API key" : "No API key set" });
     if (!ok) return finish();
   } else {
-    const status = await exec(adapter.command, [...adapter.args, ...tool.authStatusArgs], env, timeoutMs);
+    const status = await execTool(
+      options,
+      account,
+      adapter.command,
+      [...adapter.args, ...tool.authStatusArgs],
+      env,
+      timeoutMs,
+    );
     if (status.error) {
       steps.push({ name: "auth", ok: false, detail: status.error });
       return finish();
@@ -67,7 +81,7 @@ export async function probeAccount(account: AccountRuntime, options: RuntimeOpti
 
   // acp
   try {
-    const session = await readSessionOptions(adapter, env, timeoutMs);
+    const session = await readSessionOptions(options, account, adapter, env, timeoutMs);
     steps.push({ name: "acp", ok: true, detail: `${session.models.length} models` });
     result.models = {
       models: session.models,
@@ -93,7 +107,9 @@ export async function cliVersion(tool: ToolId, options: RuntimeOptions): Promise
   const env: Record<string, string> = { PATH: options.base.PATH };
   if (options.base.TMPDIR) env.TMPDIR = options.base.TMPDIR;
   if (options.base.LANG) env.LANG = options.base.LANG;
-  const res = await exec(
+  const res = await execTool(
+    options,
+    undefined,
     adapter.command,
     [...adapter.args, ...spec.versionArgs],
     env,

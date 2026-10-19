@@ -1,7 +1,3 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import {
   type Client,
@@ -11,8 +7,8 @@ import {
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { OptionValue } from "@majhi/shared";
-import { killTree } from "./exec.ts";
-import type { Command } from "./index.ts";
+import type { AccountRuntime, Command, RuntimeOptions } from "./index.ts";
+import { startTool, type ToolProcess } from "./tool-process.ts";
 
 export interface SessionOptions {
   models: OptionValue[];
@@ -46,21 +42,18 @@ const denyingClient: Client = {
  * Throws `AcpAuthRequired` when the agent asks for auth, or an Error with a plain message.
  */
 export async function readSessionOptions(
+  options: Pick<RuntimeOptions, "spawner">,
+  account: AccountRuntime,
   adapter: Command,
   env: Record<string, string>,
   timeoutMs: number,
 ): Promise<SessionOptions> {
-  const cwd = await mkdtemp(join(tmpdir(), "majhi-probe-"));
-  let child: ChildProcess | undefined;
+  let tool: ToolProcess | undefined;
   let timer: NodeJS.Timeout | undefined;
   try {
-    child = spawn(adapter.command, adapter.args, {
-      env,
-      cwd,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const proc = child;
+    tool = await startTool(options, account, adapter, env);
+    const proc = tool.child;
+    const cwd = tool.cwd;
     let stderr = "";
     proc.stderr?.on("data", (d: Buffer) => {
       if (stderr.length < 4096) stderr += d.toString();
@@ -101,8 +94,7 @@ export async function readSessionOptions(
     return await Promise.race([work, died, timedOut]);
   } finally {
     clearTimeout(timer);
-    if (child) killTree(child);
-    await rm(cwd, { recursive: true, force: true });
+    await tool?.close();
   }
 }
 

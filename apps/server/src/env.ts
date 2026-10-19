@@ -65,6 +65,8 @@ const EnvSchema = z.object({
    */
   MAJHI_RUNNER: z.enum(["local", "container"]).default("container"),
   MAJHI_RUNNER_IMAGE: z.string().trim().min(1).default("majhi-runner:dev"),
+  /** The image of a workspace's browser container (Chromium), started when a run first needs it. */
+  MAJHI_BROWSER_IMAGE: z.string().trim().min(1).default("majhi-browser:dev"),
   MAJHI_RUNNER_NETWORK: z.string().trim().min(1).default("majhi-runners"),
   /** `uid:gid` agents run as, the owner's. */
   MAJHI_RUNNER_USER: z
@@ -139,6 +141,8 @@ export interface ServerEnv {
 export interface RunnerEnv {
   mode: "local" | "container";
   image: string;
+  /** The browser container's image. */
+  browserImage: string;
   network: string;
   user?: string;
   mcpHost: string;
@@ -200,6 +204,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     runner: {
       mode: env.MAJHI_RUNNER,
       image: env.MAJHI_RUNNER_IMAGE,
+      browserImage: env.MAJHI_BROWSER_IMAGE,
       network: env.MAJHI_RUNNER_NETWORK,
       ...(env.MAJHI_RUNNER_USER === undefined ? {} : { user: env.MAJHI_RUNNER_USER }),
       mcpHost: env.MAJHI_RUNNER_MCP_HOST,

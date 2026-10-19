@@ -67,6 +67,13 @@ export interface RunFilesDeps {
    * before the run starts. Rejects with a plain message when it cannot.
    */
   hostServices?: ((task: string, services: HostService[]) => Promise<unknown>) | undefined;
+  /**
+   * Starts the workspace's browser container, if it is not running, and says where connection `connection`
+   * of `org` is reached from the task's runner. Absent without a runner.
+   */
+  browser?:
+    | ((task: string, org: string, connection: string) => Promise<{ endpoint: string } | { problem: string }>)
+    | undefined;
 }
 
 /**
@@ -92,7 +99,11 @@ export async function prepareRunConnections(
   const dir = join(root, `${kind}-${randomBytes(8).toString("hex")}`);
   await ownerOnlyDir(dir);
   try {
-    const plan = await planConnections(held, dir, deps);
+    const browser = deps.browser;
+    const plan = await planConnections(held, dir, {
+      ...deps,
+      browser: browser === undefined ? undefined : (org, id) => browser(task.id, org, id),
+    });
     for (const file of plan.files) await writeFile(join(dir, file.name), file.data, { mode: 0o600 });
     for (const profile of plan.profiles) await ownerOnlyDir(profile);
     const reach = await startHostServices(deps, task.id, plan);
@@ -165,7 +176,7 @@ export async function taskSecrets(
   });
   if (held.length === 0) return [];
   // Nothing is written: only the plan's secret values are read.
-  return (await planConnections(held, runFilesRoot(deps.majhiHome), deps)).secrets;
+  return (await planConnections(held, runFilesRoot(deps.majhiHome), { ...deps, browser: undefined })).secrets;
 }
 
 export async function removeRunFiles(dir: string): Promise<void> {

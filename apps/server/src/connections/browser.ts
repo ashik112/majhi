@@ -10,6 +10,9 @@ export const BROWSER_SERVERS = {
     version: "0.0.83",
     /** The image's command and the arguments before the profile. */
     command: "playwright-mcp",
+    /** With a runner: the arguments that attach it to the workspace's browser container. */
+    attach: (endpoint: string) => ["--cdp-endpoint", endpoint],
+    /** Without one (tests and development): it starts its own browser on the profile. */
     args: (profile: string) => [
       "--headless",
       "--browser",
@@ -34,6 +37,7 @@ export const BROWSER_SERVERS = {
     package: "chrome-devtools-mcp",
     version: "1.10.1",
     command: "chrome-devtools-mcp",
+    attach: (endpoint: string) => ["--browserUrl", endpoint],
     args: (profile: string) => [
       "--headless",
       "--userDataDir",
@@ -45,7 +49,10 @@ export const BROWSER_SERVERS = {
   },
 } as const;
 
-/** Where the runner image keeps Playwright's browsers (Dockerfile, PLAYWRIGHT_BROWSERS_PATH). */
+/**
+ * Where the browser image keeps Playwright's browsers (Dockerfile, PLAYWRIGHT_BROWSERS_PATH). The runner image
+ * has none: a run's own Playwright downloads one into the workspace's package store when it needs one.
+ */
 export const RUNNER_BROWSERS_PATH = "/opt/ms-playwright";
 
 export type BrowserServerId = keyof typeof BROWSER_SERVERS;
