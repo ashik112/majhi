@@ -1,21 +1,9 @@
 import type { OwnerDecision } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { opsPhoneRoutes } from "./routes.ts";
-import { answers, down, MIN, type OpsWorld, opsWorld, SERVICE } from "./testing.ts";
+import { type OpsWorld, opsWorld } from "./testing.ts";
 
-/** Escalation, quiet hours, ntfy down, and the phone's buttons: single use, short lived, bound, and plain. */
-
-const URL_A = SERVICE.url;
 const ADDRESS = "http://192.168.1.20:7070";
-
-async function openHigh(w: OpsWorld): Promise<number> {
-  await w.ops.watch.saveService({ ...SERVICE } as never);
-  answers(w, URL_A, down());
-  await w.ops.watch.runOrg("acme");
-  const [inc] = w.ops.repo.open();
-  if (inc === undefined) throw new Error("no incident opened");
-  return inc.id;
-}
 
 async function phoneOn(w: OpsWorld, address: string | null = ADDRESS) {
   const setup = await w.ops.phone.setup({});

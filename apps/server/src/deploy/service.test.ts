@@ -1,6 +1,5 @@
-import type { DeployRunStep } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { C1, C2, C3, environment, GH, GL_PIPELINE, push, type Rig, rig } from "./testing/rig.ts";
+import { C1, environment, GH, push, type Rig, rig } from "./testing/rig.ts";
 
 describe("deploy", () => {
   let r: Rig;

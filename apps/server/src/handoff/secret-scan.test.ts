@@ -21,9 +21,6 @@ async function commitFiles(files: Record<string, string>, message = "work"): Pro
   await testGit(repo, "commit", "--quiet", "-m", message);
 }
 
-const lines = (n: number, prefix = "entry") =>
-  `${Array.from({ length: n }, (_, i) => `${prefix}-${i}: resolved`).join("\n")}\n`;
-
 beforeEach(async () => {
   ({ dir, cleanup } = await tempDir());
   repo = join(dir, "api");

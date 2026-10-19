@@ -1,7 +1,6 @@
 import type { PermissionAsk } from "@majhi/acp";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import type { FakeSession, Script } from "../testing/fakeSession.ts";
 import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -10,36 +9,11 @@ afterEach(() => w?.cleanup());
 
 const services = () => w.h.majhi.services;
 const live = () => services().room.getLive("ACM-1", "acme-builder");
-const runs = () => services().runs;
 
 /** Items of the task in the order they appeared. */
 async function items(task = "ACM-1"): Promise<RoomItem[]> {
   const page = await w.h.cmd("room.items", { task, limit: 500 });
   return [...(page.body.items as RoomItem[])].sort((a, b) => (a.at < b.at ? -1 : 1));
-}
-
-/** Starts the task with the first session scripted, and waits for that session's brief turn to begin. */
-async function started(script?: Script): Promise<FakeSession> {
-  w = await taskWorld();
-  if (script !== undefined) {
-    // Only the first session: later ones behave normally.
-    w.h.runtime.onSession = (session) => {
-      if (w.h.runtime.sessions.length === 0) session.script = script;
-    };
-  }
-  const res = await w.h.cmd("tasks.create", {
-    text: "fix api",
-    repos: [{ project: "acme-api" }],
-    start: true,
-  });
-  expect(res.status).toBe(200);
-  await until(
-    () => w.h.runtime.sessions.length > 0 && w.h.runtime.sessions[0]?.prompts.length === 1,
-    "first prompt",
-  );
-  const session = w.h.runtime.sessions[0];
-  if (session === undefined) throw new Error("no session");
-  return session;
 }
 
 /** A permission request. A field set to `undefined` is left out. */

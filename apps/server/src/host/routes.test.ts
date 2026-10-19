@@ -1,17 +1,15 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { HOST_INFO_HEADER, HOST_TOKEN_FILE, type HostInfo, HostJobSchema } from "@majhi/shared";
+import { HOST_INFO_HEADER, HOST_TOKEN_FILE, type HostInfo } from "@majhi/shared";
 import type { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
-import { git, tempDir, testEnv } from "../testing/fixtures.ts";
+import { tempDir, testEnv } from "../testing/fixtures.ts";
 import { HostLink } from "./link.ts";
 
 const TOKEN = "0123456789abcdef".repeat(4);
 const CAN_REMOUNT: HostInfo = { version: "1.0.0", platform: "darwin", canRemount: true };
-const SSH_WAITING = { loaded: 1, needsPassphrase: ["~/.ssh/id_work"], checkedAt: "2026-09-29T10:00:00.000Z" };
-const SSH_DONE = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:01:00.000Z" };
 
 describe("host helper link over HTTP", () => {
   let dir: string;
@@ -46,18 +44,6 @@ describe("host helper link over HTTP", () => {
       headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  const cmd = (name: string, body: unknown = {}) =>
-    app.request(`/api/cmd/${name}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  /** Polls like the helper and waits for the next job. */
-  const nextJob = async (info: HostInfo = CAN_REMOUNT) => {
-    const res = await poll(info);
-    expect(res.status).toBe(200);
-    return HostJobSchema.parse(await res.json());
-  };
 
   it.each<[string, () => Promise<void>]>([
     [

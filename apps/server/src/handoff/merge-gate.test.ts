@@ -1,48 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  type HandoffResult,
-  type HandoffState,
-  type HandoffStep,
-  type MergeChecks,
-  mergeVerdictAction,
-  type QueuedMerge,
-  type Task,
-} from "@majhi/shared";
+import type { HandoffState, MergeChecks, QueuedMerge, Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { MIGRATIONS } from "../store/migrations.ts";
 import { type QueuedMergePorts, QueuedMerges } from "../tasks/queued-merge.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
-import { decideMerge } from "./merge-gate.ts";
-
-/**
- * The merge rule: nothing merges unless the hand-off checks are green for the exact commit. The
- * verdict is typed; these tests read the verdict, the refusal and what the repo holds afterwards.
- */
-
-const step = (id: HandoffStep["id"], status: HandoffStep["status"]): HandoffStep => ({
-  id,
-  label: id,
-  status,
-  detail: "",
-});
-const result = (head: string, steps: HandoffStep[]): HandoffResult => ({
-  task: "ACM-1",
-  head,
-  at: "2026-01-01T00:00:00.000Z",
-  verdict: "green",
-  steps,
-  review: { by: "code", notes: [], tokens: 0 },
-  failures: [],
-  held: [],
-  ms: 1,
-  cached: false,
-  summary: "",
-});
-const green = [step("tests", "pass"), step("build", "pass"), step("lint", "pass")];
-const idle = { running: false, queued: false };
 
 let w: BossWorld | undefined;
 afterEach(async () => {

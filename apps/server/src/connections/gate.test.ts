@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, classifyRemote, classifyTool, type GateConnection } from "./gate.ts";
+import { classifyCommand, type GateConnection } from "./gate.ts";
 
 const prod: GateConnection = {
   id: "acme-prod",

@@ -2,7 +2,7 @@ import type { lifecycle, Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../../store/index.ts";
 import { seedStatus } from "../../testing/status.ts";
-import { holdFromRunReason, TaskLifecycle, wasRefused } from "./apply.ts";
+import { TaskLifecycle } from "./apply.ts";
 import type { EffectContext } from "./types.ts";
 
 type Effect = lifecycle.Effect;
@@ -55,28 +55,6 @@ function rig(): Rig {
   });
   return { store, life, ran, failOn };
 }
-
-const row = (store: Store, id = "ACM-1") =>
-  store.raw
-    .prepare("SELECT status, paused_reason, paused_by, start_when_ready, updated_at FROM tasks WHERE id = ?")
-    .get(id) as {
-    status: string;
-    paused_reason: string | null;
-    paused_by: string | null;
-    start_when_ready: number;
-    updated_at: string;
-  };
-
-const events = (store: Store) =>
-  store.raw
-    .prepare("SELECT event, refused, code, hold, pending_effects FROM task_events ORDER BY id")
-    .all() as {
-    event: string;
-    refused: number;
-    code: string | null;
-    hold: string | null;
-    pending_effects: string | null;
-  }[];
 
 describe("the outbox", () => {
   it("drains after a crash and a restart, and only once", async () => {

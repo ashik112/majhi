@@ -1,9 +1,6 @@
-import { type AccountUsage, AutonomySettingsSchema, type Task } from "@majhi/shared";
+import { AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { Store } from "../store/index.ts";
-import { UsageRepo } from "../usage/repo.ts";
-import { AutonomyRepo } from "./repo.ts";
-import { accountsOf, capHoldFor, dayWindow, diffHolds, holdsOf, spendOf } from "./spend.ts";
+import { capHoldFor, diffHolds, holdsOf, spendOf } from "./spend.ts";
 
 const settings = AutonomySettingsSchema.parse({
   day: { cost: 2 },
@@ -30,23 +27,3 @@ describe("spendOf", () => {
     expect(capHoldFor(day, "northwind")?.kind).toBe("day-cap");
   });
 });
-
-function task(id: string, org?: string): Task {
-  return {
-    id,
-    title: id,
-    brief: id,
-    kind: "code",
-    ...(org === undefined ? {} : { org }),
-    status: "running",
-    folder: `/tmp/${id}`,
-    repos: [],
-    team: ["acme-builder"],
-    mode: "lead",
-    overrides: {},
-    links: [],
-    attachments: [],
-    createdAt: "2026-10-01T00:00:00.000Z",
-    updatedAt: "2026-10-01T00:00:00.000Z",
-  } as Task;
-}

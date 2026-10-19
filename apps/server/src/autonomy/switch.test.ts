@@ -1,4 +1,3 @@
-import type { CaptainStatus } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 

@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { cloneTempPath } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASKPASS_SCRIPT, ensureAskpass, gitAuthEnv } from "./gitAuth.ts";
-import { type GitCloneDeps, gitClone, gitLsRemote, type StreamingRun, streamingGit } from "./gitClone.ts";
+import { ensureAskpass } from "./gitAuth.ts";
+import { type GitCloneDeps, gitClone, type StreamingRun, streamingGit } from "./gitClone.ts";
 import { GUARD_CONFIG } from "./gitGuard.ts";
-import { type GitPushDeps, gitPush } from "./gitPush.ts";
 import { runCommand } from "./runCommand.ts";
 
 const exec = promisify(execFile);

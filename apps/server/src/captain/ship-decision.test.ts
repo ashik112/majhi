@@ -1,7 +1,7 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { ASK, FULL, planOf, RUNS } from "./authority-fixtures.ts";
+import { FULL, planOf, RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
@@ -82,8 +82,6 @@ function setup(s: Setup = {}) {
   };
   return { chore, lane, calls };
 }
-
-const merge = { id: "ACM-1", into: "main" };
 
 describe("the level at ship time", () => {
   it("never merges when a guard fails, whatever the level says", async () => {

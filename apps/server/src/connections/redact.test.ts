@@ -4,7 +4,6 @@ import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
-import { redactDeep, redactSecrets } from "./redact.ts";
 
 const API_KEY = "sk-acme-live-0123456789abcdef";
 const SHOWN = "[secret acme-keys.API_KEY]";

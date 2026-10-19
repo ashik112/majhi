@@ -1,4 +1,4 @@
-import { type GateOrigin, GateOriginSchema, LimitsSettingsSchema, lineOrder } from "@majhi/shared";
+import { type GateOrigin, GateOriginSchema, LimitsSettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { type Admission, admit, admitRunning, type GateCounts } from "./gate.ts";
 

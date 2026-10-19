@@ -1,9 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import type { Actor } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { UserError } from "../errors.ts";
 import { openMemoryDb } from "./db.ts";
 import { type Embedder, HashEmbedder } from "./embedder.ts";
 import { MemoryService } from "./service.ts";

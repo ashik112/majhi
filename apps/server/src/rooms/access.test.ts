@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROOM_SERVER_NAME, RoomAccess, TASKS_SERVER_NAME } from "./access.ts";
+import { ROOM_SERVER_NAME, RoomAccess } from "./access.ts";
 
 const access = () =>
   new RoomAccess(

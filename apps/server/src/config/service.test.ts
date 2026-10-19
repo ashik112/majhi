@@ -2,8 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommandMeta } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { git, tempDir } from "../testing/fixtures.ts";
+import { tempDir } from "../testing/fixtures.ts";
 import { ConfigService } from "./service.ts";
 import { ConfigConflictError } from "./write.ts";
 
@@ -18,7 +17,6 @@ describe("ConfigService.setWorkspaces", () => {
   let cleanup: () => Promise<void>;
   let majhiHome: string;
   let service: ConfigService;
-  const log = (format: string) => git(majhiHome, "log", `--format=${format}`);
 
   beforeEach(async () => {
     ({ dir, cleanup } = await tempDir());

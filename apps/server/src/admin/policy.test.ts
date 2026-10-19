@@ -1,6 +1,5 @@
-import { effectiveMode, isDestructiveCommand, PolicySettingsSchema } from "@majhi/shared";
+import { effectiveMode, PolicySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { decide, redact, redactText } from "./policy.ts";
 
 describe("approval decision table", () => {
   it("keeps a destructive command on confirm whatever the policy says", () => {

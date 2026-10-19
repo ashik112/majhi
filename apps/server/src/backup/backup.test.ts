@@ -1,5 +1,5 @@
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
@@ -11,12 +11,10 @@ import { openMemoryDb } from "../memory/db.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { Store } from "../store/index.ts";
 import { MIGRATIONS, migrate } from "../store/migrations.ts";
-import { type DbSource, unpackArchive } from "./archive.ts";
+import type { DbSource } from "./archive.ts";
 import { prepareStart } from "./boot.ts";
-import { Locked } from "./crypto.ts";
-import { walk } from "./manifest.ts";
 import { BackupService } from "./service.ts";
-import { applyPendingRestore, readPending } from "./swap.ts";
+import { readPending } from "./swap.ts";
 
 const SECRET_VALUE = "sk-ant-SUPER-SECRET-VALUE-0123456789";
 

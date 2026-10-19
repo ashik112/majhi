@@ -1,11 +1,10 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommandMeta, ConnectionConfig } from "@majhi/shared";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
-import { until } from "../testing/until.ts";
 import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
 import { ConnectService, FLOW_TTL_MS } from "./service.ts";

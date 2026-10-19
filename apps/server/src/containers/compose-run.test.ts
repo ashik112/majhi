@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +5,6 @@ import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@m
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProcessManager } from "../processes/manager.ts";
 import { FakeDocker } from "../testing/fakeDocker.ts";
-import { until } from "../testing/until.ts";
 import { ContainerService } from "./service.ts";
 
 /**
@@ -84,32 +82,11 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const STACK = `services:
-  app:
-    image: alpine:3
-    ports: ["8000:8000"]
-    depends_on:
-      db: {condition: service_healthy}
-      cache: {condition: service_started}
-  db:
-    image: postgres:16-alpine
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
-  cache:
-    image: redis:7-alpine
-`;
-
 const ask = async (image: string, name?: string) => {
   asked.push(`${name ?? "?"} ${image}`);
   return "pending" as const;
 };
 const call = (id: string, cwd: string, ...argv: string[]) => service.taskDocker(id, { argv, cwd }, { ask });
-const names = () => [...docker.containers.keys()].sort();
-
-async function up(file = STACK, id = "ACM-1") {
-  await writeFile(join(dir, "tasks", id, "shop", "compose.yaml"), file);
-  return call(id, join(dir, "tasks", id, "shop"), "compose", "up", "-d");
-}
 
 describe("the builder's network", () => {
   const dockerfile = () => writeFile(join(repo, "Dockerfile"), "FROM alpine:3\n");

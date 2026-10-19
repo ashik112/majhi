@@ -51,7 +51,6 @@ async function items(h: Harness, task = "ACM-1"): Promise<RoomItem[]> {
 }
 const systems = async (h: Harness, task = "ACM-1") =>
   (await items(h, task)).flatMap((i) => (i.type === "system" ? [i.text] : []));
-const status = async (h: Harness, id = "ACM-1") => (await h.cmd("tasks.get", { id })).body;
 
 /** Starts ACM-1 with its first turn scripted and waits until that turn is running. */
 async function startWorking(options: WorldOptions = {}, file = "a.txt") {

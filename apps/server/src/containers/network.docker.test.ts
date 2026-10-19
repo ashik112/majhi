@@ -58,25 +58,6 @@ const run = (id: string, ...argv: string[]) =>
   service.taskDocker(id, { argv, cwd: folderOf(id) }, { ask: async () => "pending" });
 const ids = (task: string) =>
   docker("ps", "-aq", "--filter", `label=majhi.task=${task}`).stdout.split("\n").filter(Boolean);
-const names = (task: string) =>
-  docker("ps", "-a", "--filter", `label=majhi.task=${task}`, "--format", "{{.Names}}")
-    .stdout.split("\n")
-    .filter(Boolean)
-    .sort();
-const addresses = (container: string) =>
-  docker("inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", container)
-    .stdout.trim()
-    .split(" ")
-    .filter(Boolean);
-/** Connects from inside a container with python: CONNECTED, or what stopped it. */
-const connect = (container: string, host: string, port: number) =>
-  docker(
-    "exec",
-    container,
-    "python3",
-    "-c",
-    `import socket\ns=socket.socket();s.settimeout(5)\ntry:\n s.connect(("${host}",${port}));print("CONNECTED")\nexcept Exception as e:\n print("BLOCKED",type(e).__name__)`,
-  ).stdout.trim();
 
 function sweep() {
   for (const task of [A, B]) {

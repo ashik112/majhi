@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfigService } from "../config/service.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
 import { seedHooks } from "../testing/hooks.ts";
-import { ensureHooks, gitAttribution } from "./attribution.ts";
+import { gitAttribution } from "./attribution.ts";
 
 const run = promisify(execFile);
 

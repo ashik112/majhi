@@ -7,11 +7,6 @@ import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World;
 afterEach(() => w?.cleanup());
-
-const AGENT = {
-  actor: { kind: "agent", id: "acme-builder" },
-  reason: "the subtask is reviewed",
-};
 const idle = () => w.h.majhi.services.runs.idle();
 const task = async () => (await w.h.cmd("tasks.get", { id: "ACM-1" })).body as Task;
 const reviewCard = async () =>

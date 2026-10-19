@@ -11,7 +11,7 @@ import { Housekeeper } from "../memory/housekeeper.ts";
 import { Store } from "../store/index.ts";
 import { fakeRuntime } from "../testing/fakeRuntime.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
-import { NOT_IN_WIKI, WikiAsk } from "./ask.ts";
+import { WikiAsk } from "./ask.ts";
 import { WikiIndex } from "./search.ts";
 
 const SHA = CommitShaSchema.parse("a".repeat(40));

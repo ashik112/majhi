@@ -9,7 +9,6 @@ import { taskFileRoutes } from "./taskFiles.ts";
 import { wikiFileRoutes } from "./wikiFiles.ts";
 
 const SHA = "a".repeat(40);
-const OTHER_SHA = "b".repeat(40);
 
 describe("wiki source files", () => {
   let dir: string;

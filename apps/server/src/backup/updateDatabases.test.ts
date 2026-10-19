@@ -1,10 +1,9 @@
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { restoreUpdateDatabases, snapshotUpdateDatabases, UPDATE_DATABASE_DIR } from "./updateDatabases.ts";
+import { restoreUpdateDatabases, snapshotUpdateDatabases } from "./updateDatabases.ts";
 
 let home: string;
 beforeEach(async () => {

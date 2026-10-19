@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildEnv } from "./env.ts";
-import { loginCommand } from "./login.ts";
 
 const base = { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8" };
 

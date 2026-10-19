@@ -1,26 +1,19 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  assertNoHostPaths,
   assertSafe,
   buildArgs,
   builderCreateArgs,
-  builderGuardRunArgs,
   ContainerRefused,
   type DockerParts,
   dockerArgv,
-  hostForwardRunArgs,
-  hostNetworkCreateArgs,
   type Limits,
   networkCreateArgs,
-  previewHoldRunArgs,
   previewRunArgs,
   type Safety,
   serviceRunArgs,
-  takeEnv,
-  taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
 import { envRef } from "./names.ts";
@@ -60,15 +53,6 @@ const preview = () =>
     scratch: "/preview",
     env: { MODE: "test" },
   });
-const holder = (subnets: string[] = ["192.168.171.0/24"]) =>
-  previewHoldRunArgs(safety, limits, { port: 7070, image: "majhi-runner:dev", taskSubnets: subnets });
-const taskHolder = (name = "db", aliases: string[] = []) =>
-  taskHoldRunArgs(safety, limits, {
-    name,
-    aliases,
-    taskSubnets: ["192.168.171.0/24"],
-    image: "majhi-runner:dev",
-  });
 const service = () =>
   serviceRunArgs(safety, limits, {
     name: "db",
@@ -76,10 +60,6 @@ const service = () =>
     env: { POSTGRES_PASSWORD: "test" },
     volumes: [{ name: "pgdata", path: "/var/lib/postgresql/data" }],
   });
-
-/** The values that follow a flag. */
-const values = (parts: DockerParts, flag: string) =>
-  parts.flags.flatMap((a, i) => (parts.flags[i - 1] === flag ? [a] : []));
 
 const plus = (parts: DockerParts, ...flags: string[]): DockerParts => ({
   ...parts,

@@ -10,7 +10,7 @@ import { BUILTIN, Catalog } from "./catalog.ts";
 import { GoalsService } from "./goals.ts";
 import { PlaybookRepo } from "./repo.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./rules.ts";
-import { CAPTAIN_RUN_MINUTES, PlaybookService } from "./service.ts";
+import { PlaybookService } from "./service.ts";
 
 /** The playbook scheduler: single flight, backoff, quiet hours, Autonomous off, budgets, reports. */
 

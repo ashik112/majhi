@@ -6,10 +6,6 @@ import {
   type Hold,
   type HoldCause,
   type HoldOf,
-  HoldSchema,
-  type Lifter,
-  liftersOf,
-  mergeHold,
 } from "./hold.ts";
 
 const AT = "2026-10-05T10:00:00.000Z";
@@ -35,7 +31,6 @@ const SAMPLES: { [C in HoldCause]: HoldOf<C> } = {
   "dependency-closed": { cause: "dependency-closed", at: AT, on: ["ACME-1"] },
   "dependency-removed": { cause: "dependency-removed", at: AT, on: ["ACME-1"] },
 };
-const CAUSES = Object.keys(SAMPLES) as HoldCause[];
 const hold = (cause: HoldCause): Hold => SAMPLES[cause];
 
 const READING: ClearReading = {
@@ -45,24 +40,6 @@ const READING: ClearReading = {
   budgetHasRoom: false,
   autopilot: "off",
   runAtStep: false,
-};
-
-/** Who may lift each cause, from the design table (4.3). */
-const LIFTERS: Record<HoldCause, Lifter[]> = {
-  "owner-stop": ["owner"],
-  "captain-stop": ["owner", "captain"],
-  "autopilot-off": ["owner", "captain"],
-  "budget-limit": ["owner", "majhi"],
-  "account-limit": ["majhi", "owner"],
-  offline: ["majhi", "owner"],
-  "signed-out": ["majhi", "owner"],
-  error: ["owner", "captain"],
-  "loop-guard": ["owner"],
-  idle: ["owner", "captain", "majhi"],
-  preempted: ["majhi", "owner"],
-  "agents-down": ["majhi", "owner"],
-  "dependency-closed": ["owner", "majhi"],
-  "dependency-removed": ["owner", "majhi"],
 };
 
 describe("auto-clear conditions", () => {

@@ -1,4 +1,4 @@
-import { stat, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
@@ -15,13 +15,7 @@ afterEach(async () => {
 });
 
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
-const branch = "fix/api";
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
-const present = (path: string) =>
-  stat(path).then(
-    () => true,
-    () => false,
-  );
 
 /** ACM-1 on api, in review, with one committed change on its branch. */
 async function reviewed(): Promise<void> {

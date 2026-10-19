@@ -142,8 +142,6 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
   };
 }
 
-const result = (d: Desk, subject: string) => d.svc.repo.get(subject)?.result;
-
 let seq = 100;
 
 /** Fills a row with judged ship actions: `kept` kept and the rest undone. */

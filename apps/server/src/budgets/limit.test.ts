@@ -1,8 +1,6 @@
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
-import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World;

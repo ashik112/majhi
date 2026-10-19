@@ -1,7 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../store/migrations.ts";
-import { until } from "../testing/until.ts";
 import type { DiffFacts } from "./analysis.ts";
 import { HandoffRepo } from "./repo.ts";
 import {
@@ -113,26 +112,6 @@ function world(over: { commands?: CardCommands; mergeBase?: string; brief?: stri
   const service = new HandoffService(ports, new HandoffRepo(db), over.commands === undefined ? {} : {});
   return { service, calls, state, add, tasks, db };
 }
-
-const BIG: DiffFacts = {
-  files: [
-    {
-      project: "acme-api",
-      path: "src/total.ts",
-      additions: 120,
-      deletions: 10,
-      patch: `+++ b/src/total.ts\n${Array.from({ length: 120 }, (_, i) => `+const v${i} = ${i};`).join("\n")}`,
-    },
-    {
-      project: "acme-api",
-      path: "src/total.test.ts",
-      additions: 5,
-      deletions: 0,
-      patch: "+++ b/src/total.test.ts\n+t",
-    },
-  ],
-  commits: ["feat: total"],
-};
 
 describe("the review pass", () => {
   it("text in the diff or the brief that tells the reviewer to approve changes nothing", async () => {

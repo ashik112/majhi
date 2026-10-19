@@ -1,32 +1,7 @@
-import type { Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { Store } from "./index.ts";
-import { MIGRATIONS, type Migration, MigrationConflict, migrate } from "./migrations.ts";
-
-function task(id: string, patch: Partial<Task> = {}): Task {
-  return {
-    id,
-    title: `Title ${id}`,
-    brief: "brief",
-    kind: "code",
-    org: "acme",
-    status: "inbox",
-    folder: `/tasks/${id}`,
-    repos: [
-      { project: "acme-api", source: "/w/api", base: "main", branch: `task/${id}`, createdBranch: true },
-      { project: "acme-web", source: "/w/web", base: "develop", branch: "feat/x", createdBranch: false },
-    ],
-    team: ["builder"],
-    mode: "lead",
-    overrides: {},
-    links: [{ type: "depends-on", task: "ACME-1", when: "merged" }],
-    attachments: [{ id: "a1", kind: "link", name: "Spec", url: "https://e.com" }],
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    ...patch,
-  } as Task;
-}
+import { MIGRATIONS, type Migration, migrate } from "./migrations.ts";
 
 describe("migrations", () => {
   it("rolls a failing migration back and does not record it", () => {

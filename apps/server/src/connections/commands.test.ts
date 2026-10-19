@@ -1,9 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Harness, harness } from "../testing/harness.ts";
 
-const PASSWORD = "app-password-0123456789";
 const BOSS = { actor: { kind: "agent", id: "majhi-boss" } };
 
 describe("connections commands", () => {
@@ -14,25 +11,6 @@ describe("connections commands", () => {
     expect((await h.cmd("orgs.create", { id: "acme", name: "Acme" })).status).toBe(200);
   });
   afterEach(() => h.cleanup());
-
-  async function mail() {
-    const created = await h.cmd("connections.create", {
-      org: "acme",
-      type: "mail",
-      name: "Ops mailbox",
-      description: "The ops inbox. Read alerts here.",
-      fields: { imap_host: "imap.acme.com", user: "ops@acme.com" },
-    });
-    expect(created.status).toBe(200);
-    expect(created.body.problems).toEqual(["Password is not set"]);
-    const set = await h.cmd("connections.setSecret", {
-      id: "ops-mailbox",
-      field: "password",
-      value: PASSWORD,
-    });
-    expect(set.status).toBe(200);
-    return set.body;
-  }
 
   it("keeps an agent from loosening the gate, even without a secret", async () => {
     await h.cmd("connections.create", {

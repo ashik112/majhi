@@ -1,9 +1,8 @@
 import type { BudgetAsk, CommandName, RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { CommandContext } from "../commands/handlers.ts";
 import { migrate } from "../store/migrations.ts";
-import { buildDecisions, type DecisionSources, isDecisionItem } from "./build.ts";
 import { inboxHandlers } from "./handlers.ts";
 import { RecommendationRepo } from "./recommendations.ts";
 import { type DecisionActions, InboxService } from "./service.ts";
@@ -108,17 +107,6 @@ const subjects: Record<string, { id: string; title: string; chat: boolean; org?:
   "ACM-1": { id: "ACM-1", title: "Fix the API", chat: false, org: "acme", repos: 1 },
   "ACM-2": { id: "ACM-2", title: "Docs", chat: false, org: "acme", repos: 1 },
 };
-
-function sources(over: Partial<DecisionSources> = {}): DecisionSources {
-  return {
-    items: [],
-    subject: (task) => subjects[task],
-    budgets: [],
-    signedOut: [],
-    recommendations: new Map(),
-    ...over,
-  };
-}
 
 function fakeActions(log: string[]): DecisionActions {
   return {

@@ -1,8 +1,6 @@
-import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentInput } from "../rooms/mcp.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { WAITING_TEXT } from "./service.ts";
 import { adminTools } from "./tools.ts";
 
 let w: BossWorld;

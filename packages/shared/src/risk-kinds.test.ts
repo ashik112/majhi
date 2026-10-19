@@ -1,20 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authorityFromLevel } from "./authority.ts";
-import {
-  type AuthorityLevel,
-  isOfficialImage,
-  levelAllows,
-  RISK_KINDS,
-  type RiskKind,
-  riskVerdict,
-} from "./risk-kinds.ts";
-
-/** What each level lets through without a card, written out: nothing is derived from the code under test. */
-const ALLOWED: Record<AuthorityLevel, readonly RiskKind[]> = {
-  ask: ["sandbox"],
-  routine: ["sandbox", "push-branch"],
-  full: ["sandbox", "push-branch", "merge-main", "deploy-staging"],
-};
+import { levelAllows } from "./risk-kinds.ts";
 
 describe("each level allows exactly its row and nothing more", () => {
   it("never lets secrets, a client's server, deleting outside, going over budget, a new image or the unknown through, at any level", () => {

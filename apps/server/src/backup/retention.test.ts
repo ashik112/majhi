@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Kept, selectPrune, weekOf } from "./retention.ts";
-
-const RULES = { daily: 7, weekly: 4, safety: 3 };
+import { type Kept, selectPrune } from "./retention.ts";
 
 function daily(day: number, usable = true): Kept {
   const at = new Date(Date.UTC(2026, 8, 1) + day * 86_400_000).toISOString();

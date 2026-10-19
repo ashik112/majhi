@@ -5,8 +5,7 @@ import { type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
-import { createUpdater, recoverUpdate } from "./update.ts";
-import { readUpdateJournal, writeUpdateJournal } from "./updateJournal.ts";
+import { createUpdater } from "./update.ts";
 
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const NEWER = "89abcdef0123456789abcdef0123456789abcdef";

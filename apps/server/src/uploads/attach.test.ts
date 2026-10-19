@@ -1,11 +1,7 @@
-import { appendFile, mkdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { tempDir } from "../testing/fixtures.ts";
-import { type AttachSource, planAttachments, takePlanned } from "./attach.ts";
-import { UploadStore } from "./store.ts";
 
 let w: BossWorld;
 afterEach(() => w?.cleanup());
@@ -25,16 +21,6 @@ async function put(folder: string, rel: string, data: Uint8Array | string = PNG)
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, data);
   return path;
-}
-
-async function upload(name: string, mime: string, data: Uint8Array | string = "x") {
-  const form = new FormData();
-  form.set(
-    "file",
-    new File([data] as unknown as ConstructorParameters<typeof File>[0], name, { type: mime }),
-  );
-  const res = await w.h.majhi.app.request("/api/uploads", { method: "POST", body: form });
-  return { status: res.status, body: (await res.json()) as { id: string; error?: string } };
 }
 
 describe("attachment errors", () => {

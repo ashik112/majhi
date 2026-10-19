@@ -6,7 +6,6 @@ import {
   type ConnectionHealth,
   type ConnectionTestResult,
   SERVICE_CATALOG,
-  type TokenMethod,
 } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConnectionHealthService } from "../connections/health.ts";
@@ -15,7 +14,6 @@ import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
 import { ConnectService } from "./service.ts";
-import { checkToken } from "./token-check.ts";
 
 const OWNER: CommandMeta = { actor: { kind: "owner" } };
 const TOKEN = "lin_api_acmeSecretValue0123456789";

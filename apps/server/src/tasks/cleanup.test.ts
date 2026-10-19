@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,12 +6,10 @@ import { EventHub } from "../events/hub.ts";
 import { RoomService } from "../room/service.ts";
 import { Store } from "../store/index.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
-import { seedStatus } from "../testing/status.ts";
 import { CleanupService } from "./cleanup.ts";
 
 const NOW = new Date("2026-09-30T12:00:00.000Z");
 const OLD = "2026-07-01T00:00:00.000Z";
-const RECENT = "2026-09-25T00:00:00.000Z";
 
 let dir: string;
 let dispose: () => Promise<void>;
