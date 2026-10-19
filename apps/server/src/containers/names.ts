@@ -115,7 +115,7 @@ export interface ContainerNames {
 }
 
 /** The kinds of the workspace's browser: its container and the network only that container and its runners share. */
-export type BrowserKind = "browser" | "browsernet";
+export type BrowserKind = "browser" | "browsernet" | "testbrowser";
 
 /** Docker filters that find objects by label. */
 export const select = {
@@ -161,6 +161,25 @@ export function browserNames(org: string) {
     labelFlags: (kind: BrowserKind): string[] => [
       "--label",
       `${LABEL.container}=${kind}`,
+      "--label",
+      `${LABEL.org}=${id}`,
+    ],
+  };
+}
+
+/**
+ * What belongs to a workspace's test browser: the Playwright server a repo's own `playwright test` connects to.
+ * One container per workspace on the runner network, reached only through majhi's authenticated proxy (never by
+ * a runner directly), named and labelled from the workspace alone.
+ */
+export function testBrowserNames(org: string) {
+  const id = IdSchema.parse(org);
+  return {
+    org: id,
+    container: `majhi-testbrowser-${id}`,
+    labelFlags: (): string[] => [
+      "--label",
+      `${LABEL.container}=testbrowser`,
       "--label",
       `${LABEL.org}=${id}`,
     ],

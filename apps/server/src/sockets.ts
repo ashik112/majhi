@@ -8,8 +8,10 @@ import {
   ServerEventSchema,
 } from "@majhi/shared";
 import { type WebSocket, WebSocketServer } from "ws";
+import { bearerOf } from "./admin/tokens.ts";
 import type { EventHub } from "./events/hub.ts";
 import { isOwnerOrigin } from "./http/origin.ts";
+import { TEST_BROWSER_PATH, type ToolCaller } from "./rooms/access.ts";
 import type { TerminalManager } from "./terminal/manager.ts";
 import { serveTerminal } from "./terminal/socket.ts";
 
@@ -45,15 +47,28 @@ export function attachSockets(
     build?: string | undefined;
     terminals: TerminalManager;
     rooms: RoomFeed;
+    /** The test browser: who a run's token is, and how its upgrade is passed on. Absent without a runner. */
+    testBrowser?: {
+      caller(token: string): ToolCaller | undefined;
+      open(caller: ToolCaller, req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void>;
+    };
   },
 ): { close: () => void } {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
+    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    // The one socket a runner may open: a run's repo tests reaching its workspace's test browser, with the run's own token.
+    if (path === TEST_BROWSER_PATH && deps.testBrowser !== undefined) {
+      const token = bearerOf(req.headers.authorization);
+      const caller = token === undefined ? undefined : deps.testBrowser.caller(token);
+      if (caller === undefined) return reject(socket, 401, "Unauthorized");
+      void deps.testBrowser.open(caller, req, socket, head);
+      return;
+    }
     if (deps.isRunner?.(req.socket.remoteAddress)) return reject(socket, 403, "Forbidden");
     const origin = req.headers.origin;
     if (origin !== undefined && !isOwnerOrigin(origin, deps.origin)) return reject(socket, 403, "Forbidden");
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
     if (path === "/api/events") {
       wss.handleUpgrade(req, socket, head, (ws) => serveEvents(ws, deps.events, deps.build));

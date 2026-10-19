@@ -87,6 +87,7 @@ export function testEnv(dir: string, overrides: Partial<ServerEnv> = {}): Server
       mode: "local",
       image: "majhi-runner:dev",
       browserImage: "majhi-browser:dev",
+      testBrowserImage: "majhi-testbrowser:dev",
       network: "majhi-runners",
       mcpHost: "majhi-server",
       memory: "4g",

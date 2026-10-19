@@ -14,6 +14,12 @@ export const CONTAINERS_PATH = "/mcp/containers";
 /** The `docker` shim of a runner calls this (`docker/docker-shim.mjs`). Not an MCP server: a plain POST. */
 export const DOCKER_PATH = "/mcp/docker";
 
+/**
+ * A repo's own `playwright test` connects here (`PW_TEST_CONNECT_WS_ENDPOINT`) with the run's token. A WebSocket
+ * upgrade, handled in `sockets.ts`, not an MCP server.
+ */
+export const TEST_BROWSER_PATH = "/mcp/testbrowser";
+
 export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
@@ -31,7 +37,8 @@ export type ToolServer =
   | "containers"
   | "connections"
   | "skills"
-  | "docker";
+  | "docker"
+  | "testBrowser";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
 const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
@@ -88,6 +95,8 @@ export class RoomAccess {
   readonly skills = new ToolTokens();
   /** Tokens of the `docker` shim: one per run, one per hand-off check. They only reach the caller's own task. */
   readonly docker = new ToolTokens();
+  /** Tokens for the test browser's WebSocket: one per run. They only reach the caller's own workspace. */
+  readonly testBrowser = new ToolTokens();
 
   /**
    * `mcpUrl` gives majhi-admin's URL; these servers sit next to it. `containersOn` says whether majhi
@@ -96,6 +105,7 @@ export class RoomAccess {
   constructor(
     private readonly mcpUrl: () => string,
     private readonly containersOn: () => boolean = () => false,
+    private readonly testBrowserOn: () => boolean = () => false,
   ) {}
 
   /** Whether majhi can run containers now. */
@@ -136,6 +146,29 @@ export class RoomAccess {
     return {
       entry: { server: "docker", token },
       env: { MAJHI_DOCKER_URL: `${base}${DOCKER_PATH}`, MAJHI_DOCKER_TOKEN: token },
+    };
+  }
+
+  /**
+   * What a run needs for its repo's `playwright test` to get a browser: where to connect, the run's token, and the
+   * switch that lets the remote browser reach the run's own localhost (the app under test). Absent when majhi has
+   * no test browser. Revoke `entry` with the session's other tokens.
+   */
+  attachTestBrowser(
+    caller: ToolCaller,
+  ): { entry: { server: "testBrowser"; token: string }; env: Record<string, string> } | undefined {
+    if (!this.testBrowserOn()) return undefined;
+    const token = this.testBrowser.issue(caller);
+    const url = new URL(this.mcpUrl());
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = TEST_BROWSER_PATH;
+    return {
+      entry: { server: "testBrowser", token },
+      env: {
+        PW_TEST_CONNECT_WS_ENDPOINT: url.toString(),
+        PW_TEST_CONNECT_HEADERS: JSON.stringify({ Authorization: `Bearer ${token}` }),
+        PW_TEST_CONNECT_EXPOSE_NETWORK: "<loopback>",
+      },
     };
   }
 

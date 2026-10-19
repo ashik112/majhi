@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [server, runner, browser, laya, laya-cuda]
+        image: [server, runner, browser, testbrowser, laya, laya-cuda]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -80,6 +80,10 @@ jobs:
             name: majhi-browser
             file: Dockerfile
             target: browser-build
+          - image: testbrowser
+            name: majhi-testbrowser
+            file: Dockerfile
+            target: test-browser-build
           - image: laya
             name: majhi-laya
             file: docker/laya.Dockerfile
@@ -204,6 +208,7 @@ jobs:
           publish server majhi-server "$VERSION"
           publish runner majhi-runner "$VERSION"
           publish browser majhi-browser "$VERSION"
+          publish testbrowser majhi-testbrowser "$VERSION"
           publish laya majhi-laya "$VERSION" "$VERSION-cpu"
           publish laya-cuda majhi-laya "$VERSION-cuda"
 

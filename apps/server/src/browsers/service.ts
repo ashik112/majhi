@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { NETGUARD, NETGUARD_CAPS, type RunnerConfig, runMounts } from "@majhi/acp";
 import { browserNames } from "../containers/names.ts";
 import { errorMessage } from "../errors.ts";
 import { inSubnet } from "../runner/network.ts";
-
-const run = promisify(execFile);
+import { dockerOf, waitForLine } from "./docker.ts";
 
 /** Where `docker/browserd.mjs` lives in the browser image. */
 const BROWSERD = "/usr/local/lib/majhi/browserd.mjs";
@@ -124,15 +121,7 @@ export class BrowserService {
   }
 
   private docker(): (args: string[]) => Promise<string> {
-    if (this.deps.docker !== undefined) return this.deps.docker;
-    const cfg = this.deps.runner();
-    return async (args) => {
-      const { stdout } = await run(cfg.docker ?? "docker", args, {
-        env: { ...cfg.cliEnv, DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker" },
-        timeout: 60_000,
-      });
-      return stdout;
-    };
+    return this.deps.docker ?? dockerOf(this.deps.runner());
   }
 
   /** One start or check at a time per workspace. */
@@ -258,19 +247,8 @@ export class BrowserService {
     throw new Error("no free address range for its network");
   }
 
-  private async waitReady(docker: (args: string[]) => Promise<string>, container: string): Promise<void> {
-    const until = Date.now() + (this.deps.readyMs ?? 30_000);
-    for (;;) {
-      const out = await docker(["logs", "--tail", "20", container]).catch(() => "");
-      if (out.includes(READY_LINE)) return;
-      const running = await docker(["inspect", "--format", "{{.State.Running}}", container]).catch(
-        () => "false",
-      );
-      if (running.trim() !== "true")
-        throw new Error(`it stopped while starting: ${out.trim().split("\n").pop() ?? ""}`);
-      if (Date.now() > until) throw new Error("it did not open its ports in time");
-      await new Promise((r) => setTimeout(r, 250));
-    }
+  private waitReady(docker: (args: string[]) => Promise<string>, container: string): Promise<void> {
+    return waitForLine(docker, container, READY_LINE, this.deps.readyMs ?? 30_000);
   }
 }
 

@@ -36,6 +36,7 @@ services:
       MAJHI_RUNNER: container
       MAJHI_RUNNER_IMAGE: majhi-runner:dev
       MAJHI_BROWSER_IMAGE: majhi-browser:dev
+      MAJHI_TEST_BROWSER_IMAGE: majhi-testbrowser:dev
       MAJHI_RUNNER_NETWORK: majhi-runners
       MAJHI_RUNNER_USER: "${HOST_UID:-1000}:${HOST_GID:-1000}"
       MAJHI_RUNNER_MCP_HOST: majhi-server
@@ -90,6 +91,19 @@ services:
       args:
         BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-browser:${MAJHI_VERSION}}
     image: majhi-browser:dev
+    profiles: [runner]
+
+  # The image of a workspace's test browser (a Playwright server for a repo's own tests). Built with `--profile runner`,
+  # never started by compose: the server starts one container per workspace when a test first connects.
+  testbrowser:
+    build:
+      context: .
+      target: test-browser
+      labels:
+        majhi.owned: build
+      args:
+        TEST_BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-testbrowser:${MAJHI_VERSION}}
+    image: majhi-testbrowser:dev
     profiles: [runner]
 
   # Laya, the local decision model, on PyTorch CPU, or CUDA with an NVIDIA GPU (SPEC 5.12). For

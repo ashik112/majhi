@@ -2,12 +2,14 @@
 ARG SERVER_FROM
 ARG RUNNER_FROM
 ARG BROWSER_FROM
+ARG TEST_BROWSER_FROM
 FROM ${RUNNER_FROM} AS runner
 ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_HOME=/home/majhi
 RUN --mount=type=bind,source=docker/owner.sh,target=/tmp/owner.sh sh /tmp/owner.sh
 FROM ${BROWSER_FROM} AS browser
+FROM ${TEST_BROWSER_FROM} AS test-browser
 FROM ${SERVER_FROM} AS runtime
 ARG HOST_UID=1000
 ARG HOST_GID=1000

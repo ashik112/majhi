@@ -49,6 +49,7 @@ import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { BrowserService } from "./browsers/service.ts";
+import { TestBrowserService } from "./browsers/test-service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
@@ -383,6 +384,8 @@ export interface Services {
   decideTokens: DecideTokens;
   /** Who gets majhi-room and majhi-tasks, and their tokens. */
   roomAccess: RoomAccess;
+  /** The workspaces' test browsers (a Playwright server for a repo's own tests). Absent without a runner. */
+  testBrowser: TestBrowserService | undefined;
   /** Routes agent messages in team rooms (5.3). */
   coordinator: RoomCoordinator;
   /** Looks at a room that went quiet. Its timer runs it; a test calls `check` instead of waiting for it. */
@@ -584,6 +587,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           prepareDir: ownerOnlyDir,
         });
   browsersRef.current = browsers;
+  const testBrowser =
+    runnerConfig === undefined
+      ? undefined
+      : new TestBrowserService({
+          image: env.runner.testBrowserImage,
+          network: env.runner.network,
+          runner: () => runnerConfig,
+          orgOf: (task) => store.tasks.get(task)?.org ?? PRIVATE,
+        });
   const usage = new AccountUsageReader({
     majhiHome: env.majhiHome,
     runtime,
@@ -828,6 +840,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const roomAccess = new RoomAccess(
     () => adminTokens.mcpUrl,
     () => containers.available(),
+    () => testBrowser !== undefined,
   );
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
   // The ports majhi itself listens on: no service on this computer may name one (5.14).
@@ -951,6 +964,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(
     async () => {
       await browsers?.reset();
+      await testBrowser?.reset();
       await containers.startup();
     },
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
@@ -2223,10 +2237,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tools: (task) => toolsFolder(env.majhiHome, task).catch(() => undefined),
     // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
     dockerShim: (task) => {
-      const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
-      return shim === undefined
+      const caller = { task, agent: store.tasks.get(task)?.team[0] ?? "handoff" };
+      const shim = roomAccess.attachDocker(caller);
+      // Its tests may be a repo's own `playwright test`: they get the workspace's test browser too.
+      const browser = roomAccess.attachTestBrowser(caller);
+      const held = [shim?.entry, browser?.entry].flatMap((e) => (e === undefined ? [] : [e]));
+      return held.length === 0
         ? undefined
-        : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
+        : { env: { ...shim?.env, ...browser?.env }, release: () => roomAccess.revoke(held) };
     },
     environment: () => `${env.commit}|${env.runner.image}`,
     baseRunsDir: join(env.majhiHome, "handoff-base"),
@@ -3376,6 +3394,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions,
     decideTokens,
     roomAccess,
+    testBrowser,
     coordinator,
     idleWatch,
     store,

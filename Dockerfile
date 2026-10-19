@@ -7,6 +7,7 @@
 ARG SERVER_FROM
 ARG RUNNER_FROM
 ARG BROWSER_FROM
+ARG TEST_BROWSER_FROM
 
 # Pins used by more than one stage live here, once; a stage that uses one says `ARG NAME`. A pin used by
 # one stage sits in that stage, with how to raise it.
@@ -297,13 +298,10 @@ COPY --chmod=0755 docker/portforward.mjs /usr/local/lib/majhi/portforward.mjs
 WORKDIR /tmp
 CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
 
-# A workspace's browser (SPEC 4.5, "Browser container"): Chromium and the libraries it needs, started by the server
-# when a run first needs a browser connection and ended by its own idle timer. `docker/browserd.mjs` is its only
-# process; `majhi-netguard` starts it with the runner's guard (private networks closed, owner's uid, no capabilities).
-# Headless Chromium draws with its own SwiftShader, so Mesa and LLVM are not installed (155 MB). The list is
-# `npx playwright install-deps --dry-run chromium` without `xvfb`, checked by the `ldd` and launch test below,
-# which fails the build on a missing library.
-FROM ${NODE_IMAGE} AS browser-build
+# The system libraries headless Chromium needs, and netguard's iptables: the shared base of the browser images below.
+# The list is `npx playwright install-deps --dry-run chromium` without `xvfb`. Headless Chromium draws with its own
+# SwiftShader, so Mesa and LLVM are not installed (155 MB).
+FROM ${NODE_IMAGE} AS chromium-libs
 RUN printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*/copyright' \
       'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/info/*' 'path-exclude=/usr/share/locale/*' \
       > /etc/dpkg/dpkg.cfg.d/majhi-lean \
@@ -315,6 +313,12 @@ RUN printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-include=/usr/share/doc/*
        fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
        fonts-tlwg-loma-otf fonts-freefont-ttf \
   && rm -rf /var/lib/apt/lists/*
+
+# A workspace's browser (SPEC 4.5, "Browser container"): Chromium for the browser connections, started by the server
+# when a run first needs one and ended by its own idle timer. `docker/browserd.mjs` is its only process; `majhi-netguard`
+# starts it with the runner's guard (private networks closed, owner's uid, no capabilities). The `ldd` and launch test
+# below fails the build on a missing library.
+FROM chromium-libs AS browser-build
 COPY --from=browsers /opt/ms-playwright /opt/ms-playwright
 RUN ln -s /opt/ms-playwright/chromium /usr/local/bin/chromium \
   && if ldd "$(readlink -f /usr/local/bin/chromium)" | grep -q "not found"; then ldd "$(readlink -f /usr/local/bin/chromium)" >&2; exit 1; fi \
@@ -325,6 +329,27 @@ COPY --chmod=0755 docker/browserd.mjs /usr/local/lib/majhi/browserd.mjs
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /tmp
 CMD ["node", "/usr/local/lib/majhi/browserd.mjs"]
+
+# A workspace's test browser (SPEC 4.5, "Test browser"): a Playwright server for a repo's own `playwright test`, which
+# connects to it through majhi's proxy with PW_TEST_CONNECT_WS_ENDPOINT. `docker/testbrowserd.mjs` starts the server of
+# the client's exact version on its first connection. The version installed here is majhi's own pin (the root
+# package.json), with Chromium and its headless shell; any other version is fetched when a repo asks for it.
+FROM chromium-libs AS test-browser-build
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+COPY package.json /tmp/root-package.json
+RUN V="$(node -p "require('/tmp/root-package.json').devDependencies['@playwright/test']")" \
+  && npm install -g playwright-core@"$V" \
+  && node /usr/local/lib/node_modules/playwright-core/cli.js install chromium \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /root/.cache /tmp/root-package.json \
+  && chmod -R a+rX /opt/pw-browsers \
+  && test -z "$(find /opt/pw-browsers ! -perm -o+r -print -quit)"
+COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
+COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
+COPY --chmod=0755 docker/testbrowserd.mjs /usr/local/lib/majhi/testbrowserd.mjs
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+WORKDIR /tmp
+CMD ["node", "/usr/local/lib/majhi/testbrowserd.mjs"]
 
 FROM base AS runtime-build
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.
@@ -372,6 +397,8 @@ RUN --mount=type=bind,source=docker/owner.sh,target=/tmp/owner.sh sh /tmp/owner.
 
 # The browser image has no owner's user: it runs by uid, with HOME set (docker/browserd.mjs).
 FROM ${BROWSER_FROM:-browser-build} AS browser
+
+FROM ${TEST_BROWSER_FROM:-test-browser-build} AS test-browser
 
 FROM ${SERVER_FROM:-runtime-build} AS runtime
 ARG HOST_UID=1000
