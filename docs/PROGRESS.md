@@ -2815,3 +2815,18 @@ Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2723 tests
 Review fixes: incidents are never ideas; the agent names its task through `status` (unpublished branches follow); a resume takes a running place like a start.
 
 Left for the next steps: no Start now control in the UI yet (the command takes `now` for the owner; the console of step 3 has the key); the Ideas list and Needs you wording are step 3; `project-busy` is in the gate's type for step 2.
+
+## Workflow reset step 2: the environment per project (in progress, branch feat/env-per-project)
+
+**Plan.** Brief: `docs/briefs/workflow-reset.md` step 2. Order:
+
+1. `containers/names.ts` becomes the one place for every docker name and label, keyed by the right unit: org (builder `majhi-build-<org>`, package store), project (network, holders, services, volumes, preview image, script images) and task only for the holder label. Every object gets `majhi.org`; project objects also get `majhi.project`.
+2. `containers/service.ts` and `env-queue.ts`: one holder per project environment, the rest wait in order with their place posted to their room; release on pause, stop and end hands it to the next.
+3. No unnamed volumes (`args.ts`, `task-docker.ts`, preview scratch).
+4. `env.branchDb` (`branch_db` tool and command): `CREATE DATABASE <task> TEMPLATE <dev>`, dropped when the task closes.
+5. `limits.worktrees` (default 15) and the budget sweep; archive on merge.
+6. Package store at `<tasks_dir>/.cache/<org>` (measured first, see DECISIONS).
+7. Migration at start and disk hygiene (server `prune.ts`, host `diskHygiene.ts`) select by labels and typed data, never by name text.
+8. SPEC 5.15 and 5.17, DECISIONS rows.
+
+**Test plan** (only these): nothing shared across workspaces; the queue hands the environment to exactly one task; the budget never removes a dirty, running or pinned folder; the template database is dropped on close; an anonymous volume becomes a named, labelled one. Typecheck and touched tests while working; full vitest, build and playwright once at the end. Journey with real docker on `alpine:3` and `postgres:18-alpine` only.
