@@ -1183,6 +1183,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
   });
   const pointersRef: { current: Pointers | undefined } = { current: undefined };
+  const tidyFolders: { run?: (ended: string | undefined) => Promise<void> } = {};
   const tasks = new TaskService({
     mergeGate,
     wikiNotes: (task) =>
@@ -1207,6 +1208,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions,
     processes,
     containers,
+    // The folder sweep is built after the task service.
+    tidyFolders: (ended) => tidyFolders.run?.(ended) ?? Promise.resolve(),
     terminals,
     memory,
     memoryScopes,
@@ -2059,7 +2062,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
       return loaded.state.config.tasksDir;
     },
+    pinned: () => store.pins.list(),
   });
+  // A task that closed merged loses its folder at once; over the budget, the oldest finished one goes too.
+  tidyFolders.run = async (ended) => {
+    if (ended !== undefined) await folderSweep.archive(ended);
+    await folderSweep.budget((await config.settings()).limits.worktrees);
+  };
   const diskGuard = new DiskGuard({ machine: () => machine.get(), sweep: folderSweep, containers });
   const findings = new FindingsService({
     repo: new FindingsRepo(store.raw),

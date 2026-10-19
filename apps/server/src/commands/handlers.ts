@@ -1314,6 +1314,13 @@ export function createHandlers({
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
+    "tasks.pin": async (input) => {
+      if (services.store.tasks.get(input.task) === undefined) {
+        throw new UserError(`Task ${input.task} does not exist.`, 404);
+      }
+      services.store.pins.set(input.task, input.pinned);
+      return input;
+    },
     "room.fresh": async (input) => ({ item: await services.tasks.fresh(input.task, input.agent) }),
     "room.approve": (input, ctx) =>
       answerCard(services, ctx, input, () =>

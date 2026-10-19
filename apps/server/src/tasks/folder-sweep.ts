@@ -8,6 +8,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import { git, gitOk, uncommitted } from "../git/git.ts";
 import { removeWorktree } from "../git/worktrees.ts";
 import type { Store } from "../store/index.ts";
+import { REPORT_FILE } from "./report.ts";
 
 /**
  * Frees disk in the folders of tasks that are done (SPEC 5.4, 5.18 Cleanup). Code only, no model.
@@ -56,6 +57,18 @@ export interface SweepDeps {
   /** The folder that holds every task folder. */
   tasksDir: () => Promise<string>;
   now?: () => Date;
+  /** The tasks the owner pinned: the worktree budget never removes their folders. */
+  pinned?: () => ReadonlySet<string>;
+}
+
+/** What the worktree budget saw and did. */
+export interface BudgetReport {
+  /** Task folders on disk when it looked. */
+  count: number;
+  /** The tasks whose folders it removed, oldest first. */
+  removed: string[];
+  /** The tasks it would have removed but kept, and why. */
+  kept: { id: string; why: string }[];
 }
 
 export interface SweepOptions {
@@ -252,6 +265,109 @@ export class TaskFolderSweep {
       );
     }
     return this.last?.value;
+  }
+
+  /**
+   * The worktree budget: at most `limit` task folders. Over it, the oldest done, reviewed or paused task
+   * goes whole, after its branch is saved. A running task, a pinned task and a folder with a change
+   * that is not committed never go (the report says why). Returns the tasks removed and the ones kept.
+   */
+  async budget(limit: number, dry = false): Promise<BudgetReport> {
+    const report: BudgetReport = { count: 0, removed: [], kept: [] };
+    const tasksRoot = await realpath(await this.deps.tasksDir()).catch(() => undefined);
+    if (tasksRoot === undefined) return report;
+    const pinned = this.deps.pinned?.() ?? new Set<string>();
+    const folders: Task[] = [];
+    for (const [id] of this.deps.store.tasks.statuses()) {
+      const task = this.deps.store.tasks.get(id);
+      if (task === undefined) continue;
+      const here = await stat(task.folder).then(
+        (s) => s.isDirectory(),
+        () => false,
+      );
+      if (here) folders.push(task);
+    }
+    report.count = folders.length;
+    let over = folders.length - limit;
+    if (over <= 0) return report;
+    const eligible = folders
+      .filter((t) => t.status === "done" || t.status === "review" || t.status === "paused")
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    for (const task of eligible) {
+      if (over <= 0) break;
+      if (pinned.has(task.id)) {
+        report.kept.push({ id: task.id, why: "pinned" });
+        continue;
+      }
+      const why = await this.retire(task, tasksRoot, "saved", dry);
+      if (why === undefined) {
+        report.removed.push(task.id);
+        over--;
+      } else report.kept.push({ id: task.id, why });
+    }
+    if (!dry && report.removed.length > 0) this.forget();
+    return report;
+  }
+
+  /**
+   * A task that just closed: when its work is merged and nothing is left to lose, its folder goes now
+   * (SPEC 5.4: archive on merge). Its room, report and branch history stay. Returns why the folder stays, or
+   * undefined when it was removed.
+   */
+  async archive(id: string): Promise<string | undefined> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "done") return "it is not done";
+    if (this.deps.pinned?.().has(id) === true) return "pinned";
+    const tasksRoot = await realpath(await this.deps.tasksDir()).catch(() => undefined);
+    if (tasksRoot === undefined) return "no tasks folder";
+    const why = await this.retire(task, tasksRoot, "merged", false);
+    if (why === undefined) this.forget();
+    return why;
+  }
+
+  /**
+   * Removes a task's worktrees and what is left of its folder, except the report. Every repo is checked
+   * first: one with a change that is not committed, or a branch that is not saved (`saved`: merged or
+   * pushed; `merged`: merged into its base), keeps the whole task. Returns why it stays, or undefined when it went.
+   */
+  private async retire(
+    task: Task,
+    tasksRoot: string,
+    need: "saved" | "merged",
+    dry: boolean,
+  ): Promise<string | undefined> {
+    const root = await realpath(task.folder).catch(() => undefined);
+    if (root === undefined) return undefined;
+    if (!inside(root, tasksRoot)) return "its folder is outside the tasks folder";
+    const trees: Task["repos"] = [];
+    for (const repo of task.repos) {
+      const worktree = repo.worktree;
+      if (worktree === undefined) continue;
+      const real = await realpath(worktree).catch(() => undefined);
+      if (real === undefined) continue;
+      if (!inside(real, root)) return `${repo.project}: its worktree is outside the task folder`;
+      const why = await worktreeKept(repo.source, worktree, repo.branch, repo.base, need);
+      if (why !== undefined) return `${repo.project}: ${why}`;
+      trees.push(repo);
+    }
+    if (dry) return undefined;
+    for (const repo of trees) {
+      const worktree = repo.worktree;
+      if (worktree === undefined) continue;
+      try {
+        await removeWorktree(repo.source, worktree, false);
+        this.deps.store.tasks.clearWorktree(task.id, repo.project);
+      } catch (err) {
+        return `worktree ${repo.project} stays: ${errorMessage(err)}`;
+      }
+    }
+    // What is left of the folder: attachments, notes, caches. The report stays with the task.
+    for (const name of await readdir(root).catch(() => [] as string[])) {
+      if (name === REPORT_FILE) continue;
+      await rm(join(root, name), { recursive: true, force: true }).catch(() => undefined);
+    }
+    if ((await readdir(root).catch(() => [] as string[])).length === 0) await rm(root, { recursive: true, force: true });
+    return undefined;
   }
 
   /** Forgets the last measurement: a sweep just changed the folders. */
@@ -522,11 +638,13 @@ async function worktreeKept(
   worktree: string,
   branch: string,
   base: string,
+  need: "saved" | "merged" = "saved",
 ): Promise<string | undefined> {
   try {
     if ((await uncommitted(worktree)).length > 0) return "it has uncommitted changes";
     const tip = (await git(worktree, ["rev-parse", "--verify", "HEAD"])).trim();
     if (await gitOk(source, ["merge-base", "--is-ancestor", tip, `refs/heads/${base}`])) return undefined;
+    if (need === "merged") return `${branch} is not merged yet`;
     const remotes = await git(source, ["branch", "-r", "--contains", tip, "--format=%(refname:short)"]);
     if (remotes.split("\n").some((r) => r.trim() !== "" && !r.endsWith("/HEAD"))) return undefined;
     return `${branch} is neither merged nor pushed`;

@@ -246,6 +246,11 @@ export interface TaskDeps {
     }>;
     taskEnded(id: string): Promise<void>;
   };
+  /**
+   * Task folders (the worktree budget, SPEC 5.17): called when a task closes (`ended` is its id, and a
+   * merged task's folder goes now) and when one starts running, so the count of folders stays under the limit.
+   */
+  tidyFolders?: (ended: string | undefined) => Promise<void>;
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
   terminals?: TerminalManager;
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
@@ -2987,8 +2992,9 @@ export class TaskService {
     }
     await this.deps.onRemoving?.(task).catch(() => undefined);
     await this.deps.runs.stop(id);
-    await this.deps.processes?.stopTask(id);
+    // Containers first: a copy of the project's database is dropped inside the service that holds it.
     await this.deps.containers?.taskEnded(id);
+    await this.deps.processes?.stopTask(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.processes?.forget(id);
     if (force) {
@@ -3964,6 +3970,10 @@ export class TaskService {
         if (effect.op === "runAgain") await this.containersRunAgain(id);
         else if (ctx.ending === true) await this.deps.containers?.taskEnded(id);
         else await this.deps.containers?.taskPaused(id);
+        // Not awaited: removing folders is not part of changing the task's state.
+        void this.deps.tidyFolders?.(effect.op !== "runAgain" && ctx.ending === true ? id : undefined).catch(
+          (err: unknown) => console.error(`Task folders: ${errorMessage(err)}`),
+        );
         return;
       case "processes.stop":
         await this.deps.processes?.stopTask(id);

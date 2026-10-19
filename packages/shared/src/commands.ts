@@ -3040,6 +3040,13 @@ export const commands = {
     }),
     output: TaskSchema,
   },
+  "tasks.pin": {
+    risk: "change",
+    summary:
+      "Pin a task so the worktree budget (limits.worktrees) never removes its folder, or unpin it. Owner only",
+    input: z.object({ task: TaskIdSchema, pinned: z.boolean() }),
+    output: z.object({ task: TaskIdSchema, pinned: z.boolean() }),
+  },
 
   // Room control (5.13, 5.16) ------------------------------------------------
   "room.fresh": {

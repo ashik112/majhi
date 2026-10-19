@@ -10,6 +10,7 @@ import { ConversationsRepo } from "./conversations.ts";
 import { createDb, type SqliteBaseline } from "./db.ts";
 import { DeployRepo } from "./deploys.ts";
 import { NoticesRepo } from "./notices.ts";
+import { PinsRepo } from "./pins.ts";
 import { PlanRepo } from "./plans.ts";
 import { RoomRepo } from "./room.ts";
 import { PermissionRepo, RunRepo } from "./runs.ts";
@@ -39,6 +40,8 @@ export class Store {
   readonly conversations: ConversationsRepo;
   /** The bell's feed: what happened lately, and what the owner has read. */
   readonly notices: NoticesRepo;
+  /** The tasks the owner pinned: their folders stay when the worktree budget is over. */
+  readonly pins: PinsRepo;
   /** What majhi put into contexts, for the token receipts. */
   readonly usageEvents: UsageEvents;
   /** The deploy records: one row per target and commit. */
@@ -65,6 +68,7 @@ export class Store {
     this.client = new ClientRepo(sqlite);
     this.conversations = new ConversationsRepo(db);
     this.notices = new NoticesRepo(sqlite);
+    this.pins = new PinsRepo(sqlite);
     this.usageEvents = new UsageEvents(sqlite);
     this.wiki = new WikiRepo(sqlite);
   }
