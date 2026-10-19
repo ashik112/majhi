@@ -4,6 +4,12 @@ Status: approved by the owner on 2026-10-19. It changes SPEC 2, 3, 5.4, 5.4a, 5.
 
 Every brief for a step includes `docs/briefs/quality-bar.md`.
 
+Rules for every step (owner, 2026-10-19):
+
+- **One source of truth.** Each fact lives in one place and everything else derives from it: a task's label, branch and folder come from its stored name through one function; docker names and labels come from one module; limits live only in `majhi.yaml` with their defaults in the zod schema. Extend existing models instead of adding parallel ones.
+- **No regex for decisions, no needless hardcoding.** Classify with typed data (enums, schemas, labels), never by matching text. Do not repeat names, ids or lists that already exist in config or schemas.
+- **No useless tests.** Only the tests each step lists. Each asserts what the owner observes against literal values. Nothing for wiring, UI, copy, or mocks that would pass if the code returned undefined.
+
 ## Why
 
 On 2026-10-19 the owner said majhi is hard to use every day: too many screens, agents that create task after task with no way to see what is happening, a captain that cannot do most things and is a chore to manage, every task eating gigabytes, and task ids and branch names that say nothing. Measured that day:
