@@ -179,6 +179,8 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
     projectUnknown: z.literal(true).optional(),
     at: z.string(),
   }),
+  /** The owner clicked Ship the fix: the merge and the deploys of this fix follow without a click for each, behind every guard. */
+  z.object({ event: z.literal("shipApproved"), at: z.string() }),
   /** Another report joined this incident: a second watch, a failed deploy, a client message. Counted as an alert. */
   z.object({ event: z.literal("joined"), source: z.enum(["watch", "client", "deploy"]), at: z.string() }),
   /**

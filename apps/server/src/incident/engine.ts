@@ -519,6 +519,17 @@ export class IncidentEngine {
     return out;
   }
 
+  /** The owner clicked Ship the fix on this incident task. */
+  shipApproved(task: string): boolean {
+    return this.deps.facts.events(task).some((e) => e.detail.event === "shipApproved");
+  }
+
+  /** Records the owner's click on Ship the fix, before the merge runs. */
+  approveShip(task: string): void {
+    if (this.shipApproved(task)) return;
+    this.record(task, { event: "shipApproved", at: this.at() }, `ship-approved:${task}`);
+  }
+
   /**
    * How often an incident fired or was reported: the finding's `seen` (bumped by every failing check while the incident
    * is open) plus the reports that joined it. Undefined for a task that is not an incident. Cheap and synchronous:

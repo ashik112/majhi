@@ -74,7 +74,13 @@ export function levelAllows(level: AuthorityLevel, kind: RiskKind, ctx: RiskCont
   if (LEVEL_ALLOWS[level].includes(kind)) return true;
   if (kind === "client-message") return ctx.incident?.clientUpdate === "sends";
   if (ctx.incidentFix === true && ctx.incident?.fix === "ships") {
-    return kind === "merge-main" || kind === "deploy-staging" || kind === "deploy-production";
+    // The fix goes out on its own branch, so pushing it is part of shipping it.
+    return (
+      kind === "push-branch" ||
+      kind === "merge-main" ||
+      kind === "deploy-staging" ||
+      kind === "deploy-production"
+    );
   }
   return false;
 }

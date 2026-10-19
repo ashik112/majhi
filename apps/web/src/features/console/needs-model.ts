@@ -187,6 +187,11 @@ export function splitRow(
 /** What the captain did by itself that the owner has not read: a reply it sent to a client, a bug it filed. */
 const CAPTAIN_NOTICE_KINDS: ReadonlySet<Notice["kind"]> = new Set(["client-reply", "bug"]);
 
+/** A reply or a bug it filed, or a deploy it started that went live. */
+function doneByCaptain(notice: Notice): boolean {
+  return CAPTAIN_NOTICE_KINDS.has(notice.kind) || (notice.kind === "deploy" && notice.by === "captain");
+}
+
 /**
  * Needs you: the decisions in four groups with repeats merged (`buildQueue`), incidents first, then
  * what waits longest; and what the captain did that is unread. `decisions` is already limited to the
@@ -215,7 +220,7 @@ export function buildNeeds(input: {
   // The most repeats first among incidents, then oldest first within every group.
   needs.incident.sort((a, b) => b.count - a.count || a.at.localeCompare(b.at));
   for (const notice of input.notices) {
-    if (notice.read || !CAPTAIN_NOTICE_KINDS.has(notice.kind)) continue;
+    if (notice.read || !doneByCaptain(notice)) continue;
     const ws = workspaceName(input.orgs, notice.org);
     needs.captain.push({
       id: `notice:${notice.id}`,

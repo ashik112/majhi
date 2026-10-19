@@ -303,6 +303,7 @@ function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[]
       subject: oneLine(words, 160),
       ...(detail === undefined ? {} : { detail: oneLine(detail) }),
       needsYou: false,
+      ...(d.state === "live" ? { by: d.by } : {}),
       link:
         d.task === undefined
           ? { kind: "page" as const, page: "projects" as const }

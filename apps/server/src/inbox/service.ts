@@ -107,6 +107,8 @@ export interface InboxDeps {
   extras?: () => readonly OwnerDecision[] | Promise<readonly OwnerDecision[]>;
   /** The owner answered a decision: the scorecard learns whether the captain's opinion held. */
   answered?: (decision: OwnerDecision, option: string) => void;
+  /** The owner is answering a decision, before it is applied. */
+  answering?: (decision: OwnerDecision, option: string) => void;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** Whether a captain's proposal no longer matches the setting it was measured against. */
@@ -379,6 +381,7 @@ export class InboxService {
   async answer(input: DecisionAnswerInput): Promise<OwnerDecision[]> {
     const decision = (await this.list()).find((d) => d.id === input.id);
     if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
+    this.deps.answering?.(decision, input.option);
     await this.apply(decision, input, () => this.deps.items());
     this.noteAnswer(decision, input.option);
     return this.list();

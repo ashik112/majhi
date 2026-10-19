@@ -1841,6 +1841,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
+    answering: (decision, option) => {
+      if (decision.incident === true && decision.kind === "ship" && option === "merge" && decision.task !== undefined) {
+        incidentEngine?.approveShip(decision.task);
+      }
+    },
   });
   /** An audit row whose agent is the captain's is the captain's, not an agent's. */
   const logAsCaptain = (row: Parameters<typeof store.permissions.log>[0]): void => {
@@ -2337,6 +2342,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     halted: () => captainRepo.isStopped(),
     backlog: (task) => autonomy.isAutonomous(task),
     incident: (task) => isIncidentTask(task),
+    fixApproved: (task) => incidentEngine?.shipApproved(task.id) === true,
     environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
     needsDeployPlan: async (task) =>
       (await deployWorld.ports.needsPlan(task.org ?? PRIVATE, task.id)) !== undefined,
