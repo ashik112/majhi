@@ -216,7 +216,7 @@ function incidentLines(): string[] {
     "Start investigating now, without waiting for anyone. In this order:",
     "",
     "1. Investigate read-only. Read logs, watches, deploy records, the wiki, the projects mounted below and this workspace's connected tools. Change nothing while you investigate.",
-    "2. Record what you found. As soon as the cause is known, call the majhi_incident_cause tool once: `text` is the cause for the team, `client` is the same cause in words a client may read (no hosts, no other client, no secret). Until it is recorded, clients are told the cause is being confirmed.",
+    "2. Record what you found. As soon as the cause is known, call the majhi_incident_cause tool once: `text` is the cause for the team, `client` is the same cause in words a client may read (no hosts, no other client, no secret). Until it is recorded, clients are told the cause is being confirmed. Then set Now to the likely cause and Next to the fix, in one line each, with the status tool.",
     "3. If nothing points to a problem, ask the client for exactly what is missing with the chat tool. It goes through the workspace's Tell rules, so it may wait for the owner.",
     "4. If you found the cause and the fix is within your permission rows, fix it. When the task has no repo yet, name the project with the add_repo tool first.",
     "5. If you cannot resolve it, or you need a permission you do not have, ask the owner once with the ask tool: say what you found and what you need. One question, not a stream.",

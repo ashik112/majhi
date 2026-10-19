@@ -52,6 +52,11 @@ export class IncidentFacts {
     return this.deps.now?.() ?? new Date();
   }
 
+  /** The workspace's soak in minutes: how long checks stay green after the fix is live. */
+  async soakMin(org: string): Promise<number> {
+    return (await this.deps.settings(org)).soakMin;
+  }
+
   events(task: string): IncidentRead["events"] {
     return this.deps.store.room
       .ofType(task, "incident-event")

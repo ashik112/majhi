@@ -2360,16 +2360,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text, org) => notifier.captain(key, text, org),
-    incident: async (input) =>
-      (
+    incident: async (input) => {
+      const env = (await projects.get(input.project).catch(() => undefined))?.deploy.find(
+        (e) => e.env === input.record.env,
+      );
+      return (
         await incidentEngine?.open({
           kind: "deploy",
           org: input.org,
           record: input.record,
           title: input.title,
           text: input.text,
+          ...(env === undefined ? {} : { tier: env.tier }),
         })
-      )?.task,
+      )?.task;
+    },
     taskNote: (task, key, level, text) => room.post(task as TaskId, key, { type: "system", level, text }),
     onLive: (org) => captainRef.current?.deployChanged(org),
     changed: () => events.emit(["tasks", "projects", "captain"]),
@@ -2790,7 +2795,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           : opsWatch?.projectOfService(inc.service),
     tasks: {
       create: (input) => tasks.create({ ...input, gate: gateOf(input.provenance) }),
-      start: (id, by) => tasks.start(id, by),
+      start: (id, by, options) => tasks.start(id, by, options),
+      pauseVictim: (id) => tasks.pauseVictim(id),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
       setType: (id, type, by) => tasks.setType(id, type, by),

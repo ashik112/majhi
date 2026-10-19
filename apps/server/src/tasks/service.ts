@@ -1320,6 +1320,13 @@ export class TaskService {
     return `${this.fullLine(id, limits.tasks_running)} Place ${this.placeInLine(id)} in line.`;
   }
 
+  /** The label of the running task that would pause for `id` if the owner asks: the lowest-priority one, the owner's included. */
+  pauseVictim(id: string): string | undefined {
+    const task = this.get(id);
+    const victim = this.victimFor(task, { by: "owner", ownerAsked: true });
+    return victim === undefined ? undefined : taskNameOf(this.get(victim));
+  }
+
   /** The running task an urgent start pauses for `task`, or undefined when none qualifies (`preemptionVictim`). */
   private victimFor(
     task: Task,

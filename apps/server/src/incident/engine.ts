@@ -1,6 +1,7 @@
 import {
   clientStatus,
   type DeployRecord,
+  type DeployTier,
   type IncidentEvent,
   incidentAskDecisionId,
   type OpsIncident,
@@ -33,7 +34,15 @@ export type IncidentSource =
       project?: string | undefined;
       evidence: readonly string[];
     }
-  | { kind: "deploy"; org: string; record: DeployRecord; title: string; text: string }
+  | {
+      kind: "deploy";
+      org: string;
+      record: DeployRecord;
+      title: string;
+      text: string;
+      /** The tier of the environment that failed: a production deploy is severity 1. */
+      tier?: DeployTier | undefined;
+    }
   | {
       kind: "client";
       org: string;
@@ -110,7 +119,13 @@ export interface EngineDeps {
       attachments: [];
       start: false;
     }): Promise<Task>;
-    start(id: string, by: string): Promise<Task>;
+    start(
+      id: string,
+      by: string,
+      options?: { preempt?: { by: "owner" | "captain"; ownerAsked: boolean } } | undefined,
+    ): Promise<Task>;
+    /** The label of the running task an urgent start would pause for `id` if the owner asks, or undefined. */
+    pauseVictim?(id: string): string | undefined;
     close(
       id: string,
       opts: { by: string; whenSubtasksOpen: "stay"; whenUnshipped: "stay" | "keep" },
@@ -146,6 +161,16 @@ export function asTitle(answer: string | undefined): string | undefined {
   if (text === undefined || text === "" || text.includes("\n") || text.length > 80) return undefined;
   if (text.endsWith(".") || text.includes(". ")) return undefined;
   return text;
+}
+
+/**
+ * Severity 1, from typed facts only: a watch whose impact is high, or a failed deploy of a production-tier
+ * environment. A client's report alone never is: it joins a watch the evidence confirms.
+ */
+export function isSeverityOne(source: IncidentSource): boolean {
+  if (source.kind === "watch") return source.incident.severity === "high";
+  if (source.kind === "deploy") return source.tier === "production";
+  return false;
 }
 
 const FIX_LIVE = "Fix live";
@@ -385,23 +410,40 @@ export class IncidentEngine {
       },
       `opened:${task.id}`,
     );
-    // The highest severity is urgent: first in the line when running tasks are at their limit, and a start
-    // still never goes past the limit.
-    if (source.kind === "watch" && source.incident.severity === "high") {
-      this.deps.store.tasks.setPlanning(task.id, { priority: "urgent" }, this.at());
-    }
+    // Severity 1 is urgent: first in the line when running tasks are at their limit, and it pauses a task the owner
+    // did not start for its place. A start never goes past the limit.
+    const urgent = isSeverityOne(source);
+    if (urgent)
+      this.deps.store.tasks.setPlanning(
+        task.id,
+        {
+          priority: "urgent",
+        },
+        this.at(),
+      );
+    // How the owner will know it is finished: the fix is live and the checks stayed green for the soak.
+    this.deps.store.tasks.setStatusLines(
+      task.id,
+      { doneWhen: `Fix live and checks green for ${await this.deps.facts.soakMin(source.org)} minutes` },
+      this.at(),
+    );
     await this.adopt(task.id, source);
     // The investigation reads only: it never waits for Auto-pilot or the Start row.
-    const started = await this.tryStart(task.id);
+    const started = await this.tryStart(task.id, urgent);
     this.deps.changed();
     return { task: task.id, joined: false, started, projectUnknown: project === undefined };
   }
 
-  private async tryStart(task: string): Promise<boolean> {
+  private async tryStart(task: string, urgent = false): Promise<boolean> {
     // Reading is never held, except by Stop everything.
     if (this.deps.blocked?.() !== undefined) return false;
     try {
-      await this.deps.tasks.start(task, "majhi");
+      // The captain never pauses a task the owner started: only the owner's click on the card does (`answer`).
+      await this.deps.tasks.start(
+        task,
+        "majhi",
+        urgent ? { preempt: { by: "captain", ownerAsked: false } } : undefined,
+      );
       return true;
     } catch {
       // It stays in the inbox, and the owner's card says Start.
@@ -441,6 +483,11 @@ export class IncidentEngine {
       );
     }
     if (source.kind === "client" && task.status === "done") await this.deps.tasks.reopen(task.id);
+    // A severity 1 report joining a lesser incident makes it urgent too.
+    if (isSeverityOne(source) && task.priority !== "urgent") {
+      this.deps.store.tasks.setPlanning(task.id, { priority: "urgent" }, at);
+      if (task.status === "ready" || task.status === "paused") await this.tryStart(task.id, true);
+    }
     this.record(task.id, { event: "joined", source: source.kind, at }, `joined:${source.kind}:${at}`);
     this.deps.changed();
   }
@@ -531,6 +578,28 @@ export class IncidentEngine {
       }
       const failed = this.unseenFailedDeploy(task, since);
       const failure = failed === undefined ? "" : ` ${this.deployLine(failed)}`;
+      // Urgent and waiting for a place: only tasks the owner started hold the places, so the owner decides.
+      const victim =
+        task.status === "ready" &&
+        task.priority === "urgent" &&
+        this.deps.store.tasks.startWhenReady(task.id) &&
+        !this.deps.facts.events(task.id).some((e) => e.detail.event === "seen" && e.detail.what === "pause")
+          ? this.deps.tasks.pauseVictim?.(task.id)
+          : undefined;
+      if (victim !== undefined) {
+        out.push({
+          ...base,
+          id: incidentAskDecisionId("start", task.id),
+          title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
+          sentence: `Every running place holds work you started, so ${task.id} waits. Pause ${victim} and start it now, or let it wait.${failure}`,
+          options: [
+            { id: "pause", label: `Pause ${victim} and start`, primary: true },
+            { id: "wait", label: "Let it wait" },
+          ],
+          at: task.createdAt,
+        });
+        continue;
+      }
       if (task.status === "inbox") {
         out.push({
           ...base,
@@ -587,7 +656,16 @@ export class IncidentEngine {
   async answer(what: string, ref: string, option: string): Promise<void> {
     const at = this.at();
     if (what === "start") {
-      await this.deps.tasks.start(ref, "owner");
+      if (option === "wait") {
+        this.record(ref, { event: "seen", what: "pause", at }, `seen:pause`);
+        this.deps.changed();
+        return;
+      }
+      await this.deps.tasks.start(
+        ref,
+        "owner",
+        option === "pause" ? { preempt: { by: "owner", ownerAsked: true } } : undefined,
+      );
     } else if (what === "recovered") {
       if (option === "close") {
         this.record(ref, { event: "recovered", choice: "closed", at }, `recovered:${at}`);
