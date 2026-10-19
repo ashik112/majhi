@@ -1413,7 +1413,8 @@ export class TaskService {
     await this.ensureWorktrees(task);
     const wasRunning = task.status === "running";
     const lifted = await this.enter(id, by, options);
-    if (!wasRunning && by !== "owner" && options.wake !== false) {
+    // Majhi's own starts (the line, an account that came back, a hold it lifts) are not the captain's.
+    if (!wasRunning && by !== "owner" && by !== "majhi" && options.wake !== false) {
       this.note(id, "Started by the captain.");
       this.deps.onOpened?.(this.get(id));
     }

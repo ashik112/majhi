@@ -2853,3 +2853,9 @@ Left for the next steps: no Start now control in the UI yet (the command takes `
 - The queue is in memory: a restart clears every environment, as it removes every container.
 - The web app shows no queue place yet (the room line carries it); a pin button and the budget setting need the web step.
 
+
+## Workflow reset, step 1b: lead and workers, the work goes on, preemption, 2026-10-19
+
+Plan (branch `feat/teams-go-on`): the plan's steps carry their own progress in `task_plans` and run one at a time (`tasks/crew.ts` pure, `tasks/crew-run.ts` the runner), the coordinator shrinks to "an agent ended a turn: its question becomes a card, its step is done"; remove the pipeline, the review loop, the loop guard, mention waking and the mention tool and slots; the workspace setting `rooms.review_before_owner` and a review step on a cheaper model; the work goes on (a worker's step, the lead, every agent down, the one-agent fallback) on top of `takeOverFor`; priority preemption through `tasks.start` and `tasks.update`; then spec and decisions, the six allowed tests, the suites, and a walk of the journey with fake agents.
+
+Tests (owner's list only): a downed worker's step completes on another agent; a downed lead is replaced by the worker with the most headroom; every agent down pauses and resumes on recovery without a duplicate run; an urgent task preempts the lowest-priority running one and the preempted one resumes without a duplicate run; the captain cannot preempt an owner task unasked; a step sent back twice stops and reaches Needs you. All in `apps/server/src/tasks/crew.test.ts`, through the fake agent's script mode. Tests of the removed modes were deleted with their code.

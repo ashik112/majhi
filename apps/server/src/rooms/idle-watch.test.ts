@@ -22,7 +22,6 @@ afterEach(async () => {
 
 type Step = string | { text: string; stop: StopReason };
 type Turns = ((turn: Turn) => Promise<Step>)[];
-const say = (text: string) => async () => text;
 /** The model's safeguards stop the turn, as Claude Code reports a flagged message. */
 const refuse =
   (text = "") =>

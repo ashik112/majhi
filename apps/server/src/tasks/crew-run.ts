@@ -33,6 +33,7 @@ import {
   statusOf,
   stepPrompt,
   stoppedStep,
+  unfinished,
 } from "./crew.ts";
 import type { TaskPlans } from "./plans.ts";
 
@@ -288,7 +289,7 @@ export class Crew {
       const task = this.deps.store.tasks.get(taskId);
       const plan = this.deps.plans.latest(taskId)?.plan;
       if (task === undefined || task.status !== "running" || plan === undefined) return false;
-      if (doing(plan) === undefined && next(plan) === undefined) return false;
+      if (!unfinished(plan)) return false;
       await this.advance(task);
       return true;
     });
@@ -336,7 +337,7 @@ export class Crew {
   /** Whether the task has a plan with a step still to do. */
   unfinished(taskId: string): boolean {
     const plan = this.deps.plans.latest(taskId)?.plan;
-    return plan !== undefined && (doing(plan) !== undefined || next(plan) !== undefined);
+    return plan !== undefined && unfinished(plan);
   }
 
   // ---------------------------------------------------------------------------

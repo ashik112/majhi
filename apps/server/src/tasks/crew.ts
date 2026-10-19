@@ -175,8 +175,9 @@ export function next(plan: TeamPlan): number | undefined {
   return i === -1 ? undefined : i;
 }
 
-/** Whether any step is still to do or in progress. */
+/** Whether the plan still goes forward: a step is to do or in progress, and none stopped (that waits for the owner). */
 export function unfinished(plan: TeamPlan): boolean {
+  if (plan.steps.some((s) => statusOf(s) === "stopped")) return false;
   return plan.steps.some((s) => statusOf(s) === "todo" || statusOf(s) === "doing");
 }
 

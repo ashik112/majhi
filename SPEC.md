@@ -47,6 +47,7 @@ This section wins over anything below that disagrees, until each step of `docs/b
 - **A task is one piece of work:** a short name, one agent by default, a plan inside it, and three lines its agent keeps current: Now, Next, Done when. A team only when the owner picks one on that task. Plan steps are not tasks.
 - **One gate:** every path that creates or starts a task goes through one check. The owner's own tasks always pass. Others share a cap on running tasks (default 4) and a cap on open tasks per workspace (default 5); over it they wait or become ideas. A task an agent makes is an idea until the owner starts it.
 - **Task model (built, step 1):** every task has a name (2 to 4 words) and, in a task its agent keeps current with `majhi-tasks.status`, Now, Next and Done when (120 characters each). One gate (`apps/server/src/tasks/gate.ts`) decides, for every creator, whether a new task starts, waits in line (`limits.tasks_running`, default 4) or is filed as an idea (`limits.open_by_others`, default 5 per workspace; always for agents and findings). Only the owner starts an idea. An agent starts only its own task and splits it into plan steps, never into tasks. The branch is `{type}/{name-slug}` and the folder `<tasks_dir>/<project>/<name-slug>`.
+- **Teams (built, step 1b):** the only team is a lead and at most 3 workers, picked by the owner on a task. The lead writes a plan of at most 8 steps, each naming its owner; workers get work only from the plan, never by @mention; a step sent back twice stops and goes to Needs you. When an agent cannot run its step moves to the agent with the most headroom, a lead is replaced by the worker with the most headroom, and when none can run the task pauses with the exact fix and resumes by itself. An urgent start pauses the lowest-priority running task and it resumes through the line (5.3, 5.7).
 - **The environment belongs to the project:** one builder and one package store per workspace, one environment (services, preview, dev database) per project with a queue, and a task is a branch and a worktree. A task that changes the schema gets a database copy dropped on close.
 - **Three places:** Needs you (the only queue), Work (by workspace and project), Chat (captain, task rooms, client chats). Everything else is Settings. No new top-level page without the owner's yes.
 - **Names say what and where:** a task shows as `project · Name` everywhere. Its branch and folder come from the name. The id is internal (address, tooltip, keys).
@@ -391,16 +392,15 @@ projects:
 
 ### 5.3 Rooms and coordination
 
-- Every agent turn's final message is posted to the room. majhi parses @mentions in it.
-- A mention wakes the mentioned agent with a **handoff prompt**, not the whole chat: the message that mentioned it, the task brief pointer (TASK.md), a short summary of room state, and the current diff stat. Agents can read the full room through the `majhi-room` MCP tool if they need to.
-- Agents can also post and mention through the `majhi-room` MCP tool (`post`, `mention`, `read_recent`).
-- Owner messages go to the mentioned agent, or to the team's lead if nobody is mentioned. Mentioning an agent not in the team adds it (if its `where` allows this org, or it is a root agent). Otherwise majhi asks the owner.
-- Coordination modes per task:
-  - **Lead delegates** (default): the lead plans and assigns by mention, and hands to the owner when the reviewer approves.
-  - **Pipeline:** each role runs once in order: lead, builders, reviewer, tester.
-  - **Build and review loop:** builder and reviewer alternate until approval, max 5 rounds.
-- Loop guards: max 12 agent-to-agent turns without an owner message, then pause with reason `owner` and ask. Configurable per org.
-- Parallel builders on different repos of the same task are allowed. Two agents never edit the same worktree at the same time: majhi holds a lock per worktree.
+- Every agent turn's final message is posted to the room. **Nothing an agent writes wakes another agent.** An @mention between agents does nothing and the `mention` tool is gone; agents join a task only by the owner's @mention (an agent not in the team joins if its `where` allows this org, or it is a root agent; otherwise majhi asks the owner) or by a plan step that names them.
+- **Lead and workers is the only team.** A task has one agent unless the owner picks a team on it (or the captain proposes one and the owner confirms): a lead and at most 3 workers. The lead writes a short plan with `record_plan`: at most 8 steps, in order, each naming the agent that owns it (`me` is the lead). The plan is stored in `task_plans`, and each step carries its own progress there (`todo`, `doing`, `done`, `stopped`, its one result line, how many times it was sent back). Steps are not tasks.
+- **Workers get work only from the plan.** majhi hands the first step to its owner with a handoff prompt (the step, the plan with where each step stands, the diff stat). When that agent ends its turn the step is done: one result line goes in the room ("Step 2 of 4 done by @name: ...", what the agent reported with `step_done`, else the first line of its message) and the next step starts. One step runs at a time, so two agents never edit the same worktree at the same time (majhi still holds a lock per worktree). An agent that waits on the owner (an ask card, a question) keeps its step until it ends a turn without one.
+- **Review before the owner.** A workspace setting, `rooms.review_before_owner` (on for every workspace but Private, off for Private; the owner changes it per workspace): when on, majhi ends the plan with a review step by an agent on a cheaper model (the agent's account's cheapest model by the price ranking, set as that agent's model for the task). A plan with no other agent to review gets none. The reviewer calls `send_back` with a step number and why: that step and the ones after it run again. A step sent back a second time stops, the task pauses, and Needs you shows the reason.
+- **Staffing.** The lead's team facts (in TASK.md and at each wake) list for every agent: model, price tier, what is left of its account's windows (headroom), what it cost this task so far, and whether this computer is busy. TASK.md tells the lead to do small or short-budget steps itself and to add a worker only when the plan is worth it.
+- Owner messages go to the mentioned agent, or to the team's lead if nobody is mentioned.
+- Agents can also post through the `majhi-room` MCP tool (`post`, `read_recent`, `record_plan`, `step_done`, `send_back`).
+- Parallel builders on different repos of the same task are allowed, by the plan: one step at a time.
+- A task kept from before: the pipeline and the build and review loop are gone; a task that used them reads and runs as lead and workers (migration 192). The loop guard (`rooms.max_agent_turns`) and `rooms.review_rounds` have nothing to count any more and are left in the settings schema until the settings screen drops them.
 
 ### 5.4 Tasks, briefs, branches, attachments
 
@@ -417,7 +417,7 @@ projects:
   - A task can have one parent. Nesting can go several levels deep.
   - Each child is a full task: its own room, team, repos, worktrees and branch.
   - The parent shows its children's progress ("3 of 5 done") and a rollup of their statuses. It moves to `done` when every child is done, unless the owner closes it earlier.
-  - The owner, the captain or a lead agent can split a task into children. Agents do it through `majhi-tasks`, which follows the approval policy (5.16).
+  - Children already made keep working. Nothing makes new ones from a split: `tasks.split` writes steps into the task's plan (5.3).
   - The task list nests children under their parent, collapsed by default.
 - **Dependencies.**
   - `depends-on` points at one or more tasks. Cycles are refused when the link is made.
@@ -454,9 +454,13 @@ Two layers:
 
 - **Checkpoint** after every agent turn: record the ACP session id, the room position, and a WIP commit on the task branch in each touched worktree (`wip(<task-id>): checkpoint N`). On final approval, majhi squashes or rewrites WIP commits per org preference.
 - **Resume:** use ACP session loading if the agent supports it. Otherwise start a new session with a handoff prompt built from TASK.md, the room summary and the diff since the last checkpoint.
-- **Usage limit:** detect limit errors from each tool (collect the exact error shapes per tool and auth type in its registry entry, with tests). For API-key accounts, rate-limit and quota errors count as limits. Mark the account at limit, with the reset time if the error gives one. Then:
-  - if the agent has a fallback whose account is not limited and the org policy allows auto-handoff, hand off and resume from the checkpoint
+- **Usage limit:** detect limit errors from each tool (collect the exact error shapes per tool and auth type in its registry entry, with tests). For API-key accounts, rate-limit and quota errors count as limits. Mark the account at limit, with the reset time if the error gives one. Then, under the org's auto-handoff switch:
+  - a **worker** that cannot run (limit, signed out, an error, safeguards with no other model) has its step moved to the best other agent that can run (a worker or the lead: most headroom, then least spent), from the last checkpoint with a handoff note that carries the plan and the diff; the room says so in one line
+  - a **lead** that cannot run is replaced by the worker with the most headroom, who keeps the plan and its progress and is the lead from then on (the old lead stays as a worker); one room line says so
+  - a one-agent task, or a team with nobody else who can run, uses the agent's fallback whose account is not limited
+  - when nobody can run, the task pauses at the checkpoint with one hold, `agents-down`, whose card names every account and its fix (sign in, or the reset time), shows in Needs you, and lifts by itself when any account is back (an account change event, and the limit sweep). The step then goes to the best agent that can run; the cut run is closed so the step never runs twice
   - otherwise pause with reason `limit`, and auto-resume at the reset time if enabled
+- **Priority preemption.** `tasks.start` with `priority: urgent`, or `tasks.update` making a waiting task urgent, with every running place taken, pauses the lowest-priority running task at a checkpoint with hold `preempted` and one room line ("Paused for project · Name (urgent). Resumes when a slot frees."). It stays in the line (priority, then age) and starts again by itself when a place frees. The owner may pause any running task; the captain only tasks it or an agent made, unless the call carries `ownerAsked` from the owner's chat turn. `now` is not a preemption: it still goes past the cap.
 - **Offline:** detect network failure (failed agent requests plus a periodic connectivity probe). Pause all running tasks with reason `offline`. When the connection returns, resume them from checkpoints, or wait for the owner if auto-resume is off.
 - **Sleep and wake:** the host helper notices a wake (a jump in wall-clock time, or macOS power events) and tells the server. Turns that failed or stalled while asleep resume on their own from the last checkpoint.
 - **Shutdown and reboot:** at login the host helper makes sure Docker and majhi are running. Tasks that were running when majhi stopped reload and resume on their own.

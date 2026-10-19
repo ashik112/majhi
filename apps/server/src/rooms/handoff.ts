@@ -1,7 +1,7 @@
 import type { HandoffVia, Role } from "@majhi/shared";
 
 /**
- * The mentioning message is kept whole up to this, the most `mention` and `post` accept. A longer
+ * The handing message is kept whole up to this, the most `post` accepts. A longer
  * final reply is cut at the end, with a marker that says where and how to read the rest.
  */
 export const HANDOFF_MESSAGE_MAX = 20_000;
