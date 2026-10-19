@@ -3,11 +3,18 @@ import { Link } from "@tanstack/react-router";
 import { lazy, Suspense, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Menu } from "@/components/ui/menu";
+import { useAgents, useOrgs } from "@/lib/studio-queries";
+import { useClients } from "@/lib/client-queries";
+import { useNewChat } from "@/lib/chat-queries";
+import { agentEntryOptions } from "@/features/chats/new-chat-options";
 import { ComposerAutoFocus } from "@/features/room/auto-focus";
 import { type ChatChip, nameOf, projectOf, WORK_STATE_LAMP, type WorkState, workspaceName } from "./model";
 import { ConsoleLamp, WorkspaceTag, wsStyle } from "./parts";
 
 const ChatBody = lazy(() => import("./chat-body"));
+
+/** The id of the pseudo chat for client chats that wait to be linked (see `chat-body.tsx`). */
+const NEW_CHATS = "new-chats";
 
 /** Chips shown before the rest go under "More". */
 const CHIPS_SHOWN = 8;
@@ -29,21 +36,16 @@ function Chip({
 }) {
   return (
     <button type="button" className="cs-chip" aria-pressed={pressed} onClick={() => onPick(chip.id)}>
-      {chip.kind === "captain" ? (
+      {chip.kind === "captain" || chip.kind === "lane" ? (
         <span className="cs-mark" style={{ width: 16, height: 16, lineHeight: "16px", fontSize: 8, borderRadius: 4 }}>
           mj
         </span>
       ) : chip.kind === "task" && stateOf !== undefined ? (
         <ConsoleLamp state={WORK_STATE_LAMP[stateOf]} />
-      ) : (
-        <WorkspaceTag name="" org={chip.org} hues={hues} />
-      )}
+      ) : chip.kind === "conversation" ? (
+        <WorkspaceTag name={workspaceName(orgs, chip.org)} org={chip.org} hues={hues} />
+      ) : null}
       <span className="cs-t">{chip.title}</span>
-      {chip.kind === "conversation" && chip.org !== undefined && (
-        <span style={wsStyle(hues, chip.org)} className="cs-wsname">
-          {workspaceName(orgs, chip.org)}
-        </span>
-      )}
       {chip.unread > 0 && <span className="cs-unread">{chip.unread}</span>}
     </button>
   );
@@ -111,6 +113,44 @@ function TaskHeader({
   );
 }
 
+/** The chips that are not conversations: client chats waiting to be linked, and a way to start a chat with an agent. */
+function ChatTools({ selected, onPick }: { selected: string; onPick: (id: string) => void }) {
+  const clients = useClients().data;
+  const entries = useAgents().data;
+  const orgs = useOrgs().data;
+  const newChat = useNewChat();
+  const waiting =
+    (clients?.newChats.length ?? 0) +
+    (clients?.accounts.filter((a) => a.trouble === "webhook" || a.trouble === "needs-token").length ?? 0);
+  const agents = agentEntryOptions(entries ?? [], orgs ?? []);
+  return (
+    <>
+      {waiting > 0 && (
+        <button type="button" className="cs-chip" aria-pressed={selected === NEW_CHATS} onClick={() => onPick(NEW_CHATS)}>
+          <span className="cs-t">New chats</span>
+          <span className="cs-unread">{waiting}</span>
+        </button>
+      )}
+      {agents.length > 0 && (
+        <Menu
+          label="New chat with an agent"
+          align="right"
+          items={agents.map((a) => ({
+            group: a.group,
+            label: `@${a.id}`,
+            onSelect: () => newChat.mutate(a.id, { onSuccess: (task) => onPick(task.id) }),
+          }))}
+          trigger={(t) => (
+            <button type="button" className="cs-chip" {...t}>
+              New chat
+            </button>
+          )}
+        />
+      )}
+    </>
+  );
+}
+
 export function ChatPane(props: {
   chips: readonly ChatChip[];
   selected: string;
@@ -159,6 +199,7 @@ export function ChatPane(props: {
             onPick={props.onPick}
           />
         ))}
+        <ChatTools selected={props.selected} onPick={props.onPick} />
         {more.length > 0 && (
           <Menu
             label="More chats"

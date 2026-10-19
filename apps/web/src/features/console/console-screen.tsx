@@ -378,6 +378,7 @@ export function ConsoleScreen() {
     <main
       className="cs-console"
       data-testid="tasks-home"
+      data-offline={lost || undefined}
       data-clear={clear || undefined}
       aria-label="Console"
       ref={(el) => {

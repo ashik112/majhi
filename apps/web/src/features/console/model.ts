@@ -273,7 +273,7 @@ export function nameOf(task: TaskSummary): string {
 export interface ChatChip {
   /** The conversation id, or `captain` for the owner's own captain chat. */
   id: string;
-  kind: "captain" | "task" | "conversation";
+  kind: "captain" | "task" | "conversation" | "lane";
   title: string;
   org: string | undefined;
   unread: number;
@@ -320,7 +320,13 @@ export function buildChips(input: {
     })
     .toSorted((a, b) => Number(b.unread > 0) - Number(a.unread > 0) || b.lastAt.localeCompare(a.lastAt));
   for (const c of rest) {
-    chips.push({ id: c.id, kind: "conversation", title: c.title, org: c.org, unread: c.unread });
+    chips.push({
+      id: c.id,
+      kind: c.kind === "captain" ? "lane" : "conversation",
+      title: c.title,
+      org: c.org,
+      unread: c.unread,
+    });
   }
   return chips;
 }

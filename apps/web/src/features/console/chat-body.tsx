@@ -2,7 +2,10 @@ import { isClientRoom } from "@majhi/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatRoom } from "@/features/boss/boss-conversation";
 import { Conversation } from "@/features/captain/conversation";
+import { AccountNotices, NewChats } from "@/features/clients/clients-list";
 import { ClientRoom } from "@/features/clients/client-room";
+import { useClients } from "@/lib/client-queries";
+import { useOrgs } from "@/lib/studio-queries";
 import { useTask } from "@/lib/task-queries";
 
 /**
@@ -10,6 +13,7 @@ import { useTask } from "@/lib/task-queries";
  * captain thread or an agent chat. Its own chunk: the room's code is read when a chat first opens.
  */
 export default function ChatBody({ id }: { id: string }) {
+  if (id === NEW_CHATS) return <NewClientChats />;
   if (id === "captain") {
     return (
       <div className="cs-chat-body" style={{ padding: 0 }}>
@@ -18,6 +22,21 @@ export default function ChatBody({ id }: { id: string }) {
     );
   }
   return <TaskRoom key={id} id={id} />;
+}
+
+/** The id of the pseudo chat that lists client chats waiting to be linked to a workspace. */
+export const NEW_CHATS = "new-chats";
+
+/** Chats the bot was added to that nobody linked yet, and chat apps that cannot be read: link, ignore or fix. */
+function NewClientChats() {
+  const clients = useClients().data;
+  const orgs = useOrgs().data ?? [];
+  return (
+    <div className="cs-chat-body" style={{ overflowY: "auto" }}>
+      <NewChats rows={clients?.newChats ?? []} orgs={orgs} />
+      <AccountNotices accounts={clients?.accounts ?? []} />
+    </div>
+  );
 }
 
 function TaskRoom({ id }: { id: string }) {
