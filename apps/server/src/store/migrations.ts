@@ -2056,6 +2056,15 @@ CREATE INDEX tasks_open_by_others ON tasks (org) WHERE status != 'done' AND kind
 UPDATE tasks SET mode = 'lead' WHERE mode != 'lead';
 `,
   },
+  {
+    // Workflow reset, step 4: a failed look says why as a typed value, so titles and the network-blip rule
+    // never read the detail text.
+    id: 193,
+    name: "ops look reason",
+    sql: `
+ALTER TABLE ops_state ADD COLUMN last_reason TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

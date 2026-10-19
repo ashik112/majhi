@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { connect as tlsConnect } from "node:tls";
-import type { OpsMonitor, OpsServiceDef } from "@majhi/shared";
+import type { LookReason, OpsMonitor, OpsServiceDef } from "@majhi/shared";
 
 /**
  * The checks of the ops watch: cheap code, no model. Each answers one yes or no and one plain line.
@@ -17,6 +17,8 @@ export interface ProbeResult {
   ms?: number;
   /** Failing, but only a warning: a certificate with days left. Its incident is capped at medium. */
   warn?: boolean;
+  /** Why it failed, when it did. */
+  reason?: LookReason;
 }
 
 export type MonitorRead = { state: "ok"; value: number } | { state: "unavailable"; why: string };
@@ -57,31 +59,48 @@ export function urlProblem(raw: string): string | undefined {
   return undefined;
 }
 
+const CERT_CODE_PARTS = ["CERT", "SSL", "TLS", "SELF_SIGNED", "UNABLE_TO_VERIFY"] as const;
+
+/** The typed reason of a failed request, read from the error's name and code, never from a message. */
+export function failureReasonOf(err: unknown): LookReason {
+  if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) return "timeout";
+  const code = codeOf(err);
+  switch (code) {
+    case "ECONNREFUSED":
+      return "refused";
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return "dns";
+    case "ETIMEDOUT":
+    case "UND_ERR_CONNECT_TIMEOUT":
+      return "timeout";
+    default:
+      break;
+  }
+  const upper = code?.toUpperCase();
+  if (upper !== undefined && CERT_CODE_PARTS.some((part) => upper.includes(part))) return "tls";
+  return "unreachable";
+}
+
 /** Words for what went wrong, from the error's code, never from a message that could carry remote text. */
 export function describeFailure(err: unknown): string {
   if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
     return `no answer in ${HTTP_TIMEOUT_MS / 1000} s`;
   }
   const code = codeOf(err);
-  switch (code) {
-    case "ECONNREFUSED":
+  if (code === "ECONNRESET" || code === "UND_ERR_SOCKET") return "connection dropped";
+  switch (failureReasonOf(err)) {
+    case "refused":
       return "connection refused";
-    case "ENOTFOUND":
-    case "EAI_AGAIN":
+    case "dns":
       return "name does not resolve";
-    case "ECONNRESET":
-    case "UND_ERR_SOCKET":
-      return "connection dropped";
-    case "ETIMEDOUT":
-    case "UND_ERR_CONNECT_TIMEOUT":
+    case "timeout":
       return "connection timed out";
+    case "tls":
+      return "certificate problem";
     default:
-      break;
+      return "no answer";
   }
-  if (code !== undefined && /CERT|SSL|TLS|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(code)) {
-    return "certificate problem";
-  }
-  return "no answer";
 }
 
 function codeOf(err: unknown): string | undefined {
@@ -131,7 +150,7 @@ export async function httpProbe(def: OpsServiceDef, ports: ProbePorts): Promise<
       headers: { "user-agent": "majhi-watch" },
     });
   } catch (err) {
-    return { ok: false, detail: describeFailure(err) };
+    return { ok: false, detail: describeFailure(err), reason: failureReasonOf(err) };
   }
   const ms = Math.max(0, Date.now() - started);
   const statusOk = def.expectStatus === undefined ? res.status < 400 : res.status === def.expectStatus;
@@ -144,6 +163,7 @@ export async function httpProbe(def: OpsServiceDef, ports: ProbePorts): Promise<
           ? `status ${res.status}`
           : `status ${res.status}, expected ${def.expectStatus}`,
       ms,
+      reason: "status",
     };
   }
   if (def.keyword !== undefined && def.keyword !== "") {
@@ -153,12 +173,12 @@ export async function httpProbe(def: OpsServiceDef, ports: ProbePorts): Promise<
     } catch {
       found = false;
     }
-    if (!found) return { ok: false, detail: "the expected text is missing", ms };
+    if (!found) return { ok: false, detail: "the expected text is missing", ms, reason: "wrong-content" };
   } else {
     void res.body?.cancel().catch(() => undefined);
   }
   if (def.maxLatencyMs !== undefined && ms > def.maxLatencyMs) {
-    return { ok: false, detail: `slow: ${ms} ms, limit ${def.maxLatencyMs} ms`, ms };
+    return { ok: false, detail: `slow: ${ms} ms, limit ${def.maxLatencyMs} ms`, ms, reason: "slow" };
   }
   return { ok: true, detail: `status ${res.status}, ${ms} ms`, ms };
 }
@@ -175,17 +195,29 @@ export async function tlsProbe(def: OpsServiceDef, ports: ProbePorts): Promise<P
     const cert = await ports.tls(url.hostname, url.port === "" ? 443 : Number(url.port), TLS_TIMEOUT_MS);
     const days = Math.floor((cert.validTo.getTime() - ports.now().getTime()) / DAY_MS);
     if (days < 0)
-      return { ok: false, detail: `certificate expired ${-days} ${-days === 1 ? "day" : "days"} ago` };
-    if (!cert.authorized) return { ok: false, detail: "certificate is not trusted" };
+      return {
+        ok: false,
+        detail: `certificate expired ${-days} ${-days === 1 ? "day" : "days"} ago`,
+        reason: "tls",
+      };
+    if (!cert.authorized) return { ok: false, detail: "certificate is not trusted", reason: "tls" };
     if (days <= TLS_FAIL_DAYS) {
-      return { ok: false, detail: `certificate expires in ${days} ${days === 1 ? "day" : "days"}` };
+      return {
+        ok: false,
+        detail: `certificate expires in ${days} ${days === 1 ? "day" : "days"}`,
+        reason: "tls",
+      };
     }
     if (days <= TLS_WARN_DAYS) {
-      return { ok: false, warn: true, detail: `certificate expires in ${days} days` };
+      return { ok: false, warn: true, detail: `certificate expires in ${days} days`, reason: "tls" };
     }
     return { ok: true, detail: `certificate valid for ${days} more days` };
   } catch (err) {
-    return { ok: false, detail: `certificate could not be read (${describeFailure(err)})` };
+    return {
+      ok: false,
+      detail: `certificate could not be read (${describeFailure(err)})`,
+      reason: failureReasonOf(err),
+    };
   }
 }
 
@@ -203,9 +235,9 @@ export async function dnsProbe(def: OpsServiceDef, ports: ProbePorts): Promise<P
           ok: true,
           detail: `resolves to ${addresses.length} ${addresses.length === 1 ? "address" : "addresses"}`,
         }
-      : { ok: false, detail: "name does not resolve" };
+      : { ok: false, detail: "name does not resolve", reason: "dns" };
   } catch {
-    return { ok: false, detail: "name does not resolve" };
+    return { ok: false, detail: "name does not resolve", reason: "dns" };
   }
 }
 
@@ -266,7 +298,7 @@ export async function monitorProbe(
   if (read.state === "unavailable") return "unavailable";
   const text = `${monitor.label} ${read.value}`;
   return read.value > monitor.max
-    ? { ok: false, detail: `${text}, limit ${monitor.max}` }
+    ? { ok: false, detail: `${text}, limit ${monitor.max}`, reason: "other" }
     : { ok: true, detail: `${text}, limit ${monitor.max}` };
 }
 

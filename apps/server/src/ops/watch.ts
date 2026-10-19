@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   type Actor,
   didWords,
+  type LookReason,
   OPS_DEFAULTS,
   type OpsCheckKind,
   type OpsCheckStatus,
@@ -167,6 +168,8 @@ interface Look {
   ms?: number | undefined;
   warn?: boolean | undefined;
   unknown?: boolean | undefined;
+  /** Why the look failed, typed by the probe. */
+  reason?: LookReason | undefined;
 }
 
 /** A thing the watch keeps an incident for: a service, or one of majhi's own checks. */
@@ -195,13 +198,6 @@ const KIND_ORDER: OpsCheckKind[] = ["url", "monitor", "dns", "tls", "watch"];
 
 const BLIP_READS = 3;
 const BLIP_MS = 15 * 60_000;
-
-/** A failure that is the network, not the service: could not reach, timed out, name lookup. */
-export function isNetworkBlip(detail: string): boolean {
-  return /could not reach|timed? ?out|timeout|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|network is unreachable/i.test(
-    detail,
-  );
-}
 
 export function incidentKey(subject: string): string {
   return subject.startsWith("self:")
@@ -426,7 +422,13 @@ export class OpsWatch {
       await this.record(service.id, kind, unknown);
       return unknown;
     }
-    const look: Look = { ok: result.ok, detail: result.detail, ms: result.ms, warn: result.warn };
+    const look: Look = {
+      ok: result.ok,
+      detail: result.detail,
+      ms: result.ms,
+      warn: result.warn,
+      reason: result.reason,
+    };
     await this.record(service.id, kind, look);
     return look;
   }
@@ -456,6 +458,7 @@ export class OpsWatch {
         lastAt: at,
         lastOk: look.ok,
         lastDetail: look.detail,
+        ...(look.reason === undefined ? {} : { lastReason: look.reason }),
         ...(look.ms === undefined ? {} : { lastMs: look.ms }),
         unknown: false,
         warn: look.warn === true,
@@ -547,9 +550,8 @@ export class OpsWatch {
     if (subject.title !== undefined) return subject.title;
     if (subject.id.startsWith("self:")) return `majhi: ${subject.name} is failing`;
     if (first.kind === "url") {
-      if (first.lastDetail.startsWith("slow")) return `${subject.name} is slow`;
-      if (first.lastDetail.startsWith("the expected text"))
-        return `${subject.name} answers with the wrong page`;
+      if (first.lastReason === "slow") return `${subject.name} is slow`;
+      if (first.lastReason === "wrong-content") return `${subject.name} answers with the wrong page`;
       return `${subject.name} is down`;
     }
     return `${subject.name}: ${first.lastDetail}`;
@@ -1037,7 +1039,7 @@ export class OpsWatch {
         impact: c.severity,
         ...(c.fix === undefined ? {} : { fix: { check: c.id, label: c.fix.label } }),
       };
-      if (c.status === "fail" && isNetworkBlip(c.detail)) {
+      if (c.status === "fail" && !(await this.deps.online())) {
         // A network hiccup is not an incident until it has lasted: 3 reads over 15 minutes.
         const now = this.now().getTime();
         const run = this.blips.get(id) ?? { since: now, reads: 0 };

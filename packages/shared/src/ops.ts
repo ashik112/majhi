@@ -21,6 +21,24 @@ export const OPS_IMPACT_LABEL: Record<OpsImpact, string> = {
   low: "Nobody notices at once",
 };
 
+/**
+ * Why a look failed, as a typed value the probe sets. Titles and the "is this only a network blip" decision
+ * read it; the free-text detail is for people only.
+ */
+export const LOOK_REASONS = [
+  "unreachable",
+  "timeout",
+  "dns",
+  "tls",
+  "refused",
+  "status",
+  "wrong-content",
+  "slow",
+  "other",
+] as const;
+export const LookReasonSchema = z.enum(LOOK_REASONS);
+export type LookReason = z.infer<typeof LookReasonSchema>;
+
 /** A monitoring service reached through one of the workspace's MCP connections: one read tool, one number. */
 export const OpsMonitorSchema = z.object({
   /** The connection id (type `mcp`, remote). */

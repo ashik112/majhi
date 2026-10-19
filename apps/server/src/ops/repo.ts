@@ -1,4 +1,5 @@
 import {
+  type LookReason,
   type OpsCheckKind,
   type OpsIncident,
   OpsIncidentSchema,
@@ -27,6 +28,8 @@ export interface CheckState {
   lastAt?: string;
   lastOk?: boolean;
   lastDetail: string;
+  /** Why the last look failed, as the probe typed it. */
+  lastReason?: LookReason;
   lastMs?: number;
   greenSince?: string;
   /** The last look could not tell (no network, no monitoring connection). */
@@ -50,6 +53,7 @@ interface StateRow {
   last_at: string | null;
   last_ok: number | null;
   last_detail: string;
+  last_reason: string | null;
   last_ms: number | null;
   green_since: string | null;
   unknown: number;
@@ -128,6 +132,7 @@ function toState(r: StateRow): CheckState {
     ...(r.last_at === null ? {} : { lastAt: r.last_at }),
     ...(r.last_ok === null ? {} : { lastOk: r.last_ok === 1 }),
     lastDetail: r.last_detail,
+    ...(r.last_reason === null ? {} : { lastReason: r.last_reason as LookReason }),
     ...(r.last_ms === null ? {} : { lastMs: r.last_ms }),
     ...(r.green_since === null ? {} : { greenSince: r.green_since }),
     unknown: r.unknown === 1,
@@ -193,11 +198,11 @@ export class OpsRepo {
   saveState(s: CheckState): void {
     this.db
       .prepare(
-        `INSERT INTO ops_state (service, kind, recent, fails, last_at, last_ok, last_detail, last_ms, green_since, unknown, warn)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO ops_state (service, kind, recent, fails, last_at, last_ok, last_detail, last_reason, last_ms, green_since, unknown, warn)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(service, kind) DO UPDATE SET recent = excluded.recent, fails = excluded.fails,
            last_at = excluded.last_at, last_ok = excluded.last_ok, last_detail = excluded.last_detail,
-           last_ms = excluded.last_ms, green_since = excluded.green_since, unknown = excluded.unknown,
+           last_reason = excluded.last_reason, last_ms = excluded.last_ms, green_since = excluded.green_since, unknown = excluded.unknown,
            warn = excluded.warn`,
       )
       .run(
@@ -208,6 +213,7 @@ export class OpsRepo {
         s.lastAt ?? null,
         s.lastOk === undefined ? null : s.lastOk ? 1 : 0,
         s.lastDetail,
+        s.lastReason ?? null,
         s.lastMs ?? null,
         s.greenSince ?? null,
         s.unknown ? 1 : 0,
