@@ -17,5 +17,9 @@ describe("session tokens of the majhi MCP servers", () => {
     expect(acmeToken).not.toBe(globexToken);
     expect(a.room.lookup(acmeToken)).toEqual({ task: "ACM-1", agent: "dev" });
     expect(a.room.lookup(globexToken)).toEqual({ task: "GLX-1", agent: "dev" });
+    // A token stops working the moment its session ends.
+    a.revoke(acme.tokens);
+    expect(a.room.lookup(acmeToken)).toBeUndefined();
+    expect(a.room.size).toBe(1);
   });
 });

@@ -23,5 +23,9 @@ describe("buildEnv", () => {
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
       CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: "1",
     });
+    // No SSH variable, not even one the caller's base holds, so agents have no SSH access.
+    const withSocket = { ...base, SSH_AUTH_SOCK: "/run/agent.sock" } as typeof base;
+    const keyed = buildEnv({ tool: "claude", home: "/h", apiKey: "k" }, withSocket);
+    expect(Object.keys(keyed).filter((k) => k === "NO_BROWSER" || k.startsWith("SSH_"))).toEqual([]);
   });
 });

@@ -113,5 +113,24 @@ describe("what majhi builds for containers", () => {
         expect(arg).not.toContain(join(safety.hostHome, ".ssh"));
       }
     }
+    // Nothing widened gets through: caps, privileges and limits that are missing or raised are refused.
+    const widened: [string, DockerParts][] = [
+      ["no cap-drop", without(service(), "--cap-drop")],
+      ["cap-add SYS_ADMIN", plus(service(), "--cap-add", "SYS_ADMIN")],
+      ["cap-add ALL", plus(service(), "--cap-add", "ALL")],
+      ["no security-opt", without(service(), "--security-opt")],
+      ["seccomp unconfined", plus(service(), "--security-opt", "seccomp=unconfined")],
+      ["apparmor unconfined", replaced(service(), "--security-opt", "apparmor=unconfined")],
+      ["pids-limit -1", replaced(service(), "--pids-limit", "-1")],
+      ["pids-limit 100000", replaced(service(), "--pids-limit", "100000")],
+      ["memory 0", replaced(service(), "--memory", "0")],
+      ["cpus 64", replaced(service(), "--cpus", "64")],
+      ["no memory", without(service(), "--memory")],
+      ["no rm", without(service(), "--rm")],
+      ["no label", without(service(), "--label")],
+    ];
+    for (const [name, parts] of widened) {
+      expect(() => assertSafe(parts, safety), name).toThrow(ContainerRefused);
+    }
   });
 });

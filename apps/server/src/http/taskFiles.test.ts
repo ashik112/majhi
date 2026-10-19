@@ -56,5 +56,15 @@ describe("task files", () => {
     }
     expect((await get(".env")).status).toBe(403);
     expect((await get("link.txt")).status).toBe(403);
+
+    // What is served from inside is sandboxed: pages and SVG cannot reach out, unknown types download.
+    const csp = "sandbox allow-scripts allow-forms allow-popups allow-downloads";
+    const page = await get("media/report.html");
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(page.headers.get("content-security-policy")).toBe(csp);
+    expect((await get("media/drawing.svg")).headers.get("content-security-policy")).toBe(csp);
+    const bin = await get("media/data.bin");
+    expect(bin.headers.get("content-type")).toBe("application/octet-stream");
+    expect(bin.headers.get("content-disposition")).toBe("attachment");
   });
 });

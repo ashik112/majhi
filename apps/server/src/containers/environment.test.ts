@@ -117,6 +117,18 @@ describe("two workspaces", () => {
       const expected = c.name.includes("acme-api") ? "acme" : "globex";
       expect(c.labels["majhi.org"], c.name).toBe(expected);
     }
+    // A volume that carries another workspace's labels is never taken over.
+    docker.volumes.set("majhi-acme-api-data-shared", {
+      labels: { "majhi.container": "volume", "majhi.org": "globex", "majhi.project": "globex-web" },
+      options: {},
+    });
+    await expect(
+      service.serviceStart("ACM-1", "builder", {
+        ...db,
+        name: "cache",
+        volumes: [{ name: "shared", path: "/data" }],
+      }),
+    ).rejects.toThrow("not one majhi made");
   });
 });
 

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConfigSections } from "../config/sections.ts";
 import { tempDir } from "../testing/fixtures.ts";
 import { wikiExportOf } from "../wiki/export.ts";
+import { taskFileRoutes } from "./taskFiles.ts";
 import { wikiFileRoutes } from "./wikiFiles.ts";
 
 const SHA = "a".repeat(40);
@@ -68,5 +69,28 @@ describe("wiki source files", () => {
       expect(res.status, path).not.toBe(200);
       expect(await res.text(), path).not.toContain("OUTSIDE-BODY");
     }
+
+    // Repo files of a task are served from its own projects only, with the same limits.
+    const source = join(dir, "web-src");
+    const worktree = join(dir, "ACM-1", "web");
+    for (const root of [source, worktree]) await mkdir(root, { recursive: true });
+    await writeFile(join(worktree, "SPEC.md"), "from worktree");
+    await writeFile(join(worktree, ".env"), "SECRET=1");
+    await symlink(join(dir, "outside.txt"), join(worktree, "link.txt"));
+    await mkdir(join(dir, "other"));
+    const repoApp = new Hono().route(
+      "/api/tasks",
+      taskFileRoutes({
+        folderOf: () => join(dir, "ACM-1"),
+        reposOf: (id) => (id === "ACM-1" ? [{ project: "web", source, worktree }] : undefined),
+      }),
+    );
+    const repo = (path: string) => repoApp.request(`/api/tasks/ACM-1/repo/${path}`);
+    expect((await repo("web/files/SPEC.md")).status).toBe(200);
+    expect((await repo("web/files/link.txt")).status).toBe(403);
+    expect((await repo("web/files/.env")).status).toBe(403);
+    expect([403, 404]).toContain((await repo("web/files/%2e%2e/outside.txt")).status);
+    expect((await repo("other/files/SPEC.md")).status).toBe(404);
+    expect((await repoApp.request("/api/tasks/ACM-2/repo/web/files/SPEC.md")).status).toBe(404);
   });
 });
