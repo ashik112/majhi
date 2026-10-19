@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { fakeAdapter } from "../testing/index.ts";
 import type { AccountRuntime, RuntimeOptions } from "./index.ts";
@@ -23,7 +24,7 @@ describe("an account probe in a runner container", () => {
       // Records each request, then runs the fake agent next to the test: only the request is under test.
       spawner: async (req) => {
         seen.push(req);
-        return localSpawner({ ...req, cwd: process.cwd(), scratch: false });
+        return localSpawner({ ...req, cwd: tmpdir(), scratch: false });
       },
     };
     const account: AccountRuntime = { tool: "claude", home: "/Users/owner/.majhi/accounts/claude-acme" };
