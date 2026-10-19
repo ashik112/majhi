@@ -241,7 +241,8 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
   "dependency-removed": {
     lifters: () => ["owner", "majhi"],
     autoClears: (h) => ({ kind: "dependencies-resolved", ids: h.on }),
-    sentence: () => "A task it waited for was removed. Start it or remove the link.",
+    sentence: (h) =>
+      `${h.on.join(", ")} no longer ${h.on.length === 1 ? "exists" : "exist"}. Remove the ${h.on.length === 1 ? "link" : "links"} to continue.`,
   },
 };
 

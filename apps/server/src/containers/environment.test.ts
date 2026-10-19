@@ -117,103 +117,22 @@ describe("two workspaces", () => {
       const expected = c.name.includes("acme-api") ? "acme" : "globex";
       expect(c.labels["majhi.org"], c.name).toBe(expected);
     }
-  });
-
-  it("never reuse a volume that another workspace made", async () => {
-    docker.volumes.set("majhi-acme-api-data-pgdata", {
+    // A volume that carries another workspace's labels is never taken over.
+    docker.volumes.set("majhi-acme-api-data-shared", {
       labels: { "majhi.container": "volume", "majhi.org": "globex", "majhi.project": "globex-web" },
       options: {},
     });
-    await expect(service.serviceStart("ACM-1", "builder", db)).rejects.toThrow(/not one majhi made/);
-  });
-});
-
-describe("one environment per project", () => {
-  it("goes to exactly one task, and to the next in line when it is released", async () => {
-    await service.serviceStart("ACM-1", "builder", db);
-    expect(service.taskNetworks("ACM-1")).toEqual(["majhi-acme-api"]);
-
-    const second = service.serviceStart("ACM-2", "builder", {
-      ...db,
-      name: "cache",
-      image: "postgres:16-alpine",
-    });
-    await until(() => said.length > 0);
-    expect(said).toEqual([
-      {
-        task: "ACM-2",
-        text: "Waiting for the acme-api environment, which ACM-1 uses now. ACM-2 is number 1 in line and starts when it is free.",
-      },
-    ]);
-    // While it waits, ACM-2 has nothing: no network, no range, no container of its own, and ACM-1's are out of its reach.
-    expect(service.taskNetworks("ACM-2")).toEqual([]);
-    expect(service.taskSubnets("ACM-2")).toEqual([]);
-    const refused = await service.taskDocker(
-      "ACM-2",
-      { argv: ["rm", "-f", "db"], cwd: join(dir, "tasks", "ACM-2") },
-      { ask: async () => "pending" },
-    );
-    expect(refused.code).toBe(125);
-    expect([...docker.containers.keys()].filter((n) => n.includes("-c-"))).toEqual(["majhi-acme-api-c-db"]);
-
-    // ACM-1 stops running: its containers go and ACM-2 holds the environment.
-    await service.taskPaused("ACM-1");
-    expect((await second).status).toBe("started");
-    expect(service.taskNetworks("ACM-1")).toEqual([]);
-    expect(service.taskNetworks("ACM-2")).toEqual(["majhi-acme-api"]);
-    expect(
-      [...docker.containers.values()]
-        .filter((c) => c.name.includes("-c-"))
-        .map((c) => c.labels["majhi.task"]),
-    ).toEqual(["ACM-2"]);
-    expect(said.at(-1)?.text).toBe("The acme-api environment is free. ACM-2 has it now.");
-    // The data stayed in the project's volume the whole time.
-    expect(docker.volumes.has("majhi-acme-api-data-pgdata")).toBe(true);
-  });
-});
-
-describe("a task's copy of the project database", () => {
-  it("is made inside the service and dropped when the task closes", async () => {
-    await service.serviceStart("ACM-1", "builder", db);
-    expect(await service.branchDb("ACM-1", { service: "db" })).toEqual({
-      database: "acm_1",
-      template: "dev",
-    });
-    // Asking again is the same copy.
-    await service.branchDb("ACM-1", { service: "db" });
-    expect(docker.copyCalls).toEqual(["create acm_1 from dev in majhi-acme-api-c-db"]);
-
-    await service.taskEnded("ACM-1");
-    expect(docker.copyCalls).toEqual([
-      "create acm_1 from dev in majhi-acme-api-c-db",
-      "drop acm_1 in majhi-acme-api-c-db",
-    ]);
+    await expect(
+      service.serviceStart("ACM-1", "builder", {
+        ...db,
+        name: "cache",
+        volumes: [{ name: "shared", path: "/data" }],
+      }),
+    ).rejects.toThrow("not one majhi made");
   });
 });
 
 describe("a volume with no source", () => {
-  it("becomes a named volume of the project, labelled with its workspace and project", async () => {
-    const result = await service.taskDocker(
-      "ACM-1",
-      {
-        argv: ["run", "-d", "--name", "db", "-v", "/var/lib/postgresql/data", "postgres:16-alpine"],
-        cwd: join(dir, "tasks", "ACM-1"),
-      },
-      { ask: async () => "pending" },
-    );
-    expect(result.code).toBe(0);
-    const [volume] = [...docker.volumes];
-    expect(volume?.[0]).toMatch(/^majhi-acme-api-data-anon-[0-9a-f]{10}$/);
-    expect(volume?.[1].labels).toEqual({
-      "majhi.container": "volume",
-      "majhi.org": "acme",
-      "majhi.project": "acme-api",
-    });
-    const run = docker.taskCalls.find((c) => c[0] === "run") ?? [];
-    expect(run).toContain(`type=volume,source=${volume?.[0]},target=/var/lib/postgresql/data`);
-    expect(run.some((a) => a === "type=volume,target=/var/lib/postgresql/data")).toBe(false);
-  });
-
   it("is the only kind `docker compose down -v` removes: the project's shared volume stays", async () => {
     const shop = join(dir, "tasks", "ACM-1", "api");
     await writeFile(

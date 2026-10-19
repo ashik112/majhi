@@ -309,9 +309,8 @@ export class WatchEngine {
     }
     if (spec.kind === "path") {
       if (c.type !== "changed") return "A file or folder can only alert on a change.";
-      const owner = await this.deps.projectOrg(spec.project);
-      if (owner === undefined) return `Project ${spec.project} does not exist.`;
-      if (owner !== org) return `Project ${spec.project} belongs to another workspace.`;
+      const own = await this.projectProblem(org, spec.project);
+      if (own !== undefined) return own;
       const rel = normalize(spec.path);
       if (isAbsolute(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
         return `"${spec.path}" must be inside the project: use a path relative to it.`;
@@ -328,14 +327,21 @@ export class WatchEngine {
       }
     }
     if (def.project !== undefined) {
-      const owner = await this.deps.projectOrg(def.project);
-      if (owner === undefined) return `Project ${def.project} does not exist.`;
-      if (owner !== org) return `Project ${def.project} belongs to another workspace.`;
+      const own = await this.projectProblem(org, def.project);
+      if (own !== undefined) return own;
     }
     if (def.fire.fix.logDir !== undefined) {
       const bad = logDirProblem(def.fire.fix.logDir);
       if (bad !== undefined) return bad;
     }
+    return undefined;
+  }
+
+  /** Why a watch may not name this project: it is gone, or it belongs to another workspace. */
+  private async projectProblem(org: string, project: string): Promise<string | undefined> {
+    const owner = await this.deps.projectOrg(project);
+    if (owner === undefined) return `Project ${project} does not exist.`;
+    if (owner !== org) return `Project ${project} belongs to another workspace.`;
     return undefined;
   }
 
@@ -364,9 +370,8 @@ export class WatchEngine {
         return ownTask(spec.task);
       }
       case "branch": {
-        const owner = await this.deps.projectOrg(spec.project);
-        if (owner === undefined) return `Project ${spec.project} does not exist.`;
-        if (owner !== org) return `Project ${spec.project} belongs to another workspace.`;
+        const own = await this.projectProblem(org, spec.project);
+        if (own !== undefined) return own;
         if (spec.branch.startsWith("-") || /[\s~^:?*[\\]|\.\.|\.lock$/.test(spec.branch)) {
           return `"${spec.branch}" is not a branch name.`;
         }

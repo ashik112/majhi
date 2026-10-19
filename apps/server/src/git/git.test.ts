@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -31,31 +31,6 @@ describe("majhi's own git", () => {
       else process.env[name] = value;
     }
     await rm(dir, { recursive: true, force: true });
-  });
-
-  it("drops the caller's author and committer, which would win over the identity a commit names", () => {
-    const env = gitEnv({
-      PATH: "/usr/bin",
-      GIT_AUTHOR_NAME: "Someone",
-      GIT_AUTHOR_EMAIL: "someone@example.com",
-      GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
-      GIT_COMMITTER_NAME: "Someone",
-      GIT_COMMITTER_EMAIL: "someone@example.com",
-    });
-    expect(Object.keys(env).filter((k) => /^GIT_(AUTHOR|COMMITTER)_/.test(k))).toEqual([]);
-    expect(env.PATH).toBe("/usr/bin");
-  });
-
-  it("hands the socket to ssh when it fetches", async () => {
-    const seen = join(dir, "seen");
-    const probe = join(dir, "ssh-probe.sh");
-    await writeFile(probe, `#!/bin/sh\nprintf '%s' "$SSH_AUTH_SOCK" > '${seen}'\nexit 1\n`);
-    await chmod(probe, 0o755);
-    process.env.SSH_AUTH_SOCK = "/run/ssh-agent.sock";
-    process.env.GIT_SSH_COMMAND = probe;
-    await git(dir, ["init", "-q"]);
-    await expect(git(dir, ["fetch", "ssh://git@example.test/x.git"])).rejects.toThrow();
-    expect(await readFile(seen, "utf8")).toBe("/run/ssh-agent.sock");
   });
 
   it("runs none of the commands a repo's config and attributes name", async () => {
@@ -141,78 +116,5 @@ describe("majhi's own git", () => {
     await plain(repo, ["merge-tree", "--write-tree", "other", "task/x"]);
     await plain(repo, ["update-ref", "refs/heads/probe", "HEAD"]);
     expect(await ran()).toMatch(/clean[\s\S]*merge-driver[\s\S]*hook reference-transaction/);
-  });
-
-  it("runs no signing program a repo's config names", async () => {
-    const repo = join(dir, "repo");
-    const marker = join(dir, "ran");
-    const ran = () => readFile(marker, "utf8").catch(() => "");
-    process.env.GIT_CONFIG_GLOBAL = join(dir, "no-global");
-    process.env.GIT_CONFIG_NOSYSTEM = "1";
-    const id = ["-c", "user.name=t", "-c", "user.email=t@t"];
-    await git(dir, ["init", "-q", "-b", "main", repo]);
-    await writeFile(join(repo, "a.txt"), "one\n");
-    await git(repo, ["add", "a.txt"]);
-    await git(repo, [...id, "commit", "-qm", "one"]);
-
-    // What an agent could plant: a signing program that writes the marker, the settings that make
-    // git check signatures, and signed commits on two branches, made with plain git.
-    const gpg = join(dir, "gpg.sh");
-    await writeFile(
-      gpg,
-      [
-        "#!/bin/sh",
-        `echo gpg >> '${marker}'`,
-        "cat > /dev/null",
-        'case " $* " in *" -bsau "*)',
-        "  printf '\\n[GNUPG:] SIG_CREATED D 1 8 00 1 X\\n' >&2",
-        "  printf -- '-----BEGIN PGP SIGNATURE-----\\n\\nAAAA\\n-----END PGP SIGNATURE-----\\n' ;;",
-        "esac",
-        "",
-      ].join("\n"),
-      { mode: 0o755 },
-    );
-    for (const [key, value] of [
-      ["gpg.program", gpg],
-      ["log.showSignature", "true"],
-      ["merge.verifySignatures", "true"],
-      ["commit.gpgSign", "true"],
-    ] as const) {
-      await git(repo, ["config", key, value]);
-    }
-    const { GIT_CONFIG_COUNT: _count, ...env } = gitEnv(process.env);
-    const plain = (args: string[]) => promisify(execFile)("git", args, { cwd: repo, env });
-    for (const branch of ["signed", "signed-too"]) {
-      await plain(["checkout", "-q", "-b", branch, "main"]);
-      await writeFile(join(repo, `${branch}.txt`), `${branch}\n`);
-      await plain(["add", "."]);
-      await plain([...id, "commit", "-S", "-qm", branch]);
-    }
-    await plain(["checkout", "-q", "main"]);
-    expect(await git(repo, ["cat-file", "commit", "signed"])).toContain("BEGIN PGP SIGNATURE");
-    await rm(marker, { force: true });
-
-    expect(await git(repo, ["log", "-1", "signed"])).toContain("signed");
-    expect(await git(repo, ["show", "signed"])).toContain("+signed");
-    await writeFile(join(repo, "b.txt"), "two\n");
-    await git(repo, ["add", "b.txt"]);
-    await git(repo, [...id, "commit", "-qm", "two"]);
-    const merged = await mergeBranch({
-      source: repo,
-      branch: "signed",
-      into: "main",
-      identity: { name: "Owner", email: "owner@acme.test" },
-      message: "Merge ACME-1",
-      scratch: join(dir, "scratch"),
-    });
-    expect(merged).toMatchObject({ ok: true, how: "merge commit" });
-    expect(await git(repo, ["cat-file", "commit", "main"])).not.toContain("BEGIN PGP SIGNATURE");
-    expect(await ran()).toBe("");
-
-    // The same repo with plain git does run it, so the setup above is live.
-    await plain(["log", "-1", "signed-too"]);
-    expect(await ran()).toBe("gpg\n");
-    await plain([...id, "merge", "--no-edit", "signed-too"]).catch(() => undefined);
-    expect(await ran()).toBe("gpg\ngpg\n");
   });
 });

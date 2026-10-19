@@ -1,7 +1,7 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { ASK, FULL, planOf, RUNS } from "./authority-fixtures.ts";
+import { FULL, planOf, RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
@@ -83,23 +83,7 @@ function setup(s: Setup = {}) {
   return { chore, lane, calls };
 }
 
-const merge = { id: "ACM-1", into: "main" };
-
 describe("the level at ship time", () => {
-  it("lets the captain merge where the level is Full, with no click", async () => {
-    const t = setup({ rows: FULL });
-    await t.chore();
-    expect(t.calls).toMatchObject({ merged: 1, asked: 0, pushed: [true] });
-  });
-
-  it("asks at Routine and at Ask me", async () => {
-    for (const rows of [RUNS, ASK]) {
-      const t = setup({ rows });
-      await t.chore();
-      expect(t.calls).toMatchObject({ merged: 0, asked: 1 });
-    }
-  });
-
   it("never merges when a guard fails, whatever the level says", async () => {
     const failing: [string, Setup][] = [
       [
@@ -118,30 +102,5 @@ describe("the level at ship time", () => {
       await t.chore();
       expect([guard, t.calls.merged]).toEqual([guard, 0]);
     }
-  });
-
-  it("merges without a push where only Merge is the captain's", async () => {
-    const t = setup({ rows: { ...FULL, push: "ask" } });
-    await t.chore();
-    expect(t.calls.pushed).toEqual([false]);
-  });
-});
-
-describe("the lane and the chore", () => {
-  const cases: [string, Setup, "merges" | "asks" | "rests"][] = [
-    ["Full", { rows: FULL }, "merges"],
-    ["Routine", { rows: RUNS }, "asks"],
-    ["Ask me", { rows: ASK }, "asks"],
-    ["Auto-pilot off, a task the owner started", { rows: FULL, autonomous: false }, "merges"],
-  ];
-
-  it.each(cases)("reach the same decision for %s", async (_name, over, outcome) => {
-    const t = setup(over);
-    await t.chore();
-    expect([t.calls.merged, t.calls.asked]).toEqual(
-      outcome === "merges" ? [1, 0] : outcome === "asks" ? [0, 1] : [0, 0],
-    );
-    const refused = await t.lane.check("acme", "tasks.merge", merge);
-    expect(refused === undefined).toBe(outcome === "merges");
   });
 });

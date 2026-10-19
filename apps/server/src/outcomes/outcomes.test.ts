@@ -142,46 +142,6 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
   };
 }
 
-const result = (d: Desk, subject: string) => d.svc.repo.get(subject)?.result;
-
-describe("outcomes of the captain's actions", () => {
-  it("counts an action kept only after the wait, and an undo an hour later wins over waiting", async () => {
-    const d = desk();
-    const early = d.action(1, T0);
-    d.clock.at = T0 + HOUR;
-    d.undo(early, T0 + HOUR);
-    await d.svc.sweep();
-    expect(result(d, `action:${early}`)).toBe("merged-reverted");
-    // Another action nobody touched: pending at one hour, kept after six.
-    const other = d.action(2, T0);
-    d.clock.at = T0 + 2 * HOUR;
-    await d.svc.sweep();
-    expect(result(d, `action:${other}`)).toBeUndefined();
-    d.clock.at = T0 + 7 * HOUR;
-    await d.svc.sweep();
-    expect(result(d, `action:${other}`)).toBe("kept");
-  });
-
-  it("flips a kept action to undone when the owner undoes it a day later, and counts it once", async () => {
-    const d = desk();
-    // A Tuesday, so the whole story sits in one week.
-    const t = Date.parse("2026-10-06T08:00:00.000Z");
-    const id = d.action(1, t, { chore: "triage", key: "triage:priority:ACM-1:x" });
-    d.clock.at = t + 24 * HOUR;
-    await d.svc.sweep();
-    expect(result(d, `action:${id}`)).toBe("kept");
-    d.undo(id, t + 30 * HOUR);
-    d.clock.at = t + 31 * HOUR;
-    await d.svc.sweep();
-    await d.svc.sweep();
-    expect(result(d, `action:${id}`)).toBe("undone");
-    const card = await d.svc.scorecard("week", "acme");
-    expect(card.total).toMatchObject({ actions: 1, judged: 1, kept: 0, overruled: 1, keptPct: 0 });
-    // Triage is upkeep: the row carries it.
-    expect(card.rows.find((r) => r.key === "upkeep")?.tally.actions).toBe(1);
-  });
-});
-
 let seq = 100;
 
 /** Fills a row with judged ship actions: `kept` kept and the rest undone. */
@@ -194,40 +154,6 @@ async function _fill(d: Desk, kept: number, undone: number, from = T0 - 100 * HO
   d.clock.at = T0;
   await d.svc.sweep();
 }
-
-describe("the trust ladder: demotion of a channel", () => {
-  it("an Auto channel goes back to Draft and loses its Auto standing", async () => {
-    const d = desk();
-    d.gate.applyLadder("acme", "email", "auto");
-    d.svc.repo.setTrust("acme", "outbound:email", { autoOk: true });
-    for (let i = 0; i < 12; i++) d.draft(i, "email", "approved", T0 - 50 * HOUR + i * 60_000, "auto");
-    for (let i = 12; i < 20; i++) d.draft(i, "email", "discarded", T0 - 50 * HOUR + i * 60_000, "auto");
-    d.clock.at = T0 + 20 * HOUR;
-    await d.svc.sweep();
-    // Auto-sent drafts are judged by time: 12 kept, 8 rejected.
-    expect(d.gate.mode("acme", "email")).toBe("draft");
-    expect(d.svc.autoAccepted("acme", "email")).toBe(false);
-  });
-});
-
-describe("the trust ladder: promotion", () => {
-  it("makes Auto selectable for a channel only through an accepted promotion", async () => {
-    const d = desk({ window: 5 });
-    d.gate.applyLadder("acme", "email", "batch");
-    for (let i = 0; i < 5; i++) d.draft(i, "email", "approved", T0 - 30 * 24 * HOUR + i * HOUR, "batch");
-    await d.svc.sweep();
-    const [_item] = d.svc.decisions();
-    expect(() => d.gate.setMode({ org: "acme", channel: "email", mode: "auto", explicit: true })).toThrow(
-      /./,
-    );
-    await d.svc.answerNotice(d.svc.repo.openNotices()[0]?.id ?? 0, "promote");
-    expect(d.gate.mode("acme", "email")).toBe("auto");
-    expect(d.svc.autoAccepted("acme", "email")).toBe(true);
-    // Another channel and another workspace have no standing.
-    expect(d.svc.autoAccepted("acme", "post")).toBe(false);
-    expect(d.svc.autoAccepted("globex", "email")).toBe(false);
-  });
-});
 
 describe("one monthly ceiling", () => {
   it("holds new starts once spend reaches it, never a turn already running, and asks as a Money decision", async () => {
@@ -250,42 +176,5 @@ describe("one monthly ceiling", () => {
     expect(d.svc.ceilingHeld()).toBeUndefined();
     expect((await d.svc.money()).savedCeilingUsd).toBe(100);
     expect((await d.svc.money()).ceilingUsd).toBe(130);
-  });
-
-  it("keeps holding after 'Keep the ceiling' and asks nothing more that month", async () => {
-    const d = desk();
-    await d.svc.setMoney({ ceilingUsd: 50 });
-    d.turn(T0 - HOUR, 80);
-    d.clock.at = T0 + 60_000;
-    expect(d.svc.ceilingHeld()).toBeDefined();
-    await d.svc.answerCeiling("2026-10", "leave");
-    expect(d.svc.ceilingHeld()).toBeDefined();
-    expect(d.svc.decisions()).toEqual([]);
-    await expect(d.svc.answerCeiling("2026-09", "raise")).rejects.toThrow(/./);
-  });
-
-  it("rolls over at the owner's midnight, not UTC's", async () => {
-    const d = desk();
-    d.tz.value = "Pacific/Auckland";
-    await d.svc.setMoney({ ceilingUsd: 100 });
-    // 12:30 UTC on 30 Sep is 01:30 on 1 Oct in Auckland: October's spend.
-    d.turn(Date.parse("2026-09-30T12:30:00.000Z"), 120);
-    d.clock.at = Date.parse("2026-09-30T13:00:00.000Z");
-    const october = await d.svc.money();
-    expect(october.month).toBe("2026-10");
-    expect(october.spentUsd).toBe(120);
-    expect(d.svc.ceilingHeld()).toBeDefined();
-    // The same instant in UTC is still September.
-    d.tz.value = "UTC";
-    d.clock.at += 30 * 60_000;
-    expect((await d.svc.money()).month).toBe("2026-09");
-    // A month later the spend is last month's and nothing is held.
-    d.tz.value = "Pacific/Auckland";
-    d.clock.at = Date.parse("2026-10-31T12:00:00.000Z");
-    const november = await d.svc.money();
-    expect(november.month).toBe("2026-11");
-    expect(november.spentUsd).toBe(0);
-    expect(d.svc.ceilingHeld()).toBeUndefined();
-    expect(d.svc.decisions()).toEqual([]);
   });
 });

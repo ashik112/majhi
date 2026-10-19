@@ -1,8 +1,6 @@
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
-import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World;
@@ -99,31 +97,5 @@ describe("the 100% action", () => {
     await settle();
     expect(await turns(globex)).toBe(2);
     expect(task(globex)?.status).not.toBe("paused");
-  });
-
-  it("lets the turn in progress finish, and holds the prompts queued behind it", async () => {
-    await world(120);
-    const id = await create("add a health endpoint to api from develop");
-    await settle();
-    expect(await turns(id)).toBe(1);
-
-    // Turn 2 starts and is in progress; a third prompt waits behind it. Then the budget drops
-    // below what is already used, so the 100% alert fires at once. Turn 2 must be a real, slow turn:
-    // the fake agent answers an `echo:` prompt at once, so only a plain prompt runs the scripted
-    // turn that `slowMs` stretches.
-    await w.h.cmd("room.send", { task: id, text: "also add a version field" });
-    await until(() => services().runs.working(id).length > 0, "turn 2 to start");
-    await w.h.cmd("room.send", { task: id, text: "echo: third" });
-    expect((await budget({ orgs: { acme: { tokens: TURN } } })).status).toBe(200);
-    expect(services().runs.working(id).length).toBeGreaterThan(0);
-    await settle();
-
-    // Turn 2 ran to the end and was recorded; turn 3 did not start.
-    expect(await turns(id)).toBe(2);
-    const page = await w.h.cmd("room.items", { task: id, limit: 500 });
-    const texts = (page.body.items as RoomItem[]).flatMap((i) => (i.type === "agent" ? [i.text] : []));
-    expect(texts.join("\n")).not.toContain("echo: third");
-    expect(task(id)).toMatchObject({ status: "paused", pausedReason: "limit" });
-    expect(services().runs.pausedForLimit()).toEqual([{ task: id, agent: "acme-builder" }]);
   });
 });

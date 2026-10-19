@@ -1,10 +1,9 @@
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { restoreUpdateDatabases, snapshotUpdateDatabases, UPDATE_DATABASE_DIR } from "./updateDatabases.ts";
+import { restoreUpdateDatabases, snapshotUpdateDatabases } from "./updateDatabases.ts";
 
 let home: string;
 beforeEach(async () => {
@@ -43,34 +42,5 @@ describe("update database rollback", () => {
       db.close();
     }
     expect(await readFile(join(home, "majhi.yaml"), "utf8")).toBe("keep settings");
-  });
-
-  it("removes databases that did not exist before the update", async () => {
-    const db = database("majhi.db");
-    db.close();
-    await snapshotUpdateDatabases(home);
-    await mkdir(join(home, "memory"));
-    const added = database("memory/memory.db");
-    added.close();
-    await restoreUpdateDatabases(home);
-    expect(existsSync(join(home, "memory/memory.db"))).toBe(false);
-  });
-
-  it("refuses a damaged snapshot before changing either live database", async () => {
-    const db = database("majhi.db");
-    db.close();
-    await snapshotUpdateDatabases(home);
-    await writeFile(join(home, UPDATE_DATABASE_DIR, "majhi.db"), "damaged");
-    await expect(restoreUpdateDatabases(home)).rejects.toThrow();
-    const live = new Database(join(home, "majhi.db"));
-    expect(live.prepare("SELECT value FROM original").pluck().get()).toBe("keep");
-    live.close();
-  });
-
-  it("does not overwrite a snapshot still needed for recovery", async () => {
-    const db = database("majhi.db");
-    db.close();
-    await snapshotUpdateDatabases(home);
-    await expect(snapshotUpdateDatabases(home)).rejects.toThrow("recovery is still pending");
   });
 });

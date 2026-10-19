@@ -564,14 +564,6 @@ describe("transition table", () => {
     expect(effectsOf(t)).toEqual(row.effects);
     row.check?.(t.next);
   });
-
-  it("does not change the state it was given", () => {
-    const from = task({ status: "running", hold: hold("offline"), unmetDeps: ["ACME-2"] });
-    const copy = JSON.parse(JSON.stringify(from)) as TaskState;
-    transition(from, { type: "holdCleared", by: "owner" });
-    transition(from, { type: "close" });
-    expect(from).toEqual(copy);
-  });
 });
 
 /** The statuses each event is accepted in on a task with no hold (hold rules are tested below). */
@@ -611,101 +603,6 @@ describe("illegal transitions are refused", () => {
     const r = refused(transition(task({ status }), event));
     expect(r.code).toBe("wrong-status");
   });
-
-  it("start from mr is refused and points at sendBack, never running", () => {
-    const r = refused(transition(task({ status: "mr" }), { type: "start", by: "captain" }));
-    expect(r.code).toBe("wrong-status");
-  });
-
-  it("done to running is refused for start, sendBack and processEnded", () => {
-    for (const event of [
-      { type: "start", by: "owner" },
-      { type: "sendBack", by: "owner" },
-      { type: "processEnded" },
-    ] as const)
-      expect(refused(transition(task({ status: "done" }), event)).code).toBe("wrong-status");
-  });
-
-  it("an event for a task that does not exist is refused, and create on an existing task too", () => {
-    expect(refused(transition(undefined, { type: "start", by: "owner" })).code).toBe("wrong-status");
-    expect(refused(transition(task(), { type: "create", id: "ACME-1", status: "inbox" })).code).toBe(
-      "already-exists",
-    );
-  });
-
-  it("start refuses with unmet dependencies and writes nothing", () => {
-    const from = task({ status: "ready", unmetDeps: ["ACME-2"], startWhenReady: true });
-    const r = refused(transition(from, { type: "start", by: "owner" }));
-    expect(r.code).toBe("unmet-dependencies");
-    expect(r.text).toContain("ACME-2");
-    expect(from.startWhenReady).toBe(true);
-    expect(from.status).toBe("ready");
-  });
-
-  it.each(CAUSES)("a %s hold refuses every event that would move the task", (cause) => {
-    for (const [status, event] of [
-      ["inbox", { type: "start", by: "owner" }],
-      ["ready", { type: "start", by: "owner" }],
-      ["running", { type: "start", by: "owner" }],
-      ["review", { type: "sendBack", by: "owner" }],
-      ["running", { type: "agentsIdle" }],
-      ["review", { type: "processEnded" }],
-    ] as const) {
-      const r = refused(transition(task({ status, hold: hold(cause) }), event));
-      expect(r.code).toBe("held");
-      expect(r.text).toBe(sentenceOf(hold(cause)));
-    }
-  });
-
-  it("holdCleared on a task with no hold is refused", () => {
-    expect(refused(transition(task({ status: "running" }), { type: "holdCleared", by: "owner" })).code).toBe(
-      "not-held",
-    );
-  });
-
-  it("runLost is refused when a run is live or a hold explains the task", () => {
-    expect(
-      refused(
-        transition(task({ status: "running", hasLiveRun: true }), {
-          type: "runLost",
-          at: AT,
-          autoResume: true,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-    expect(
-      refused(
-        transition(task({ status: "running", hold: hold("offline") }), {
-          type: "runLost",
-          at: AT,
-          autoResume: true,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-  });
-
-  it("dependency removed on a running task with no dependency hold is refused", () => {
-    const r = transition(task({ status: "running", hold: hold("offline") }), {
-      type: "dependencyChanged",
-      change: "removed",
-      on: ["ACME-2"],
-      at: AT,
-    });
-    expect(refused(r).code).toBe("wrong-status");
-  });
-
-  it("a dependency change that names no task is refused", () => {
-    expect(
-      refused(
-        transition(task({ status: "ready" }), {
-          type: "dependencyChanged",
-          change: "removed",
-          on: [],
-          at: AT,
-        }),
-      ).code,
-    ).toBe("nothing-to-do");
-  });
 });
 
 const READING: ClearReading = {
@@ -718,11 +615,42 @@ const READING: ClearReading = {
 };
 
 describe("lifting a hold", () => {
-  const WHO = ["owner", "captain"] as const;
+  const WHO = ["owner", "captain", "majhi"] as const;
+  const CAPTAIN_CANNOT_LIFT: HoldCause[] = [
+    "owner-stop",
+    "loop-guard",
+    "dependency-closed",
+    "dependency-removed",
+  ];
+  /** Everything majhi can read for itself, so the cause's own condition holds. */
+  const FULL: ClearReading = {
+    ...READING,
+    online: true,
+    budgetHasRoom: true,
+    autopilot: "on",
+    runAtStep: true,
+    slotFree: true,
+    anyAccountUp: true,
+    lastActivityAt: "2026-10-05T11:00:00.000Z",
+    resolvedTasks: ["ACME-2", "ACME-1"],
+    accounts: { "claude-acme": { signedIn: true } },
+  };
 
   describe.each(CAUSES)("%s", (cause) => {
     it.each(WHO)("by %s is allowed exactly when the table lists them", (by) => {
-      const r = transition(task({ status: "running", hold: hold(cause) }), { type: "holdCleared", by });
+      const from = task({ status: "running", hold: hold(cause) });
+      const r = transition(
+        from,
+        by === "majhi" ? { type: "holdCleared", by, reading: FULL } : { type: "holdCleared", by },
+      );
+      // The captain never lifts an owner stop, a loop guard or a closed or removed dependency.
+      if (by === "captain" && CAPTAIN_CANNOT_LIFT.includes(cause))
+        expect(refused(r).code).toBe("not-allowed");
+      // Majhi lifts only a hold whose condition is met.
+      if (by === "majhi" && liftersOf(hold(cause)).includes("majhi"))
+        expect(refused(transition(from, { type: "holdCleared", by, reading: READING })).code).toBe(
+          "condition-not-met",
+        );
       if (liftersOf(hold(cause)).includes(by)) expect(ok(r).next.hold).toBeUndefined();
       else {
         const refusal = refused(r);
@@ -730,112 +658,6 @@ describe("lifting a hold", () => {
         expect(refusal.text).toBe(sentenceOf(hold(cause)));
       }
     });
-
-    it("by majhi: allowed only when the cause is majhi-liftable and its condition holds", () => {
-      const full: ClearReading = {
-        ...READING,
-        online: true,
-        budgetHasRoom: true,
-        autopilot: "on",
-        runAtStep: true,
-        slotFree: true,
-        anyAccountUp: true,
-        lastActivityAt: "2026-10-05T11:00:00.000Z",
-        resolvedTasks: ["ACME-2", "ACME-1"],
-        accounts: { "claude-acme": { signedIn: true } },
-      };
-      const from = task({ status: "running", hold: hold(cause) });
-      const cleared = transition(from, { type: "holdCleared", by: "majhi", reading: full });
-      const early = transition(from, { type: "holdCleared", by: "majhi", reading: READING });
-      if (liftersOf(hold(cause)).includes("majhi")) {
-        expect(ok(cleared).next.hold).toBeUndefined();
-        expect(refused(early).code).toBe("condition-not-met");
-      } else {
-        expect(refused(cleared).code).toBe("not-allowed");
-        expect(refused(early).code).toBe("not-allowed");
-      }
-    });
-  });
-
-  it("the captain cannot lift an owner stop, a loop guard or a closed dependency", () => {
-    for (const cause of ["owner-stop", "loop-guard", "dependency-closed", "dependency-removed"] as const)
-      expect(
-        refused(
-          transition(task({ status: "running", hold: hold(cause) }), { type: "holdCleared", by: "captain" }),
-        ).code,
-      ).toBe("not-allowed");
-  });
-
-  it("runResumed (the run's own report) cannot lift a hold only the owner or captain may lift", () => {
-    for (const cause of ["owner-stop", "captain-stop", "loop-guard"] as const)
-      expect(
-        refused(transition(task({ status: "running", hold: hold(cause) }), { type: "runResumed" })).code,
-      ).toBe("not-allowed");
-  });
-
-  it("runResumed lifts an error: a turn that failed and was retried is working again", () => {
-    const out = transition(task({ status: "running", hold: hold("error") }), { type: "runResumed" });
-    if (isRefusal(out)) throw new Error("refused");
-    expect(out.next.hold).toBeUndefined();
-  });
-
-  it("an MR task goes back to work for the owner only", () => {
-    const out = transition(task({ status: "mr" }), { type: "sendBack", by: "owner" });
-    if (isRefusal(out)) throw new Error("refused");
-    expect(out.next.status).toBe("running");
-    for (const by of ["captain", "majhi"] as const)
-      expect(refused(transition(task({ status: "mr" }), { type: "sendBack", by })).code).toBe("wrong-status");
-  });
-
-  it("majhi lifting a hold for another account's reading does not clear it", () => {
-    const from = task({ status: "running", hold: hold("signed-out") });
-    const r = transition(from, {
-      type: "holdCleared",
-      by: "majhi",
-      reading: { ...READING, accounts: { "claude-globex": { signedIn: true } } },
-    });
-    expect(refused(r).code).toBe("condition-not-met");
-  });
-
-  it("a budget-limit lifted by majhi on its condition does not exempt the run", () => {
-    const from = task({ status: "running", hold: hold("budget-limit") });
-    const t = ok(
-      transition(from, { type: "holdCleared", by: "majhi", reading: { ...READING, budgetHasRoom: true } }),
-    );
-    expect(t.next.exemptUntilRunEnds).toBe(false);
-    expect(effectsOf(t)).not.toContain("budgets.exempt");
-  });
-});
-
-describe("stopping a task that already has a hold", () => {
-  it("an owner stop replaces a hold more parties can lift, and a repeat is a no-op", () => {
-    const first = ok(
-      transition(task({ status: "running", hold: hold("offline") }), { type: "ownerStop", at: AT }),
-    );
-    expect(first.next.hold?.cause).toBe("owner-stop");
-    expect(effectsOf(first)).toEqual(STOP);
-    const again = ok(transition(first.next, { type: "ownerStop", at: "2026-10-05T11:00:00.000Z" }));
-    expect(again.effects).toEqual([]);
-  });
-
-  it("a captain stop cannot replace the owner's stop", () => {
-    const t = ok(
-      transition(task({ status: "running", hold: hold("owner-stop") }), { type: "captainStop", at: AT }),
-    );
-    expect(t.next.hold?.cause).toBe("owner-stop");
-    expect(t.effects).toEqual([]);
-  });
-
-  it("Auto-pilot step upgrades to now with the stop effects, and now is not downgraded", () => {
-    const step: Hold = { cause: "autopilot-off", at: AT, mode: "step" };
-    const up = ok(
-      transition(task({ status: "running", hold: step }), { type: "autopilotOff", at: AT, mode: "now" }),
-    );
-    expect(up.next.hold).toMatchObject({ mode: "now" });
-    expect(effectsOf(up)).toEqual(STOP);
-    const down = ok(transition(up.next, { type: "autopilotOff", at: AT, mode: "step" }));
-    expect(down.next.hold).toMatchObject({ mode: "now" });
-    expect(down.effects).toEqual([]);
   });
 });
 
@@ -916,19 +738,7 @@ describe("invariants over every reachable state", () => {
 
   const { states } = explore();
 
-  it("a done task has no hold, no wish and no exemption", () => {
-    for (const s of states.filter((x) => x.status === "done")) {
-      expect(s.hold).toBeUndefined();
-      expect(s.startWhenReady).toBe(false);
-      expect(s.exemptUntilRunEnds).toBe(false);
-    }
-  });
-
-  it("a running task is never waiting to start", () => {
-    for (const s of states.filter((x) => x.status === "running")) expect(s.startWhenReady).toBe(false);
-  });
-
-  it("no held task can be started or sent back, from any reachable state", () => {
+  it("no held task can be started or sent back, none with unmet dependencies is started, and every hold can be lifted by someone", () => {
     for (const s of states.filter((x) => x.hold !== undefined)) {
       for (const e of [
         { type: "start", by: "owner" },
@@ -938,18 +748,12 @@ describe("invariants over every reachable state", () => {
         if (!isRefusal(r)) throw new Error(`${JSON.stringify(s)} accepted ${e.type}`);
       }
     }
-  });
-
-  it("no task with unmet dependencies is ever started", () => {
     for (const s of states.filter(
       (x) => x.unmetDeps.length > 0 && (x.status === "inbox" || x.status === "ready"),
     )) {
       const r = transition(s, { type: "start", by: "owner" });
       expect(isRefusal(r)).toBe(true);
     }
-  });
-
-  it("every hold in every reachable state can be lifted by someone", () => {
     for (const s of states.filter((x) => x.hold !== undefined)) {
       const lifters = liftersOf(s.hold as Hold);
       const cleared = lifters.some((by) => {

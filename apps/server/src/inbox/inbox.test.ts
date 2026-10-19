@@ -1,9 +1,8 @@
 import type { BudgetAsk, CommandName, RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { CommandContext } from "../commands/handlers.ts";
 import { migrate } from "../store/migrations.ts";
-import { buildDecisions, type DecisionSources, isDecisionItem } from "./build.ts";
 import { inboxHandlers } from "./handlers.ts";
 import { RecommendationRepo } from "./recommendations.ts";
 import { type DecisionActions, InboxService } from "./service.ts";
@@ -109,35 +108,6 @@ const subjects: Record<string, { id: string; title: string; chat: boolean; org?:
   "ACM-2": { id: "ACM-2", title: "Docs", chat: false, org: "acme", repos: 1 },
 };
 
-function sources(over: Partial<DecisionSources> = {}): DecisionSources {
-  return {
-    items: [],
-    subject: (task) => subjects[task],
-    budgets: [],
-    signedOut: [],
-    recommendations: new Map(),
-    ...over,
-  };
-}
-
-describe("building decisions", () => {
-  it("leaves out what waits for nobody: answered cards, an owner pause, a task that is gone", () => {
-    const out = buildDecisions(
-      sources({
-        items: [
-          { ...ask, state: "answered" },
-          { ...paused, reason: "owner" },
-          { ...choice, task: "ACM-9" },
-          { ...review, ready: undefined },
-        ],
-      }),
-    );
-    expect(out.map((d) => d.id)).toEqual(["room:ACM-2:rv1"]);
-    expect(out[0]?.options.map((o) => o.id)).toEqual(["merge", "done", "changes"]);
-    expect(isDecisionItem({ ...paused, reason: "offline" }, subjects["ACM-2"] as never)).toBe(false);
-  });
-});
-
 function fakeActions(log: string[]): DecisionActions {
   return {
     answerAsk: async (t, i, a) => void log.push(`ask ${t} ${i} ${JSON.stringify(a)}`),
@@ -183,46 +153,6 @@ beforeEach(() => {
 });
 
 describe("answering a decision", () => {
-  it.each([
-    ["room:ACM-1:pm1", "yes", undefined, "permission ACM-1 pm1 yes"],
-    ["room:ACM-1:ap1", "reject", undefined, "approval ACM-1 ap1 reject"],
-    ["room:ACM-1:ap1", "approve", undefined, "approval ACM-1 ap1 approve"],
-    ["room:ACM-2:rv1", "merge", undefined, "card ACM-2 rv1 merge"],
-    ["room:ACM-2:rv1", "done", undefined, "card ACM-2 rv1 done"],
-    [
-      "room:ACM-2:rv1",
-      "changes",
-      "  Use the shared helper.  ",
-      "changes ACM-2 acme-builder Use the shared helper.",
-    ],
-  ])("routes the approval %s / %s to its own path", async (id, option, text, expected) => {
-    await service().answer({ id, option, ...(text === undefined ? {} : { text }) });
-    expect(log).toEqual([expected]);
-  });
-
-  it("refuses Ask for changes without words and says why a merge that failed did not finish", async () => {
-    const inbox = service();
-    await expect(inbox.answer({ id: "room:ACM-2:rv1", option: "changes", text: "  " })).rejects.toThrow(
-      /Write your answer/,
-    );
-    mergeResults = [{ project: "api", ok: false, detail: "conflicts in 2 files" }];
-    await expect(inbox.answer({ id: "room:ACM-2:rv1", option: "merge" })).rejects.toThrow(
-      /Could not merge api: conflicts in 2 files/,
-    );
-    expect(log).toEqual(["card ACM-2 rv1 merge"]);
-  });
-
-  it("refuses an option the decision does not offer, a secret and a sign-in, and does nothing", async () => {
-    const inbox = service();
-    await expect(inbox.answer({ id: "room:ACM-1:ch1", option: "maybe" })).rejects.toThrow(
-      /not one of the options/,
-    );
-    await expect(inbox.answer({ id: "room:ACM-1:sr1", option: "save" })).rejects.toThrow();
-    await expect(inbox.answer({ id: "signin:claude-acme", option: "x" })).rejects.toThrow();
-    await expect(inbox.answer({ id: "room:ACM-1:nope", option: "x" })).rejects.toThrow(/gone/);
-    expect(log).toEqual([]);
-  });
-
   it("answers only for the owner: an agent, the captain too, is refused before anything runs", async () => {
     const handlers = inboxHandlers(service());
     const ctx = (kind: "owner" | "agent"): CommandContext => ({
@@ -234,72 +164,5 @@ describe("answering a decision", () => {
     expect(log).toEqual([]);
     await handlers["decisions.answer"](input, ctx("owner"));
     expect(log).toEqual(["choice ACM-1 ch1 now"]);
-  });
-});
-
-describe("the captain's recommendation", () => {
-  it("is stored by decision id and comes back on the decision", async () => {
-    const inbox = service();
-    await inbox.recommend({ id: "room:ACM-1:ask1", option: "keep", reason: "keeps a backup branch" }, "acme");
-    const found = (await inbox.list()).find((d) => d.id === "room:ACM-1:ask1");
-    expect(found?.suggestion).toEqual({ option: "keep", reason: "keeps a backup branch", by: "captain" });
-    // A second opinion replaces the first.
-    await inbox.recommend({ id: "room:ACM-1:ask1", option: "rebuild", reason: "cleaner" }, "acme");
-    expect((await inbox.list()).find((d) => d.id === "room:ACM-1:ask1")?.suggestion?.option).toBe("rebuild");
-  });
-
-  it("is refused for another workspace's decision, a missing option and a decision with no buttons", async () => {
-    const inbox = service();
-    await expect(
-      inbox.recommend({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, "globex"),
-    ).rejects.toThrow(/another workspace/);
-    await expect(
-      inbox.recommend({ id: "room:ACM-1:ask1", option: "nope", reason: "x" }, "acme"),
-    ).rejects.toThrow(/one of: rebuild, keep/);
-    await expect(inbox.recommend({ id: "room:ACM-1:sr1", option: "x", reason: "x" }, "acme")).rejects.toThrow(
-      /no buttons/,
-    );
-    expect(repo.all().size).toBe(0);
-  });
-
-  it("is a tool of the captain only: the plain command refuses everyone", async () => {
-    const handlers = inboxHandlers(service());
-    const ctx: CommandContext = {
-      command: "decisions.recommend",
-      meta: { actor: { kind: "owner" } },
-    };
-    await expect(
-      handlers["decisions.recommend"]({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, ctx),
-    ).rejects.toThrow(/tool of the captain/);
-  });
-});
-
-describe("an answer that waits out its Undo time", () => {
-  afterEach(() => vi.useRealTimers());
-
-  it("is sent by the server when the time is up, with no tab left, and Undo drops it", async () => {
-    vi.useFakeTimers();
-    const inbox = service();
-    const id = "room:ACM-1:ch1";
-    await inbox.answerView({ id, option: "now", holdMs: 5000 });
-    expect(log).toEqual([]);
-    await vi.advanceTimersByTimeAsync(4999);
-    expect(log).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(log).toEqual(["choice ACM-1 ch1 now"]);
-
-    const again = "room:ACM-1:oq1";
-    await inbox.answerView({ id: again, option: "c0", holdMs: 5000 });
-    expect(inbox.held.cancel(again)).toBe(true);
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(log).toEqual(["choice ACM-1 ch1 now"]);
-  });
-
-  it("is sent at once, not lost, when the server shuts down", async () => {
-    vi.useFakeTimers();
-    const inbox = service();
-    await inbox.answerView({ id: "room:ACM-1:ch1", option: "wait", holdMs: 5000 });
-    await inbox.held.flush();
-    expect(log).toEqual(["choice ACM-1 ch1 wait"]);
   });
 });

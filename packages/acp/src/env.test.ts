@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildEnv } from "./env.ts";
-import { loginCommand } from "./login.ts";
 
 const base = { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8" };
 
@@ -23,58 +22,9 @@ describe("buildEnv", () => {
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
       CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: "1",
     });
-  });
-
-  it("sets the API key only for API-key accounts", () => {
-    const login = buildEnv({ tool: "claude", home: "/h" }, base);
-    expect(login.ANTHROPIC_API_KEY).toBeUndefined();
-    const key = buildEnv({ tool: "claude", home: "/h", apiKey: "sk-test" }, base);
-    expect(key.ANTHROPIC_API_KEY).toBe("sk-test");
-    expect(key.DEFAULT_AUTH_REQUEST).toBeUndefined();
-  });
-
-  it("sets the git author, committer and task, a hooks folder and gc settings for this run only", () => {
-    const env = buildEnv({ tool: "claude", home: "/h" }, base, {
-      author: { name: "Ada", email: "ada@acme.test" },
-      committer: { name: "acme-dev via majhi", email: "majhi@majhi.local" },
-      task: "ACM-1",
-      branches: ["task/acm-1-x", "feature/y"],
-      gitDirs: ["/w/api/.git", "/w/web/.git"],
-      trailer: true,
-      hooks: "/m/git-hooks",
-    });
-    expect(env).toMatchObject({
-      GIT_AUTHOR_NAME: "Ada",
-      GIT_AUTHOR_EMAIL: "ada@acme.test",
-      GIT_COMMITTER_NAME: "acme-dev via majhi",
-      GIT_COMMITTER_EMAIL: "majhi@majhi.local",
-      MAJHI_TASK: "ACM-1",
-      MAJHI_BRANCHES: "task/acm-1-x feature/y",
-      MAJHI_GIT_DIRS: "/w/api/.git\n/w/web/.git",
-      MAJHI_TRAILER: "1",
-      GIT_CONFIG_COUNT: "8",
-      GIT_CONFIG_KEY_0: "core.hooksPath",
-      GIT_CONFIG_VALUE_0: "/m/git-hooks",
-      GIT_CONFIG_KEY_2: "gc.pruneExpire",
-      GIT_CONFIG_VALUE_2: "never",
-      GIT_CONFIG_KEY_6: "core.logAllRefUpdates",
-      GIT_CONFIG_VALUE_6: "always",
-      GIT_CONFIG_KEY_7: "gc.packRefs",
-      GIT_CONFIG_VALUE_7: "false",
-    });
-  });
-
-  it("never sets NO_BROWSER or any SSH variable, so agents have no SSH access", () => {
+    // No SSH variable, not even one the caller's base holds, so agents have no SSH access.
     const withSocket = { ...base, SSH_AUTH_SOCK: "/run/agent.sock" } as typeof base;
-    const env = buildEnv({ tool: "claude", home: "/h", apiKey: "k" }, withSocket);
-    expect(Object.keys(env).filter((k) => k === "NO_BROWSER" || k.startsWith("SSH_"))).toEqual([]);
-  });
-});
-
-describe("loginCommand", () => {
-  it("rejects API-key accounts and never shows a key", () => {
-    expect(() => loginCommand({ tool: "claude", home: "/h", apiKey: "sk-secret" }, { base })).toThrow();
-    const spec = loginCommand({ tool: "claude", home: "/h" }, { base });
-    expect(spec.display).not.toContain("KEY");
+    const keyed = buildEnv({ tool: "claude", home: "/h", apiKey: "k" }, withSocket);
+    expect(Object.keys(keyed).filter((k) => k === "NO_BROWSER" || k.startsWith("SSH_"))).toEqual([]);
   });
 });

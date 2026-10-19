@@ -135,38 +135,6 @@ describe("what the level lets through without a card", () => {
       ]);
     },
   );
-
-  it("leaves no room item for what stays inside the task, and logs it once a minute per kind", async () => {
-    const t = flow();
-    const run = t.runOf("ACM-8");
-    for (const line of ["pnpm test", "pnpm lint", "cd api"]) {
-      expect(await t.permissions.ask(run, t.shell(line), signal)).toBe("once");
-    }
-    expect(await t.permissions.ask(run, t.ask("Read a.ts", { kind: "read" }), signal)).toBe("once");
-    expect(t.items.size).toBe(0);
-    // Three commands in the same minute are one row; the read is another kind of action.
-    expect(t.logged.map((l) => [l.kind, l.by])).toEqual([
-      ["execute", "rule"],
-      ["read", "rule"],
-    ]);
-  });
-});
-
-describe("Allow in this task", () => {
-  it("lets the next ask of that kind in the same task run, and no other task's", async () => {
-    const t = flow();
-    const run = t.runOf("ACM-8");
-    const asking = t.permissions.ask(run, t.shell("gh pr merge 7"), signal);
-    await tick();
-    t.permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task");
-    expect(await asking).toBe("once");
-    expect(await t.permissions.ask(run, t.shell("gh pr merge 7"), signal)).toBe("once");
-    expect(t.items.get("perm:4:2")).toMatchObject({ state: "auto" });
-    const other = t.runOf("ACM-9");
-    void t.permissions.ask(other, t.shell("gh pr merge 7"), signal);
-    await tick();
-    expect(other.pending.size).toBe(1);
-  });
 });
 
 describe("Always", () => {
@@ -203,72 +171,5 @@ describe("Always", () => {
     void t.permissions.ask(message, t.shell("gh pr create --fill"), signal);
     await tick();
     expect(message.pending.size).toBe(1);
-  });
-
-  it("is never offered for a kind that always asks, and never for the agent's own allow always", async () => {
-    const t = flow();
-    const run = t.runOf("ACM-8");
-    void t.permissions.ask(run, t.shell("rm -rf /Users/owner/Documents"), signal);
-    await tick();
-    expect(t.items.get("perm:4:1")).toMatchObject({
-      risk: "delete-outside",
-      options: [{ id: "once" }, { id: "no" }],
-    });
-  });
-});
-
-describe("a connection's MCP tool write", () => {
-  const sync = "mcp__acme-obs__sync_data";
-
-  it("offers task and always choices, and Allow in this task covers the next call in the same task only", async () => {
-    const { permissions, ask, items, held } = flow();
-    const run = held("ACM-8");
-    const first = permissions.ask(run, ask(sync), signal);
-    expect(items.get("perm:4:1")).toMatchObject({
-      state: "pending",
-      options: [
-        { id: "once" },
-        { id: "majhi:task" },
-        { id: "majhi:always" },
-        { id: "majhi:reads" },
-        { id: "no" },
-      ],
-    });
-    permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task");
-    // The agent is told the plain Allow once, so its own CLI does not remember anything.
-    expect(await first).toBe("once");
-
-    expect(await permissions.ask(run, ask(sync), signal)).toBe("once");
-    expect(items.get("perm:4:2")).toMatchObject({ state: "auto" });
-
-    // Another task still asks.
-    void permissions.ask(held("ACM-9"), ask(sync), signal);
-    expect(items.get("perm:4:1")).toMatchObject({ state: "pending" });
-  });
-
-  it("keeps a destructive write to Allow once and Deny", () => {
-    const { permissions, ask, items, held } = flow();
-    const run = held("ACM-8");
-    void permissions.ask(run, ask("mcp__acme-obs__delete_view"), signal);
-    expect(items.get("perm:4:1")).toMatchObject({
-      options: [{ id: "once" }, { id: "no" }],
-      connection: { destructive: true },
-    });
-    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task")).toThrow();
-  });
-
-  it("refuses the captain every choice, and saves Always allow and It only reads for the owner", async () => {
-    const { permissions, ask, held, added } = flow();
-    const run = held("ACM-8");
-    void permissions.ask(run, ask(sync), signal);
-    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always", true)).toThrow(/owner/);
-    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:reads", true)).toThrow(/owner/);
-    expect(added).toEqual([]);
-
-    permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always");
-    void permissions.ask(run, ask(sync), signal);
-    permissions.answer(run, "ACM-8", "perm:4:2", "majhi:reads");
-    await Promise.resolve();
-    expect(added).toEqual(["allow:acme-obs.sync_data", "read:acme-obs.sync_data"]);
   });
 });

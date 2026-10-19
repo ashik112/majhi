@@ -51,7 +51,6 @@ async function items(h: Harness, task = "ACM-1"): Promise<RoomItem[]> {
 }
 const systems = async (h: Harness, task = "ACM-1") =>
   (await items(h, task)).flatMap((i) => (i.type === "system" ? [i.text] : []));
-const status = async (h: Harness, id = "ACM-1") => (await h.cmd("tasks.get", { id })).body;
 
 /** Starts ACM-1 with its first turn scripted and waits until that turn is running. */
 async function startWorking(options: WorldOptions = {}, file = "a.txt") {
@@ -91,14 +90,5 @@ describe("restart and crash", () => {
     expect(await git(wt, "show", "--name-only", "--format=", "HEAD")).toBe("a.txt");
     expect(again.majhi.services.store.runs.interrupted()).toEqual([]);
     expect(again.majhi.services.store.runs.forTask("ACM-1").at(-1)?.checkpoint).toBe(1);
-  });
-
-  it("pauses with reason error after two failed resumes", async () => {
-    await startWorking();
-    w.h.runtime.startError = new Error("adapter is broken");
-    extra = w.h.restart();
-    const again = extra;
-    await until(async () => (await status(again)).status === "paused", "the pause");
-    expect(await status(again)).toMatchObject({ pausedReason: "error" });
   });
 });

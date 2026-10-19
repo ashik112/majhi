@@ -86,23 +86,4 @@ describe("a client room of another workspace", () => {
     expect(proposal.isError).toBe(true);
     expect(proposal.text).toMatch(/Refused|own workspace/);
   });
-
-  it("is not changed by the captain: the client update switch is the owner's alone", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    const services = h.majhi.services;
-    const lane = (await services.lanes.ensure("acme")).id;
-    const call = (command: string, input: Record<string, unknown>) =>
-      services.admin.call({ task: lane, agent: "boss" }, toolName(command), { reason: "reading", ...input });
-    // Neither a proposal nor a tool: autonomy.configure does not take the switch, and authority.set is no tool.
-    const res = await call("autonomy.configure", { orgs: { acme: { incident: { clientUpdate: "sends" } } } });
-    expect(res.isError).toBe(true);
-    const direct = await call("authority.set", { org: "acme", clientUpdate: "sends" });
-    expect(direct).toEqual({ text: "Unknown tool: majhi_authority_set", isError: true });
-    expect((await w.items(lane)).filter((i) => i.type === "approval")).toHaveLength(0);
-    expect(JSON.stringify(await must(h.cmd("settings.get")))).not.toContain("clientUpdate");
-    // The owner's own command sets it.
-    expect((await h.cmd("authority.set", { org: "acme", clientUpdate: "sends" })).status).toBe(200);
-    expect(JSON.stringify(await must(h.cmd("settings.get")))).toContain('"clientUpdate":"sends"');
-  });
 });

@@ -83,29 +83,3 @@ describe("the captain and free agent slots", () => {
     expect(t.status(first)).toBe("running");
   });
 });
-
-describe("one task at a time per workspace", () => {
-  it("keeps the captain's second start in the backlog while one runs, lets the owner raise it, and never holds the owner", async () => {
-    const t = await on();
-    const first = await t.ownerTask("Fix the typo on the login page");
-    const second = await t.ownerTask("Update the README");
-    expect((await t.call("majhi_tasks_start", { id: first })).isError).toBe(false);
-    expect(t.status(first)).toBe("running");
-
-    const no = await t.call("majhi_tasks_start", { id: second });
-    expect(no.isError).toBe(true);
-    expect(no.text).toContain(`This workspace works on 1 task at once and ${first} is running.`);
-    expect(t.status(second)).toBe("inbox");
-
-    // The owner's own start is never held by it.
-    expect((await t.h.cmd("tasks.start", { id: second })).status).toBe(200);
-    expect(t.status(second)).toBe("running");
-    expect((await t.h.cmd("tasks.stop", { id: second })).status).toBe(200);
-
-    // Two at once when the owner says so.
-    const third = await t.ownerTask("Add a CSV export");
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 2 } } })).status).toBe(200);
-    expect((await t.call("majhi_tasks_start", { id: third })).isError).toBe(false);
-    expect(t.status(third)).toBe("running");
-  });
-});

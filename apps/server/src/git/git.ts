@@ -460,6 +460,19 @@ export async function uncommitted(worktree: string): Promise<string[]> {
 }
 
 /**
+ * True when a tracked file in the checkout is modified or staged, or git cannot tell. Untracked
+ * files do not count. Every refusal that guards the owner's checkout or a task folder against
+ * losing uncommitted work asks this one question, and an unreadable checkout counts as changed.
+ */
+export async function hasTrackedChanges(checkout: string): Promise<boolean> {
+  try {
+    return (await git(checkout, ["status", "--porcelain", "--untracked-files=no"])).trim() !== "";
+  } catch {
+    return true;
+  }
+}
+
+/**
  * The files git keeps in a worktree's own git folder while an operation is unfinished, with the
  * operation's name. A squash merge leaves no `MERGE_HEAD`, only `SQUASH_MSG` next to the staged
  * result; `git commit` or `git reset --merge` removes it.

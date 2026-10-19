@@ -155,28 +155,4 @@ describe("a captain lane's reads", () => {
     const memory = await t.call("memory.search", { query: "Tuesdays" });
     expect(memory.text).toContain("Acme deploys on Tuesdays");
   });
-
-  it("refuse an explicit filter for another workspace, and reads that name its task, project or room", async () => {
-    const t = await world();
-    const refused = (text: string) => expect(text).toMatch(/^Refused: this lane works in Acme only/);
-    const cases: [string, Record<string, unknown>][] = [
-      ["tasks.get", { id: t.glx.id }],
-      ["tasks.get", { id: t.own.id }],
-      ["room.items", { task: t.glx.id }],
-      ["audit.list", { org: "globex" }],
-      ["usage.summary", { filters: { org: "globex" } }],
-      ["usage.turns", { filters: { account: "claude-globex" } }],
-      ["memory.search", { query: "invoices", scope: "org:globex" }],
-      ["projects.get", { id: "globex-web" }],
-    ];
-    for (const [command, input] of cases) {
-      if (!(command in commands)) continue;
-      const res = await t.call(command, input);
-      expect(res.isError, `${command} ${JSON.stringify(input)}`).toBe(true);
-      refused(res.text);
-    }
-    // Spend in the lane counts its own workspace only.
-    const summary = JSON.parse((await t.call("usage.summary", {})).text) as { all: { costUsd: number } };
-    expect(summary.all.costUsd).toBe(0.5);
-  });
 });

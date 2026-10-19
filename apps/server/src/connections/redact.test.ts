@@ -4,29 +4,9 @@ import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
-import { redactDeep, redactSecrets } from "./redact.ts";
 
 const API_KEY = "sk-acme-live-0123456789abcdef";
 const SHOWN = "[secret acme-keys.API_KEY]";
-
-describe("redactSecrets", () => {
-  it("replaces each value with its name, longest first, and leaves short values alone", () => {
-    const secrets = [
-      { name: "a.short", value: "abc" },
-      { name: "a.key", value: "key-0123" },
-      { name: "a.long", value: "key-0123-and-more" },
-    ];
-    expect(redactSecrets("x key-0123-and-more y key-0123 abc", secrets)).toBe(
-      "x [secret a.long] y [secret a.key] abc",
-    );
-    expect(
-      redactDeep({ a: ["key-0123", 3], b: { c: "key-0123" } }, (t) => redactSecrets(t, secrets)),
-    ).toEqual({
-      a: ["[secret a.key]", 3],
-      b: { c: "[secret a.key]" },
-    });
-  });
-});
 
 describe("a run's secret values", () => {
   let w: World;

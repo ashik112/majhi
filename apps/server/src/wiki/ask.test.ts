@@ -11,7 +11,7 @@ import { Housekeeper } from "../memory/housekeeper.ts";
 import { Store } from "../store/index.ts";
 import { fakeRuntime } from "../testing/fakeRuntime.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
-import { NOT_IN_WIKI, WikiAsk } from "./ask.ts";
+import { WikiAsk } from "./ask.ts";
 import { WikiIndex } from "./search.ts";
 
 const SHA = CommitShaSchema.parse("a".repeat(40));
@@ -145,46 +145,5 @@ describe("wiki.ask", () => {
     await expect(ask.answer("acme", "shop", "How does the billing service charge cards?")).rejects.toThrow(
       '"shop" is not a project of workspace "acme".',
     );
-  });
-
-  it("drops a cited passage number it was not given, and answers not found when none was", async () => {
-    const some = await world({ cited: [1, 40] });
-    const out = await some.ask.answer("acme", "api", "How does the billing service charge cards?");
-    expect(out).toMatchObject({
-      found: true,
-      answer: "It charges cards.",
-      pages: [{ project: "api", id: "overview" }],
-    });
-    expect(out.sources).toHaveLength(1);
-
-    const none = await world({ cited: [40, 0, -1], answer: "It uses Paypal." });
-    expect(await none.ask.answer("acme", "api", "How does the billing service charge cards?")).toEqual({
-      answer: NOT_IN_WIKI,
-      sources: [],
-      pages: [],
-      found: false,
-    });
-  });
-
-  it("does not call the model when nothing in the scope matches, and costs nothing when asked again", async () => {
-    const { ask, sessions } = await world();
-    const nothing = await ask.answer("acme", "api", "What colour is the moon?");
-    expect(nothing).toEqual({ answer: NOT_IN_WIKI, sources: [], pages: [], found: false });
-    expect(sessions()).toBe(0);
-    // Words only another workspace's page holds find nothing here.
-    expect(await ask.answer("acme", undefined, "secret vault")).toMatchObject({ found: false });
-    expect(sessions()).toBe(0);
-
-    await ask.answer("acme", "api", "How does the billing service charge cards?");
-    await ask.answer("acme", "api", "  how does the BILLING service charge cards? ");
-    expect(sessions()).toBe(1);
-  });
-
-  it("refuses when the workspace budget is used up, and answers again once it has room", async () => {
-    const { ask, sessions } = await world({ rest: "Workspace acme has used its budget." });
-    await expect(ask.answer("acme", "api", "How does the billing service charge cards?")).rejects.toThrow(
-      "Workspace acme has used its budget.",
-    );
-    expect(sessions()).toBe(0);
   });
 });

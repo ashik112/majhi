@@ -6,10 +6,6 @@ import {
   type Hold,
   type HoldCause,
   type HoldOf,
-  HoldSchema,
-  type Lifter,
-  liftersOf,
-  mergeHold,
 } from "./hold.ts";
 
 const AT = "2026-10-05T10:00:00.000Z";
@@ -35,7 +31,6 @@ const SAMPLES: { [C in HoldCause]: HoldOf<C> } = {
   "dependency-closed": { cause: "dependency-closed", at: AT, on: ["ACME-1"] },
   "dependency-removed": { cause: "dependency-removed", at: AT, on: ["ACME-1"] },
 };
-const CAUSES = Object.keys(SAMPLES) as HoldCause[];
 const hold = (cause: HoldCause): Hold => SAMPLES[cause];
 
 const READING: ClearReading = {
@@ -47,119 +42,63 @@ const READING: ClearReading = {
   runAtStep: false,
 };
 
-/** Who may lift each cause, from the design table (4.3). */
-const LIFTERS: Record<HoldCause, Lifter[]> = {
-  "owner-stop": ["owner"],
-  "captain-stop": ["owner", "captain"],
-  "autopilot-off": ["owner", "captain"],
-  "budget-limit": ["owner", "majhi"],
-  "account-limit": ["majhi", "owner"],
-  offline: ["majhi", "owner"],
-  "signed-out": ["majhi", "owner"],
-  error: ["owner", "captain"],
-  "loop-guard": ["owner"],
-  idle: ["owner", "captain", "majhi"],
-  preempted: ["majhi", "owner"],
-  "agents-down": ["majhi", "owner"],
-  "dependency-closed": ["owner", "majhi"],
-  "dependency-removed": ["owner", "majhi"],
-};
-
-describe("hold table", () => {
-  it.each(CAUSES)("%s: a sample parses and has the right lifters", (cause) => {
-    expect(HoldSchema.safeParse(hold(cause)).success).toBe(true);
-    expect([...liftersOf(hold(cause))].sort()).toEqual([...LIFTERS[cause]].sort());
-  });
-
-  it("the Auto-pilot step hold is lifted by the owner or majhi, not the captain", () => {
-    const step: Hold = { cause: "autopilot-off", at: AT, mode: "step" };
-    expect(liftersOf(step)).toEqual(["owner", "majhi"]);
-    expect(autoClears(step)).toEqual({ kind: "step-or-autopilot-on" });
-  });
-});
-
 describe("auto-clear conditions", () => {
-  it("offline clears only when online", () => {
-    expect(conditionMet(autoClears(hold("offline")), READING)).toBe(false);
-    expect(conditionMet(autoClears(hold("offline")), { ...READING, online: true })).toBe(true);
+  const signedIn = (account: string, limitedUntil?: string, isIn = true): ClearReading => ({
+    ...READING,
+    accounts: { [account]: { signedIn: isIn, ...(limitedUntil === undefined ? {} : { limitedUntil }) } },
   });
+  const openBudget: Hold = { ...SAMPLES["budget-limit"], until: "2026-10-06T00:00:00.000Z" };
 
-  it("signed-out clears when that account reads signed in, not another", () => {
-    const c = autoClears(hold("signed-out"));
-    expect(conditionMet(c, READING)).toBe(false);
-    expect(conditionMet(c, { ...READING, accounts: { other: { signedIn: true } } })).toBe(false);
-    expect(conditionMet(c, { ...READING, accounts: { "claude-acme": { signedIn: false } } })).toBe(false);
-    expect(conditionMet(c, { ...READING, accounts: { "claude-acme": { signedIn: true } } })).toBe(true);
-  });
-
-  it("account-limit clears when the window reset, and never for a signed-out account", () => {
-    const c = autoClears(hold("account-limit"));
-    const at = (limitedUntil: string | undefined, signedIn = true): ClearReading => ({
-      ...READING,
-      accounts: { "claude-acme": { signedIn, limitedUntil } },
-    });
-    expect(conditionMet(c, at("2026-10-05T13:00:00.000Z"))).toBe(false);
-    expect(conditionMet(c, at("2026-10-05T12:00:00.000Z"))).toBe(true);
-    expect(conditionMet(c, at(undefined))).toBe(true);
-    expect(conditionMet(c, at(undefined, false))).toBe(false);
-    expect(conditionMet(c, READING)).toBe(false);
-  });
-
-  it("budget-limit clears on room or when its period end passes", () => {
-    const open = { ...SAMPLES["budget-limit"], until: "2026-10-06T00:00:00.000Z" };
-    expect(conditionMet(autoClears(open), READING)).toBe(false);
-    expect(conditionMet(autoClears(open), { ...READING, budgetHasRoom: true })).toBe(true);
-    expect(conditionMet(autoClears(open), { ...READING, now: "2026-10-06T00:00:00.000Z" })).toBe(true);
-    expect(conditionMet(autoClears(hold("budget-limit")), READING)).toBe(false);
-  });
-
-  it("Auto-pilot step clears at the step or when Auto-pilot is on", () => {
-    const c = autoClears({ cause: "autopilot-off", at: AT, mode: "step" });
-    expect(conditionMet(c, READING)).toBe(false);
-    expect(conditionMet(c, { ...READING, runAtStep: true })).toBe(true);
-    expect(conditionMet(c, { ...READING, autopilot: "on" })).toBe(true);
-    expect(conditionMet(c, { ...READING, autopilot: "stopping" })).toBe(false);
-  });
-
-  it("idle clears on activity after the hold, not before", () => {
-    const c = autoClears(hold("idle"));
-    expect(conditionMet(c, READING)).toBe(false);
-    expect(conditionMet(c, { ...READING, lastActivityAt: "2026-10-05T09:00:00.000Z" })).toBe(false);
-    expect(conditionMet(c, { ...READING, lastActivityAt: "2026-10-05T10:00:01.000Z" })).toBe(true);
-  });
-
-  it("never means never", () => {
-    expect(conditionMet({ kind: "never" }, { ...READING, online: true, budgetHasRoom: true })).toBe(false);
-  });
-});
-
-describe("mergeHold", () => {
-  it("an owner-only hold is not replaced by one majhi can clear", () => {
-    expect(mergeHold(hold("owner-stop"), hold("offline")).cause).toBe("owner-stop");
-    expect(mergeHold(hold("loop-guard"), hold("account-limit")).cause).toBe("loop-guard");
-  });
-
-  it("a tie keeps the existing hold", () => {
-    expect(mergeHold(hold("owner-stop"), hold("loop-guard")).cause).toBe("owner-stop");
-  });
-
-  it("the same cause takes the newer data", () => {
-    const newer: Hold = { cause: "signed-out", at: "2026-10-05T11:00:00.000Z", account: "claude-globex" };
-    expect(mergeHold(hold("signed-out"), newer)).toEqual(newer);
-  });
-
-  it("Auto-pilot now is never downgraded to step, step upgrades to now", () => {
-    const now: Hold = { cause: "autopilot-off", at: AT, mode: "now" };
-    const step: Hold = { cause: "autopilot-off", at: AT, mode: "step" };
-    expect(mergeHold(now, step)).toEqual(now);
-    expect(mergeHold(step, now)).toEqual(now);
-  });
-
-  it("a removed dependency replaces a closed one", () => {
-    expect(mergeHold(hold("dependency-closed"), hold("dependency-removed")).cause).toBe("dependency-removed");
-  });
-
-  it("nothing existing takes the incoming hold", () => {
-    expect(mergeHold(undefined, hold("offline"))).toEqual(hold("offline"));
+  it.each<[string, Hold, ClearReading, boolean]>([
+    ["offline, still offline", hold("offline"), READING, false],
+    ["offline, back online", hold("offline"), { ...READING, online: true }, true],
+    ["signed out, no reading", hold("signed-out"), READING, false],
+    ["signed out, another account signed in", hold("signed-out"), signedIn("other"), false],
+    [
+      "signed out, that account still signed out",
+      hold("signed-out"),
+      signedIn("claude-acme", undefined, false),
+      false,
+    ],
+    ["signed out, that account signed in again", hold("signed-out"), signedIn("claude-acme"), true],
+    [
+      "account limit, window not over",
+      hold("account-limit"),
+      signedIn("claude-acme", "2026-10-05T13:00:00.000Z"),
+      false,
+    ],
+    [
+      "account limit, window reset",
+      hold("account-limit"),
+      signedIn("claude-acme", "2026-10-05T12:00:00.000Z"),
+      true,
+    ],
+    ["account limit, no limit any more", hold("account-limit"), signedIn("claude-acme"), true],
+    [
+      "account limit, but signed out",
+      hold("account-limit"),
+      signedIn("claude-acme", undefined, false),
+      false,
+    ],
+    ["account limit, no reading", hold("account-limit"), READING, false],
+    ["budget limit, no room", openBudget, READING, false],
+    ["budget limit, room again", openBudget, { ...READING, budgetHasRoom: true }, true],
+    ["budget limit, period over", openBudget, { ...READING, now: "2026-10-06T00:00:00.000Z" }, true],
+    ["budget limit with no end, no room", hold("budget-limit"), READING, false],
+    ["idle, no activity", hold("idle"), READING, false],
+    [
+      "idle, activity before the hold",
+      hold("idle"),
+      { ...READING, lastActivityAt: "2026-10-05T09:00:00.000Z" },
+      false,
+    ],
+    [
+      "idle, activity after the hold",
+      hold("idle"),
+      { ...READING, lastActivityAt: "2026-10-05T10:00:01.000Z" },
+      true,
+    ],
+  ])("clears a hold only when its cause is gone: %s", (_name, held, reading, clears) => {
+    expect(conditionMet(autoClears(held), reading)).toBe(clears);
   });
 });

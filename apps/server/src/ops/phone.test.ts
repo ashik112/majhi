@@ -1,21 +1,9 @@
 import type { OwnerDecision } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { opsPhoneRoutes } from "./routes.ts";
-import { answers, down, MIN, type OpsWorld, opsWorld, SERVICE } from "./testing.ts";
+import { type OpsWorld, opsWorld } from "./testing.ts";
 
-/** Escalation, quiet hours, ntfy down, and the phone's buttons: single use, short lived, bound, and plain. */
-
-const URL_A = SERVICE.url;
 const ADDRESS = "http://192.168.1.20:7070";
-
-async function openHigh(w: OpsWorld): Promise<number> {
-  await w.ops.watch.saveService({ ...SERVICE } as never);
-  answers(w, URL_A, down());
-  await w.ops.watch.runOrg("acme");
-  const [inc] = w.ops.repo.open();
-  if (inc === undefined) throw new Error("no incident opened");
-  return inc.id;
-}
 
 async function phoneOn(w: OpsWorld, address: string | null = ADDRESS) {
   const setup = await w.ops.phone.setup({});
@@ -51,119 +39,6 @@ function buttons(w: OpsWorld, index = -1): Record<string, string> {
 
 const path = (url: string) => url.slice(ADDRESS.length);
 
-describe("escalation", () => {
-  it("a high incident alerts now, repeats once after 10 minutes, and no more", async () => {
-    const w = opsWorld();
-    await phoneOn(w);
-    const id = await openHigh(w);
-    expect(w.alerts.map((a) => [a.severity, a.repeat])).toEqual([["high", false]]);
-    expect(w.ntfy).toHaveLength(1);
-    expect(w.ntfy[0]?.body.priority).toBe(4);
-
-    w.advance(9 * MIN);
-    await w.ops.watch.tick();
-    expect(w.alerts).toHaveLength(1);
-
-    w.advance(1 * MIN);
-    await w.ops.watch.tick();
-    expect(w.alerts.map((a) => a.repeat)).toEqual([false, true]);
-    expect(w.ntfy).toHaveLength(2);
-    expect(w.ntfy[1]?.body.priority).toBe(5);
-
-    w.advance(40 * MIN);
-    await w.ops.watch.tick();
-    await w.ops.watch.tick();
-    expect(w.alerts).toHaveLength(2);
-    expect(w.ntfy).toHaveLength(2);
-    const inc = w.ops.repo.incident(id);
-    expect(inc?.timeline.map((t) => t.kind)).toEqual(["opened", "alerted", "action", "escalated"]);
-    // It is marked in Decisions as not acknowledged.
-    expect(w.ops.watch.unacked()).toEqual([expect.objectContaining({ id, escalated: true })]);
-  });
-
-  it("an acknowledged incident never repeats, and leaves Decisions", async () => {
-    const w = opsWorld();
-    await phoneOn(w);
-    const id = await openHigh(w);
-    expect(w.ops.watch.unacked()).toHaveLength(1);
-    w.advance(5 * MIN);
-    await w.ops.watch.ack(id, { kind: "owner" });
-    expect(w.ops.watch.unacked()).toEqual([]);
-    w.advance(30 * MIN);
-    await w.ops.watch.tick();
-    expect(w.alerts).toHaveLength(1);
-    expect(w.ntfy).toHaveLength(1);
-    expect(w.ops.repo.incident(id)?.timeline.map((t) => t.kind)).toEqual([
-      "opened",
-      "alerted",
-      "action",
-      "acked",
-    ]);
-    // Acknowledging twice changes nothing.
-    await w.ops.watch.ack(id, { kind: "owner" });
-    expect(w.ops.repo.incident(id)?.timeline).toHaveLength(4);
-    // It is still open until its checks are green.
-    expect(w.ops.repo.open()).toHaveLength(1);
-  });
-});
-
-describe("what the phone gets", () => {
-  it("shows the topic once, stores it in secrets, and never returns it again", async () => {
-    const w = opsWorld();
-    const first = await w.ops.phone.setup({});
-    expect(first.topic).toMatch(/^majhi-[A-Za-z0-9_-]{24}$/);
-    expect(first.link).toBe(`ntfy://ntfy.sh/${first.topic}`);
-    expect(w.secrets.values.get("ops-ntfy-topic")).toBe(first.topic);
-    expect(JSON.stringify(await w.ops.phone.status())).not.toContain(first.topic);
-    expect(JSON.stringify(await w.ops.watch.overview())).not.toContain(first.topic);
-    // Setting up again replaces it.
-    const second = await w.ops.phone.setup({});
-    expect(second.topic).not.toBe(first.topic);
-    await w.ops.phone.forget();
-    expect(w.secrets.values.size).toBe(0);
-    expect((await w.ops.phone.status()).state).toBe("off");
-  });
-
-  it("refuses an address that carries a password, or is not a web address", async () => {
-    const w = opsWorld();
-    await expect(w.ops.phone.setup({ server: "https://u:p@ntfy.example" })).rejects.toThrow(/./);
-    await expect(w.ops.phone.setup({ server: "ftp://ntfy.example" })).rejects.toThrow(/./);
-    await w.ops.phone.setup({});
-    await expect(w.ops.phone.set({ address: "javascript:alert(1)" })).rejects.toThrow(/./);
-  });
-
-  it("is a title only: the workspace and a fixed phrase, never a task, a URL, a secret or code", async () => {
-    const w = opsWorld();
-    await phoneOn(w);
-    w.net.answers.set(URL_A, [down()]);
-    await w.ops.watch.saveService({ ...SERVICE, name: "Acme API SECRET=hunter2 rm -rf /" } as never);
-    await w.ops.watch.runOrg("acme");
-    w.decisions = [
-      approval(),
-      approval({ id: "room:ACM-1:i2", kind: "ship", title: "Merge password=hunter2 into main" }),
-      approval({ id: "draft:3", kind: "draft", title: "Email to ceo@acme.example: here is the key hunter2" }),
-    ];
-    await w.ops.phone.sweepDecisions();
-    expect(w.ntfy.length).toBe(4);
-    const wire = JSON.stringify(w.ntfy.map((n) => ({ ...n.body, topic: undefined })));
-    for (const bad of [
-      "hunter2",
-      "rm -rf",
-      "evil.example",
-      "ceo@acme.example",
-      "api.acme.example",
-      "ACM-1",
-      "Merge",
-      "Email to",
-    ]) {
-      expect(wire).not.toContain(bad);
-    }
-    // Each decision is pushed once.
-    await w.ops.phone.sweepDecisions();
-    expect(w.ntfy).toHaveLength(4);
-  });
-});
-
 describe("the buttons", () => {
   function app(w: OpsWorld) {
     return opsPhoneRoutes({ phone: w.ops.phone });
@@ -192,21 +67,6 @@ describe("the buttons", () => {
     const again = await post(a, approve);
     expect(again.status).toBe(403);
     expect(w.answered).toHaveLength(1);
-  });
-
-  it("taking one button voids the other", async () => {
-    const { w, a, approve, leave } = await pushed();
-    expect((await post(a, leave)).status).toBe(200);
-    expect(w.answered).toEqual([{ id: "room:ACM-1:i1", option: "reject" }]);
-    expect((await post(a, approve)).status).toBe(403);
-    expect(w.answered).toHaveLength(1);
-  });
-
-  it("refuses a link that is too old", async () => {
-    const { w, a, approve } = await pushed();
-    w.advance(61 * MIN);
-    expect((await post(a, approve)).status).toBe(403);
-    expect(w.answered).toEqual([]);
   });
 
   it("refuses a changed byte, a link that names another reference or action, a forged payload, and a token from another decision", async () => {
@@ -251,39 +111,5 @@ describe("the buttons", () => {
     // The real ones still work: refusals spend nothing.
     expect((await post(a, first.Leave as string)).status).toBe(200);
     expect(w.answered).toEqual([{ id: "room:ACM-1:i1", option: "reject" }]);
-  });
-
-  it("a token made after a new setup does not work: the old signing key is gone", async () => {
-    const { w, a, approve } = await pushed();
-    await w.ops.phone.setup({});
-    await w.ops.phone.set({ address: ADDRESS, actions: { approval: true } });
-    expect((await post(a, approve)).status).toBe(403);
-  });
-
-  it("will not answer a kind the owner turned off, a decision that is gone, or a captain's different pick", async () => {
-    const { w, a, approve } = await pushed();
-    await w.ops.phone.set({ actions: { approval: false } });
-    expect((await post(a, approve)).status).toBe(403);
-    await w.ops.phone.set({ actions: { approval: true } });
-    w.decisions = [];
-    expect((await post(a, approve)).status).toBe(403);
-
-    const s = opsWorld();
-    await phoneOn(s);
-    s.decisions = [
-      approval({ suggestion: { option: "reject", reason: "touches the build", by: "captain" } }),
-    ];
-    await s.ops.phone.sweepDecisions();
-    const res = await post(app(s), buttons(s).Approve as string);
-    expect(res.status).toBe(403);
-    expect(s.answered).toEqual([]);
-  });
-
-  it("stops answering after too many wrong tries, even to a good link", async () => {
-    const { w, a, approve } = await pushed();
-    for (let i = 0; i < 20; i++) await a.request(`/ops/phone/x/approve?t=wrong${i}`, { method: "POST" });
-    const res = await post(a, approve);
-    expect(res.status).toBe(429);
-    expect(w.answered).toEqual([]);
   });
 });

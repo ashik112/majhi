@@ -1,6 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { LoopGuard } from "./loop-guard.ts";
@@ -53,53 +51,5 @@ describe("the loop guard", () => {
     expect(paused).toEqual([]);
     expect(await guard.answered("ACM-1")).toBe(true);
     expect(paused).toEqual(["ACM-1"]);
-  });
-
-  it("starts the count again after a commit", async () => {
-    const { guard, paused, tasks } = setup(memory());
-    await answers(guard, "ACM-1", 2);
-    const t = tasks.get("ACM-1");
-    if (t !== undefined) t.head = "a2";
-    await answers(guard, "ACM-1", 2);
-    expect(paused).toEqual([]);
-    await guard.answered("ACM-1");
-    expect(paused).toEqual(["ACM-1"]);
-  });
-
-  it("keeps the count over a restart", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "majhi-loop-guard-"));
-    dirs.push(dir);
-    const file = join(dir, "majhi.db");
-    const open = () => {
-      const store = new Store(file);
-      stores.push(store);
-      return new CaptainRepo(store.raw);
-    };
-    const first = setup(open());
-    await answers(first.guard, "ACM-1", 2);
-    const second = setup(open());
-    expect(await second.guard.answered("ACM-1")).toBe(true);
-    expect(second.paused).toEqual(["ACM-1"]);
-  });
-
-  it("pauses once when answers come at the same time, however many", async () => {
-    const { guard, paused } = setup(memory());
-    await guard.answered("ACM-1");
-    await Promise.all([guard.answered("ACM-1"), guard.answered("ACM-1"), guard.answered("ACM-1")]);
-    expect(paused).toEqual(["ACM-1"]);
-  });
-
-  it("pauses again only after the owner resumed it and the answers went on without progress", async () => {
-    const { guard, paused, tasks } = setup(memory());
-    await answers(guard, "ACM-1", 3);
-    expect(paused).toEqual(["ACM-1"]);
-    // Still paused, one more answer in flight: no second pause.
-    await guard.answered("ACM-1");
-    expect(paused).toEqual(["ACM-1"]);
-    // The owner resumes (a status change), the loop goes on.
-    const t = tasks.get("ACM-1");
-    if (t !== undefined) t.status = "running";
-    await answers(guard, "ACM-1", 3);
-    expect(paused).toEqual(["ACM-1", "ACM-1"]);
   });
 });

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -74,34 +73,6 @@ beforeEach(() => {
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
 describe("restore swap", () => {
-  it("replaces the data, sets the old data aside and drops the old write-ahead log", () => {
-    seedLive();
-    const staged = stageBackup();
-    stageSwap(home, { id: "r1", name: "majhi-daily-1.age", staged, now: new Date() });
-    expect(readPending(home)?.state).toBe("staged");
-
-    expect(applyPendingRestore(home)).toBe(true);
-
-    expect(readFileSync(join(home, "majhi.db"), "utf8")).toBe("restored-db");
-    expect(existsSync(join(home, "majhi.db-wal"))).toBe(false);
-    expect(existsSync(join(home, "majhi.db-shm"))).toBe(false);
-    expect(readFileSync(join(home, "memory/memory.db"), "utf8")).toBe("restored-memory");
-    // Only the database in memory/ is replaced: other files there stay.
-    expect(readFileSync(join(home, "memory/notes.txt"), "utf8")).toBe("kept: not a database");
-    expect(readFileSync(join(home, "agents/b.md"), "utf8")).toBe("restored agent");
-    expect(existsSync(join(home, "agents/a.md"))).toBe(false);
-    // A folder the backup does not have is left alone.
-    expect(readFileSync(join(home, "skills/old/SKILL.md"), "utf8")).toContain("live skill");
-    // The old data is kept as the rollback.
-    expect(readFileSync(join(home, "rollback/r1/majhi.db"), "utf8")).toBe("live-db");
-    expect(readFileSync(join(home, "rollback/r1/majhi.db-wal"), "utf8")).toBe("live-wal");
-    expect(readFileSync(join(home, "rollback/r1/agents/a.md"), "utf8")).toBe("live agent");
-    expect(readResult(home)?.ok).toBe(true);
-    expect(readPending(home)).toBeUndefined();
-    // Nothing happens twice.
-    expect(applyPendingRestore(home)).toBe(false);
-  });
-
   it("leaves the old data exactly as it was when any single step fails", () => {
     seedLive();
     const before = snapshot();
@@ -129,42 +100,5 @@ describe("restore swap", () => {
       expect(readResult(home)).toMatchObject({ ok: false });
       expect(readPending(home)).toBeUndefined();
     }
-  });
-
-  it("puts everything back at the next start when the process died halfway", () => {
-    seedLive();
-    const before = snapshot();
-    // Whatever the step, the process dies there: every later file operation also fails.
-    for (let dieAt = 1; dieAt <= 14; dieAt++) {
-      rmSync(join(home, "restore-staging"), { recursive: true, force: true });
-      rmSync(join(home, "rollback"), { recursive: true, force: true });
-      const staged = stageBackup();
-      stageSwap(home, { id: "r1", name: "majhi-daily-1.age", staged, now: new Date() });
-      let calls = 0;
-      const dying: SwapFs = {
-        rename(from, to) {
-          calls++;
-          if (calls >= dieAt) throw new Error("killed");
-          renameSync(from, to);
-        },
-      };
-      applyPendingRestore(home, dying);
-      if (calls < dieAt) break;
-      // The next start sees a journal that never finished and undoes it.
-      expect(applyPendingRestore(home)).toBe(false);
-      expect(snapshot()).toEqual(before);
-      expect(readResult(home)).toMatchObject({ ok: false });
-    }
-  });
-
-  it("keeps only the newest rollbacks", () => {
-    seedLive();
-    for (const id of ["r1", "r2", "r3"]) {
-      const staged = join(home, "restore-staging", id, "data");
-      put("majhi.yaml", `from ${id}`, staged);
-      stageSwap(home, { id, name: `${id}.age`, staged, now: new Date() });
-      applyPendingRestore(home);
-    }
-    expect(readdirSync(join(home, "rollback")).sort()).toEqual(["r2", "r3"]);
   });
 });

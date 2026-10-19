@@ -153,6 +153,14 @@ export function replaceSecrets(
   return out + text.slice(at);
 }
 
+/**
+ * The text with every secret it holds replaced by `placeholder`. The one way text that may hold a
+ * secret is made safe to keep or show: command output, deploy logs, approval details, client replies.
+ */
+export function hideSecrets(text: string, placeholder: string): string {
+  return replaceSecrets(text, detectSecrets(text), () => placeholder);
+}
+
 const KIND_NAMES: Partial<Record<SecretKind, string>> = {
   anthropic: "anthropic",
   openai: "openai",

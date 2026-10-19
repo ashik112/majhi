@@ -1,4 +1,4 @@
-import { type ApprovalMode, detectSecrets, replaceSecrets } from "@majhi/shared";
+import { type ApprovalMode, hideSecrets } from "@majhi/shared";
 
 export type Decision = "run" | "pending";
 
@@ -50,5 +50,5 @@ function redactWith(input: unknown, sensitive: RegExp): unknown {
 
 /** Text with every detected secret hidden. */
 export function redactText(text: string): string {
-  return replaceSecrets(text, detectSecrets(text), () => REDACTED);
+  return hideSecrets(text, REDACTED);
 }

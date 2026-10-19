@@ -15,7 +15,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
-import { DetailPane, } from "@/components/ui/list-detail";
+import { DetailPane } from "@/components/ui/list-detail";
 import { Menu } from "@/components/ui/menu";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { PageLink } from "@/components/ui/page-link";

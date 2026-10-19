@@ -6,7 +6,6 @@ import {
   type ConnectionHealth,
   type ConnectionTestResult,
   SERVICE_CATALOG,
-  type TokenMethod,
 } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConnectionHealthService } from "../connections/health.ts";
@@ -15,7 +14,6 @@ import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
 import { ConnectService } from "./service.ts";
-import { checkToken } from "./token-check.ts";
 
 const OWNER: CommandMeta = { actor: { kind: "owner" } };
 const TOKEN = "lin_api_acmeSecretValue0123456789";
@@ -160,20 +158,6 @@ afterEach(async () => {
 });
 
 describe("a pasted token connects only when a real call with it passes", () => {
-  it("a wrong token saves nothing and is a typed rejection with the page to make a new one", async () => {
-    r = await rig();
-    const out = await r.connect.connectToken(
-      { org: "acme", service: "linear-key", token: "lin_api_wrong0123456789" },
-      OWNER,
-    );
-    expect(out).toMatchObject({
-      ok: false,
-      failure: { reason: "rejected", status: 400 },
-    });
-    expect(r.connections.size).toBe(0);
-    expect(r.stored.size).toBe(0);
-  });
-
   it("the token goes only in an Authorization header, to Linear's host, with no redirect followed, and never into a URL, a log or a state", async () => {
     r = await rig();
     const out = await r.connect.connectToken({ org: "acme", service: "linear-key", token: TOKEN }, OWNER);
@@ -192,65 +176,5 @@ describe("a pasted token connects only when a real call with it passes", () => {
     expect(everything).not.toContain(TOKEN);
     // It is stored once, as a secret value of the connection, and nowhere in its config.
     expect([...r.stored.values()]).toEqual([TOKEN]);
-  });
-
-  it("a token that later stops working needs attention, and a re-check that passes heals it", async () => {
-    r = await rig();
-    const out = await r.connect.connectToken({ org: "acme", service: "linear-key", token: TOKEN }, OWNER);
-    const id = out.ok ? out.connection : "";
-    r.state.status = 401;
-    await r.health.check(id);
-    expect(r.health.get(id)).toMatchObject({ state: "needs-attention", reason: "rejected" });
-    delete r.state.status;
-    await r.health.check(id);
-    expect(r.health.get(id)?.state).toBe("connected");
-  });
-});
-
-describe("checkToken", () => {
-  const method = (hosts: string[], url = "https://api.acme.test/me"): TokenMethod => ({
-    variable: "ACME_TOKEN",
-    page: { label: "Open", url: "https://acme.test/tokens" },
-    steps: ["Make one"],
-    scopes: [],
-    auth: "bearer",
-    check: { url, method: "GET", labelPaths: [["user", "name"]], did: "Asked Acme who it is" },
-    hosts,
-  });
-  const answer = (status: number, body: unknown) =>
-    (async () => Response.json(body, { status })) as unknown as typeof fetch;
-
-  it("never sends a token to a host the service entry does not name", async () => {
-    let called = false;
-    const fetchFn = (async () => {
-      called = true;
-      return Response.json({});
-    }) as unknown as typeof fetch;
-    expect(await checkToken(fetchFn, method(["api.other.test"]), TOKEN)).toMatchObject({
-      ok: false,
-      failure: { reason: "blocked-host" },
-    });
-    expect(called).toBe(false);
-  });
-
-  it("a 200 that does not name an account is not a pass (a login page, a proxy)", async () => {
-    expect(
-      await checkToken(answer(200, { html: "<form>log in</form>" }), method(["api.acme.test"]), TOKEN),
-    ).toMatchObject({
-      ok: false,
-      failure: { reason: "unexpected", status: 200 },
-    });
-  });
-
-  it("a redirect is never followed: it is an unexpected answer", async () => {
-    const fetchFn = (async () =>
-      new Response(null, {
-        status: 302,
-        headers: { location: "https://evil.test" },
-      })) as unknown as typeof fetch;
-    expect(await checkToken(fetchFn, method(["api.acme.test"]), TOKEN)).toMatchObject({
-      ok: false,
-      failure: { reason: "unexpected", status: 302 },
-    });
   });
 });

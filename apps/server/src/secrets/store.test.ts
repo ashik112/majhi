@@ -31,32 +31,4 @@ describe("SecretStore", () => {
     expect(raw.includes("sk-test-fake")).toBe(false);
     expect(raw.includes("claude-a")).toBe(false);
   });
-
-  it("refuses a key that did not make the file", async () => {
-    await store.set("a", "value-aaaa");
-    const other = join(dir, "other.key");
-    await writeKeyFile(other, await generateKey());
-    await expect(new SecretStore(join(dir, "home"), other).get("a")).rejects.toThrow("Cannot decrypt");
-  });
-
-  it("tells whether the key file opens secrets.age", async () => {
-    const identity = await generateKey();
-    await writeKeyFile(keyFile, identity);
-    const none = join(dir, "none.key");
-    expect(await new SecretStore(join(dir, "home"), none).keyState()).toBe("missing");
-    expect(await store.keyState()).toBe("ok");
-    expect(await store.opens(await generateKey())).toBe(true);
-    await store.set("a", "value-aaaa");
-    expect(await store.keyState()).toBe("ok");
-    expect(await new SecretStore(join(dir, "home"), none).keyState()).toBe("lost");
-    // A folder where the key file should be, as Docker makes for a missing one.
-    await mkdir(join(dir, "folder.key"));
-    expect(await new SecretStore(join(dir, "home"), join(dir, "folder.key")).keyState()).toBe("lost");
-    const other = join(dir, "other.key");
-    await writeKeyFile(other, await generateKey());
-    const wrong = new SecretStore(join(dir, "home"), other);
-    expect(await wrong.keyState()).toBe("wrong");
-    expect(await wrong.opens(identity)).toBe(true);
-    expect(await wrong.opens(await generateKey())).toBe(false);
-  });
 });

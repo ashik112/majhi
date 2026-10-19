@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConfigSections } from "../config/sections.ts";
 import { tempDir } from "../testing/fixtures.ts";
 import { wikiExportOf } from "../wiki/export.ts";
+import { taskFileRoutes } from "./taskFiles.ts";
 import { wikiFileRoutes } from "./wikiFiles.ts";
 
 const SHA = "a".repeat(40);
-const OTHER_SHA = "b".repeat(40);
 
 describe("wiki source files", () => {
   let dir: string;
@@ -55,13 +55,6 @@ describe("wiki source files", () => {
   });
   afterEach(() => cleanup());
 
-  it("serves a dot folder such as .github, but never env files or git's folder", async () => {
-    expect((await get(".github/ci.yml")).status).toBe(200);
-    expect((await get(".env")).status).toBe(403);
-    expect((await get("env.txt")).status).toBe(403);
-    expect((await get(".git/config")).status).toBe(403);
-  });
-
   it("refuses .., absolute paths, symlinks out of the export and backslashes", async () => {
     for (const path of [
       "%2e%2e/%2e%2e/outside.txt",
@@ -75,14 +68,28 @@ describe("wiki source files", () => {
       expect(res.status, path).not.toBe(200);
       expect(await res.text(), path).not.toContain("OUTSIDE-BODY");
     }
-  });
 
-  it("answers only for the workspace's own projects, with the wiki on, at an exported commit", async () => {
-    expect((await get("secret.txt", "acme/shop")).status).toBe(404);
-    expect((await get("secret.txt", "globex/shop")).status).toBe(404);
-    expect((await get("secret.txt", "globex/web")).status).toBe(404);
-    expect((await app.request(`/api/wiki/acme/web/${OTHER_SHA}/files/src/app.py`)).status).toBe(404);
-    expect((await app.request("/api/wiki/acme/web/main/files/src/app.py")).status).toBe(404);
-    expect((await app.request(`/api/wiki/..%2Fglobex/shop/${SHA}/files/secret.txt`)).status).toBe(404);
+    // Repo files of a task are served from its own projects only, with the same limits.
+    const source = join(dir, "web-src");
+    const worktree = join(dir, "ACM-1", "web");
+    for (const root of [source, worktree]) await mkdir(root, { recursive: true });
+    await writeFile(join(worktree, "SPEC.md"), "from worktree");
+    await writeFile(join(worktree, ".env"), "SECRET=1");
+    await symlink(join(dir, "outside.txt"), join(worktree, "link.txt"));
+    await mkdir(join(dir, "other"));
+    const repoApp = new Hono().route(
+      "/api/tasks",
+      taskFileRoutes({
+        folderOf: () => join(dir, "ACM-1"),
+        reposOf: (id) => (id === "ACM-1" ? [{ project: "web", source, worktree }] : undefined),
+      }),
+    );
+    const repo = (path: string) => repoApp.request(`/api/tasks/ACM-1/repo/${path}`);
+    expect((await repo("web/files/SPEC.md")).status).toBe(200);
+    expect((await repo("web/files/link.txt")).status).toBe(403);
+    expect((await repo("web/files/.env")).status).toBe(403);
+    expect([403, 404]).toContain((await repo("web/files/%2e%2e/outside.txt")).status);
+    expect((await repo("other/files/SPEC.md")).status).toBe(404);
+    expect((await repoApp.request("/api/tasks/ACM-2/repo/web/files/SPEC.md")).status).toBe(404);
   });
 });
