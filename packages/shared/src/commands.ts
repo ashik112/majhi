@@ -1806,7 +1806,7 @@ export const commands = {
       checks: OrgConfigSchema.shape.checks.nullable().optional(),
       /** Overrides majhi's `wiki.enabled` for this org. */
       wiki: OrgConfigSchema.shape.wiki.nullable().optional(),
-      /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
+      /** This org's own `max_agent_turns`, and `review_before_owner`: a review by an agent comes before the task reaches the owner. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
       /** Overrides majhi's `turns` limits for this org's agents, field by field. */
       turns: OrgConfigSchema.shape.turns.nullable().optional(),
@@ -2372,6 +2372,14 @@ export const commands = {
       message: z.string().trim().min(1).max(4000).optional(),
       /** The owner starts it now, past the limit on tasks running at once. Ignored from anyone else. */
       now: z.boolean().optional(),
+      /**
+       * Start it on this priority. `urgent` with every running place taken pauses the lowest-priority running task
+       * at a checkpoint to make room; it resumes through the line when a place frees. The captain does this to a
+       * task the owner started only with `ownerAsked`.
+       */
+      priority: TaskPrioritySchema.optional(),
+      /** The captain's tool call: the owner asked for this in the conversation. Set by majhi from the call, never typed. */
+      ownerAsked: z.boolean().optional(),
     }),
     output: TaskSchema,
   },
@@ -2413,6 +2421,8 @@ export const commands = {
       priority: TaskPrioritySchema.nullable().optional(),
       /** The deadline, `YYYY-MM-DD`; null clears it. */
       due: DaySchema.nullable().optional(),
+      /** The captain's tool call: the owner asked for this change in the conversation. Set by majhi, never typed. */
+      ownerAsked: z.boolean().optional(),
     }),
     output: TaskSchema,
   },

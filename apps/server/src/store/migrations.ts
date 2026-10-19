@@ -2046,6 +2046,16 @@ ALTER TABLE tasks ADD COLUMN idea TEXT;
 CREATE INDEX tasks_open_by_others ON tasks (org) WHERE status != 'done' AND kind != 'chat' AND idea IS NULL;
 `,
   },
+  {
+    // Workflow reset, step 1b: lead and workers is the only way a team takes turns. A task that used the
+    // pipeline or the build and review loop becomes a lead task (readers already treat an unknown mode as
+    // `lead`); the room's turn counters it kept are dropped when it is next read.
+    id: 192,
+    name: "one team mode: lead and workers",
+    sql: `
+UPDATE tasks SET mode = 'lead' WHERE mode != 'lead';
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

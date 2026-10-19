@@ -48,6 +48,7 @@ export const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   limit: "paused: the account hit its usage limit",
   error: "paused after an error",
   "signed-out": "paused: an account is signed out",
+  down: "paused: every agent is down",
   loop: "stopped: the agents are going in circles",
   blocked: "is blocked and waits for you",
 };

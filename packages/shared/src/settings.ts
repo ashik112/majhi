@@ -180,6 +180,14 @@ export const RoomSettingsSchema = z.strictObject({
 });
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomPatchSchema = z.strictObject(roomFields).partial();
+/**
+ * What a workspace says about its rooms: its own loop guard, and "Review before it reaches me". Absent
+ * `review_before_owner` means on for every workspace but Private (`reviewBeforeOwner` in accounts.ts).
+ */
+export const RoomOrgPatchSchema = z
+  .strictObject({ max_agent_turns: roomFields.max_agent_turns, review_before_owner: z.boolean() })
+  .partial();
+export type RoomOrgPatch = z.infer<typeof RoomOrgPatchSchema>;
 
 /** Cleanup of done tasks. */
 const cleanupFields = {

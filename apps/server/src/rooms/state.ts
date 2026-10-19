@@ -1,37 +1,17 @@
 import { z } from "zod";
 
 /**
- * What the room remembers between turns (5.3), stored on the task so a restart keeps it:
- * agent-to-agent turns since the owner last wrote (the loop guard), the pipeline's next step,
- * and the review loop's round.
+ * What the room remembers between turns (5.3), stored on the task so a restart keeps it. Only the agents
+ * the owner took off the team now: the loop guard's counters, the pipeline's stage and the review loop's
+ * round went with those modes. Stored rows that still hold them read fine: the extra keys are dropped.
  */
 export const RoomStateSchema = z.object({
-  /**
-   * Handoffs between agents in a row that changed nothing in the worktrees (the loop guard).
-   * The owner's message and any turn that changes files or commits reset it.
-   */
-  agentTurns: z.number().int().nonnegative().default(0),
-  /** The worktrees' state after the last turn (HEADs and uncommitted changes), to see progress. */
-  fingerprint: z.string().optional(),
-  /**
-   * The worktrees' state after the last turn of the lead or a reviewer: a later change is work
-   * nobody has reviewed yet.
-   */
-  reviewedFingerprint: z.string().optional(),
-  /** Pipeline: the index of the stage that runs now, in `pipelineStages` order. */
-  stage: z.number().int().nonnegative().optional(),
-  /** Pipeline: agents of the current stage that have not finished their turn yet. */
-  pending: z.array(z.string()).optional(),
-  /** Review loop: rounds the reviewer has sent back so far. */
-  round: z.number().int().nonnegative().optional(),
-  /** The loop guard already woke the lead once for this run of no-change turns; the next trip pauses. */
-  nudged: z.boolean().optional(),
-  /** Agents the owner took off the team. An agent's mention does not bring them back; the owner can. */
+  /** Agents the owner took off the team. Naming one in a plan step does not bring it back; the owner can. */
   removed: z.array(z.string()).optional(),
 });
 export type RoomState = z.infer<typeof RoomStateSchema>;
 
-export const EMPTY_ROOM_STATE: RoomState = { agentTurns: 0 };
+export const EMPTY_ROOM_STATE: RoomState = {};
 
 export function parseRoomState(json: string): RoomState {
   try {

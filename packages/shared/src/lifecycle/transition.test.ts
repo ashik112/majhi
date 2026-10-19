@@ -35,6 +35,8 @@ const SAMPLES: { [C in HoldCause]: HoldOf<C> } = {
   error: { cause: "error", at: AT, phase: "turn", error: "boom" },
   "loop-guard": { cause: "loop-guard", at: AT, why: "no progress" },
   idle: { cause: "idle", at: AT, why: "Nobody is left." },
+  preempted: { cause: "preempted", at: AT },
+  "agents-down": { cause: "agents-down", at: AT, down: [{ account: "claude-acme", state: "signed-out" }] },
   "dependency-closed": { cause: "dependency-closed", at: AT, on: ["ACME-2"] },
   "dependency-removed": { cause: "dependency-removed", at: AT, on: ["ACME-2"] },
 };
@@ -736,6 +738,7 @@ describe("lifting a hold", () => {
         budgetHasRoom: true,
         autopilot: "on",
         runAtStep: true,
+        slotFree: true,
         lastActivityAt: "2026-10-05T11:00:00.000Z",
         accounts: { "claude-acme": { signedIn: true } },
       };

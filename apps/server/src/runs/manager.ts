@@ -96,23 +96,28 @@ const RESUME_RETRY_MS = 1_000;
 const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 /** The first prompt of the fresh session a turn limit moved the agent to (PRV-96). */
-/** Why work moves to another agent: the note's reason, the room's line, and whether a teammate may take it. */
+/** How work moves to another agent: `step` a worker's step goes to a teammate, `lead` the worker with the most headroom leads, `fallback` the agent's own fallback takes its place. */
+type HandoffHow = "step" | "lead" | "fallback";
+
+/** Why work moves to another agent: the note's reason and the room's line. */
 interface Handoff {
   carry: string;
-  line: (to: string) => string;
-  teammates: boolean;
+  line: (to: string, how: HandoffHow) => string;
 }
 
 const limitHandoff = (from: string, until: string, now: Date): Handoff => ({
   carry: `@${from}'s account hit its usage limit`,
-  line: (to) => handedOffLine(from, to, until, now),
-  teammates: false,
+  line: (to, how) => handedOffLine(from, to, until, now, how),
 });
 
 const signedOutHandoff = (from: string): Handoff => ({
   carry: `@${from}'s account needs a new sign-in`,
-  line: (to) => `@${from}'s account needs a new sign-in. @${to} continues from the checkpoint.`,
-  teammates: true,
+  line: (to, how) =>
+    how === "lead"
+      ? `@${from}'s account needs a new sign-in. @${to}, the worker with the most headroom, leads now and continues from the checkpoint.`
+      : how === "step"
+        ? `@${from}'s account needs a new sign-in. @${to} takes its step from the checkpoint.`
+        : `@${from}'s account needs a new sign-in. @${to} continues from the checkpoint.`,
 });
 
 const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
@@ -228,32 +233,23 @@ export interface RunDeps {
    */
   fallbackFor?: (task: string, agent: string) => Promise<string | undefined>;
   /**
-   * When `agent` is the lead and its account is signed out: the first teammate whose account works,
-   * under the same `resume.handoff` switch. Undefined when there is none.
+   * Who takes over from `agent` inside the task's own team, under the same `resume.handoff` switch: the
+   * best other agent that can run for a worker's step (`step`), the worker with the most headroom for the
+   * lead (`lead`). Undefined when nobody on the team can.
    */
-  teammateFor?: (task: string, agent: string) => Promise<string | undefined>;
+  successorFor?: (task: string, agent: string) => Promise<{ to: string; how: "step" | "lead" } | undefined>;
   /**
-   * Puts `to` in `from`'s place in the task's team, same position and overrides. A teammate already
-   * on the team takes the lead's place and `from` leaves it. False when it could not.
+   * Hands the work of `from` to `to`. `fallback`: `to` takes `from`'s place in the team, same position
+   * and overrides. `lead`: `to` leads, `from` stays as a worker. `step`: the team stays as it is and the
+   * plan's step moves. False when it could not.
    */
-  takeOver?: (task: string, from: string, to: string) => Promise<boolean>;
+  takeOver?: (task: string, from: string, to: string, how: HandoffHow) => Promise<boolean>;
   /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
   /** A turn failed on its account's sign-in: the account is `needs-login` from now, with `detail` for Accounts. */
   markSignedOut?: (account: string, detail: string) => Promise<void>;
-  /** Whether a teammate of `agent` in the task runs on an account that is not known to need a sign-in. */
-  teamCanRun?: (task: string, agent: string) => Promise<boolean>;
-  /**
-   * A turn failed and its step goes back to the team: `signed-out` when the agent's account needs a
-   * new sign-in (the lead is woken to give the step to a teammate), `error` for any other failure.
-   */
-  onTurnFailed?: (turn: {
-    task: string;
-    agent: string;
-    text: string;
-    cause: "signed-out" | "error";
-    account?: string | undefined;
-  }) => void;
+  /** A turn failed with an error and nothing is queued after it: its step goes to another agent. */
+  onTurnFailed?: (turn: { task: string; agent: string; text: string }) => void;
   /**
    * Autonomous mode's mid-turn cap check (PRV-74), asked at a running turn's tool calls with what the
    * turn spent so far (USD, from the agent's running cost). A line when a cap is passed by more
@@ -1651,7 +1647,7 @@ export class RunManager {
       this.setLive(run, { status: "error", nowDoing: undefined });
       // A resume tries once more by itself; anything else is the team's to pick up.
       if (!run.resuming && run.queue.length === 0)
-        this.deps.onTurnFailed?.({ task: run.task, agent: run.agent, text: message, cause: "error" });
+        this.deps.onTurnFailed?.({ task: run.task, agent: run.agent, text: message });
       this.resumeFailed(run, message);
       return undefined;
     }
@@ -1689,17 +1685,18 @@ export class RunManager {
   }
 
   /**
-   * Gives the run's work to its agent's fallback: the fallback takes its place in the team, gets a
-   * handoff note built from saved state and the queue, and the run's session ends. False when no
-   * fallback can take over, and nothing changed.
+   * Gives the run's work to another agent: a teammate of the task's own (a worker's step goes to the best
+   * other agent, the lead is replaced by the worker with the most headroom), else the agent's fallback,
+   * which takes its place in the team. The new agent gets a handoff note built from saved state, the plan
+   * and the queue, and the run's session ends. False when nobody can take over, and nothing changed.
    */
   private async takeOverFor(run: AgentRun, why: Handoff): Promise<boolean> {
     const { deps } = this;
-    const to =
-      (await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined)) ??
-      (why.teammates ? await deps.teammateFor?.(run.task, run.agent).catch(() => undefined) : undefined);
+    const mate = await deps.successorFor?.(run.task, run.agent).catch(() => undefined);
+    const to = mate?.to ?? (await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined));
+    const how: HandoffHow = mate?.how ?? "fallback";
     if (to === undefined || run.closing) return false;
-    if (!(await deps.takeOver?.(run.task, run.agent, to).catch(() => false))) return false;
+    if (!(await deps.takeOver?.(run.task, run.agent, to, how).catch(() => false))) return false;
     const task = deps.store.tasks.get(run.task);
     const next = this.runFor(run.task, to);
     if (task !== undefined) {
@@ -1726,7 +1723,7 @@ export class RunManager {
     next.queue = [...carried, ...next.queue];
     next.held = false;
     next.paused = undefined;
-    this.live.system(run, "warn", why.line(to));
+    this.live.system(run, "warn", why.line(to, how));
     this.retire(run);
     this.live.refreshQueued(next);
     void this.drive(next);
@@ -1762,34 +1759,14 @@ export class RunManager {
   }
 
   /**
-   * A turn failed on the account's sign-in. The account is marked `needs-login` and the room says who
-   * cannot run. A teammate's step goes back to the lead, who is woken to give it to a teammate whose
-   * account works. When the agent is the lead, or no teammate's account works, the run pauses as
-   * `signed-out` with the prompt queued again, and continues once the account is signed in.
+   * A turn failed on the account's sign-in. The account is marked `needs-login`, the prompt goes back in
+   * the queue, and the loop gives the step to another agent from the last checkpoint (`takeOverFor`).
+   * When nobody else can run, the run pauses as `signed-out` and continues once the account is signed in.
    */
   private async signedOutMidTurn(run: AgentRun, account: string, said: string): Promise<void> {
     const line = said.split("\n", 1)[0]?.trim() ?? said;
     const detail = `A run of @${run.agent} could not sign in: ${line} Sign in again from Accounts.`;
     await this.deps.markSignedOut?.(account, detail).catch(() => undefined);
-    const cannot = `@${run.agent} cannot run: its account ${account} needs a new sign-in.`;
-    const lead = this.deps.store.tasks.get(run.task)?.team[0];
-    const teammates =
-      lead !== undefined &&
-      lead !== run.agent &&
-      (await this.deps.teamCanRun?.(run.task, run.agent).catch(() => false)) === true;
-    if (teammates) {
-      this.markTurn(run, false, true);
-      this.live.system(run, "error", `${cannot} Its step goes back to @${lead}.`);
-      this.setLive(run, { status: "error", nowDoing: undefined });
-      this.deps.onTurnFailed?.({
-        task: run.task,
-        agent: run.agent,
-        text: said,
-        cause: "signed-out",
-        account,
-      });
-      return;
-    }
     // Kept in flight: after a restart the turn continues too. The loop hands off or pauses once the prompt is back in the queue.
     this.markTurn(run, false, false);
     run.requeue = true;
@@ -1800,7 +1777,7 @@ export class RunManager {
   private pauseSignedOut(run: AgentRun, account: string): void {
     const lead = this.deps.store.tasks.get(run.task)?.team[0];
     run.startFailure = { kind: "signed-out", text: `${account} needs a new sign-in.` };
-    const nobody = lead === run.agent ? "" : " No teammate with a working account can take its step.";
+    const nobody = lead === undefined || run.agent === lead ? "" : " No teammate with a working account can take its step.";
     this.pause(
       run,
       "signed-out",
@@ -1997,7 +1974,6 @@ export class RunManager {
               from: item.from,
               to: { id: run.agent, role },
               via: item.via,
-              mode: task.mode,
               text: item.text,
               itemId: item.id,
               room: roomLines(recent, BUDGET.roomSummary, 300),

@@ -1,4 +1,4 @@
-import type { CoordinationMode, HandoffVia, Role } from "@majhi/shared";
+import type { HandoffVia, Role } from "@majhi/shared";
 
 /**
  * The mentioning message is kept whole up to this, the most `mention` and `post` accept. A longer
@@ -11,7 +11,6 @@ export interface HandoffInput {
   from: string;
   to: { id: string; role: Role };
   via: HandoffVia;
-  mode: CoordinationMode;
   /** The message that handed the work over. */
   text: string;
   /** The handoff room item, which keeps the whole message for read_recent. */
@@ -23,12 +22,9 @@ export interface HandoffInput {
   needsBrief: boolean;
 }
 
-/** Asked of a reviewer so its verdict can be read without a model. */
-export const VERDICT_ASK = "End your reply with APPROVED, or with CHANGES NEEDED and what to fix.";
-
 /** What every handoff prompt says first. Fixed text, so it is the same in every one. */
 export const HANDOFF_RULES = [
-  'Your reply is posted to the room. To hand work on, start a line with "@name:" or use the mention tool; a name in the middle of a sentence wakes nobody. Mention @owner only when you need the owner. With nothing to hand on, address no one: a message that addresses nobody wakes nobody.',
+  "Your reply is posted to the room. Nobody is woken by what you write: work reaches an agent only as a step of the plan, which majhi hands on when you end your turn. Mention @owner only when you need the owner.",
   "Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
 ].join("\n");
 
@@ -39,17 +35,13 @@ export const HANDOFF_RULES = [
  */
 export function handoffPrompt(input: HandoffInput): string {
   const why =
-    input.via === "pipeline"
-      ? `@${input.from} finished their step of the pipeline. Your step is next.`
-      : input.via === "review-loop"
-        ? input.to.role === "Reviewer"
-          ? `@${input.from} finished a round of work. Review it.`
-          : `@${input.from} reviewed your work and asks for changes. Fix them.`
-        : `@${input.from} handed this to you in the room.`;
+    input.via === "plan"
+      ? "A step of the plan is yours."
+      : `@${input.from} handed this to you in the room.`;
   // The fixed text comes first, then what is new in this handoff: the same opening every time is
   // what a provider's prompt cache can reuse (SPEC 5.9 item 7).
   const lines = [
-    ...(input.to.role === "Reviewer" ? [HANDOFF_RULES, VERDICT_ASK] : [HANDOFF_RULES]),
+    HANDOFF_RULES,
     "",
     `${why} You are @${input.to.id} (${input.to.role}) in task ${input.task}.`,
     "",

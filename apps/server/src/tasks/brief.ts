@@ -275,17 +275,11 @@ function sharedPerms(members: readonly BriefAgent[]): string[] {
 
 function teamLines(task: Task, members: readonly BriefAgent[]): string[] {
   const lead = members[0];
-  const how: Record<Task["mode"], string> = {
-    lead: `@${lead?.id ?? "the lead"} leads: plans the work and hands parts to the others by mentioning them. When the reviewer approves, the task goes to the owner.`,
-    pipeline:
-      "Each role runs once, in order: lead, builders, reviewer, tester. When your step ends, majhi hands the work to the next step.",
-    "review-loop":
-      "The builder and the reviewer take turns: majhi hands the work to the other after each turn, until the reviewer approves. Reviewers end with APPROVED, or with CHANGES NEEDED and what to fix.",
-  };
+  const how = `@${lead?.id ?? "the lead"} leads: writes a short plan of at most 8 steps, each naming the agent that owns it. majhi hands each step to its owner, one at a time; a worker that finishes posts one result line and the next step starts. When the last step is done, the task goes to the owner.`;
   return [
     "## Team",
     "",
-    `Mode: ${MODE_LABELS[task.mode]}. ${how[task.mode]}`,
+    `Mode: ${MODE_LABELS[task.mode]}. ${how}`,
     "",
     ...members.map((m) => {
       const repos =
@@ -293,7 +287,7 @@ function teamLines(task: Task, members: readonly BriefAgent[]): string[] {
       return `- @${m.id} (${m.role}${repos})`;
     }),
     "",
-    `Your last message in a turn is posted to the room. To hand work to a teammate, start a line with their name (like "@${members[1]?.id ?? lead?.id ?? "agent"}: please ...") or use the mention tool: majhi wakes them with your message. A name in the middle of a sentence wakes nobody. With nothing to hand on, address no one. Mention @owner only when you need the owner. Only one agent edits a worktree at a time; majhi makes the others wait.`,
+    "Your last message in a turn is posted to the room. Nothing you write wakes another agent: work reaches a teammate only as a step of the plan, and an @mention of a teammate does nothing. Mention @owner only when you need the owner. When a step is yours, do that step and end your turn with one line saying what you did. Only one agent edits a worktree at a time; majhi makes the others wait.",
   ];
 }
 

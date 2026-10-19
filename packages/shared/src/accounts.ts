@@ -10,7 +10,7 @@ import {
   CommitsPatchSchema,
   ContextPatchSchema,
   ResumePatchSchema,
-  RoomPatchSchema,
+  RoomOrgPatchSchema,
   TurnsPatchSchema,
   WikiOrgPatchSchema,
 } from "./settings.ts";
@@ -209,8 +209,8 @@ export const OrgConfigSchema = z.looseObject({
   wiki: WikiOrgPatchSchema.optional(),
   /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
   branch_pattern: BranchPatternSchema.optional(),
-  /** Overrides the loop guard for this org's tasks (5.3). */
-  rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
+  /** This org's rooms: its own loop guard (5.3) and whether a review comes before the owner (step 1b). */
+  rooms: RoomOrgPatchSchema.optional(),
   /** Overrides majhi's turn limits for this org's agents, field by field (PRV-96). */
   turns: TurnsPatchSchema.optional(),
   /** Overrides the model and effort tiers of `decisions.tiers` for this org's agents (5.12). */
@@ -227,6 +227,14 @@ export const OrgConfigSchema = z.looseObject({
   tracker: z.unknown().optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
+
+/**
+ * Whether a task of this workspace ends with a review by an agent before it reaches the owner: the
+ * workspace's own `rooms.review_before_owner`, else on everywhere but Private. The one place that default lives.
+ */
+export function reviewBeforeOwner(org: string | undefined, config: OrgConfig | undefined): boolean {
+  return config?.rooms?.review_before_owner ?? (org !== undefined && org !== PRIVATE);
+}
 
 /** `orgs` in majhi.yaml. A connection id is unique across orgs: it names the folder of the connection's files. */
 export const OrgsConfigSchema = z.record(IdSchema, OrgConfigSchema).superRefine((orgs, ctx) => {

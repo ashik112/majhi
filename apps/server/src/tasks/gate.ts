@@ -11,7 +11,7 @@
  *  - Chat tasks (one agent, a conversation, the captain's lanes) are not tasks of this gate at all.
  */
 
-import type { GateOrigin, LimitsSettings } from "@majhi/shared";
+import { type GateOrigin, type LimitsSettings, priorityRank, type TaskPriority } from "@majhi/shared";
 
 /** The caps live in majhi.yaml `limits`; their defaults are in the schema, nowhere else. */
 export type GateLimits = Pick<LimitsSettings, "tasks_running" | "open_by_others">;
@@ -61,4 +61,35 @@ export function admit(input: {
     return { kind: "idea", reason: "open-cap" };
   }
   return wantsStart ? admitRunning(counts, limits) : { kind: "file" };
+}
+
+/** A task that runs now, as the preemption looks at it. */
+export interface RunningPick {
+  id: string;
+  priority?: TaskPriority | undefined;
+  /** The owner made it (or it is older than origins): the captain leaves it alone unless the owner asked. */
+  ownedByOwner: boolean;
+}
+
+/**
+ * Which running task pauses so an urgent one can run (workflow reset, step 1b). Only an urgent start
+ * preempts, only a task of a lower priority, and the lowest priority first (the newest of those, which
+ * has the least work to lose: `running` comes newest first). The owner may pause any; the captain only a
+ * task it or an agent made, unless the owner asked in the conversation. Undefined when nobody qualifies:
+ * the start waits in line as before.
+ */
+export function preemptionVictim(input: {
+  wanted: TaskPriority | undefined;
+  by: "owner" | "captain";
+  ownerAsked: boolean;
+  running: readonly RunningPick[];
+}): string | undefined {
+  if (input.wanted !== "urgent") return undefined;
+  const may = (t: RunningPick) =>
+    priorityRank(t.priority) > priorityRank(input.wanted) &&
+    (input.by === "owner" || input.ownerAsked || !t.ownedByOwner);
+  return [...input.running]
+    .filter(may)
+    .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority))
+    .at(0)?.id;
 }

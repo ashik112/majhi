@@ -127,6 +127,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       tasks: services.tasks,
       access: services.roomAccess,
       coordinator: services.coordinator,
+      crew: services.tasks.crew,
       admin: services.admin,
       config,
       room: services.room,

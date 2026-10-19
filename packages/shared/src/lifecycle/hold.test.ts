@@ -27,6 +27,12 @@ const SAMPLES: { [C in HoldCause]: HoldOf<C> } = {
   error: { cause: "error", at: AT, phase: "turn", error: "boom" },
   "loop-guard": { cause: "loop-guard", at: AT, why: "three answers, no progress" },
   idle: { cause: "idle", at: AT, why: "The lead finished." },
+  preempted: { cause: "preempted", at: AT },
+  "agents-down": {
+    cause: "agents-down",
+    at: AT,
+    down: [{ account: "claude-acme", state: "signed-out" }],
+  },
   "dependency-closed": { cause: "dependency-closed", at: AT, on: ["ACME-1"] },
   "dependency-removed": { cause: "dependency-removed", at: AT, on: ["ACME-1"] },
 };
@@ -54,6 +60,8 @@ const LIFTERS: Record<HoldCause, Lifter[]> = {
   error: ["owner", "captain"],
   "loop-guard": ["owner"],
   idle: ["owner", "captain", "majhi"],
+  preempted: ["majhi", "owner"],
+  "agents-down": ["majhi", "owner"],
   "dependency-closed": ["owner"],
   "dependency-removed": ["owner"],
 };

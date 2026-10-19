@@ -6,7 +6,7 @@ import { childMoves, stalled } from "./idle-watch.ts";
 
 /**
  * A running task never goes silent: when a turn ends and nobody works, nothing waits for the owner
- * and no background process is waited on, the lead is woken once, or the owner when the lead ended.
+ * and no background process is waited on, a plan with a step left is put back to work, or the owner is asked.
  * The rooms here are parents with a subtask that does not start by itself, so ACM-1 stays running
  * when its agents are idle, as PRV-style parents do.
  */
@@ -175,53 +175,5 @@ describe("the idle rule", () => {
     expect(childMoves({ ...child, status: "inbox" })).toBe(false);
     expect(childMoves({ ...child, status: "ready", startWhenReady: true })).toBe(true);
     expect(childMoves({ status: "ready", startWhenReady: true, waitsOnAncestor: true })).toBe(false);
-  });
-});
-
-/** What Claude Code does with an OAuth session it cannot refresh: says so, then the prompt fails on ACP's auth error. */
-const signedOut = async (turn: Turn): Promise<Step> => {
-  turn.emit({
-    type: "text",
-    messageId: "auth",
-    text: "Failed to authenticate: OAuth session expired and could not be refreshed",
-  });
-  throw Object.assign(new Error("Authentication required"), { code: -32000 });
-};
-const statusOf = async (id: string) =>
-  ((await w.h.cmd("accounts.list")).body as { id: string; status: string }[]).find((a) => a.id === id)
-    ?.status;
-
-describe("a turn that failed on its account's sign-in", () => {
-  it("marks the account, hands the step back to the lead, and refuses to hand it to that agent again", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [
-        say("@acme-builder please build the export."),
-        say("@acme-builder please try the export again."),
-        say("@acme-reviewer please build the export instead."),
-        say("Done for now."),
-      ],
-      "acme-builder": [signedOut],
-      "acme-reviewer": [say("Built it.")],
-    });
-    await settle();
-    expect(prompts["acme-reviewer"]).toHaveLength(1);
-
-    expect(await statusOf("claude-acme")).toBe("needs-login");
-    // The second handoff to the builder is refused: it never gets another prompt.
-    expect(prompts["acme-builder"]).toHaveLength(1);
-  });
-
-  it("refuses the mention tool for an agent whose account needs a sign-in", async () => {
-    const { prompts } = await parentWorld({ "acme-lead": [say("Planning.")] });
-    await w.h.majhi.services.runs.idle();
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    await w.h.majhi.services.accounts.markSignedOut("claude-acme", "Failed to authenticate");
-    await expect(
-      w.h.majhi.services.coordinator.mention(
-        { task: "ACM-1", agent: "acme-lead" },
-        "acme-builder",
-        "build it",
-      ),
-    ).rejects.toThrow();
   });
 });

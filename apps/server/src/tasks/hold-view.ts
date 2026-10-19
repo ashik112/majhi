@@ -14,6 +14,8 @@ const HOLD_LABEL: { readonly [C in lifecycle.HoldCause]: string } = {
   error: "stopped with an error",
   "loop-guard": "going in circles",
   idle: "nobody is working on it",
+  preempted: "paused for an urgent task",
+  "agents-down": "every agent is down",
   "dependency-closed": "a task it waited for was closed",
   "dependency-removed": "a link was removed",
 };

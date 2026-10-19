@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Task } from "@majhi/shared";
+import type { Task, TeamPlan } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import { progressLines } from "../tasks/crew.ts";
 import { attributionOf } from "./attribution.ts";
 import {
   type CheckpointRepo,
@@ -28,6 +29,10 @@ export interface DurableDeps {
 }
 
 const IDENTITY_HINT_ID = "hint:identity";
+
+/** The plan's steps with where each stands, for a note: none without a plan. */
+const planLines = (plan: TeamPlan | undefined): string[] | undefined =>
+  plan === undefined ? undefined : progressLines(plan);
 
 /** The task's worktrees, as checkpoints and diffs see them. */
 export function checkpointRepos(task: Task): CheckpointRepo[] {
@@ -108,6 +113,7 @@ export async function buildCarry(
       room: recent.filter((i) => i.seq > last.roomSeq),
       diff: await diffText(repos, BUDGET.diff),
       why,
+      plan: planLines(store.plans.forTask(task.id).at(-1)?.plan),
     });
   const path = await saveNote(task.folder, agent, note);
   return {

@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import type { RoomItem, Task, TaskId, TaskStatus } from "@majhi/shared";
+import type { RoomItem, Task, TaskStatus } from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -62,95 +61,19 @@ export function lastLine(text: string, max = 200): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-/**
- * How a turn ended: by itself, stopped by the model's safeguards, failed with an error, or failed
- * because the agent's account needs a new sign-in.
- */
-export type TurnEnding = "finished" | "refused" | "failed" | "signed-out";
+/** How a turn ended: by itself, stopped by the model's safeguards, or failed with an error. */
+export type TurnEnding = "finished" | "refused" | "failed";
 
-/**
- * The note that wakes the lead when a teammate ended its turn and nobody took over. `refused`: the
- * model's safeguards stopped the teammate, so its step needs someone else or other words. `failed`:
- * its turn failed. `signed-out`: its account needs a new sign-in, so its step needs someone else.
- */
-export function leadNote(
-  task: string,
-  finished: string,
-  text: string,
-  ending: TurnEnding | boolean = "finished",
-  account?: string,
-): string {
-  const how: TurnEnding = ending === true ? "refused" : ending === false ? "finished" : ending;
+/** The line the owner sees when nobody is left to carry on and the plan has nowhere to hand the step. */
+export function ownerLine(task: string, agent: string, text: string, ending: TurnEnding): string {
   const quote = lastLine(text);
-  const last = quote === "" ? "." : `. Its last line: "${quote}"`;
-  if (how === "signed-out") {
-    return [
-      `@${finished} cannot run: its account ${account ?? "its account"} needs a new sign-in, so the step you gave it did not start. Nobody is working on ${task} now.`,
-      "Nothing else is pending: no handoff, no question to the owner, no background process.",
-      `Give its step to a teammate whose account works (the majhi-room mention tool, or "@name: please ..."). Do not hand anything to @${finished} until the owner signs it in again.`,
-    ].join("\n");
+  if (ending === "refused") {
+    return `@${agent} was blocked by its model's safeguards and nobody is working on ${task}. Rephrase the step, change its model, or give the step to another agent.`;
   }
-  if (how === "failed") {
-    return [
-      `@${finished}'s turn failed with an error: "${quote === "" ? "unknown error" : quote}". Nobody is working on ${task} now.`,
-      "Nothing else is pending: no handoff, no question to the owner, no background process.",
-      'Hand its step back to it if the error looks passing, give it to another teammate (the majhi-room mention tool, or "@name: please ..."), or say what it waits for.',
-    ].join("\n");
+  if (ending === "failed") {
+    return `Nobody is working on ${task}: @${agent}'s last turn failed${quote === "" ? "" : ` with "${quote}"`}. Resume the task to try again, or give the step to another agent.`;
   }
-  if (how === "refused") {
-    return [
-      `@${finished} was blocked by its model's safeguards and stopped. Nobody is working on ${task} now${last}`,
-      "Nothing else is pending: no handoff, no question to the owner, no background process.",
-      'Give its step to another teammate (the majhi-room mention tool, or "@name: please ..."), or rephrase the step and hand it back to it. Do not repeat the same words.',
-    ].join("\n");
-  }
-  return [
-    `@${finished} finished its turn and nobody is working on ${task} now${last}`,
-    "Nothing is pending: no handoff, no question to the owner, no background process.",
-    'Hand off the next step of your plan (the majhi-room mention tool, or "@name: please ..."), finish the task, or say what it waits for.',
-  ].join("\n");
-}
-
-/** The line the owner sees when the lead itself ended and nobody else is left to wake. */
-export function ownerLine(
-  task: string,
-  lead: string,
-  text: string,
-  ending: TurnEnding | boolean = "finished",
-): string {
-  const how: TurnEnding = ending === true ? "refused" : ending === false ? "finished" : ending;
-  const quote = lastLine(text);
-  if (how === "refused") {
-    return `@${lead} was blocked by its model's safeguards and nobody is working on ${task}. Rephrase the step, change its model, or give the step to another agent.`;
-  }
-  if (how === "failed" || how === "signed-out") {
-    return `Nobody is working on ${task}: @${lead}'s last turn failed${quote === "" ? "" : ` with "${quote}"`}. Resume the task to try again, or give the step to another agent.`;
-  }
-  return `Nobody is working on ${task} and nothing is pending. @${lead}'s last message: ${quote === "" ? "(empty)" : `"${quote}"`}`;
-}
-
-/**
- * The owner's line when the lead ended its turn after a teammate's turn failed and nobody picked the
- * step up: names the failure, not "nothing is pending".
- */
-export function failedTeammateLine(task: string, lead: string, failed: Failure): string {
-  const quote = lastLine(failed.text);
-  const cause =
-    failed.ending === "signed-out"
-      ? `@${failed.agent} cannot run: its account ${failed.account ?? ""} needs a new sign-in`.replace(
-          / {2,}/g,
-          " ",
-        )
-      : `@${failed.agent}'s last turn failed${quote === "" ? "" : ` with "${quote}"`}`;
-  return `Nobody is working on ${task}: ${cause}, and @${lead} handed its step to nobody else. Give the step to another agent, or sign the account in and resume.`;
-}
-
-/** A teammate's turn that failed, until someone works again. */
-interface Failure {
-  agent: string;
-  text: string;
-  ending: "failed" | "signed-out";
-  account?: string | undefined;
+  return `Nobody is working on ${task} and nothing is pending. @${agent}'s last message: ${quote === "" ? "(empty)" : `"${quote}"`}`;
 }
 
 export interface IdleWatchDeps {
@@ -160,7 +83,11 @@ export interface IdleWatchDeps {
     working(task: string): string[];
     /** Something of the task's agents is on its way (queued for a slot, starting, held by a gate). */
     busy?(task: string): boolean;
-    notify(task: string, agent: string, text: string): void;
+  };
+  /** The plan's side: put an unfinished step back to work, or give an agent's step to another agent. */
+  crew: {
+    kick(task: string): Promise<boolean>;
+    stuck(task: string, agent: string, ending: Exclude<TurnEnding, "finished">, text: string): Promise<boolean>;
   };
   /** Pauses the task for the owner with this line in the room ("needs you"). */
   pauseForOwner: (task: string, text: string) => Promise<void>;
@@ -171,19 +98,15 @@ export interface IdleWatchDeps {
 
 /**
  * Keeps a running task from going silent (5.3). A moment after an agent ends a turn with nothing
- * queued (by itself, or stopped by its model's safeguards with no other model left to try), when the task still runs but nobody works, no owner card waits and no background process
- * is waited on, the lead is woken once with who finished last. When the lead itself ended, the owner
- * is asked instead: the task pauses as blocked. At most once per quiet period: every turn that ends
- * starts a new one. Lives in memory: after a restart the resilience sweep wakes stranded tasks, and
- * the next turn that ends arms this again.
+ * queued (by itself, stopped by its model's safeguards with no other model left to try, or failed),
+ * when the task still runs but nobody works, no owner card waits and no background process is waited
+ * on: a plan with a step left is put back to work (the step goes to another agent when its owner
+ * failed or was blocked), and a task with no plan, or nowhere to hand the step, goes to the owner as
+ * paused. At most once per quiet period: every turn that ends starts a new one. Lives in memory:
+ * after a restart the resilience sweep wakes stranded tasks, and the next turn that ends arms this again.
  */
 export class IdleWatch {
-  private readonly last = new Map<
-    string,
-    { agent: string; text: string; ending: TurnEnding; account?: string | undefined; turn: number }
-  >();
-  /** Per task, the last teammate turn that failed and that the lead was told of, until a turn ends well. */
-  private readonly failed = new Map<string, Failure>();
+  private readonly last = new Map<string, { agent: string; text: string; ending: TurnEnding; turn: number }>();
   /** The turn each task's quiet period was handled for. */
   private readonly handled = new Map<string, number>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -200,29 +123,12 @@ export class IdleWatch {
       ending: turn.refused === true ? "refused" : "finished",
       turn: this.turns,
     });
-    // The failed teammate works again: its failure is over.
-    if (this.failed.get(turn.task)?.agent === turn.agent) this.failed.delete(turn.task);
   }
 
-  /**
-   * An agent's turn failed and nothing is queued after it: `signed-out` when its account needs a new
-   * sign-in, `error` otherwise. Looked at in a moment, like a turn that ended.
-   */
-  turnFailed(turn: {
-    task: string;
-    agent: string;
-    text: string;
-    cause: "signed-out" | "error";
-    account?: string | undefined;
-  }): void {
+  /** An agent's turn failed with an error and nothing is queued after it. Looked at in a moment, like a turn that ended. */
+  turnFailed(turn: { task: string; agent: string; text: string }): void {
     this.turns += 1;
-    this.last.set(turn.task, {
-      agent: turn.agent,
-      text: turn.text,
-      ending: turn.cause === "signed-out" ? "signed-out" : "failed",
-      account: turn.account,
-      turn: this.turns,
-    });
+    this.last.set(turn.task, { agent: turn.agent, text: turn.text, ending: "failed", turn: this.turns });
     this.idle(turn.task);
   }
 
@@ -241,55 +147,23 @@ export class IdleWatch {
   }
 
   async check(id: string): Promise<void> {
-    const { store, runs } = this.deps;
+    const { store, runs, crew } = this.deps;
     const last = this.last.get(id);
     const task = store.tasks.get(id);
     if (task === undefined || task.status !== "running" || isBossChat(task)) {
       this.last.delete(id);
       this.handled.delete(id);
-      this.failed.delete(id);
       return;
     }
     if (last === undefined || this.handled.get(id) === last.turn) return;
-    const lead = task.team[0];
-    if (lead === undefined) return;
-    // A teammate that cannot sign in can do nothing more: the lead hears it now, busy or not, once.
-    const signedOut = last.ending === "signed-out" && last.agent !== lead;
-    if (!signedOut && !stalled(this.facts(task, runs.working(id).length))) return;
+    if (!stalled(this.facts(task, runs.working(id).length))) return;
     this.handled.set(id, last.turn);
-    if (last.agent !== lead) {
-      if (last.ending === "failed" || last.ending === "signed-out") {
-        this.failed.set(id, {
-          agent: last.agent,
-          text: last.text,
-          ending: last.ending,
-          account: last.account,
-        });
-      }
-      const what =
-        last.ending === "refused"
-          ? "was blocked by its model's safeguards"
-          : last.ending === "signed-out"
-            ? `could not run (its account ${last.account ?? ""} needs a new sign-in)`.replace(/ {2,}/g, " ")
-            : last.ending === "failed"
-              ? "failed"
-              : "finished";
-      const woke = signedOut
-        ? `@${last.agent} ${what}. Woke @${lead} to give its step to a teammate.`
-        : `Nobody was working on ${task.id} after @${last.agent} ${what}. Woke @${lead}.`;
-      this.say(task.id, woke);
-      runs.notify(task.id, lead, leadNote(task.id, last.agent, last.text, last.ending, last.account));
-      return;
-    }
-    // The lead ended too. A teammate's failure it was told of and left is the cause, not "nothing".
-    const failed = last.ending === "finished" ? this.failed.get(id) : undefined;
-    this.failed.delete(id);
-    await this.deps.pauseForOwner(
-      task.id,
-      failed === undefined
-        ? ownerLine(task.id, lead, last.text, last.ending)
-        : failedTeammateLine(task.id, lead, failed),
-    );
+    const moved =
+      last.ending === "finished"
+        ? await crew.kick(id)
+        : await crew.stuck(id, last.agent, last.ending, last.text);
+    if (moved) return;
+    await this.deps.pauseForOwner(id, ownerLine(id, last.agent, last.text, last.ending));
   }
 
   /**
@@ -328,9 +202,5 @@ export class IdleWatch {
         });
       }),
     };
-  }
-
-  private say(task: TaskId, text: string): void {
-    this.deps.room.post(task, `info:${randomUUID()}`, { type: "system", level: "info", text });
   }
 }

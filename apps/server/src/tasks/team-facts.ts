@@ -56,6 +56,8 @@ export interface MemberFacts {
   effort: string | undefined;
   account: string;
   limits: Limits;
+  /** What the agent cost this task so far, in USD. Absent when nothing was priced yet. */
+  costUsd?: number;
 }
 
 export interface RunningFacts {
@@ -88,6 +90,8 @@ export interface TeamFacts {
   running: RunningFacts[];
   /** At most 3 plans of other tasks with an outcome, newest first. */
   past: PastPlan[];
+  /** Why this computer is busy now (memory or load), when it is: more workers would slow every run. */
+  busy?: string;
 }
 
 export interface FactsInput {
@@ -107,6 +111,10 @@ export interface FactsInput {
   past?: readonly PastPlan[];
   /** Agents the owner took off the team: a mention does not bring them back, so they are not offered. */
   removed?: readonly string[];
+  /** USD each agent cost this task so far. */
+  costs?: ReadonlyMap<string, number>;
+  /** Why this computer is busy now, when it is. */
+  busy?: string | undefined;
 }
 
 /** At most this many agents that could join, and running tasks, and files per project. */
@@ -151,6 +159,7 @@ export function buildTeamFacts(input: FactsInput): TeamFacts {
     joinable,
     running: input.running.slice(0, LIST_CAP),
     past: (input.past ?? []).slice(0, PAST_CAP),
+    ...(input.busy === undefined ? {} : { busy: input.busy }),
   };
 }
 
@@ -188,6 +197,7 @@ export function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFact
       ? effortForTier(offered.efforts, input.tierOf(fm).effort)
       : undefined);
 
+  const spent = input.costs?.get(fm.id);
   return {
     id: fm.id,
     role: fm.role,
@@ -197,11 +207,12 @@ export function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFact
     effort,
     account: fm.account,
     limits: view === undefined ? { kind: "unknown" } : limitsOf(view.auth, view.status, view.usage),
+    ...(spent === undefined ? {} : { costUsd: spent }),
   };
 }
 
 /** The models an `auto` pick may take: the agent's own list when it has one, else all but the hidden ones. */
-function fallbackModels(fm: AgentFrontmatter, offered: AccountModels, view: AccountView | undefined) {
+export function fallbackModels(fm: AgentFrontmatter, offered: AccountModels, view: AccountView | undefined) {
   const allowed = fm.models ?? [];
   const hidden = view?.hiddenModels ?? [];
   return normalizeOffered(
@@ -299,11 +310,16 @@ export function teamFactsLines(f: TeamFacts): string[] {
   if (f.joinable.length > 0) {
     lines.push(
       "",
-      'Could join (start a line with "@name:" or use the mention tool to add one to the team):',
+      "Could join (name one in a plan step and it joins the team):",
       ...f.joinable.map(memberLine),
     );
   }
   lines.push("");
+  lines.push(
+    f.busy === undefined
+      ? "This computer: calm, so a worker running at the same time costs no speed."
+      : `This computer is busy (${f.busy}): a worker running at the same time slows every run. Prefer doing small steps yourself.`,
+  );
   if (f.running.length === 0) lines.push("Running now: nothing else.");
   else lines.push("Running now:", ...f.running.map(runningLine));
   if (f.past.length > 0) {
@@ -317,13 +333,14 @@ export function leadPlanLines(lead: string): string[] {
   return [
     "## How the lead plans",
     "",
-    `@${lead}: choose the cheapest way that gets this done well, and say why.`,
+    `@${lead}: choose the cheapest way that gets this done well.`,
     "",
-    '- Your first reply states the plan in a few lines: who does what, in which order, and why that is cheaper or faster. For example "the builder on a cheaper model writes the code, I review", or "small change, I do it myself". Record it with the majhi-room record_plan tool before you start the work: the room shows it as a plan line, and majhi keeps it with the tokens each agent used.',
-    "- Rules of thumb, not limits: give bulk implementation to cheaper agents; keep expensive models for planning and review; split large work into child tasks so turns stay short; run independent parts in parallel on different accounts when their limits allow. Doing it alone is right when handing over would cost more than the work.",
-    "- Do not give a long job to an agent whose account is nearly out.",
-    "- The owner may reply to change the plan. Follow the new plan, and record it again with record_plan.",
-    "- Hand over the lead (majhi-tasks set_lead, naming a teammate or an agent that may join) when your account is at its limit, the task needs another skill or model, or you are stuck. The new lead gets a note with the plan, what is done and what is next; you stay as a builder unless you set keepOldLead to false.",
+    "- Do small or short-budget steps yourself, and add a worker only when the plan is worth it. Team facts says what each agent has left, what it cost this task so far and how busy this computer is. Do not give a long step to an agent whose account is nearly out.",
+    '- Your first reply states the plan in a few lines and records it with the majhi-room record_plan tool: at most 8 steps in order, each naming who does it ("me" or a worker\'s name) and why this is cheaper or faster. Then end your turn. A worker joins the team when a step names it (at most 3 workers per task).',
+    "- Workers get work only from the plan. majhi hands each step to its owner, one at a time; a worker that finishes posts one result line and the next step starts. An @mention wakes nobody. When a step is yours, do it and end your turn.",
+    "- Record the plan again when it changes, for example after the owner replies: its progress starts over.",
+    "- If a worker's account cannot run, majhi gives its step to another agent from the last checkpoint. If yours cannot, the worker with the most headroom becomes the lead and carries on with the plan and its progress.",
+    "- When this workspace asks for a review before the owner, majhi ends your plan with a review step by an agent on a cheaper model. The reviewer sends a step back with send_back; a step sent back twice stops and goes to the owner.",
   ];
 }
 
@@ -335,7 +352,8 @@ function memberLine(m: MemberFacts): string {
   if (m.price !== undefined)
     parts.push(`$${money(m.price.input)} in and $${money(m.price.output)} out per M tokens`);
   parts.push(m.effort === undefined ? "default effort" : `effort ${m.effort}`);
-  return `- @${m.id} (${m.role}): ${parts.join(", ")}. ${limitsSentence(m.account, m.limits)}`;
+  const spent = m.costUsd === undefined ? "" : ` Spent ${usdText(m.costUsd)} on this task so far.`;
+  return `- @${m.id} (${m.role}): ${parts.join(", ")}. ${limitsSentence(m.account, m.limits)}${spent}`;
 }
 
 function limitsSentence(account: string, l: Limits): string {

@@ -114,6 +114,7 @@ const PAUSE_TITLE: Record<string, string> = {
   limit: "Paused: the account hit its usage limit",
   error: "Paused after an error",
   "signed-out": "Paused: an account is signed out",
+  down: "Paused: every agent is down",
   loop: "Stopped: the agents are going in circles",
   blocked: "Blocked and waits for you",
 };

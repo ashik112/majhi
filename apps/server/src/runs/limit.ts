@@ -19,9 +19,22 @@ export function limitPauseText(account: string, until: string, now: Date): strin
   return `${account} is at its usage limit until ${limitClock(until, now)}`;
 }
 
-/** The one room line when the fallback takes over. */
-export function handedOffLine(from: string, to: string, until: string, now: Date): string {
-  return `@${from} hit its usage limit (resets ${limitClock(until, now)}). @${to} continues from the checkpoint.`;
+/**
+ * The one room line when another agent takes over: `fallback` (the agent's own fallback, in its place),
+ * `step` (a teammate takes the step) or `lead` (the worker with the most headroom leads).
+ */
+export function handedOffLine(
+  from: string,
+  to: string,
+  until: string,
+  now: Date,
+  how: "step" | "lead" | "fallback" = "fallback",
+): string {
+  const hit = `@${from} hit its usage limit (resets ${limitClock(until, now)}).`;
+  if (how === "lead")
+    return `${hit} @${to}, the worker with the most headroom, leads now and continues from the checkpoint.`;
+  if (how === "step") return `${hit} @${to} takes its step from the checkpoint.`;
+  return `${hit} @${to} continues from the checkpoint.`;
 }
 
 /** Said once when an account's limit passed but the org does not resume by itself. */

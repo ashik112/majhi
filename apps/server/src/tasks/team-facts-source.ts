@@ -1,4 +1,5 @@
 import { type AccountModels, type AgentFrontmatter, canWorkIn, resolveTier, type Task } from "@majhi/shared";
+import { modelForTier } from "../runs/model-options.ts";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
@@ -8,8 +9,11 @@ import type { Store } from "../store/index.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { TaskPlanner } from "./planner.ts";
 import { likelyPaths, overlapsOf } from "./planning.ts";
+import { downOf, type Hand, headroomOf, type ReviewerCandidate } from "./crew.ts";
 import {
   buildTeamFacts,
+  fallbackModels,
+  limitsOf,
   type PastPlan,
   type RunningFacts,
   runningFactsOf,
@@ -28,6 +32,10 @@ export interface TeamFactsDeps {
   config: ConfigService;
   planner: TaskPlanner;
   now: () => Date;
+  /** What each agent cost this task so far, in USD. Absent: not shown. */
+  costs?: ((task: string) => Map<string, number>) | undefined;
+  /** Why this computer is busy now, or undefined when it is calm. */
+  busy?: (() => string | undefined) | undefined;
 }
 
 /** Gathers the team facts of a task from the agents, accounts, price table, runs and the planner. */
@@ -39,7 +47,7 @@ export class TeamFactsSource {
    * captain chat, another mode, no team) or the agents cannot be read. Any other read that fails
    * leaves its part out: facts never stop a turn.
    */
-  async facts(task: Task): Promise<TeamFacts | undefined> {
+  async facts(task: Task, options: { light?: boolean } = {}): Promise<TeamFacts | undefined> {
     if (task.kind === "chat" || isBossChat(task) || task.mode !== "lead" || task.team.length === 0) {
       return undefined;
     }
@@ -79,10 +87,67 @@ export class TeamFactsSource {
       prices,
       runs,
       tierOf: (fm) => resolveTier(fm.role, fm.tier, orgTiers?.[fm.role], settings?.tiers[fm.role]),
-      running: (await attempt(() => this.running(task, lead, all))) ?? [],
-      past: (await attempt(async () => this.past(task, lead, Object.keys(sections?.orgs ?? {})))) ?? [],
+      running: options.light === true ? [] : ((await attempt(() => this.running(task, lead, all))) ?? []),
+      past:
+        options.light === true
+          ? []
+          : ((await attempt(async () => this.past(task, lead, Object.keys(sections?.orgs ?? {})))) ?? []),
       removed: store.tasks.roomState(task.id).removed ?? [],
+      costs: this.deps.costs?.(task.id) ?? new Map(),
+      busy: this.deps.busy?.(),
     });
+  }
+
+  /**
+   * The team as staffing sees it: for each agent whether its account can run now, what it has left and
+   * what it cost this task. Reads the agents and the accounts, no git: it runs at every step.
+   */
+  async hands(task: Task): Promise<Hand[]> {
+    const { agents, accounts } = this.deps;
+    const stored = await attempt(() => agents.list());
+    const all = (stored ?? []).flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
+    const views = new Map(((await attempt(() => accounts.list())) ?? []).map((v) => [v.id, v]));
+    const costs = this.deps.costs?.(task.id) ?? new Map<string, number>();
+    return task.team.flatMap((id) => {
+      const fm = all.find((a) => a.id === id);
+      if (fm === undefined) return [];
+      const view = views.get(fm.account);
+      const limits = view === undefined ? ({ kind: "unknown" } as const) : limitsOf(view.auth, view.status, view.usage);
+      const down = downOf(fm.account, limits);
+      return [
+        { id, up: down === undefined, headroom: headroomOf(limits), costUsd: costs.get(id) ?? 0, down },
+      ];
+    });
+  }
+
+  /** The agents that could review this task, each with the price of its model: the team first, then the ones that could join. */
+  async reviewers(task: Task): Promise<ReviewerCandidate[]> {
+    const facts = await this.facts(task, { light: true });
+    if (facts === undefined) return [];
+    const hands = await this.hands(task);
+    const row = (m: TeamFacts["members"][number], inTeam: boolean): ReviewerCandidate => ({
+      id: m.id,
+      role: m.role,
+      inTeam,
+      up: inTeam ? (hands.find((h) => h.id === m.id)?.up ?? true) : downOf(m.account, m.limits) === undefined,
+      price: m.price?.output,
+    });
+    return [...facts.members.map((m) => row(m, true)), ...facts.joinable.map((m) => row(m, false))];
+  }
+
+  /** The cheapest model the agent's account offers, by the price ranking. Undefined when it offers fewer than two. */
+  async cheapestModel(agent: string): Promise<string | undefined> {
+    const { agents, accounts, config } = this.deps;
+    const stored = await attempt(() => agents.get(agent));
+    if (stored === undefined || !stored.ok) return undefined;
+    const fm = stored.agent.frontmatter;
+    const offered = await attempt(() => accounts.cachedModels(fm.account));
+    if (offered === undefined) return undefined;
+    const view = ((await attempt(() => accounts.list())) ?? []).find((v) => v.id === fm.account);
+    const models = fallbackModels(fm, offered, view);
+    if (models.length < 2) return undefined;
+    const prices = (await attempt(() => readPrices(config.file))) ?? {};
+    return modelForTier(models, "cheapest", prices);
   }
 
   /** Recent plans of finished tasks in the orgs the lead may see. A root lead sees every org. */

@@ -252,10 +252,16 @@ export function assertedReading(hold: Hold, now: string): lifecycle.ClearReading
   return {
     now,
     online: true,
-    accounts: "account" in hold ? { [hold.account]: { signedIn: true } } : {},
+    accounts:
+      "account" in hold
+        ? { [hold.account]: { signedIn: true } }
+        : hold.cause === "agents-down"
+          ? Object.fromEntries(hold.down.map((d) => [d.account, { signedIn: true }]))
+          : {},
     budgetHasRoom: true,
     autopilot: "on",
     runAtStep: true,
+    slotFree: true,
     lastActivityAt: "9999-12-31T23:59:59.999Z",
   };
 }

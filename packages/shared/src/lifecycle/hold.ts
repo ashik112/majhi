@@ -13,6 +13,14 @@ import { TaskIdSchema } from "../tasks.ts";
 const At = z.string().datetime();
 const AccountId = IdSchema;
 
+/** An account that cannot run: signed out (the fix is a sign-in) or at a usage limit (it resets at `until`). */
+export const DownAccountSchema = z.object({
+  account: AccountId,
+  state: z.enum(["signed-out", "at-limit", "unreachable"]),
+  until: At.optional(),
+});
+export type DownAccount = z.infer<typeof DownAccountSchema>;
+
 export const HoldSchema = z.discriminatedUnion("cause", [
   z.object({ cause: z.literal("owner-stop"), at: At }),
   z.object({ cause: z.literal("captain-stop"), at: At, why: z.string().optional() }),
@@ -42,6 +50,11 @@ export const HoldSchema = z.discriminatedUnion("cause", [
   }),
   z.object({ cause: z.literal("loop-guard"), at: At, why: z.string() }),
   z.object({ cause: z.literal("idle"), at: At, why: z.string() }),
+  // A more urgent task took this one's running place (priority preemption). It resumes through the line.
+  z.object({ cause: z.literal("preempted"), at: At }),
+  // Every agent of the task is down. `down` names each account and what fixes it, so the owner reads the
+  // exact step or reset time; the hold lifts by itself when any of them is back.
+  z.object({ cause: z.literal("agents-down"), at: At, down: z.array(DownAccountSchema) }),
   z.object({ cause: z.literal("dependency-closed"), at: At, on: z.array(TaskIdSchema).min(1) }),
   z.object({ cause: z.literal("dependency-removed"), at: At, on: z.array(TaskIdSchema).min(1) }),
 ]);
@@ -61,6 +74,8 @@ export interface ClearReading {
   autopilot: "on" | "off" | "stopping";
   /** The held run reached the end of its current step. */
   runAtStep: boolean;
+  /** A running place is free (the running cap has room). Absent: not known, so a slot hold does not lift. */
+  slotFree?: boolean | undefined;
   /** When an agent last spoke in the task or a message last arrived for it. */
   lastActivityAt?: string | undefined;
 }
@@ -73,6 +88,8 @@ export type AutoClear =
   | { kind: "account-available"; account: string }
   | { kind: "budget-room"; until?: string | undefined }
   | { kind: "step-or-autopilot-on" }
+  | { kind: "slot-free" }
+  | { kind: "any-account-available"; accounts: readonly string[] }
   | { kind: "activity-after"; at: string };
 
 /** Whether `condition` holds in `reading`. Pure. */
@@ -93,6 +110,10 @@ export function conditionMet(condition: AutoClear, reading: ClearReading): boole
       return reading.budgetHasRoom || (condition.until !== undefined && condition.until <= reading.now);
     case "step-or-autopilot-on":
       return reading.runAtStep || reading.autopilot === "on";
+    case "slot-free":
+      return reading.slotFree === true;
+    case "any-account-available":
+      return condition.accounts.some((account) => conditionMet({ kind: "account-available", account }, reading));
     case "activity-after":
       return reading.lastActivityAt !== undefined && reading.lastActivityAt > condition.at;
   }
@@ -105,6 +126,21 @@ interface HoldRow<C extends HoldCause> {
   autoClears: (h: HoldOf<C>) => AutoClear;
   /** The one sentence the owner reads. */
   sentence: (h: HoldOf<C>) => string;
+}
+
+/** What is down and what fixes each: "Every agent is down. Sign in claude-acme, or wait for codex-acme (resets ...)." */
+function downSentence(down: readonly DownAccount[]): string {
+  if (down.length === 0) return "Every agent is down.";
+  const parts = down.map((d) =>
+    d.state === "signed-out"
+      ? `sign in ${d.account}`
+      : d.state === "unreachable"
+        ? `reach ${d.account}`
+        : `wait for ${d.account}${d.until === undefined ? "" : ` (resets ${d.until})`}`,
+  );
+  const [first, ...rest] = parts;
+  const head = first === undefined ? "" : `${first.slice(0, 1).toUpperCase()}${first.slice(1)}`;
+  return `Every agent is down. ${[head, ...rest].join(", or ")}.`;
 }
 
 const sentenceEnd = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
@@ -164,7 +200,17 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
   "loop-guard": {
     lifters: () => ["owner"],
     autoClears: () => ({ kind: "never" }),
-    sentence: () => "It was going in circles and was stopped. Say what to change.",
+    sentence: (h) => `${sentenceEnd(h.why)} It was stopped. Say what to change.`,
+  },
+  preempted: {
+    lifters: () => ["majhi", "owner"],
+    autoClears: () => ({ kind: "slot-free" }),
+    sentence: () => "Paused for a more urgent task. It resumes when a running place frees.",
+  },
+  "agents-down": {
+    lifters: () => ["majhi", "owner"],
+    autoClears: (h) => ({ kind: "any-account-available", accounts: h.down.map((d) => d.account) }),
+    sentence: (h) => `${downSentence(h.down)} It resumes by itself when one is back.`,
   },
   idle: {
     // The design lists O and C; majhi is added because the cause auto-clears on activity.

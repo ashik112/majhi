@@ -1,4 +1,5 @@
 import type { PlanAgentTokens, PlanMember, PlanOutcome, Task, TeamPlan } from "@majhi/shared";
+import type { PlanRow } from "../store/plans.ts";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
@@ -23,6 +24,33 @@ const AGENT_LIMIT = 50;
 /** The lead's plans for a task, and what each version cost (PRV-52). */
 export class TaskPlans {
   constructor(private readonly deps: PlansDeps) {}
+
+  /** The task's current plan version, or undefined when the lead never recorded one. */
+  latest(task: string): PlanRow | undefined {
+    return this.deps.store.plans.forTask(task).at(-1);
+  }
+
+  /**
+   * Changes the current plan version's steps and shows them again in the room. `change` returns the new
+   * plan, or undefined to leave it. Synchronous from the read to the write, so two changes never cross.
+   */
+  update(task: string, change: (plan: TeamPlan) => TeamPlan | undefined): TeamPlan | undefined {
+    const { store, room } = this.deps;
+    const row = store.plans.forTask(task).at(-1);
+    if (row === undefined) return undefined;
+    const plan = change(row.plan);
+    if (plan === undefined) return undefined;
+    store.plans.setPlan(row.id, plan);
+    room.post(task as Task["id"], `team-plan:${row.version}`, {
+      type: "team-plan",
+      agent: row.agent,
+      version: row.version,
+      steps: plan.steps,
+      why: plan.why,
+      how: plan.how,
+    });
+    return plan;
+  }
 
   /** Stores the next version of the task's plan and shows it in the room. Only the lead may. */
   async record(task: Task, agent: string, plan: TeamPlan): Promise<string> {
@@ -81,6 +109,17 @@ export class TaskPlans {
     const before = latest.outcome;
     const say = task.status === "review" ? before === null || !sameAgents(before, after) : before === null;
     if (say) room.post(task.id, `plan-outcome:${latest.version}:${at}`, outcomeLine(latest.version, after));
+  }
+
+  /** What each agent cost this task so far, in USD (turns without a price count as nothing). */
+  costs(task: string): Map<string, number> {
+    const out = new Map<string, number>();
+    const usage = this.deps.usage;
+    if (usage === undefined) return out;
+    for (const g of usage.groups("agent", { filters: { task } }, AGENT_LIMIT)) {
+      if (g.key !== null && g.totals.turns - g.totals.unpricedTurns > 0) out.set(g.key, g.totals.costUsd);
+    }
+    return out;
   }
 
   /** The task and its subtasks, children of children too. */

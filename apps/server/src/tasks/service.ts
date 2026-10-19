@@ -28,7 +28,6 @@ import {
   LOCAL_TASK_PREFIX,
   lifecycle,
   type MergeChecks,
-  MODE_LABELS,
   mayRetype,
   mergeCanBeOverridden,
   nameFromTitle,
@@ -45,6 +44,7 @@ import {
   parseTaskText,
   priorityRank,
   type ReadMount,
+  reviewBeforeOwner,
   type RoomItem,
   type RoomSearchHit,
   type ShipOption,
@@ -67,7 +67,9 @@ import {
   type TeamOverride,
   type TeamPlan,
   type TypeBy,
+  taskLabel,
   taskNameOf,
+  WORKERS_MAX,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -112,7 +114,6 @@ import { endItemId, supersededBy } from "../processes/notices.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
-import { firstTurn, type Member, unreviewed } from "../rooms/coordinate.ts";
 import { attributionOf } from "../runs/attribution.ts";
 import { commitAll, commitBy, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -150,7 +151,7 @@ import {
 } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
-import { type Admission, admit, admitRunning, type GateLimits } from "./gate.ts";
+import { type Admission, admit, admitRunning, type GateLimits, preemptionVictim } from "./gate.ts";
 import { handoverNote } from "./handover.ts";
 import { holdViewOf } from "./hold-view.ts";
 import {
@@ -191,6 +192,8 @@ import {
 } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { claimTaskFolder, nameSlug, removableFolder, scopeSlug } from "./task-folder.ts";
+import { Crew } from "./crew-run.ts";
+import { type DownAccount, hasRoomForWorker } from "./crew.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 import { chooseType, guessType, typeQuestion } from "./typing.ts";
@@ -270,6 +273,8 @@ export interface TaskDeps {
   onReview?: (id: string) => Promise<void>;
   /** majhi merged a task's branch into `into` of `project`. Never awaited. */
   onMerged?: (merge: { task: string; project: string; into: string }) => void | Promise<void>;
+  /** Why this computer is busy now, or undefined when it is calm: the lead's team facts say so. */
+  machineBusy?: () => string | undefined;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -343,8 +348,6 @@ export class TaskService {
   private readonly now: () => Date;
   /** `wait` processes the room was told the task waits for, so it is said once. */
   private readonly waitNoted = new Set<string>();
-  /** Worktree states the lead was woken to review, so a lead that cannot run is not woken again. */
-  private readonly reviewWoken = new Set<string>();
   /** Tasks inside `start` (worktrees, memory) that have no run yet, and the ones the owner stopped there. */
   private readonly starting = new Set<string>();
   /** Tasks the room was told wait for a free place, so it is said once. */
@@ -357,6 +360,8 @@ export class TaskService {
   private readonly planner: TaskPlanner;
   private readonly teamFacts: TeamFactsSource;
   private readonly plans: TaskPlans;
+  /** Lead and workers: the plan's steps, who runs them, and what happens when an agent is down. */
+  readonly crew: Crew;
   /** The facts block each (task, agent) got last, so a wake prompt only repeats them when they changed. */
   private readonly chatRecallSeen = new Map<string, string>();
   private readonly wakeSeen = new Map<string, string>();
@@ -400,6 +405,8 @@ export class TaskService {
       config: deps.config,
       planner: this.planner,
       now: this.now,
+      costs: (task) => this.plans.costs(task),
+      busy: deps.machineBusy,
     });
     this.plans = new TaskPlans({
       store: deps.store,
@@ -408,6 +415,23 @@ export class TaskService {
       flushUsage: deps.flushUsage,
       team: (task) => this.planTeam(task),
       now: this.now,
+    });
+    this.crew = new Crew({
+      store: deps.store,
+      room: deps.room,
+      runs: deps.runs,
+      plans: this.plans,
+      host: {
+        addToTeam: (id, agent, options) => this.addToTeam(id, agent, options),
+        pauseForOwner: (id, text) => this.pauseForOwner(id, text, "loop"),
+        pauseDown: (id, down) => this.holdDown(id, down),
+        hands: (task) => this.teamFacts.hands(task),
+        reviewers: (task) => this.teamFacts.reviewers(task),
+        cheapestModel: (agent) => this.teamFacts.cheapestModel(agent),
+        setModel: async (task, agent, model) => {
+          await this.setOverride({ task, agent, model });
+        },
+      },
     });
     this.orchestrator = new Orchestrator({
       store: deps.store,
@@ -691,7 +715,6 @@ export class TaskService {
       if (promoting === undefined) {
         store.tasks.insert(task);
         if (input.noAutonomy === true) store.tasks.setNoAutonomy(id, true);
-        store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
         if (wantsStart) store.tasks.setStartWhenReady(id, true);
       } else {
         // The same row, room and folder: only what makes it a task is added.
@@ -1191,7 +1214,13 @@ export class TaskService {
   async start(
     id: string,
     by = "owner",
-    options: { gateReleased?: boolean; wake?: boolean; now?: boolean } = {},
+    options: {
+      gateReleased?: boolean;
+      wake?: boolean;
+      now?: boolean;
+      /** Start on priority: when every running place is taken and this task is urgent, the lowest-priority running task pauses for it. */
+      preempt?: { by: "owner" | "captain"; ownerAsked: boolean };
+    } = {},
   ): Promise<Task> {
     const task = this.get(id);
     await this.checkStartable(task);
@@ -1203,13 +1232,22 @@ export class TaskService {
     const fresh = task.status === "inbox" || task.status === "ready" || task.status === "paused";
     const limits =
       fresh && task.kind !== "chat" && options.now !== true ? await this.gateLimits() : undefined;
+    let victim: string | undefined;
     // No await from the count to `starting.add`: two starts at once cannot both take the last place.
     if (limits !== undefined) {
       const full = admitRunning({ running: this.runningCount(id) }, limits);
-      if (full.kind === "queue") return this.queueStart(task, limits.tasks_running, by);
+      if (full.kind === "queue") {
+        victim =
+          full.reason === "running-cap" && options.preempt !== undefined
+            ? this.victimFor(task, options.preempt)
+            : undefined;
+        if (victim === undefined) return this.queueStart(task, limits.tasks_running, by);
+      }
     }
     this.starting.add(id);
     try {
+      // The urgent task holds its place first, then the lowest-priority running task gives its own up.
+      if (victim !== undefined) await this.preempt(victim, task);
       return await this.startNow(id, task, by, options);
     } finally {
       this.starting.delete(id);
@@ -1277,6 +1315,93 @@ export class TaskService {
     const limits = await this.gateLimits();
     if (admitRunning({ running: this.runningCount(id) }, limits).kind === "start") return undefined;
     return `${this.fullLine(id, limits.tasks_running)} Place ${this.placeInLine(id)} in line.`;
+  }
+
+  /** The running task an urgent start pauses for `task`, or undefined when none qualifies (`preemptionVictim`). */
+  private victimFor(task: Task, preempt: { by: "owner" | "captain"; ownerAsked: boolean }): string | undefined {
+    const running = this.deps.store.tasks
+      .runningTasks(task.id)
+      .filter((t) => t.kind !== "chat" && !this.starting.has(t.id))
+      .map((t) => ({
+        id: t.id,
+        priority: t.priority,
+        ownedByOwner: t.origin === undefined || t.origin.kind === "owner" || t.origin.kind === "chat",
+      }));
+    return preemptionVictim({ wanted: task.priority, ...preempt, running });
+  }
+
+  /**
+   * Pauses `victim` at a checkpoint for the urgent `task`: its runs stop (the checkpoint commit ends the
+   * turn), it holds as `preempted`, and it stays in the line, so it starts again when a place frees. The
+   * room of the paused task says for which.
+   */
+  private async preempt(victim: string, urgent: Task): Promise<void> {
+    const at = this.now().toISOString();
+    const sections = await this.deps.config.sections();
+    const label = taskLabel(urgent, urgent.org === undefined ? undefined : sections.orgs[urgent.org]?.name);
+    this.note(victim, `Paused for ${label} (urgent). Resumes when a slot frees.`);
+    await this.holdTask(
+      victim,
+      { cause: "preempted", at },
+      { by: "majhi", reason: "preempted", why: `Paused for ${label} (urgent).` },
+    );
+    // The line starts it again: majhi asked, so majhi may lift the hold.
+    this.deps.store.tasks.setStartWhenReady(victim, true);
+    this.resumeBy.set(victim, "majhi");
+    this.deps.events.emitTask(victim);
+  }
+
+  /** Puts a hold on a task from outside its runs: they stop, the task pauses, its card says why. */
+  private async holdTask(id: string, hold: lifecycle.Hold, ctx: Partial<EffectContext>): Promise<void> {
+    const task = this.get(id);
+    if (task.status !== "running" && task.status !== "review") return;
+    await this.teardown(id, ctx);
+    await this.lifecycle.apply(id, { type: "holdPlaced", hold }, { ctx, skip: ["publishTask"] });
+    this.deps.room.publishTask(this.get(id));
+  }
+
+  /** Every agent is down: the task pauses at its checkpoint, and its card names each fix or reset time. */
+  async holdDown(id: string, down: readonly DownAccount[]): Promise<void> {
+    const hold: lifecycle.Hold = { cause: "agents-down", at: this.now().toISOString(), down: [...down] };
+    await this.holdTask(id, hold, {
+      by: "majhi",
+      reason: "down",
+      why: lifecycle.sentenceOf(hold),
+    });
+    this.deps.events.emitTask(id);
+  }
+
+  /**
+   * Tasks paused because every agent was down start again when any agent can run (an account signed in,
+   * a limit reset). The step goes to the best agent that can run; one run, never two.
+   */
+  async resumeDown(): Promise<string[]> {
+    const resumed: string[] = [];
+    const paused = this.deps.store.tasks
+      .getMany(this.deps.store.tasks.idsWithStatus("paused"))
+      .filter((t) => t.pausedReason === "down");
+    for (const task of paused) {
+      if (!(await this.crew.recovered(task))) continue;
+      try {
+        await this.start(task.id, "majhi");
+        resumed.push(task.id);
+      } catch (err) {
+        console.error(`Could not resume ${task.id} after an agent came back: ${errorMessage(err)}`);
+      }
+    }
+    return resumed;
+  }
+
+  /**
+   * "Start on priority" for a task that waits in line and was made urgent: when every place is taken, the
+   * lowest-priority running task pauses for it. Nothing happens for a task that is not urgent, not waiting,
+   * or has nobody to pause.
+   */
+  async prioritize(id: string, preempt: { by: "owner" | "captain"; ownerAsked: boolean }): Promise<Task> {
+    const task = this.get(id);
+    if (task.priority !== "urgent" || !this.deps.store.tasks.startWhenReady(id)) return task;
+    if (task.status !== "inbox" && task.status !== "ready" && task.status !== "paused") return task;
+    return this.start(id, preempt.by === "owner" ? "owner" : "majhi", { preempt });
   }
 
   private async startNow(
@@ -1438,9 +1563,13 @@ export class TaskService {
       );
   }
 
-  /** Who goes first when the task starts, by its mode: the lead, the pipeline's first step, the loop's builder. */
+  /**
+   * Who starts with the task: its lead, or the agent running the step in progress when the task starts again
+   * (a step whose agent is still down goes to another one). The workers get their steps from the plan.
+   */
   private async firstAgents(task: Task): Promise<string[]> {
-    return firstTurn(task.mode, this.members(task, await this.frontmatters())).agents;
+    const resumed = await this.crew.resumeAgent(task.id);
+    return resumed === undefined ? task.team.slice(0, 1) : [resumed];
   }
 
   /** Creates the worktrees the task does not have yet, each from its base (or the branch it stacks on). */
@@ -1530,13 +1659,6 @@ export class TaskService {
   }
 
   /** The team with each agent's role, lead first. An agent file that is gone counts as a Builder. */
-  members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
-    return task.team.map((id) => ({
-      id,
-      role: agents.find((a) => a.id === id)?.role ?? "Builder",
-    }));
-  }
-
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
   /** `by`: who stopped it (`owner`, an agent id, `autonomy`), so the paused card can say the captain did. */
   async stop(
@@ -1619,7 +1741,6 @@ export class TaskService {
     else if (input.project !== undefined)
       throw new UserError("project goes with base: give the new base too.");
     if (input.agent !== undefined && input.agent !== task.team[0]) await this.changeAgent(task, input.agent);
-    if (input.mode !== undefined && input.mode !== task.mode) await this.changeMode(task, input.mode);
     if (input.priority !== undefined || input.due !== undefined)
       this.deps.store.tasks.setPlanning(
         task.id,
@@ -1693,21 +1814,6 @@ export class TaskService {
     return undefined;
   }
 
-  /** A new coordination mode starts its own turn order; the loop guard's count and the removed agents stay. */
-  private async changeMode(task: Task, mode: CoordinationMode): Promise<void> {
-    const at = this.now().toISOString();
-    this.deps.store.tasks.setMode(task.id, mode, at);
-    const next = this.get(task.id);
-    const { state } = firstTurn(mode, this.members(next, await this.frontmatters()));
-    const { agentTurns, removed } = this.deps.store.tasks.roomState(task.id);
-    this.deps.store.tasks.setRoomState(task.id, {
-      ...state,
-      agentTurns,
-      ...(removed === undefined ? {} : { removed }),
-    });
-    this.note(task.id, `Mode: ${MODE_LABELS[mode]}.`);
-  }
-
   // ---------------------------------------------------------------------------
   // Team (5.3)
 
@@ -1725,6 +1831,11 @@ export class TaskService {
     if (options.by !== undefined && removed.includes(agent))
       throw new UserError(`The owner removed @${agent} from ${id}. Only the owner can add it back.`, 409);
     const fm = await this.checkMember(task, agent);
+    if (!task.team.includes(agent) && !hasRoomForWorker(task.team))
+      throw new UserError(
+        `${task.id} has its lead and ${WORKERS_MAX} workers already: ${task.team.map((a) => `@${a}`).join(", ")}. Take one off the team first.`,
+        409,
+      );
     // The owner added it again: agents may mention it as usual.
     if (removed.includes(agent))
       this.deps.store.tasks.setRoomState(id, {
@@ -1806,17 +1917,27 @@ export class TaskService {
   }
 
   /**
-   * Puts `to` in `from`'s place at the same position, with `from`'s repos override, when
-   * `from`'s account hit its usage limit. It does not close `from`'s run: the run manager calls it
-   * from inside that run's own loop and ends the run itself. False when the swap cannot be made.
+   * Hands the work of `from`, whose account cannot run, to `to`. It does not close `from`'s run: the run
+   * manager calls it from inside that run's own loop and ends the run itself. False when it cannot be done.
+   *  - `step`: the team stays as it is and the plan's step moves to `to`, a worker or the lead.
+   *  - `lead`: `to`, a worker, leads from now on; `from` stays on the team as a worker.
+   *  - `fallback`: `to`, the agent's own fallback, takes its place at the same position, with its repos override.
    */
-  async takeOver(id: string, from: string, to: string): Promise<boolean> {
+  async takeOver(
+    id: string,
+    from: string,
+    to: string,
+    how: "step" | "lead" | "fallback" = "fallback",
+  ): Promise<boolean> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "done") return false;
     if (!task.team.includes(from)) return false;
-    // A teammate takes the lead's place: it leads, and `from` leaves the team.
-    const mate = task.team.includes(to);
-    if (mate && task.team[0] !== from) return false;
+    if (how !== "fallback" && !task.team.includes(to)) return false;
+    if (how === "lead" && task.team[0] !== from) return false;
+    if (how === "step") {
+      this.crew.moved(id, from, to, "step");
+      return true;
+    }
     try {
       await this.checkMember(task, to);
     } catch {
@@ -1826,15 +1947,18 @@ export class TaskService {
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
-      mate
-        ? [to, ...task.team.filter((a) => a !== from && a !== to)]
+      how === "lead"
+        ? [to, from, ...task.team.filter((a) => a !== from && a !== to)]
         : task.team.map((a) => (a === from ? to : a)),
       at,
     );
-    // Only the repos carry over: a model or effort set for `from` may not exist on `to`'s account.
-    const { [from]: theirs, [to]: _replaced, ...rest } = task.overrides;
-    const repos = theirs?.repos;
-    this.deps.store.tasks.setOverrides(id, repos === undefined ? rest : { ...rest, [to]: { repos } }, at);
+    this.crew.moved(id, from, to, how);
+    if (how === "fallback") {
+      // Only the repos carry over: a model or effort set for `from` may not exist on `to`'s account.
+      const { [from]: theirs, [to]: _replaced, ...rest } = task.overrides;
+      const repos = theirs?.repos;
+      this.deps.store.tasks.setOverrides(id, repos === undefined ? rest : { ...rest, [to]: { repos } }, at);
+    }
     await this.afterProcessesOf(id, held, await this.teamChanged(id));
     return true;
   }
@@ -1929,6 +2053,8 @@ export class TaskService {
   async staffTeam(id: string, team: readonly string[]): Promise<Task> {
     const task = this.get(id);
     if (team.length === 0 || team.join() === task.team.join()) return task;
+    if (team.length > WORKERS_MAX + 1)
+      throw new UserError(`A task has its lead and at most ${WORKERS_MAX} workers.`, 409);
     for (const agent of team) await this.checkMember(task, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(id, [...team], at);
@@ -2069,7 +2195,7 @@ export class TaskService {
       level: "warn",
       text,
     });
-    await this.stop(id, reason);
+    await this.stop(id, reason, text);
     this.deps.events.emitTask(id);
   }
 
@@ -3432,7 +3558,8 @@ export class TaskService {
   /** The lead records its plan (majhi-room `record_plan`). */
   async recordPlan(id: string, agent: string, plan: TeamPlan): Promise<string> {
     const task = this.get(id);
-    return this.plans.record(task, agent, plan);
+    const org = task.org === undefined ? undefined : (await this.deps.config.sections()).orgs[task.org];
+    return this.crew.record(task, agent, plan, { review: reviewBeforeOwner(task.org, org) });
   }
 
   /** The team as it is now, for the snapshot kept with a plan: from the last facts, else from the agent files. */
@@ -3768,7 +3895,8 @@ export class TaskService {
       }
       return;
     }
-    if (this.leadReviewDue(task)) return;
+    // A plan with a step left is not finished: the next step starts, or the idle watch puts it back to work.
+    if (this.crew.unfinished(id)) return;
     const moved = await this.lifecycle.apply(
       id,
       { type: "agentsIdle" },
@@ -3784,37 +3912,6 @@ export class TaskService {
     await this.deps
       .onReview?.(id)
       .catch((err: unknown) => this.warn(id, `Could not ship: ${errorMessage(err)}`));
-  }
-
-  /**
-   * Lead mode: the worktrees changed since the last turn of the lead or a reviewer, so a teammate's
-   * work waits for review. Wakes the lead instead of sending the task to review, once per worktree
-   * state: the lead's next turn marks the change seen, and a lead that cannot run is not woken again.
-   */
-  private leadReviewDue(task: Task): boolean {
-    const lead = task.team[0];
-    if (task.mode !== "lead" || lead === undefined || task.team.length < 2) return false;
-    // A question to the owner waits: the owner has the next move, and the answer starts the room again.
-    if (this.deps.store.room.pendingOfType(task.id, "owner-question").length > 0) return false;
-    const state = this.deps.store.tasks.roomState(task.id);
-    if (!unreviewed(state)) return false;
-    const key = `${task.id} ${state.fingerprint}`;
-    if (this.reviewWoken.has(key)) return false;
-    this.reviewWoken.add(key);
-    this.note(
-      task.id,
-      `Nobody is working on ${task.id}, but a teammate changed the worktrees and nobody has reviewed it. Woke @${lead} to review that work before the task goes to review.`,
-    );
-    this.deps.runs.notify(
-      task.id,
-      lead,
-      [
-        `A teammate changed the worktrees since your last turn (commits or edits) and nobody is working on ${task.id} now.`,
-        'Review that work against your plan and the teammate\'s report in the room. Hand on what is left (the majhi-room mention tool, or "@name: please ..."), or finish it yourself.',
-        "When the task is done, end your turn without handing on: it then goes to review.",
-      ].join("\n"),
-    );
-    return true;
   }
 
   /**
@@ -3900,10 +3997,27 @@ export class TaskService {
       if (reason === "error" || reason === "signed-out")
         this.dropPendingShip(id, "the agent stopped with an error");
     }
+    // A team whose every agent is down pauses with one hold that names each fix, and resumes when any is back.
+    const down =
+      (reason === "limit" || reason === "signed-out") && task.team.length > 1
+        ? await this.crew.downAll(task)
+        : [];
+    const hold =
+      down.length > 0
+        ? ({ cause: "agents-down", at, down } as const)
+        : holdFromRunReason(reason, at, row, why);
     await this.lifecycle.apply(
       id,
-      { type: "runPaused", hold: holdFromRunReason(reason, at, row, why) },
-      { ctx: { by: "majhi", why, reason, account }, skip: ["dropPendingShip"] },
+      { type: "runPaused", hold },
+      {
+        ctx: {
+          by: "majhi",
+          why: down.length > 0 ? lifecycle.sentenceOf(hold) : why,
+          reason: down.length > 0 ? "down" : reason,
+          account,
+        },
+        skip: ["dropPendingShip"],
+      },
     );
   }
 
@@ -4146,14 +4260,6 @@ export class TaskService {
     const writer = input.by === undefined ? undefined : this.cards.byCaptain(input.by) ? "captain" : "majhi";
     this.cards.settle(task.id, "review", `Replied to @${agent}`, input.by ?? "owner");
     this.cards.replied(task.id);
-    // The owner spoke: the loop guard counts agent turns from here.
-    const state = this.deps.store.tasks.roomState(task.id);
-    if (state.agentTurns > 0 || state.nudged === true)
-      this.deps.store.tasks.setRoomState(task.id, {
-        ...state,
-        agentTurns: 0,
-        nudged: false,
-      });
     // A task that was never started gets its brief before this message, in the room and in the queue.
     if (starts) {
       const first = await this.firstAgents(task);
@@ -4236,13 +4342,6 @@ export class TaskService {
     }
     this.cards.settle(task.id, "review", input.settled, input.by ?? "owner");
     if (task.status !== "running") await this.start(task.id, "owner", { wake: false });
-    const state = this.deps.store.tasks.roomState(task.id);
-    if (state.agentTurns > 0 || state.nudged === true)
-      this.deps.store.tasks.setRoomState(task.id, {
-        ...state,
-        agentTurns: 0,
-        nudged: false,
-      });
     this.deps.runs.notify(task.id, input.agent, input.text);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emitTask(task.id, true);

@@ -64,6 +64,15 @@ export class PlanRepo {
       .flatMap((r) => parseRow(r) ?? []);
   }
 
+  /** Writes a plan version's steps again: the plan's own row keeps where each step stands. */
+  setPlan(id: number, plan: TeamPlan): void {
+    this.db
+      .update(taskPlans)
+      .set({ plan: JSON.stringify(plan) })
+      .where(eq(taskPlans.id, id))
+      .run();
+  }
+
   setOutcome(id: number, outcome: PlanOutcome): void {
     this.db
       .update(taskPlans)
