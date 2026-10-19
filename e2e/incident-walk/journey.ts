@@ -22,30 +22,18 @@ import {
 } from "./walk.ts";
 
 const REPO = join(HOST_HOME, "Work", "storefront");
+/** The two switches of the run: `WALK_FIX=ships WALK_TELL=sends` is Captain ships and Captain sends. */
+const FIX = process.env.WALK_FIX === "ships" ? "ships" : "ask";
+const TELL = process.env.WALK_TELL === "sends" ? "sends" : "ask";
 
 let room = "";
 const TITLE = "Database usage over 90% on storefront";
 
 async function setup(w: World): Promise<string> {
+  // The workspace's one level and its two incident switches, set the way the owner sets them.
+  await cmd("authority.set", { org: "acme", level: "routine", fix: FIX, clientUpdate: TELL });
   await cmd("autonomy.configure", {
-    orgs: {
-      acme: {
-        authority: {
-          start: "decide",
-          questions: "decide",
-          approvals: "decide",
-          upkeep: "decide",
-          merge: "decide",
-          push: "decide",
-          deployStaging: "decide",
-          deployProduction: "ask",
-          tell: "decide",
-          own: "ask",
-        },
-        incident: { soakMin: 1, cadenceMin: 5 },
-        holds: { firstContact: false },
-      },
-    },
+    orgs: { acme: { incident: { soakMin: 1, cadenceMin: 5 }, holds: { firstContact: false } } },
   });
   await cmd("autonomy.start", {});
   await cmd("ops.settings", { escalateMin: 10, resolveMin: 1 });
@@ -59,7 +47,57 @@ async function setup(w: World): Promise<string> {
   room = row.id;
   setReplies([{ when: "Write a short title", say: TITLE }]);
   void w;
-  return "Acme: Start, Tell, Merge, Push are the captain's; Auto-pilot on; soak 1 min; Slack channel linked";
+  return `Acme: Routine, Fix ${FIX}, Client update ${TELL}; Auto-pilot on; soak 1 min; Slack channel linked`;
+}
+
+/** Needs you, in light and dark, as it stands now. */
+async function needsShots(w: World, name: string): Promise<void> {
+  for (const mode of ["light", "dark"] as const) {
+    await w.page.evaluate(
+      (m) =>
+        localStorage.setItem(
+          "majhi.look",
+          JSON.stringify({ theme: "graphite", mode: m, density: "comfortable" }),
+        ),
+      mode,
+    );
+    console.log(await shot(w, `${name}-${mode}`, "/"));
+  }
+  await w.page.evaluate(() =>
+    localStorage.setItem(
+      "majhi.look",
+      JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
+    ),
+  );
+}
+
+/** Under Client update Ask me the captain's updates wait in Needs you: the owner sends each one. */
+async function releaseDrafts(): Promise<number> {
+  if (TELL !== "ask") return 0;
+  const list = (await cmd("decisions.list", {})).decisions as any[];
+  let n = 0;
+  for (const d of list) {
+    if (d.kind !== "draft" && d.kind !== "reply") continue;
+    const option = d.options.find((o: any) => o.primary) ?? d.options[0];
+    if (option === undefined) continue;
+    await cmd("decisions.answer", { id: d.id, option: option.id });
+    n += 1;
+  }
+  return n;
+}
+let shownHeld = false;
+
+/** The first held update is photographed in Needs you, then every held update is sent. */
+async function holdThenRelease(w: World): Promise<void> {
+  if (TELL !== "ask") return;
+  const held = (await cmd("decisions.list", {})).decisions.some(
+    (d: any) => d.kind === "draft" || d.kind === "reply",
+  );
+  if (held && !shownHeld) {
+    shownHeld = true;
+    await needsShots(w, "03-update-waits");
+  }
+  await releaseDrafts();
 }
 
 const FLAGS = { promisedTime: false, money: false, security: false, severalClients: false };
@@ -181,7 +219,23 @@ async function clientSaysDown(w: World): Promise<string> {
     user: "U0SARA",
     text: "Hi, the server is down! Our orders page does not load.",
   });
-  const sent = await until("the first reply in Slack", async () => w.slack.sent[0], 120_000);
+  const sent = await until(
+    "the first reply in Slack",
+    async () => {
+      if (TELL === "ask" && !shownHeld) {
+        const held = (await cmd("decisions.list", {})).decisions.some(
+          (d: any) => d.kind === "draft" || d.kind === "reply",
+        );
+        if (held) {
+          shownHeld = true;
+          await needsShots(w, "02-update-waits");
+        }
+      }
+      await releaseDrafts();
+      return w.slack.sent[0];
+    },
+    120_000,
+  );
   const tasks = await incidentTasks();
   if (tasks.length !== 1) throw new Error(`expected one incident task, saw ${tasks.length}`);
   const task = await until(
@@ -228,7 +282,10 @@ async function leadFixes(w: World, id: string): Promise<string> {
   });
   await until(
     "the client to get a reply for Identified",
-    async () => w.slack.sent.length > toldBefore,
+    async () => {
+      await holdThenRelease(w);
+      return w.slack.sent.length > toldBefore;
+    },
     90_000,
   );
   return `lead committed the fix in ${tree}; cause recorded; the client got a reply after the status change`;
@@ -243,6 +300,44 @@ async function ship(w: World, id: string): Promise<string> {
     async () => ["review", "mr"].includes((await cmd("tasks.get", { id })).status),
     120_000,
   );
+  if (FIX === "ask") {
+    // Ask me: the fix is one row in Needs you, and one click merges it and deploys it, each step behind its guards.
+    await cmd("projects.planDeploy", {
+      task: id,
+      steps: [{ project: "storefront", env: "production", runs: GL_RUNS }],
+    });
+    const row = await until(
+      "the Ship the fix row",
+      async () =>
+        (await cmd("decisions.list", {})).decisions.find(
+          (d: any) => d.task === id && d.incident === true && d.kind === "ship",
+        ),
+      120_000,
+    );
+    if (!row.options.some((o: any) => o.label === "Ship the fix"))
+      throw new Error("the row does not say Ship the fix");
+    await needsShots(w, "04-ship-the-fix");
+    const before = git("rev-parse", "main");
+    await cmd("decisions.answer", { id: row.id, option: "merge" });
+    const sha = await until(
+      "main to move",
+      async () => (git("rev-parse", "main") !== before ? git("rev-parse", "main") : false),
+      120_000,
+    );
+    // The fake GitLab has no git over http: its main branch is moved to the merged commit, which is what a push does.
+    w.hosts.branches.set("gitlab:acme/storefront:main", sha);
+    const live = await until(
+      "the deploy to go live with no second click",
+      async () => {
+        const v = await cmd("projects.deployView", { project: "storefront" });
+        const r = v.history.find((h: any) => h.task === id);
+        if (r?.state === "failed") throw new Error(`deploy failed: ${r.reason}`);
+        return r?.state === "live" ? r : false;
+      },
+      180_000,
+    );
+    return `Ship the fix: one click merged ${sha.slice(0, 7)} and deploy ${live.id} went live`;
+  }
   await cmd("tasks.merge", { id, done: false });
   const sha = git("rev-parse", "main");
   // The fake GitLab has no git over http: its main branch is moved to the merged commit, which is what a push does.
@@ -296,7 +391,10 @@ async function recovers(w: World, id: string): Promise<string> {
   // The client hears of it on the next incident sweep (every 20 s), not at the instant the status flips.
   await until(
     "the client to be told Resolved",
-    async () => w.slack.sent.some((m) => m.text.includes("resolved")),
+    async () => {
+      await releaseDrafts();
+      return w.slack.sent.some((m) => m.text.includes("resolved"));
+    },
     60_000,
   ).catch(() => {
     throw new Error(`the client was never told Resolved: ${JSON.stringify(w.slack.sent.map((m) => m.text))}`);
@@ -337,6 +435,24 @@ async function rcaSent(w: World, id: string): Promise<string> {
     120_000,
   );
   const room = view.rooms[0].room;
+  if (TELL === "sends") {
+    // Captain sends: the report follows the switch and went to the chat by itself, and it stays frozen.
+    const sent = await until(
+      "the captain to send the report",
+      async () => {
+        const v = await cmd("incident.view", { task: id });
+        return v.report.sent.length === 1 ? v : false;
+      },
+      90_000,
+    );
+    const msg = w.slack.sent.find((m) => m.text.includes("Summary"));
+    if (!msg) throw new Error("nothing reached Slack");
+    return `the captain sent the report (${sent.report.sent.length} chat); Slack got: ${JSON.stringify(msg.text).slice(0, 200)}`;
+  }
+  // Ask me: a Review report row waits in Needs you, and the owner's click sends it.
+  await needsShots(w, "06-review-report");
+  const row = (await cmd("decisions.list", {})).decisions.find((d: any) => d.id === `iask:report:${id}`);
+  if (row === undefined) throw new Error("no Review report row in Needs you");
   const sentBefore = w.slack.sent.length;
   const out = await cmd("incident.sendReport", { task: id, room });
   const after = await cmd("incident.view", { task: id });
@@ -385,7 +501,7 @@ async function failedDeploy(w: World): Promise<string> {
     throw new Error(`expected one new incident task, saw ${tasks.length - before}`);
   const mine = tasks.find((t: any) => t.id === failed.incident);
   if (!mine) throw new Error("the deploy has no incident task");
-  console.log(await shot(w, "07-deploy-failed-needs-you", "/decisions"));
+  await needsShots(w, "07-deploy-failed");
   console.log(await shot(w, "07-deploy-failed-board"));
   // The owner presses Roll back (the fake pipeline succeeds again), through the card.
   w.hosts.outcome.gitlab = "success";
@@ -419,10 +535,34 @@ async function refireAndRecover(w: World): Promise<string> {
     },
     300_000,
   );
-  console.log(await shot(w, "08-recovered", "/t/ACM-1"));
+  await needsShots(w, "08-recovered");
   await cmd("decisions.answer", { id: card.id, option: "close" });
   const done = await cmd("tasks.get", { id: "ACM-1" });
   return `re-fire reopened ACM-1 (${reopened.status}) with no new task; recovery card "${card.title}"; closed -> ${done.status}`;
+}
+
+/** A high incident that fires many times: one row with its alert count and one Acknowledge. */
+async function highIncident(w: World): Promise<string> {
+  const saved = await cmd("ops.serviceSave", {
+    org: "acme",
+    name: "Checkout",
+    url: "http://127.0.0.1:1/checkout",
+    tls: false,
+    dns: false,
+    impact: "high",
+    project: "storefront",
+  });
+  for (let i = 0; i < 8; i += 1) await cmd("ops.checkNow", { id: saved.id });
+  const row = await until(
+    "the row of the high incident",
+    async () =>
+      (await cmd("decisions.list", {})).decisions.find(
+        (d: any) => d.incident === true && d.repeats?.count >= 5,
+      ),
+    120_000,
+  );
+  await needsShots(w, "01-high-incident");
+  return `one row for the incident: "${row.title}", ${row.repeats.count} alerts, options ${JSON.stringify(row.options.map((o: any) => o.label))}`;
 }
 
 const laneItems = async (task: string): Promise<any[]> =>
@@ -559,6 +699,7 @@ try {
   }
   if (run("7")) await stage("7 failed deploy journey", () => failedDeploy(w));
   if (run("8")) await stage("8 watch re-fire and recovery without a fix", () => refireAndRecover(w));
+  if (only.includes("10")) await stage("10 high incident with an alert count", () => highIncident(w));
   if (only.includes("9")) await stage("9 two lanes, read-only commands, waiting line", () => unblock(w));
   void [execFileSync, until, sleep, results, REPO, run];
 } finally {

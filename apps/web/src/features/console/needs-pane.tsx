@@ -59,7 +59,7 @@ export function showMore(shown: Record<QueueGroup, number>, group: QueueGroup): 
 
 /** The one decision a row answers, when it does not merge repeats. */
 function onlyOf(row: NeedsRow): OwnerDecision | undefined {
-  return row.decisions.length === 1 ? row.decisions[0] : undefined;
+  return row.decisions.length === 1 || row.decisions[0]?.incident === true ? row.decisions[0] : undefined;
 }
 
 /** A question with answers is drawn as a numbered list of choices, each one whole. */

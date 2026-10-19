@@ -93,6 +93,7 @@ export async function boot(): Promise<World> {
     env: {
       ...process.env,
       MAJHI_E2E_PORT: String(PORT),
+      MAJHI_ORIGIN: BASE,
       MAJHI_E2E_ROOT: E2E_ROOT,
       WALK_REPLIES: REPLIES,
       WALK_GITLAB: `127.0.0.1:${GITLAB_PORT}`,
@@ -104,10 +105,13 @@ export async function boot(): Promise<World> {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addInitScript(() => {
     try {
-      localStorage.setItem(
-        "majhi.look",
-        JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
-      );
+      // The first page sets the look; a later page keeps what the walk switched it to.
+      if (localStorage.getItem("majhi.look") === null) {
+        localStorage.setItem(
+          "majhi.look",
+          JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
+        );
+      }
     } catch {
       // No storage: the default theme.
     }

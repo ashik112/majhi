@@ -183,7 +183,9 @@ export function ConsoleScreen() {
   }, [linkId, linkChat, linkPane, data.loading, data.needs, navigate, openChat]);
 
   const detail = useDecisionDetail(
-    pane === 0 && needsRow?.decisions.length === 1 ? needsRow.decisions[0]?.id : undefined,
+    pane === 0 && (needsRow?.decisions.length === 1 || needsRow?.decisions[0]?.incident === true)
+      ? needsRow.decisions[0]?.id
+      : undefined,
   ).data;
 
   const needsDeps: NeedsDeps = useMemo(
