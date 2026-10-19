@@ -366,7 +366,8 @@ export class TaskFolderSweep {
       if (name === REPORT_FILE) continue;
       await rm(join(root, name), { recursive: true, force: true }).catch(() => undefined);
     }
-    if ((await readdir(root).catch(() => [] as string[])).length === 0) await rm(root, { recursive: true, force: true });
+    if ((await readdir(root).catch(() => [] as string[])).length === 0)
+      await rm(root, { recursive: true, force: true });
     return undefined;
   }
 

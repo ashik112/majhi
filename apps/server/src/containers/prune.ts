@@ -18,7 +18,6 @@ export const PRUNE_AGE_DAYS = 7;
 /** How often the weekly prune runs on its own. The captain's tidy chore runs the same prune daily. */
 export const PRUNE_EVERY_MS = 7 * 86_400_000;
 
-
 /** The docker calls the prune makes: reads and removals only. */
 export type PruneDocker = { exec(args: readonly string[]): Promise<DockerResult> };
 
@@ -78,9 +77,7 @@ export function selectUnusedImages(
 
 /** Every local image majhi labelled, with its newest date, size, tags and the task that built it. */
 export async function listImages(docker: PruneDocker): Promise<ImageRow[]> {
-  const ids = lines(
-    await docker.exec(["image", "ls", "-q", "--no-trunc", "--filter", select.kind("image")]),
-  );
+  const ids = lines(await docker.exec(["image", "ls", "-q", "--no-trunc", "--filter", select.kind("image")]));
   if (ids.length === 0) return [];
   const none = (key: string) => `{{with index .Config.Labels "${key}"}}{{.}}{{else}}-{{end}}`;
   const rows = lines(

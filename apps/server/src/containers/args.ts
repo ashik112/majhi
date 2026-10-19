@@ -570,7 +570,10 @@ function checkBuilderGuard(
   if (all(flags, "--cap-add").join() !== "NET_ADMIN") refuse("A builder guard adds NET_ADMIN, nothing else.");
   if (all(flags, "--env").length > 0 || is(flags, "--add-host") || is(flags, "--tmpfs"))
     refuse("A builder guard takes no environment, host name or scratch folder.");
-  if (found.networks.length !== 1 || found.networks[0] !== `container:${containerNames(s).builderContainer}`) {
+  if (
+    found.networks.length !== 1 ||
+    found.networks[0] !== `container:${containerNames(s).builderContainer}`
+  ) {
     refuse(
       `A builder guard joins the network of ${containerNames(s).builderContainer}, and no other.`,
       "network_not_allowed",

@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Safety } from "./args.ts";
+import { envRef } from "./names.ts";
 import {
   assertTaskArgv,
   ImageNotAllowed,
   type TaskDockerContext,
   translateTaskDocker,
 } from "./task-docker.ts";
-import { envRef } from "./names.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "majhi-task-docker-"));
 const folder = join(dir, "tasks", "ACM-1");

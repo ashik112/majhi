@@ -921,7 +921,13 @@ function checkOwnContainer(name: string, s: Safety): void {
 }
 
 /** The `majhi.*` labels a task container may carry: its kind, task, workspace and project and, in compose, its service. */
-const TASK_LABEL_KEYS = new Set<string>([LABEL.container, LABEL.task, LABEL.org, LABEL.project, LABEL.compose]);
+const TASK_LABEL_KEYS = new Set<string>([
+  LABEL.container,
+  LABEL.task,
+  LABEL.org,
+  LABEL.project,
+  LABEL.compose,
+]);
 
 function checkRun(args: readonly string[], s: Safety, allowedImages: readonly string[]): void {
   const names = taskNames(s);

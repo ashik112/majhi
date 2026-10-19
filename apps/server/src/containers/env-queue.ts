@@ -57,7 +57,10 @@ export class EnvQueue {
    * Gets the environment now, or waits in line for it: the promise settles when the task holds it, and
    * rejects with `LeftTheLine` when `leave` takes the task out. A task that waits twice keeps its place.
    */
-  acquire(env: string, task: string): { held: true } | { held: false; place: number; granted: Promise<void> } {
+  acquire(
+    env: string,
+    task: string,
+  ): { held: true } | { held: false; place: number; granted: Promise<void> } {
     if (this.take(env, task)) return { held: true };
     const line = this.lines.get(env) ?? [];
     this.lines.set(env, line);

@@ -81,7 +81,9 @@ describe("removeOwnLeftovers", () => {
     ]);
     const all = lines.join("\n");
     expect(all).not.toContain("acme-web");
-    expect(all).not.toMatch(/system prune|volume prune|container prune|image prune -f$|prune -a|--all|buildx rm|volume rm/);
+    expect(all).not.toMatch(
+      /system prune|volume prune|container prune|image prune -f$|prune -a|--all|buildx rm|volume rm/,
+    );
     // The build cache is only ever trimmed by age, never cleared.
     const builderPrunes = all.split("\n").filter((l) => l.includes("builder prune"));
     expect(builderPrunes.every((l) => l.includes("--filter until="))).toBe(true);

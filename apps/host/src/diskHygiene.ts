@@ -66,7 +66,10 @@ export interface OwnImage {
 }
 
 /** The images to remove: majhi's own, built by a task that is not open. Open tasks unknown: none. */
-export function selectOwnImages(rows: readonly OwnImage[], open: ReadonlySet<string> | undefined): OwnImage[] {
+export function selectOwnImages(
+  rows: readonly OwnImage[],
+  open: ReadonlySet<string> | undefined,
+): OwnImage[] {
   if (open === undefined) return [];
   return rows.filter((r) => r.builtBy !== "" && !open.has(r.builtBy));
 }
@@ -136,7 +139,8 @@ export async function removeOwnLeftovers(
       STEP_TIMEOUT_MS,
     ).catch(() => "");
     const row = parseImages(listed).find((r) => `${r.repository}:${r.tag}` === tag);
-    if (row !== undefined) await removeImage(tag, row.size === "" ? tag : `${tag} (${row.size})`, sizeBytes(row.size));
+    if (row !== undefined)
+      await removeImage(tag, row.size === "" ? tag : `${tag} (${row.size})`, sizeBytes(row.size));
   }
 
   const open = await readOpenTasks(majhiHome);

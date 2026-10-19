@@ -132,7 +132,11 @@ describe("one environment per project", () => {
     await service.serviceStart("ACM-1", "builder", db);
     expect(service.taskNetworks("ACM-1")).toEqual(["majhi-acme-api"]);
 
-    const second = service.serviceStart("ACM-2", "builder", { ...db, name: "cache", image: "postgres:16-alpine" });
+    const second = service.serviceStart("ACM-2", "builder", {
+      ...db,
+      name: "cache",
+      image: "postgres:16-alpine",
+    });
     await until(() => said.length > 0);
     expect(said).toEqual([
       {
@@ -156,9 +160,11 @@ describe("one environment per project", () => {
     expect((await second).status).toBe("started");
     expect(service.taskNetworks("ACM-1")).toEqual([]);
     expect(service.taskNetworks("ACM-2")).toEqual(["majhi-acme-api"]);
-    expect([...docker.containers.values()].filter((c) => c.name.includes("-c-")).map((c) => c.labels["majhi.task"])).toEqual([
-      "ACM-2",
-    ]);
+    expect(
+      [...docker.containers.values()]
+        .filter((c) => c.name.includes("-c-"))
+        .map((c) => c.labels["majhi.task"]),
+    ).toEqual(["ACM-2"]);
     expect(said.at(-1)?.text).toBe("The acme-api environment is free. ACM-2 has it now.");
     // The data stayed in the project's volume the whole time.
     expect(docker.volumes.has("majhi-acme-api-data-pgdata")).toBe(true);
@@ -168,7 +174,10 @@ describe("one environment per project", () => {
 describe("a task's copy of the project database", () => {
   it("is made inside the service and dropped when the task closes", async () => {
     await service.serviceStart("ACM-1", "builder", db);
-    expect(await service.branchDb("ACM-1", { service: "db" })).toEqual({ database: "acm_1", template: "dev" });
+    expect(await service.branchDb("ACM-1", { service: "db" })).toEqual({
+      database: "acm_1",
+      template: "dev",
+    });
     // Asking again is the same copy.
     await service.branchDb("ACM-1", { service: "db" });
     expect(docker.copyCalls).toEqual(["create acm_1 from dev in majhi-acme-api-c-db"]);

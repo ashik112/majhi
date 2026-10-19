@@ -736,7 +736,7 @@ export class ContainerService {
     for (const p of this.deps.processes.listAll()) {
       if (p.status !== "running" || p.container?.kind !== "service" || p.container.name !== alias) continue;
       await this.deps.processes.stop(p.task, p.id, "task");
-      this.forwarded.delete(this.names(p.task).hostForward(id));
+      if (this.deps.task(p.task) !== undefined) this.forwarded.delete(this.names(p.task).hostForward(id));
       stopped.push(p.task);
     }
     this.deps.changed?.();
@@ -757,7 +757,10 @@ export class ContainerService {
     await this.starting;
     return this.locked(task, async () => {
       this.assertOpen(task);
-      if (this.queue.holder(names.key) !== task || this.running(task, "service", input.service) === undefined) {
+      if (
+        this.queue.holder(names.key) !== task ||
+        this.running(task, "service", input.service) === undefined
+      ) {
         throw new UserError(
           `Start the Postgres service ${input.service} with service_start first: the copy is made inside it.`,
           409,
@@ -1094,7 +1097,10 @@ export class ContainerService {
     return {
       code: out.code ?? 124,
       stdout: showUserNames(this.scope(task), out.stdout),
-      stderr: showUserNames(this.scope(task), out.code === null ? `${out.stderr}\ndocker: timed out\n` : out.stderr),
+      stderr: showUserNames(
+        this.scope(task),
+        out.code === null ? `${out.stderr}\ndocker: timed out\n` : out.stderr,
+      ),
     };
   }
 
@@ -1601,8 +1607,7 @@ export class ContainerService {
     const done: Restarted = { started: [], failed: [] };
     if (this.docker === undefined) return done;
     const key = this.scope(task).env.key;
-    const wants =
-      (this.parked.get(task)?.length ?? 0) > 0 || (this.parkedStacks.get(task)?.length ?? 0) > 0;
+    const wants = (this.parked.get(task)?.length ?? 0) > 0 || (this.parkedStacks.get(task)?.length ?? 0) > 0;
     if (wants && this.queue.holder(key) !== task) {
       const got = this.queue.acquire(key, task);
       if (!got.held) {
@@ -1856,9 +1861,7 @@ export class ContainerService {
         n.endsWith("*") ? n.slice(0, -1) : n,
       ),
     );
-    const images = new Set(
-      await this.lines(docker, ["image", "ls", "--format", "{{.Repository}}"]),
-    );
+    const images = new Set(await this.lines(docker, ["image", "ls", "--format", "{{.Repository}}"]));
     const volumes = new Set(await this.lines(docker, ["volume", "ls", "-q"]));
     for (const id of this.deps.allTasks()) {
       const old = legacyNames(id);
@@ -1867,8 +1870,10 @@ export class ContainerService {
         else await this.quietly(() => docker.exec(["buildx", "rm", "--force", old.builder]));
       }
       if (open.has(id)) continue;
-      if (images.has(old.previewImage)) await this.quietly(() => docker.exec(["image", "rm", "-f", old.previewImage]));
-      if (volumes.has(old.builderState)) await this.quietly(() => docker.exec(["volume", "rm", "-f", old.builderState]));
+      if (images.has(old.previewImage))
+        await this.quietly(() => docker.exec(["image", "rm", "-f", old.previewImage]));
+      if (volumes.has(old.builderState))
+        await this.quietly(() => docker.exec(["volume", "rm", "-f", old.builderState]));
     }
     // Volumes made for a task before volumes belonged to projects carry a task and no project.
     const rows = await this.lines(docker, [
@@ -1881,7 +1886,11 @@ export class ContainerService {
     ]);
     const stale = rows.flatMap((row) => {
       const [name, task, project] = row.split(" ");
-      return name !== undefined && task !== undefined && task !== "" && (project ?? "") === "" && !open.has(task)
+      return name !== undefined &&
+        task !== undefined &&
+        task !== "" &&
+        (project ?? "") === "" &&
+        !open.has(task)
         ? [name]
         : [];
     });
@@ -2047,9 +2056,13 @@ export class ContainerService {
       );
     });
     const aborted = new Promise<never>((_, reject) => {
-      signal?.addEventListener("abort", () => reject(new UserError("The call was cancelled while it waited.")), {
-        once: true,
-      });
+      signal?.addEventListener(
+        "abort",
+        () => reject(new UserError("The call was cancelled while it waited.")),
+        {
+          once: true,
+        },
+      );
     });
     try {
       await Promise.race([got.granted, gaveUp, aborted]);
@@ -2163,6 +2176,8 @@ export class ContainerService {
     const procs = task === undefined ? this.deps.processes.listAll() : this.all(task);
     for (const p of procs) {
       if (p.status !== "running" || p.container === undefined || p.container.kind === "build") continue;
+      // A process of a task that is gone has no environment to count in.
+      if (this.deps.task(p.task) === undefined) continue;
       const names = this.names(p.task);
       found.add(
         p.container.kind === "preview"

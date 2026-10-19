@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContainerRefused, type Safety } from "./args.ts";
 import { loadCompose } from "./compose.ts";
 import { parseCompose } from "./compose-cli.ts";
-import { buildRunPlan, type TaskDockerContext } from "./task-docker.ts";
 import { envRef } from "./names.ts";
+import { buildRunPlan, type TaskDockerContext } from "./task-docker.ts";
 
 /**
  * A repo's compose file is data from a repo, so it is never trusted: every key is checked against an

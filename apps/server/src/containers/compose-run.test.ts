@@ -24,7 +24,13 @@ let asked: string[];
 let open: string[];
 
 const task = (id: string): Task =>
-  ({ id, folder: join(dir, "tasks", id), team: [], repos: [{ project: id.toLowerCase() }], org: "acme" }) as unknown as Task;
+  ({
+    id,
+    folder: join(dir, "tasks", id),
+    team: [],
+    repos: [{ project: id.toLowerCase() }],
+    org: "acme",
+  }) as unknown as Task;
 
 function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
   return {

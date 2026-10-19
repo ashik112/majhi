@@ -42,7 +42,8 @@ function make(openTasks: string[]): ContainerService {
       protectedPaths: [],
     }),
     processes,
-    task: (id) => ({ id, folder: folderOf(id), repos: [{ project: id.toLowerCase() }], org: "acme" }) as unknown as Task,
+    task: (id) =>
+      ({ id, folder: folderOf(id), repos: [{ project: id.toLowerCase() }], org: "acme" }) as unknown as Task,
     openTasks: () => openTasks,
     allTasks: () => openTasks,
     settings: async () => settings,
@@ -80,7 +81,7 @@ function sweep() {
   for (const task of [A, B]) {
     const found = ids(task);
     if (found.length > 0) docker("rm", "-f", "-v", ...found);
-    const volumes = docker("volume", "ls", "-q", "--filter", `label=majhi.task=${task}`)
+    const volumes = docker("volume", "ls", "-q", "--filter", `label=majhi.project=${task.toLowerCase()}`)
       .stdout.split("\n")
       .filter(Boolean);
     if (volumes.length > 0) docker("volume", "rm", "-f", ...volumes);
