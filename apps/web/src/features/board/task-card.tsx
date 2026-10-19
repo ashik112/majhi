@@ -139,7 +139,9 @@ export const TaskCard = memo(function TaskCard({ entry, focused, selected, ctx, 
               )}
             >
               {line.cardText ?? line.text}
-              {queued?.priority === "high" && <span className="text-fg-muted">, high priority</span>}
+              {(queued?.priority === "high" || queued?.priority === "urgent") && (
+                <span className="text-fg-muted">, {queued.priority} priority</span>
+              )}
             </span>
           </div>
         )

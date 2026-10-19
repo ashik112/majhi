@@ -146,9 +146,34 @@ export type TaskKind = z.infer<typeof TaskKindSchema>;
 export const TaskStatusSchema = z.enum(["inbox", "ready", "running", "paused", "review", "mr", "done"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
-/** The owner's priority for a task (PRV-74). Absent means normal. Autonomous mode takes high first. */
-export const TaskPrioritySchema = z.enum(["high", "normal", "low"]);
+/**
+ * A task's priority, most urgent first: this order is the one rank everything uses (the line of
+ * waiting starts, autonomous mode's backlog, the board). Absent means normal. A severity-high incident
+ * is made `urgent`. Only the owner and the captain set `urgent` or `high`.
+ */
+export const TASK_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
+export const TaskPrioritySchema = z.enum(TASK_PRIORITIES);
 export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
+
+/** 0 is the most urgent. */
+export function priorityRank(priority: TaskPriority | undefined): number {
+  return TASK_PRIORITIES.indexOf(priority ?? "normal");
+}
+
+/**
+ * The order waiting starts take their places: priority first, then the oldest wish. When a place
+ * frees, the first of this order starts. No running task is stopped for a more urgent one.
+ */
+export function lineOrder<T extends { priority?: TaskPriority | undefined; updatedAt: string; id: string }>(
+  waiting: readonly T[],
+): T[] {
+  return [...waiting].sort(
+    (a, b) =>
+      priorityRank(a.priority) - priorityRank(b.priority) ||
+      a.updatedAt.localeCompare(b.updatedAt) ||
+      a.id.localeCompare(b.id),
+  );
+}
 
 /**
  * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in

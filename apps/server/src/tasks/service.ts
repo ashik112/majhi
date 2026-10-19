@@ -43,6 +43,7 @@ import {
   parseMentions,
   parsePathMentions,
   parseTaskText,
+  priorityRank,
   type ReadMount,
   type RoomItem,
   type RoomSearchHit,
@@ -319,6 +320,8 @@ export interface CreateInput {
    * promoted, and it cannot also be a child, wait for others or follow up another task.
    */
   promote?: string | undefined;
+  /** Urgent, high, normal or low. Absent: normal. An agent or a scan may only give normal or low. */
+  priority?: TaskPriority | undefined;
 }
 
 /** What the room says when a message cannot restart a task whose merge request is open. */
@@ -549,6 +552,16 @@ export class TaskService {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
     const name = this.nameFor(input.name, parsed.title);
+    if (
+      input.priority !== undefined &&
+      !mayRaise(input.gate) &&
+      priorityRank(input.priority) < priorityRank("normal")
+    ) {
+      throw new UserError(
+        "Only the owner or the captain sets a task urgent or high. Leave priority out, or use low.",
+        409,
+      );
+    }
     // The one gate: chats are conversations, not tasks of the gate, and a promoted chat is the owner's own.
     const admission =
       promoting !== undefined || kind === "chat"
@@ -635,6 +648,7 @@ export class TaskService {
         id,
         title: parsed.title,
         name,
+        ...(input.priority === undefined || input.priority === "normal" ? {} : { priority: input.priority }),
         ...(idea === undefined ? {} : { idea }),
         brief: input.text,
         kind,
@@ -4335,6 +4349,11 @@ export class TaskService {
       ...(action === undefined ? {} : { action }),
     });
   }
+}
+
+/** Whether this maker may set a priority above normal: not an agent or a scan, which only file ideas. */
+function mayRaise(gate: GateOrigin): boolean {
+  return gate !== "agent" && gate !== "finding";
 }
 
 /** What the room says about a task filed as an idea. */

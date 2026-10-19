@@ -1,4 +1,4 @@
-import { type GateOrigin, GateOriginSchema, LimitsSettingsSchema } from "@majhi/shared";
+import { type GateOrigin, GateOriginSchema, LimitsSettingsSchema, lineOrder } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { type Admission, admit, type GateCounts } from "./gate.ts";
 
@@ -57,6 +57,21 @@ describe("the task gate", () => {
       kind: "queue",
       reason: "running-cap",
     });
+  });
+
+  it("starts the urgent task first when a place frees, though a normal one queued earlier", () => {
+    const waiting = [
+      { id: "ACM-1", priority: "normal" as const, updatedAt: "2026-10-19T09:00:00.000Z" },
+      { id: "ACM-2", priority: "urgent" as const, updatedAt: "2026-10-19T10:00:00.000Z" },
+      { id: "ACM-3", priority: "low" as const, updatedAt: "2026-10-19T08:00:00.000Z" },
+    ];
+    // The cap is full: every one of them waits.
+    for (const t of waiting) expect(run("owner", counts(limits.tasks_running, 0)).kind, t.id).toBe("queue");
+    // A place frees: the first of the line starts, and the next one still waits.
+    const line = lineOrder(waiting);
+    expect(line.map((t) => t.id)).toEqual(["ACM-2", "ACM-1", "ACM-3"]);
+    expect(run("owner", counts(limits.tasks_running - 1, 0))).toEqual({ kind: "start" });
+    expect(run("owner", counts(limits.tasks_running, 0))).toEqual({ kind: "queue", reason: "running-cap" });
   });
 
   it("counts the open tasks of the task's own workspace only", () => {

@@ -1,4 +1,4 @@
-import { type TaskPriority, TaskPrioritySchema } from "@majhi/shared";
+import { TASK_PRIORITIES, type TaskPriority, TaskPrioritySchema } from "@majhi/shared";
 import { EllipsisVertical } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -116,7 +116,7 @@ export function SchedulePanel({
             const next = TaskPrioritySchema.parse(value);
             if (next !== priority) save({ priority: next === "normal" ? null : next });
           }}
-          segments={(["high", "normal", "low"] as const).map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))}
+          segments={TASK_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABEL[p] }))}
           className="[&>button]:flex-1"
         />
       </div>

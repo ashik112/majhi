@@ -18,6 +18,7 @@ import {
   IdSchema,
   isCaptainThread,
   isOwnerChat,
+  lineOrder,
   type MrFact,
   type MrReview,
   MrReviewSchema,
@@ -440,7 +441,8 @@ export class TaskRepo {
    * pass. The orchestrator asks on every sweep, so it must not load every task to find them.
    */
   waitingToStart(): Task[] {
-    return this.getMany(this.q.waitingIds.all().map((r) => r.id));
+    // The line the running cap holds: priority first, then the oldest wish (`lineOrder`).
+    return lineOrder(this.getMany(this.q.waitingIds.all().map((r) => r.id)));
   }
 
   /** The tasks running now other than `except`, newest first, loaded in one pass. */
@@ -1399,8 +1401,7 @@ function taskStatements(db: Db) {
       .select({ id: tasks.id })
       .from(tasks)
       .where(and(inArray(tasks.status, ["inbox", "ready"]), sql`start_when_ready = 1`))
-      // High priority first (a severity-1 incident), then the oldest wish: the line the running cap holds.
-      .orderBy(sql`case when priority = 'high' then 0 else 1 end`, asc(tasks.updatedAt), asc(tasks.id))
+      .orderBy(asc(tasks.updatedAt), asc(tasks.id))
       .prepare(),
     runningIds: db
       .select({ id: tasks.id })

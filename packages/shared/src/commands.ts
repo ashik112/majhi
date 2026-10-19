@@ -2264,6 +2264,8 @@ export const commands = {
        * sentence, left out, it is the first four meaningful words of the title.
        */
       name: TaskNameSchema.optional(),
+      /** Urgent, high, normal or low. Default normal. An agent may only set normal or low. */
+      priority: TaskPrioritySchema.optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /**

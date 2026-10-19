@@ -16,7 +16,7 @@ export function PriorityChip({
   className?: string;
 }) {
   if (priority === "normal") return null;
-  const high = priority === "high";
+  const high = priority === "high" || priority === "urgent";
   return (
     <Badge
       tone={high ? "amber" : "neutral"}

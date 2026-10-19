@@ -2810,6 +2810,6 @@ Walked in a throwaway home with fake agents: the owner's sentence became name "F
 
 Measured (480 seeded tasks, the perf seed): `tasks.list` store read p50/p95 1.72/2.40 ms before, 1.84/2.47 ms after (`list(true)` 2.50/3.47 to 2.56/3.24). The gate adds two reads on a create (running ids 0.04/0.05 ms, open count 0.06/0.07 ms, indexed) and one on a start; no per-row work. Now, Next and Done when go out with the task's normal change event.
 
-Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2722 tests passed; `pnpm build` and `pnpm exec playwright test` 10 passed. New tests: gate admissions per origin at and over each cap, names to branch and folder (collisions, containment, deletion only inside tasks_dir), the migration on a real-shaped database copy, split writes plan steps and makes no task.
+Verified: all workspace typechecks; `pnpm exec vitest run` 399 files, 2723 tests passed; `pnpm build` and `pnpm exec playwright test` 10 passed. New tests: gate admissions per origin at and over each cap (and the urgent task first when a place frees), names to branch and folder (collisions, containment, deletion only inside tasks_dir), the migration on a real-shaped database copy, split writes plan steps and makes no task.
 
 Left for the next steps: no Start now control in the UI yet (the command takes `now` for the owner; the console of step 3 has the key); the Ideas list and Needs you wording are step 3; `project-busy` is in the gate's type for step 2.

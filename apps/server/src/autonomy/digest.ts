@@ -13,6 +13,7 @@ import type {
   TaskSize,
   UsageWindow,
 } from "@majhi/shared";
+import { priorityRank } from "@majhi/shared";
 import { capText } from "./spend.ts";
 import { meets, stateWords } from "./waits.ts";
 
@@ -156,13 +157,11 @@ export function factsOf(input: DigestInput): Facts {
   };
 }
 
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
-
 /** The backlog as autonomous mode takes it: high first, then the nearest due, then the oldest. */
 export function backlogOrder<T extends BacklogTask>(tasks: readonly T[]): T[] {
   return [...tasks].sort(
     (a, b) =>
-      PRIORITY_RANK[a.priority ?? "normal"] - PRIORITY_RANK[b.priority ?? "normal"] ||
+      priorityRank(a.priority) - priorityRank(b.priority) ||
       (a.due ?? "9999-12-31").localeCompare(b.due ?? "9999-12-31") ||
       a.createdAt.localeCompare(b.createdAt) ||
       a.id.localeCompare(b.id),

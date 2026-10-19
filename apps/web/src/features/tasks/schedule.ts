@@ -5,7 +5,12 @@ import type { TaskPriority } from "@majhi/shared";
  * show them. Priority is absent for normal; due is a local calendar day, `YYYY-MM-DD`.
  */
 
-export const PRIORITY_LABEL: Record<TaskPriority, string> = { high: "High", normal: "Normal", low: "Low" };
+export const PRIORITY_LABEL: Record<TaskPriority, string> = {
+  urgent: "Urgent",
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
 
 /** The local calendar day `days` after `now`, `YYYY-MM-DD`. */
 export function dayFrom(now: number, days = 0): string {

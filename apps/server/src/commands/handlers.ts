@@ -1006,7 +1006,13 @@ export function createHandlers({
       if (ctx.meta.actor.kind === "owner") services.autonomy.forgetHold(input.id);
       return stopped;
     },
-    "tasks.update": (input) => services.tasks.update(input),
+    "tasks.update": async (input, ctx) => {
+      // Priority is the owner's and the captain's to change; the captain resolves to its own kind, an agent stays one.
+      if (input.priority !== undefined && (await resolveActor(services, ctx.meta)).kind === "agent") {
+        throw new UserError("Only the owner or the captain changes a task's priority.", 409);
+      }
+      return services.tasks.update(input);
+    },
     "tasks.close": async (input, ctx) =>
       services.tasks.close(input.id, {
         by: await who(ctx),
