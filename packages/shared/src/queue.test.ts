@@ -42,6 +42,10 @@ describe("the Needs you queue", () => {
       [1, "2026-10-19T10:00:00.000Z"],
       [2, "2026-10-19T10:00:00.000Z"],
     ]);
-    expect(rows.decide[0]?.decisions.map((d) => d.id)).toEqual(["room:ACM-1:p", "room:ACM-2:p", "room:ACM-3:p"]);
+    expect(rows.decide[0]?.decisions.map((d) => d.id)).toEqual([
+      "room:ACM-1:p",
+      "room:ACM-2:p",
+      "room:ACM-3:p",
+    ]);
   });
 });
