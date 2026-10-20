@@ -51,6 +51,7 @@ export const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   down: "paused: every agent is down",
   loop: "stopped: the agents are going in circles",
   blocked: "is blocked and waits for you",
+  autonomy: "was stopped by Autonomous and waits for you",
 };
 
 export function oneLine(text: string, max = 140): string {

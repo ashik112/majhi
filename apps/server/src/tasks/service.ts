@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
-  type AccountStatus,
   type AccountView,
   type AgentFrontmatter,
   type Attachment,
@@ -28,6 +27,7 @@ import {
   LOCAL_TASK_PREFIX,
   lifecycle,
   type MergeChecks,
+  madeByOwner,
   mayRetype,
   mergeCanBeOverridden,
   nameFromTitle,
@@ -42,7 +42,6 @@ import {
   parseMentions,
   parsePathMentions,
   parseTaskText,
-  madeByOwner,
   priorityRank,
   type ReadMount,
   type RoomItem,
@@ -609,7 +608,11 @@ export class TaskService {
         ? undefined
         : await this.admission(input.gate, org ?? PRIVATE, input.start, input.ownerAsked);
     const idea: IdeaReason | undefined =
-      input.heldByOwner === true ? "held-by-owner" : admission?.kind === "idea" ? admission.reason : undefined;
+      input.heldByOwner === true
+        ? "held-by-owner"
+        : admission?.kind === "idea"
+          ? admission.reason
+          : undefined;
     const wantsStart = input.start && idea === undefined;
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
@@ -1690,7 +1693,8 @@ export class TaskService {
     by = "owner",
   ): Promise<Task> {
     const task = this.get(id);
-    const ctx: Partial<EffectContext> = { by, why, reason };
+    // Autonomous's stop says why through its hold: the card reads the reason from it.
+    const ctx: Partial<EffectContext> = { by, why, ...(by === "autonomy-stop" ? {} : { reason }) };
     const inFlight = task.status === "running" || task.status === "paused" || task.status === "review";
     if (inFlight) {
       const at = this.now().toISOString();

@@ -92,6 +92,7 @@ const PAUSE_TEXT: Record<string, string> = {
   error: "Paused: an error stopped it",
   "signed-out": "Paused: an account is signed out",
   owner: "Paused by you",
+  autonomy: "Stopped by Autonomous",
 };
 
 /** "Waiting on GLX-412", or "Waiting on GLX-412, GLX-413 +1" when there are more than two. */

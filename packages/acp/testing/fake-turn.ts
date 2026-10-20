@@ -678,7 +678,8 @@ export function serveAcp(o: ServeOptions): void {
         }
         const scripted = text.startsWith("echo:") ? undefined : await scriptedTurn(s, text);
         const reply = o.replies === undefined ? undefined : await repliedTo(o.replies, text);
-        if (text.startsWith("crash:")) {
+        // `crash:` at the start, or `[crash-now]` anywhere (a message majhi wraps before it reaches the agent).
+        if (text.startsWith("crash:") || text.includes("[crash-now]")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
         }

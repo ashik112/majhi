@@ -171,7 +171,9 @@ export class AutonomyRepo {
     until?: string,
   ): void {
     this.db
-      .prepare("UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ?, until = ? WHERE id = 1")
+      .prepare(
+        "UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ?, until = ? WHERE id = 1",
+      )
       .run(mode, at, by, why ?? null, mode === "on" ? (until ?? null) : null);
   }
 
@@ -456,13 +458,11 @@ export class AutonomyRepo {
       .prepare(
         `SELECT COUNT(*) AS n
          FROM runs r JOIN autonomy_tasks a ON a.task = r.task
-         WHERE r.task = ? AND r.stop_reason = 'error' AND r.started_at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
+         WHERE r.task = ? AND r.stop_reason IN ('error', 'exit') AND r.started_at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
       )
       .get(task) as { n: number } | undefined;
     return row?.n ?? 0;
   }
-
-
 }
 
 function eventOf(r: EventDbRow): AutonomyEvent[] {

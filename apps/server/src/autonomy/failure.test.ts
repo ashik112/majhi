@@ -40,9 +40,16 @@ describe("a task Autonomous works on that fails", () => {
     // The second failure stops it, and the card says why.
     h.majhi.services.runs.notify(id, task()?.team[0] ?? "", "try again");
     await w.until(() => task()?.status === "paused", "the second failure to stop it");
-    expect(task()).toMatchObject({ pausedReason: "owner", pausedBy: "autonomy-stop" });
+    expect(task()).toMatchObject({ pausedReason: "autonomy", pausedBy: "autonomy-stop" });
     const room = await h.cmd("room.items", { task: id, limit: 100 });
     expect(JSON.stringify(room.body)).toContain("It failed twice.");
+    // One row in Needs you, in the owner's own words.
+    const waiting = (await h.cmd("decisions.list", {})).body as {
+      decisions: { task?: string; kind: string; title: string }[];
+    };
+    expect(waiting.decisions.filter((d) => d.task === id).map((d) => [d.kind, d.title])).toEqual([
+      ["paused", "Stopped by Autonomous: It failed twice."],
+    ]);
 
     // The captain cannot take it back; the owner can.
     const again = await call("majhi_tasks_start", { id });

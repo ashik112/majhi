@@ -207,6 +207,7 @@ export const PausedReasonSchema = z.enum([
   "signed-out",
   "preempted",
   "down",
+  "autonomy",
 ]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 

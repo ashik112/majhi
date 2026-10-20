@@ -2498,6 +2498,8 @@ export class RunManager {
         );
         const session = run.session;
         this.endSession(run, "exit");
+        // A crash in the middle of a turn is a failed run for Autonomous's two-failures rule.
+        if (run.interrupted) this.deps.onRunFailed?.(run.task);
         // The process is gone, but its runner container may not be: remove it.
         void session?.close().catch(() => undefined);
         this.setLive(run, { status: "error", nowDoing: undefined });
