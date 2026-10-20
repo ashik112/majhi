@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useMemo, } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { DetailSection } from "@/components/ui/list-detail";

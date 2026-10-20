@@ -151,7 +151,7 @@ async function ensureLane(): Promise<void> {
   await until("the captain's lane", has, 60_000);
 }
 
-async function autonomousOn(w: World): Promise<string> {
+async function autonomousOn(_w: World): Promise<string> {
   await ownerTask("Add release notes one", "t1");
   await ownerTask("Add release notes two", "t2");
   await ownerTask("Add release notes three", "t3");
@@ -173,7 +173,7 @@ async function autonomousOn(w: World): Promise<string> {
       peak = Math.max(peak, now.length);
       for (const id of now) seen.add(id);
       if (peak > 2) throw new Error(`${now.length} captain tasks ran at once: ${now.join(", ")}`);
-      return seen.size >= 2 ? true : false;
+      return seen.size >= 2;
     },
     180_000,
   );
@@ -186,7 +186,7 @@ async function autonomousOn(w: World): Promise<string> {
       peak = Math.max(peak, now.length);
       for (const id of now) seen.add(id);
       if (peak > 2) throw new Error(`${now.length} captain tasks ran at once`);
-      return seen.size >= 3 ? true : false;
+      return seen.size >= 3;
     },
     240_000,
   );
@@ -194,7 +194,7 @@ async function autonomousOn(w: World): Promise<string> {
   return `Autonomous on until ${status.until}; ${seen.size} tasks taken on, never more than ${peak} at once`;
 }
 
-async function failsTwice(w: World): Promise<string> {
+async function failsTwice(_w: World): Promise<string> {
   // The owner finishes the three reviewed tasks, which frees the agents they held.
   for (const done of [ids.t1, ids.t2, ids.t3]) {
     if (done !== undefined) await cmd("tasks.close", { id: done, unshipped: "keep" });
