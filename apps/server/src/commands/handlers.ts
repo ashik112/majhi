@@ -322,7 +322,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(new TriggerAlias(services.ops.engine), services),
     ...autonomyHandlers(services.autonomy),
-    ...captainHandlers(services.captain, services.autonomy),
+    ...captainHandlers(services.captain, services.autonomy, services.lanes),
     ...inboxHandlers(services.inbox),
     ...conversationsHandlers(services.conversations),
     ...noticesHandlers(services.notices),

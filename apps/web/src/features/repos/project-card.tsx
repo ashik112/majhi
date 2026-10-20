@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/list-detail";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useBoss } from "@/features/boss/boss-context";
-import { wsTab } from "@/features/captain/panel-model";
 import { useProjectCards, useRefreshCard } from "@/lib/card-queries";
 import { formatAgo } from "@/lib/format";
 import { useNewTask } from "../new-task/new-task-context";
@@ -70,7 +69,7 @@ export function ProjectCardSection({ project, org }: { project: string; org: str
         <CardBody
           card={card}
           project={project}
-          onDescribe={() => boss.show(wsTab(org), describeProjectAsk(project))}
+          onDescribe={() => boss.show({ org, draft: describeProjectAsk(project) })}
         />
       )}
     </DetailSection>

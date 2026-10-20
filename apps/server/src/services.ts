@@ -61,6 +61,7 @@ import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
 import { CannotRunDecisions } from "./captain/cannot-run.ts";
+import { StepGuard } from "./captain/step.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
@@ -1434,12 +1435,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
+  /** The owner's current Captain chat, the desk. Found by a scan, so remembered for a few seconds and forgotten when it changes. */
+  let deskMemo: { id: string | undefined; at: number } | undefined;
+  const deskChatOf = (): string | undefined => {
+    const now = Date.now();
+    if (deskMemo === undefined || now - deskMemo.at > 5_000) {
+      const boss = config.knownBoss();
+      deskMemo = { id: boss === undefined ? undefined : findBossChat({ store, tasks }, boss)?.id, at: now };
+    }
+    return deskMemo.id;
+  };
   const conversations = new ConversationsService({
     store,
     events,
-    currentChat: () => {
-      const boss = config.knownBoss();
-      return boss === undefined ? undefined : findBossChat({ store, tasks }, boss)?.id;
+    currentChat: deskChatOf,
+    forgetCurrent: () => {
+      deskMemo = undefined;
     },
   });
   room.onWrite((task, item) => conversations.observe(task, item));
@@ -1950,6 +1961,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   room.useCaptain({
     lanesOf: (org) => lanes.chatsOf(org),
     orgOfLane: (chat) => lanes.orgOf(chat),
+    deskChat: deskChatOf,
+    allLanes: () => lanes.all().map(({ org, chat }) => ({ org, chat })),
   });
   const cannotRunDecisions = new CannotRunDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
@@ -2135,6 +2148,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   );
   admin.useAutonomy(autonomy);
+  const stepGuard = new StepGuard({ config, agents: agentStore, store });
+  admin.useStrays((command, input) => stepGuard.refusal(command, input));
   admin.useProposals({
     autonomy: async () => (await config.settings()).autonomy,
     mode: () => autonomy.mode(),

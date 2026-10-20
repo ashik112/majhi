@@ -70,7 +70,7 @@ function ChipMark({
   hues: ReadonlyMap<string, number>;
   orgs: readonly OrgView[] | undefined;
 }) {
-  if (chip.kind === "captain" || chip.kind === "lane") {
+  if (chip.kind === "captain") {
     return (
       <span className="cs-mark" data-size="sm">
         <MajhiMark />

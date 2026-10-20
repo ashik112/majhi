@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
-import { IdSchema } from "./ids.ts";
+import { IdSchema, OrgIdSchema } from "./ids.ts";
 import { AuthorityLevelSchema } from "./risk-kinds.ts";
 import { AutonomyOrgSchema, BudgetSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
@@ -216,6 +216,17 @@ export const CaptainStatusSchema = z.object({
   orgs: z.array(CaptainOrgSchema),
 });
 export type CaptainStatus = z.infer<typeof CaptainStatusSchema>;
+
+/**
+ * `captain.step`: from the owner's All conversation, ask the captain's step in one workspace to do or answer
+ * something. The step runs there with that workspace's access only; its answer shows in the conversation,
+ * tagged with the workspace.
+ */
+export const CaptainStepInputSchema = z.object({
+  org: OrgIdSchema,
+  ask: z.string().trim().min(1).max(4000),
+});
+export const CaptainStepResultSchema = z.object({ org: z.string(), chat: TaskIdSchema });
 
 export const CaptainLogInputSchema = z.object({
   org: z.string().optional(),

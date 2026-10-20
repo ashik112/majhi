@@ -706,6 +706,11 @@ const RoomItemBase = z.object({
    * copy); the task's timeline reads it from there (`roomWithCaptain`) and the workspace thread leaves it out.
    */
   about: TaskIdSchema.optional(),
+  /**
+   * Set on a read of the owner's Captain conversation, never stored: the workspace of the captain step the line
+   * was said in. Lines of the desk itself (the All conversation) have none.
+   */
+  org: OrgIdSchema.optional(),
 });
 
 export const ToolContentSchema = z.discriminatedUnion("type", [

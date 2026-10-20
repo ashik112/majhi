@@ -28,7 +28,7 @@ import { providerAllowed } from "./rules.ts";
 export interface LaneDeps {
   repo: CaptainRepo;
   store: Store;
-  tasks: Pick<TaskService, "create" | "reopen" | "tellAgent">;
+  tasks: Pick<TaskService, "create" | "reopen" | "tellAgent" | "send">;
   config: ConfigService;
   agents: AgentStore;
   now: () => Date;
@@ -269,6 +269,31 @@ export class Lanes {
       if (boss === undefined) return { sent: false, why: "the lane has no captain" };
       if (about !== undefined) this.deps.about?.(chat.id, about);
       await this.deps.tasks.tellAgent({ task: chat.id, agent: boss, text, settled, by: "majhi" });
+      return { sent: true, chat: chat.id };
+    } catch (err) {
+      return { sent: false, why: errorMessage(err) };
+    }
+  }
+
+  /**
+   * The captain's ask to a workspace's step, written in its lane as the captain's own message so the one
+   * conversation shows it, and sent to the step. Not sent when no account may run it.
+   */
+  async ask(
+    org: string,
+    text: string,
+    job: Job = "reacting",
+  ): Promise<{ sent: true; chat: string } | { sent: false; why: string }> {
+    if (this.deps.halted?.() === true) return { sent: false, why: STOPPED_WHY };
+    const picked = await this.account(org);
+    if ("problem" in picked) return { sent: false, why: picked.problem };
+    const rest = await this.deps.rest?.(org, picked.account, job);
+    if (rest !== undefined) return { sent: false, why: rest };
+    try {
+      const chat = await this.ensure(org, job);
+      const boss = chat.team[0];
+      if (boss === undefined) return { sent: false, why: "the lane has no captain" };
+      await this.deps.tasks.send({ task: chat.id, text, attachments: [], mode: "queue", by: boss });
       return { sent: true, chat: chat.id };
     } catch (err) {
       return { sent: false, why: errorMessage(err) };

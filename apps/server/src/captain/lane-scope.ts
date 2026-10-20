@@ -101,8 +101,30 @@ function ownWorkspace(row: Record<string, unknown>, world: ScopeWorld): string |
   return undefined;
 }
 
+/** The registries as a `ScopeWorld`: where a task, project, account or agent belongs. */
+export function scopeWorldOf(
+  sections: {
+    orgs: Readonly<Record<string, unknown>>;
+    projects: Readonly<Record<string, { org: string }>>;
+    accounts: Readonly<Record<string, { org: string }>>;
+  },
+  agents: ReadonlyMap<string, string>,
+  taskOrg: (id: string) => string | undefined | null,
+): ScopeWorld {
+  return {
+    orgs: new Set([PRIVATE, ...Object.keys(sections.orgs).filter((id) => id !== PRIVATE)]),
+    task: (id) => {
+      const org = taskOrg(id);
+      return org === undefined ? undefined : (org ?? PRIVATE);
+    },
+    project: (id) => sections.projects[id]?.org,
+    account: (id) => sections.accounts[id]?.org,
+    agent: (id) => agents.get(id),
+  };
+}
+
 /** The workspaces a read's input asks about: its own fields, and the lists of names it carries. */
-function inputWorkspaces(input: Record<string, unknown>, world: ScopeWorld): string[] {
+export function inputWorkspaces(input: Record<string, unknown>, world: ScopeWorld): string[] {
   const out: string[] = [];
   const add = (w: string | undefined) => {
     if (w !== undefined) out.push(w);

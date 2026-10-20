@@ -68,7 +68,7 @@ import { type Overnight, overnightOf } from "../agenda/overnight.ts";
 import { briefDue } from "../agenda/time.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
-import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
+import { forceOrg, narrow, readRefusal, scopeWorldOf } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { captainPolicyOf } from "../captain/policy.ts";
@@ -1535,16 +1535,10 @@ export class AutonomyService {
     for (const a of await this.deps.agents.list()) {
       if (a.ok && a.agent.frontmatter.scope !== "root") agents.set(a.id, a.agent.frontmatter.scope);
     }
-    const world: ScopeWorld = {
-      orgs: new Set(workspaceIds(sections.orgs)),
-      task: (id) => {
-        const t = this.deps.store.tasks.get(id);
-        return t === undefined ? undefined : (t.org ?? PRIVATE);
-      },
-      project: (id) => sections.projects[id]?.org,
-      account: (id) => sections.accounts[id]?.org,
-      agent: (id) => agents.get(id),
-    };
+    const world = scopeWorldOf(sections, agents, (id) => {
+      const t = this.deps.store.tasks.get(id);
+      return t === undefined ? undefined : (t.org ?? null);
+    });
     const name = (org: string) => (org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org));
     return {
       refusal: (command, input) => readRefusal(lane, command, input, world, name),

@@ -79,6 +79,8 @@ import {
   CaptainLogResultSchema,
   CaptainRunChoreInputSchema,
   CaptainRunChoreResultSchema,
+  CaptainStepInputSchema,
+  CaptainStepResultSchema,
   CaptainStatusSchema,
   CaptainUndoInputSchema,
   CaptainUndoResultSchema,
@@ -4271,6 +4273,13 @@ export const commands = {
       "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also the Autonomous switch (autonomy: on or off)",
     input: Empty,
     output: CaptainStatusSchema,
+  },
+  "captain.step": {
+    risk: "change",
+    summary:
+      "In the owner's All conversation only: ask the captain's step in one workspace to do or answer something. The step runs there with that workspace's access only (its version control, SSH, connections, wiki and account) and its answer shows in this conversation. Write ask from the owner's words and that workspace's own facts: a text that names another workspace is refused",
+    input: CaptainStepInputSchema,
+    output: CaptainStepResultSchema,
   },
   "captain.log": {
     risk: "read",

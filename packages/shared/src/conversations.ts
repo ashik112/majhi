@@ -3,9 +3,10 @@ import { ChatAppSchema } from "./chat.ts";
 import { IdSchema } from "./ids.ts";
 
 /**
- * The one list of the Chats page and the chat dock. A conversation is a task's room (`task`), a
- * workspace's captain thread (`captain`), a client's chat (`client`) or a chat the owner started with
- * an agent (`agent`). All are rooms in the same store, so one row shape and one unread rule cover them.
+ * The one list of the console's chat pane. A conversation is a task's room (`task`), a client's chat
+ * (`client`) or a chat the owner started with an agent (`agent`), the Captain among them. A workspace's
+ * captain step (`captain`) is a room of the same store, but the server folds it into the Captain chat
+ * and never lists it, so the owner has one conversation. One row shape and one unread rule cover them.
  */
 export const ConversationKindSchema = z.enum(["task", "captain", "client", "agent"]);
 export type ConversationKind = z.infer<typeof ConversationKindSchema>;

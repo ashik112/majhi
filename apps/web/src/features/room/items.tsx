@@ -1,4 +1,4 @@
-import { type AgentLive, permissionOptionLabel, type RoomItem } from "@majhi/shared";
+import { type AgentLive, PRIVATE, PRIVATE_NAME, permissionOptionLabel, type RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -29,6 +29,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useExtractMemory } from "@/lib/memory-queries";
+import { useOrgs } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { PendingAsk } from "./ask-card";
@@ -430,6 +431,14 @@ function ContextLine({ item, repeat }: { item: Of<"context">; repeat: number }) 
   );
 }
 
+/** In the Captain conversation, the workspace a line was said in. Lines of the desk itself have none. */
+function InWorkspace({ org }: { org: string | undefined }) {
+  const orgs = useOrgs().data;
+  if (org === undefined) return null;
+  const name = org === PRIVATE ? PRIVATE_NAME : (orgs?.find((o) => o.id === org)?.name ?? org);
+  return <span className="min-w-0 shrink truncate text-sm text-fg-faint">in {name}</span>;
+}
+
 /** The owner's side of the conversation: a light bubble in the same column as the agents. */
 function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: AgentLive | undefined }) {
   // Not the owner's: the captain (or majhi) wrote it into this task, and the record says so.
@@ -445,6 +454,7 @@ function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: Agent
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
           <span className="text-base font-semibold text-fg">{who}</span>
+          <InWorkspace org={item.org} />
           <Stamp at={item.at} />
           {item.removed === true && <span className="text-sm text-fg-faint">Removed, not sent</span>}
         </div>
@@ -584,6 +594,7 @@ function AgentMessage({
           <span className={cn("shrink-0 text-base font-semibold text-fg", !captain && "font-mono")}>
             {captain ? "Captain" : `@${item.agent}`}
           </span>
+          <InWorkspace org={item.org} />
           {meta && <span className="min-w-0 truncate font-mono text-xs text-fg-faint">{meta}</span>}
           <Stamp at={item.at} />
         </div>

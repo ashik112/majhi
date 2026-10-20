@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Sheet } from "@/components/ui/sheet";
 import { markSeen } from "@/features/autonomy/summary-seen";
-import { useBoss } from "@/features/boss/boss-context";
+import { useOrgFilter } from "@/lib/org-filter";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
@@ -18,7 +18,6 @@ import { DelegationSheet } from "./delegation";
 import { FindingsSheet } from "./findings";
 import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
-import { wsTab } from "./panel-model";
 import { ScorecardSheet } from "./scorecard";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
@@ -47,7 +46,7 @@ export function CaptainView() {
   const now = useNow(30_000);
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();
-  const { setTab } = useBoss();
+  const { setOrg } = useOrgFilter();
   const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
   const thread = search.thread;
   const tab = search.tab;
@@ -60,8 +59,8 @@ export function CaptainView() {
   const view: View = forced ? "captain" : (picked ?? (autonomy?.mode === "on" ? "dashboard" : "captain"));
   // A link to a thread (an old address of a lane chat) selects it in the conversation.
   useEffect(() => {
-    if (thread !== undefined) setTab(wsTab(thread));
-  }, [thread, setTab]);
+    if (thread !== undefined) setOrg(thread);
+  }, [thread, setOrg]);
   // A link to an old tab opens its sheet, and the chat tab selects the conversation.
   useEffect(() => {
     const asked = sheetOf(tab);
@@ -117,7 +116,7 @@ export function CaptainView() {
           aria-label="Conversation"
           className={`flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
         >
-          <Conversation page />
+          <Conversation />
         </section>
       )}
       {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
