@@ -75,7 +75,6 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "incident.askCaptain",
   // Autonomous mode is the owner's switch: the captain never turns it on, widens its limits or guides itself.
   "autonomy.start",
-  "autonomy.pause",
   "autonomy.stop",
   "autonomy.configure",
   "autonomy.guide",
@@ -514,7 +513,6 @@ export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
   "history.undo",
   "config.restoreLast",
   "autonomy.start",
-  "autonomy.pause",
   "autonomy.stop",
   "autonomy.configure",
   "autonomy.exclude",

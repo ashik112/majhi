@@ -25,6 +25,8 @@ import type { OrgSpendRow } from "./spend.ts";
 export interface AutonomyState {
   mode: AutonomyMode;
   since?: string;
+  /** While on: when majhi turns it off by itself. Absent: until the owner does. */
+  until?: string;
   by?: "owner" | "majhi";
   why?: string;
   /** The captain's autonomy chat. */
@@ -81,6 +83,7 @@ type NewEvent = Omit<AutonomyEvent, "seq" | "at"> & { at: string };
 interface StateDbRow {
   mode: string;
   since: string | null;
+  until: string | null;
   changed_by: string | null;
   why: string | null;
   chat: string | null;
@@ -149,12 +152,11 @@ function present<K extends string, V>(key: K, value: V | null): { [P in K]?: V }
 }
 
 /**
- * The mode as stored. `paused` is gone from the owner's switch (On or Off): a database that still
- * holds it reads as On, so the tasks it held restart when the owner next turns it on or off.
+ * The mode as stored. `paused` was a state of its own once: a database that still holds it reads as On, so the
+ * tasks it held restart when the owner next turns it on or off.
  */
 export function modeOf(stored: string): AutonomyMode {
-  const mode = AutonomyModeSchema.catch("off").parse(stored);
-  return mode === "paused" ? "on" : mode;
+  return stored === "paused" ? "on" : AutonomyModeSchema.catch("off").parse(stored);
 }
 
 /** The autonomy tables in `majhi.db`: state, tasks, the feed and the daily summaries. */
@@ -169,6 +171,7 @@ export class AutonomyRepo {
     return {
       mode: modeOf(row.mode),
       ...present("since", row.since),
+      ...present("until", row.until),
       ...present("by", by),
       ...present("why", row.why),
       ...present("chat", row.chat),
@@ -179,10 +182,21 @@ export class AutonomyRepo {
     };
   }
 
-  setMode(mode: AutonomyMode, at: string, by: "owner" | "majhi", why: string | undefined): void {
+  setMode(
+    mode: AutonomyMode,
+    at: string,
+    by: "owner" | "majhi",
+    why: string | undefined,
+    until?: string,
+  ): void {
     this.db
-      .prepare("UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ? WHERE id = 1")
-      .run(mode, at, by, why ?? null);
+      .prepare("UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ?, until = ? WHERE id = 1")
+      .run(mode, at, by, why ?? null, mode === "on" ? (until ?? null) : null);
+  }
+
+  /** Changes only the end time of a switch that is on. */
+  setUntil(until: string | undefined): void {
+    this.db.prepare("UPDATE autonomy_state SET until = ? WHERE id = 1 AND mode = 'on'").run(until ?? null);
   }
 
   setChat(chat: string): void {

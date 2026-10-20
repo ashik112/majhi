@@ -2081,6 +2081,14 @@ WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
   AND NOT EXISTS (SELECT 1 FROM task_repos WHERE task_repos.task = tasks.id);
 `,
   },
+  {
+    // Captain, step 5: Autonomous is on until a time, or until the owner turns it off.
+    id: 195,
+    name: "autonomous until",
+    sql: `
+ALTER TABLE autonomy_state ADD COLUMN until TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

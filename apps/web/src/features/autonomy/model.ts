@@ -22,8 +22,6 @@ import { formatMoney, formatTokens } from "@/lib/format";
 export const MODE_WORD: Record<AutonomyMode, string> = {
   off: "Off",
   on: "On",
-  // Not a state any more: the server reads it as On.
-  paused: "On",
   stopping: "Turning off",
 };
 
@@ -31,7 +29,6 @@ export const MODE_WORD: Record<AutonomyMode, string> = {
 export const MODE_LAMP: Record<AutonomyMode, LampState> = {
   off: "idle",
   on: "working",
-  paused: "working",
   stopping: "paused",
 };
 
@@ -41,8 +38,6 @@ export function modeLine(mode: AutonomyMode): string {
     case "off":
       return "The captain works only when you ask it to.";
     case "on":
-      return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
-    case "paused":
       return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "stopping":
       return "Turning off. Tasks finish their current step, nothing new starts, then they pause.";

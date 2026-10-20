@@ -129,16 +129,14 @@ async function configureBasis(world: ProposalWorld, lane: string): Promise<strin
 function planStart(world: ProposalWorld, input: unknown): Planned {
   const parsed = AutonomyStartInputSchema.safeParse(input);
   if (!parsed.success) return { kind: "refuse", error: "Invalid input for autonomy.start." };
-  if (world.mode() === "on" && !parsed.data.resumeStopped) {
-    return { kind: "refuse", error: "Auto-pilot is already on." };
-  }
+  if (world.mode() === "on") return { kind: "refuse", error: "Autonomous is already on." };
   return {
     kind: "propose",
-    summary: "Turn Auto-pilot on",
+    summary: "Turn Autonomous on",
     basis: startBasis(world),
     changes: [
-      `Auto-pilot: ${world.mode() === "on" ? "On" : "Off"} → On`,
-      ...(parsed.data.resumeStopped ? ["Resume the tasks it paused"] : []),
+      `Autonomous: Off → On${parsed.data.until === null ? ", until you turn it off" : `, until ${parsed.data.until}`}`,
+      "Resume the tasks it paused",
     ],
   };
 }

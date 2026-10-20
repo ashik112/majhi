@@ -81,7 +81,6 @@ export function useAutonomyEvents(decisions: boolean) {
 
 type StatusCommand =
   | "autonomy.start"
-  | "autonomy.pause"
   | "autonomy.stop"
   | "autonomy.configure"
   | "autonomy.forget"

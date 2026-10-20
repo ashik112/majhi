@@ -8,7 +8,6 @@ type AutonomyCommand =
   | "autonomy.events"
   | "autonomy.report"
   | "autonomy.start"
-  | "autonomy.pause"
   | "autonomy.stop"
   | "autonomy.configure"
   | "authority.set"
@@ -46,15 +45,11 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
     "autonomy.report": async (input) => autonomy.report(input.days),
     "autonomy.start": async (input, ctx) => {
       ownerOnly(ctx);
-      return autonomy.start(input.resumeStopped);
+      return autonomy.start(input.until ?? undefined);
     },
-    "autonomy.pause": async (_input, ctx) => {
+    "autonomy.stop": async (_input, ctx) => {
       ownerOnly(ctx);
-      return autonomy.pause();
-    },
-    "autonomy.stop": async (input, ctx) => {
-      ownerOnly(ctx);
-      return autonomy.stop(input.how);
+      return autonomy.stop();
     },
     "autonomy.configure": async (input, ctx) => {
       ownerOnly(ctx);

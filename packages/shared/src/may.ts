@@ -76,9 +76,9 @@ export function may(
   ask: MayAsk,
   lineWhy: (row: AuthorityRow, name: string) => string,
 ): May {
-  const work = mayWork(policy, ask.job);
-  if (!work.ok) return work;
-  if (ask.act === "read") return work;
+  // Reading changes nothing: only Stop everything holds it, never the Autonomous switch.
+  const work = mayWork(policy, ask.act === "read" ? "reacting" : ask.job);
+  if (!work.ok || ask.act === "read") return work;
   if (policy.authority[ask.act] !== "decide") {
     return { ok: false, because: "line", row: ask.act, why: lineWhy(ask.act, policy.name) };
   }

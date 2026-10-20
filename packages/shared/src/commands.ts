@@ -67,7 +67,6 @@ import {
   AutonomyStartInputSchema,
   AutonomyStatusInputSchema,
   AutonomyStatusSchema,
-  AutonomyStopInputSchema,
 } from "./autonomy.ts";
 import { BACKUP_PASSPHRASE_MAX, BackupListSchema, BackupVerifySchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
@@ -4214,22 +4213,15 @@ export const commands = {
   "autonomy.start": {
     risk: "change",
     summary:
-      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
+      "Turn Autonomous on, until an instant (until, ISO) or until the owner turns it off (until null). The tasks it paused when it was last turned off resume. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
     input: AutonomyStartInputSchema,
-    output: AutonomyStatusSchema,
-  },
-  "autonomy.pause": {
-    risk: "change",
-    summary:
-      "Kept for older callers: the same as autonomy.stop with how=now. Autonomous is On or Off; it has no pause. Owner only",
-    input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.stop": {
     risk: "change",
     summary:
-      "Turn Autonomous off. now: pause the tasks it started at once. graceful: current steps finish, nothing new starts, then they pause. Either way turning it on again can resume them. Owner only",
-    input: AutonomyStopInputSchema,
+      "Turn Autonomous off: current steps finish, nothing new starts, then the tasks it started pause. Turning it on again resumes them. Owner only",
+    input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.configure": {
@@ -4291,14 +4283,14 @@ export const commands = {
   "captain.stop": {
     risk: "change",
     summary:
-      "Same as autonomy.stop with how=now: turns Autonomous off and pauses the tasks it started. The captain is never stopped; it still answers when spoken to. Kept for older callers. Owner only",
+      "Pause all: nothing the captain does runs and the tasks it drives pause at a checkpoint, until captain.resume. The captain is never stopped from answering. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },
   "captain.resume": {
     risk: "change",
     summary:
-      "Same as autonomy.start with resumeStopped: turns Autonomous on and resumes the tasks it paused. Kept for older callers. Owner only",
+      "Lift Pause all: the captain works as the level and Autonomous say, and the tasks it paused continue. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },

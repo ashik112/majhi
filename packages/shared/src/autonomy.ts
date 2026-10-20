@@ -6,19 +6,16 @@ import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from 
 import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } from "./tasks.ts";
 
 /**
- * Autonomous mode (PRV-74): the captain runs the desk like the owner would, inside the caps, the
- * account floors and the hard limits, and explains each decision in one line. The rules are in
- * docs/PROGRESS.md under PRV-74.
+ * Autonomous mode: the captain takes the owner's tasks from the backlog and finishes them, inside the day's cap,
+ * the account floors and the hard limits, and explains each decision in one line. One switch with an end time
+ * (docs/briefs/captain.md).
  */
 
 /**
- * `off`: nothing autonomous runs. `on`: the captain picks work and does it. `paused`: the captain gets no
- * ticks and autonomous tasks pause after their current turn, until Resume. `stopping`: Stop
- * gracefully was pressed; current turns finish, nothing new starts, then majhi turns it `off`.
+ * `off`: nothing autonomous runs. `on`: the captain picks work and does it. `stopping`: it was turned off;
+ * current turns finish, nothing new starts, then majhi turns it `off`.
  */
-export const AutonomyModeSchema = z.enum(["off", "on", "paused", "stopping"]);
-// `paused` is no state any more: a database that holds it reads as `on`. `stopping` is the moment
-// between "let them finish this step" and Off.
+export const AutonomyModeSchema = z.enum(["off", "on", "stopping"]);
 export type AutonomyMode = z.infer<typeof AutonomyModeSchema>;
 
 /** Tokens (input + output + cache write, as budgets count them) and dollars. */
@@ -310,6 +307,8 @@ export const AutonomyStatusSchema = z.object({
   mode: AutonomyModeSchema,
   /** When the mode last changed (UTC ISO), who changed it, and majhi's reason when it did. */
   since: z.string().optional(),
+  /** While on: when majhi turns it off by itself (UTC ISO). Absent: until the owner turns it off. */
+  until: z.string().optional(),
   by: z.enum(["owner", "majhi"]).optional(),
   why: z.string().optional(),
   /**
@@ -488,10 +487,11 @@ export const AutonomyGuideResultSchema = z.object({
   instruction: AutonomyInstructionSchema.optional(),
 });
 
-export const AutonomyStopInputSchema = z.object({ how: z.enum(["now", "graceful"]) });
-
-/** `autonomy.start`: `resumeStopped` also resumes the tasks Stop now paused (`status.stopped`). */
-export const AutonomyStartInputSchema = z.object({ resumeStopped: z.boolean().default(false) });
+/**
+ * `autonomy.start`: turn Autonomous on until `until` (an instant), or until the owner turns it off (`null`).
+ * The tasks it paused when it was last turned off resume.
+ */
+export const AutonomyStartInputSchema = z.object({ until: z.iso.datetime().nullable().default(null) });
 
 /** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
 export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });

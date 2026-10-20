@@ -1,7 +1,6 @@
 import type { AutonomyStatus } from "@majhi/shared";
 import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
@@ -25,16 +24,10 @@ export function useAutonomyActions() {
   return {
     busy: start.isPending || stop.isPending,
     start,
-    /** Pause its tasks now, or let them finish their step first. */
-    turnOff: (how: "now" | "graceful", onDone?: () => void) =>
+    /** Its tasks finish their step, then pause. */
+    turnOff: (onDone?: () => void) =>
       stop.mutate(
-        {
-          input: { how },
-          reason:
-            how === "now"
-              ? "Owner turned Auto-pilot off and paused its tasks"
-              : "Owner turned Auto-pilot off and let its tasks finish their step",
-        },
+        { input: {}, reason: "Owner turned Auto-pilot off" },
         settle("Could not turn Auto-pilot off", onDone),
       ),
   };
@@ -70,8 +63,6 @@ function EditBudgets({ onClose }: { onClose: () => void }) {
 export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
   const { start } = useAutonomyActions();
   const captain = useCaptainStatus().data;
-  const paused = status.stopped;
-  const [resume, setResume] = useState(true);
   // Every workspace where the captain decides something.
   const acts = (captain?.orgs ?? [])
     .filter((o) => Object.values(o.authority).includes("decide"))
@@ -110,20 +101,6 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             , let the captain decide something in one workspace, then come back.
           </p>
         )}
-        {paused.length > 0 && (
-          <label className="flex items-start gap-2.5 text-base text-fg">
-            <input
-              type="checkbox"
-              checked={resume}
-              onChange={(event) => setResume(event.target.checked)}
-              className="mt-1"
-            />
-            <span className="min-w-0 text-pretty">
-              Resume the {paused.length === 1 ? "task" : `${paused.length} tasks`} it paused
-              <span className="text-fg-muted"> ({taskList(paused)})</span>
-            </span>
-          </label>
-        )}
         {noCaptain && (
           <p
             role="alert"
@@ -150,7 +127,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             onClick={() =>
               start.mutate(
                 {
-                  input: { resumeStopped: paused.length > 0 && resume },
+                  input: { until: null },
                   reason: "Owner turned Auto-pilot on",
                 },
                 { onSuccess: onClose },
@@ -189,17 +166,9 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
           )}
         </p>
         <div className="flex flex-col gap-2">
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={actions.busy}
-            onClick={() => actions.turnOff("now", onClose)}
-          >
-            {stopping ? "Pause its tasks now" : "Turn off and pause its tasks"}
-          </Button>
-          {!stopping && working.length > 0 && (
-            <Button size="lg" disabled={actions.busy} onClick={() => actions.turnOff("graceful", onClose)}>
-              Turn off, let them finish this step
+          {!stopping && (
+            <Button variant="primary" size="lg" disabled={actions.busy} onClick={() => actions.turnOff(onClose)}>
+              Turn off
             </Button>
           )}
         </div>
