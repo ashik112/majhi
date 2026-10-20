@@ -110,11 +110,19 @@ export function AutonomousSwitch() {
       align="right"
       items={items}
       trigger={(t) => (
-        <button type="button" className="cs-auto" {...t}>
+        <button
+          type="button"
+          className="cs-auto"
+          title={paused ? "Nothing the captain does runs" : statusLine(status, now)}
+          {...t}
+        >
           <ConsoleLamp state={paused ? "paused" : status.mode === "on" ? "working" : "idle"} />
-          <span className="cs-t">
-            <b>Autonomous · {word}</b>
-            <small>{paused ? "Nothing the captain does runs" : statusLine(status, now)}</small>
+          <b>Autonomous</b>
+          <span className="cs-auto-state" data-on={status.mode === "on" || undefined}>
+            {word}
+            {status.mode === "on" &&
+              status.until !== undefined &&
+              ` · ${clockWord(new Date(status.until), now)}`}
           </span>
         </button>
       )}

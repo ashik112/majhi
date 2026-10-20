@@ -181,21 +181,18 @@
   border-color: var(--c-line-hover);
   background: var(--c-selected);
 }
-.cs-auto .cs-t {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  line-height: 12px;
-}
+/* One line like the rest of the bar: the name, then its state. What it is doing is the hover text and the menu. */
 .cs-auto b {
-  font: 500 12px var(--font-sans);
+  font: 500 12px / 16px var(--font-sans);
   white-space: nowrap;
 }
-.cs-auto small {
-  font: 400 10.5px var(--font-sans);
-  color: var(--c-fg-faint);
+.cs-auto-state {
+  font: 400 12px / 16px var(--font-sans);
+  color: var(--c-fg-muted);
   white-space: nowrap;
+}
+.cs-auto-state[data-on="true"] {
+  color: var(--c-fg);
 }
 .cs-search {
   height: 30px;
@@ -1291,9 +1288,6 @@
   .cs-pane[data-pane="chat"][data-open="true"] {
     transform: none;
     visibility: visible;
-  }
-  .cs-auto small {
-    display: none;
   }
   .cs-search {
     width: 132px;
