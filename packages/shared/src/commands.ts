@@ -19,13 +19,6 @@ import {
   ToolInfoSchema,
 } from "./accounts.ts";
 import { CallerSchema } from "./actor.ts";
-import {
-  AgendaBriefInputSchema,
-  AgendaConfigureInputSchema,
-  AgendaDismissInputSchema,
-  AgendaTodayInputSchema,
-  AgendaTodaySchema,
-} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -66,6 +59,7 @@ import {
   AutonomyStatusSchema,
 } from "./autonomy.ts";
 import { BACKUP_PASSPHRASE_MAX, BackupListSchema, BackupVerifySchema } from "./backup.ts";
+import { BriefListInputSchema, BriefSchema } from "./brief.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
   BudgetAnswerInputSchema,
@@ -1377,34 +1371,13 @@ export const commands = {
     input: HandoffRerunInputSchema,
     output: HandoffStateSchema,
   },
-  // The agenda and the morning brief (5.18) -----------------------------------
-  "agenda.today": {
+  // The morning brief (5.18) -------------------------------------------------
+  "brief.list": {
     risk: "read",
     summary:
-      "The owner's day in one call: today's brief, the ordered agenda (decisions, incidents and high findings, budget holds, playbook drafts) cut at the owner's review budget into today and later, what is running, and goals. Computed in code. The owner and the captain; a captain lane reads its own workspace",
-    input: AgendaTodayInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.configure": {
-    risk: "change",
-    summary:
-      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner, or the captain through the owner's approval",
-    input: AgendaConfigureInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.brief": {
-    risk: "change",
-    summary:
-      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner, or the captain through the owner's approval",
-    input: AgendaBriefInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.dismissBrief": {
-    risk: "change",
-    summary:
-      "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
-    input: AgendaDismissInputSchema,
-    output: z.object({ day: z.string() }),
+      "The morning briefs of the last days, newest first, one per workspace and day: the short lines the owner read, and the facts behind them. Quiet days are left out. The owner and the captain; a captain lane reads its own workspace",
+    input: BriefListInputSchema,
+    output: z.object({ briefs: z.array(BriefSchema) }),
   },
   // The project wiki (docs/design/wiki.md) ---------------------------------------------
   "wiki.get": {
@@ -4194,7 +4167,7 @@ export const commands = {
   "autonomy.status": {
     risk: "read",
     summary:
-      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner, the settings and the newest daily summary. Without detail the task list, backlog and cards are empty and only the counts, lanes, spend and settings come back",
+      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner and the settings. Without detail the task list, backlog and cards are empty and only the counts, lanes, spend and settings come back",
     input: AutonomyStatusInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -4344,7 +4317,7 @@ export const commands = {
   "autonomy.note": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the captain: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the daily summary",
+      "Autonomous mode only, for the captain: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the morning brief",
     input: AutonomyNoteInputSchema,
     output: z.object({ seq: z.number().int().positive() }),
   },

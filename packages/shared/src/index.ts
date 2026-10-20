@@ -1,6 +1,5 @@
 export * from "./accounts.ts";
 export * from "./actor.ts";
-export * from "./agenda.ts";
 export * from "./agent-tools.ts";
 export * from "./api.ts";
 export * from "./app-setup.ts";
@@ -14,6 +13,7 @@ export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
 export * from "./build-id.ts";
+export * from "./brief.ts";
 export * from "./captain.ts";
 export * from "./captain-places.ts";
 export * from "./chat.ts";

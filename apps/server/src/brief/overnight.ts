@@ -1,5 +1,13 @@
 import type { AutonomyEvent } from "@majhi/shared";
-import { SHIPS } from "../autonomy/summary.ts";
+
+/** The ship calls that count, by what they did. */
+export const SHIPS: Readonly<Record<string, "merged" | "pushed" | "mr-open" | "mr-merged">> = {
+  "tasks.merge": "merged",
+  "tasks.push": "pushed",
+  "tasks.openMrs": "mr-open",
+  "tasks.mergeMrs": "mr-merged",
+  "tasks.markMerged": "mr-merged",
+};
 
 /** What autonomous mode did in a span, as counts and a few titles, for the morning brief. Pure. */
 export interface Overnight {

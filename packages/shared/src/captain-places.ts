@@ -134,7 +134,7 @@ const WORK: readonly CommandName[] = [
 ];
 
 /** The owner talks to it: everything a turn may need to answer or act, and the switch it can propose. */
-const CHAT_ONLY: readonly CommandName[] = ["autonomy.start", "agenda.brief", "connections.setSecret"];
+const CHAT_ONLY: readonly CommandName[] = ["autonomy.start", "brief.list", "connections.setSecret"];
 
 const PLACES: Record<CaptainPlace, readonly CommandName[]> = {
   needs: [...CORE, ...NEEDS],

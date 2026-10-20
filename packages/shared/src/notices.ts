@@ -19,6 +19,7 @@ export const NoticeKindSchema = z.enum([
   "deploy",
   "incident",
   "bug",
+  "brief",
   "update",
 ]);
 export type NoticeKind = z.infer<typeof NoticeKindSchema>;

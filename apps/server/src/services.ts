@@ -38,8 +38,6 @@ import { AdminAccess } from "./admin/access.ts";
 import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { type AdminCaller, AdminTokens } from "./admin/tokens.ts";
-import { AgendaRepo } from "./agenda/repo.ts";
-import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -50,6 +48,8 @@ import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
+import { BriefRepo } from "./brief/repo.ts";
+import { BriefService } from "./brief/service.ts";
 import { BrowserService } from "./browsers/service.ts";
 import { TestBrowserService } from "./browsers/test-service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -272,7 +272,7 @@ const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
 const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
-const AGENDA_SWEEP_MS = 60_000;
+const BRIEF_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
 
@@ -469,8 +469,8 @@ export interface Services {
   homeChecks: HomeChecks;
   /** A task's origin, areas and whole trail in one read, and the areas of many tasks for a board. */
   taskDetails: TaskDetails;
-  /** The owner's agenda and the morning brief (5.18). */
-  agenda: AgendaService;
+  /** The morning brief per workspace (5.18). */
+  brief: BriefService;
   /** `code_graph`: agents ask a task's own repos' code graph (5.21). */
   codeGraph: CodeGraphTools;
   /** The sealed reader runner: no network, read-only checkout. Absent unless agents run in containers. */
@@ -2250,52 +2250,42 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
-  const agendaOwner = { kind: "owner" } as const;
-  const agenda = new AgendaService({
-    repo: new AgendaRepo(store.raw),
+  const briefOwner = { kind: "owner" } as const;
+  // Bound below, once the ops watch exists: the one combined push goes to its channels.
+  let tellOwner: ((day: string, text: string) => Promise<void>) | undefined;
+  const brief = new BriefService({
+    repo: new BriefRepo(store.raw),
     clock: async () => {
       const a = (await config.settings()).autonomy;
-      return { at: a.summary_at, tz: a.tz };
+      return { at: a.brief_at, tz: a.tz };
     },
-    decisions: (org) => inbox.list(org),
-    findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    orgs: async () => [
+      { id: PRIVATE, name: "Private" },
+      ...Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
+    ],
+    decisions: () => inbox.list(),
+    findings: () => findings.list({ limit: 500 }, briefOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
-    incidentOf: (finding) => opsWatch?.incidentOfFinding(finding)?.id,
-    goals: () => goals.list({}, agendaOwner),
-    running: () =>
-      store.tasks
-        .list(false)
-        .filter((t) => t.status === "running" && t.chat !== true && t.lane !== true)
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          ...(t.name === undefined ? {} : { name: t.name }),
-          ...(t.repos[0] === undefined ? {} : { project: t.repos[0].project }),
-          ...(t.org === undefined ? {} : { org: t.org }),
-          since: t.updatedAt,
-        })),
-    names: async () => {
-      const orgs = (await config.sections()).orgs;
-      return new Map<string, string>([
-        [PRIVATE, "Private"],
-        ...Object.entries(orgs).map(([id, o]) => [id, o.name] as [string, string]),
-      ]);
-    },
-    overnight: (from, to) => autonomy.overnight(from, to),
+    overnight: (from, to, org) => autonomy.overnight(from, to, org),
     write: async (prompt) =>
       (
         await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
           reply.trim() === "" ? { ok: false, problem: "The reply was empty." } : { ok: true, value: reply },
         )
       ).value,
-    next: (max) => autonomy.queueTitles(max),
-    notify: (day, text) => notifier.brief(day, text),
-    changed: () => events.emit(["agenda"]),
+    next: (org, max) => autonomy.queueTitles(max, org),
+    tell: (day, text) => notifier.brief(day, text, () => tellOwner?.(day, text) ?? Promise.resolve()),
+    // The brief is a line in the workspace's own captain conversation. It is posted, never sent to the captain.
+    chatLine: async (org, day, lines) => {
+      const chat = await lanes.ensure(org);
+      room.post(chat.id as TaskId, `brief:${day}`, { type: "system", level: "info", text: lines.join(" ") });
+    },
+    changed: () => events.emit(["briefs", "notices"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
-  const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
-  agendaSweep.unref();
-  background.run(() => agenda.sweep());
+  const briefSweep = setInterval(() => background.run(() => brief.sweep()), BRIEF_SWEEP_MS);
+  briefSweep.unref();
+  background.run(() => brief.sweep());
   const handoff = createHandoff({
     db: store.raw,
     store,
@@ -3377,6 +3367,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
   });
   ownerTelegram = ops.telegram;
+  tellOwner = async (_day, text) => {
+    await ops.tellOwner("Morning brief", text);
+  };
   admin.useScript({
     run: runScript,
     holds: async (org, id) => {
@@ -3558,7 +3551,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           .map(([id]) => id),
     }),
     homeChecks,
-    agenda,
+    brief,
     codeGraph,
     graphRunner,
     pdfPrinter,
@@ -3608,7 +3601,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       conversations.stop();
       chatParts.hub.stop();
       clearInterval(limitSweep);
-      clearInterval(agendaSweep);
+      clearInterval(briefSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

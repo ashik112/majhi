@@ -14,6 +14,7 @@ const OLD = `# The owner's file
 autonomy:
   day:
     cost: 20 # kept
+  summary_at: "07:30"
   pick:
     size: small
   orgs:
@@ -38,6 +39,7 @@ describe("the move to Autonomous's own rules", () => {
 
     expect(await legacyAutonomousKeys(file)).toEqual([
       "autonomy.pick",
+      "autonomy.summary_at",
       "autonomy.orgs.acme.tasksAtOnce",
       "autonomy.orgs.acme.hours",
     ]);
@@ -46,6 +48,9 @@ describe("the move to Autonomous's own rules", () => {
     const after = await readFile(file, "utf8");
     expect(after).toContain("# The owner's file");
     expect(after).toContain("cost: 20 # kept");
+    // The daily summary hour is the morning brief hour now.
+    expect(after).toContain('brief_at: "07:30"');
+    expect(after).not.toContain("summary_at");
     expect(after).toContain("level: routine");
     expect(after).toContain("level: ask");
     expect(after).toContain("2026-12-24");

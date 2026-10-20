@@ -543,8 +543,8 @@ export const EventTopicSchema = z.enum([
   "playbooks",
   /** The ops watch (5.18): watched services, incidents and the phone push, `ops.*`. */
   "ops",
-  /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
-  "agenda",
+  /** A morning brief was made (5.18): refetch `brief.list`. */
+  "briefs",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */

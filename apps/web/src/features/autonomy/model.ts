@@ -4,7 +4,6 @@ import type {
   AutonomyMode,
   AutonomyPatch,
   AutonomySettings,
-  AutonomySummary,
   Budget,
   CapUse,
   TaskPriority,
@@ -52,7 +51,6 @@ export function capText(use: CapUse): string {
   if (use.cap?.tokens !== undefined)
     parts.push(`${formatTokens(use.used.tokens)} of ${formatTokens(use.cap.tokens)} tokens`);
   if (parts.length === 0) parts.push(formatMoney(use.used.cost), `${formatTokens(use.used.tokens)} tokens`);
-  if (use.changed === true) parts.push("cap changed during the day");
   return parts.join(" · ");
 }
 
@@ -99,7 +97,6 @@ export const EVENT_WORD: Record<AutonomyEventKind, string> = {
   answer: "Answer",
   guide: "Guidance",
   cap: "Limit",
-  summary: "Summary",
 };
 
 export type Tone = "neutral" | "amber" | "blue" | "green" | "red";
@@ -135,28 +132,6 @@ export function clockTime(iso: string, now: number): string {
     minute: "2-digit",
     hourCycle: "h23",
   });
-}
-
-// The daily summary ----------------------------------------------------------
-
-export const HOW_WORD: Record<AutonomySummary["shipped"][number]["how"], string> = {
-  merged: "Merged",
-  pushed: "Pushed",
-  "mr-open": "MR open",
-  "mr-merged": "MR merged",
-  review: "Ready to ship",
-  done: "Done",
-};
-
-const SEEN_KEY = "majhi.autonomy.summary-seen";
-
-/** The day of the newest summary the owner has opened on the Autonomous page. */
-export function seenSummary(): string | undefined {
-  return readStored(SEEN_KEY);
-}
-
-export function markSummarySeen(day: string): void {
-  writeStored(SEEN_KEY, day);
 }
 
 /**
@@ -214,7 +189,7 @@ export interface LimitsDraft {
   orgs: Record<string, OrgDraft>;
   window: string;
   weekly: string;
-  summaryAt: string;
+  briefAt: string;
 }
 
 const capDraft = (budget: Budget | undefined): CapDraft => ({
@@ -234,7 +209,7 @@ export function limitsDraft(settings: AutonomySettings, orgIds: readonly string[
     orgs,
     window: String(settings.floors.window),
     weekly: String(settings.floors.weekly),
-    summaryAt: settings.summary_at,
+    briefAt: settings.brief_at,
   };
 }
 
@@ -276,7 +251,7 @@ export function limitsPatch(
   if (window.problem !== undefined || window.value === undefined) return { problem: window.problem ?? "" };
   const weekly = parsePercent(draft.weekly, "Weekly floor");
   if (weekly.problem !== undefined || weekly.value === undefined) return { problem: weekly.problem ?? "" };
-  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.summaryAt))
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.briefAt))
     return { problem: "Summary time: use a time like 08:00." };
 
   const patch: AutonomyPatch = { tz };
@@ -292,7 +267,7 @@ export function limitsPatch(
   if (Object.keys(orgs).length > 0) patch.orgs = orgs;
   if (window.value !== settings.floors.window || weekly.value !== settings.floors.weekly)
     patch.floors = { window: window.value, weekly: weekly.value };
-  if (draft.summaryAt !== settings.summary_at) patch.summary_at = draft.summaryAt;
+  if (draft.briefAt !== settings.brief_at) patch.brief_at = draft.briefAt;
   return { patch };
 }
 

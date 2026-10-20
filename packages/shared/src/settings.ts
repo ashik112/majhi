@@ -468,7 +468,7 @@ export const PolicyFilePatchSchema = PolicyPatchSchema.extend({ rules: z.array(S
 
 /**
  * Autonomous mode (PRV-74): the caps it spends within, the account floors it keeps, what it may do
- * per org, when the daily summary is made, and the owner's standing instructions. Whether it is on
+ * per org, when the morning brief is made, and the owner's standing instructions. Whether it is on
  * is runtime state (`autonomy.status`), not config. Only the owner changes this section.
  */
 /**
@@ -558,8 +558,10 @@ const autonomyFields = {
   orgs: z.record(BudgetIdSchema, AutonomyOrgSchema),
   /** No new work starts on an account with less than this share of a window left, in percent. */
   floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }),
-  /** When the daily summary is made, 24 h clock in `tz`. */
-  summary_at: ClockSchema,
+  /** When the morning brief is made, 24 h clock in `tz`. */
+  brief_at: ClockSchema,
+  /** Removed: the daily summary is the morning brief now. The startup migration renames it to `brief_at`. */
+  summary_at: z.unknown(),
   /** An IANA zone like Europe/Berlin: the browser that saved the settings knows it. Absent: the server's. */
   tz: z.string().trim().min(1).max(64),
   instructions: z.array(AutonomyInstructionSchema).max(50),
@@ -570,7 +572,8 @@ export const AutonomySettingsSchema = z.strictObject({
   day: autonomyFields.day.default({ cost: 20 }),
   orgs: autonomyFields.orgs.default({}),
   floors: autonomyFields.floors.default({ window: 10, weekly: 5 }),
-  summary_at: autonomyFields.summary_at.default("08:00"),
+  brief_at: autonomyFields.brief_at.default("08:00"),
+  summary_at: autonomyFields.summary_at.optional(),
   tz: autonomyFields.tz.optional(),
   instructions: autonomyFields.instructions.default([]),
   pick: autonomyFields.pick.optional(),
@@ -607,7 +610,7 @@ export const AutonomyPatchSchema = z
     day: BudgetSchema,
     orgs: z.record(BudgetIdSchema, AutonomyOrgPatchSchema.nullable()),
     floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }).partial(),
-    summary_at: ClockSchema,
+    brief_at: ClockSchema,
     tz: autonomyFields.tz,
   })
   .partial();

@@ -6,8 +6,6 @@ import {
   AutonomyHoldSchema,
   type AutonomyMode,
   AutonomyModeSchema,
-  type AutonomySummary,
-  AutonomySummarySchema,
   type Budget,
   type BudgetAsk,
   BudgetAskSchema,
@@ -112,24 +110,6 @@ interface EventDbRow {
 }
 
 /** A JSON column read with a schema; anything that does not parse reads as `fallback`. */
-/** The caps of one day, as `autonomy_day_caps` keeps them: the day cap and each workspace's own. */
-export const DayCapsSchema = z.object({
-  day: BudgetSchema.optional(),
-  orgs: z.record(z.string(), BudgetSchema),
-});
-export type DayCaps = z.infer<typeof DayCapsSchema>;
-
-/** Which caps differ: `day` for the day cap, else the org id. */
-function capsMoved(before: DayCaps, after: DayCaps): string[] {
-  const same = (a: Budget | undefined, b: Budget | undefined) =>
-    a?.cost === b?.cost && a?.tokens === b?.tokens;
-  const moved = same(before.day, after.day) ? [] : ["day"];
-  for (const org of new Set([...Object.keys(before.orgs), ...Object.keys(after.orgs)])) {
-    if (!same(before.orgs[org], after.orgs[org])) moved.push(org);
-  }
-  return moved;
-}
-
 function parsed<T>(json: string | null, schema: z.ZodType<T>, fallback: T): T {
   if (json === null) return fallback;
   try {
@@ -340,82 +320,12 @@ export class AutonomyRepo {
     ).flatMap(eventOf);
   }
 
-  /** True when the mode changed from `from` (inclusive) to `to` (exclusive). */
-  modeChangedBetween(from: string, to: string): boolean {
-    return (
-      this.db
-        .prepare("SELECT 1 FROM autonomy_events WHERE kind = 'mode' AND at >= ? AND at < ? LIMIT 1")
-        .get(from, to) !== undefined
-    );
-  }
-
   /** When each inbox or ready task was made, for the backlog's order by age. */
   backlogAges(): Map<string, string> {
     const rows = this.db
       .prepare("SELECT id, created_at FROM tasks WHERE status IN ('inbox', 'ready')")
       .all() as { id: string; created_at: string }[];
     return new Map(rows.map((r) => [r.id, r.created_at]));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Daily summaries
-
-  /** Stores the day's summary once. False when the day has one already. */
-  addSummary(summary: AutonomySummary): boolean {
-    return (
-      this.db
-        .prepare("INSERT OR IGNORE INTO autonomy_summaries (day, at, summary) VALUES (?, ?, ?)")
-        .run(summary.day, summary.at, JSON.stringify(summary)).changes > 0
-    );
-  }
-
-  hasSummary(day: string): boolean {
-    return this.db.prepare("SELECT 1 FROM autonomy_summaries WHERE day = ?").get(day) !== undefined;
-  }
-
-  latestSummary(): AutonomySummary | undefined {
-    const row = this.db.prepare("SELECT summary FROM autonomy_summaries ORDER BY day DESC LIMIT 1").get() as
-      | { summary: string }
-      | undefined;
-    return row === undefined
-      ? undefined
-      : parsed<AutonomySummary | undefined>(row.summary, AutonomySummarySchema, undefined);
-  }
-
-  /**
-   * Notes the caps in force on `day` (the owner's local day). The first note of a day stores them;
-   * a later one that differs keeps the new caps and remembers which ones moved, so the day's summary
-   * compares against the cap that applied, or says it changed.
-   */
-  noteCaps(day: string, caps: DayCaps): void {
-    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
-      | { caps: string; changed: string }
-      | undefined;
-    if (row === undefined) {
-      this.db
-        .prepare("INSERT OR IGNORE INTO autonomy_day_caps (day, caps, changed) VALUES (?, ?, '[]')")
-        .run(day, JSON.stringify(caps));
-      return;
-    }
-    const before = parsed(row.caps, DayCapsSchema, { orgs: {} });
-    const moved = capsMoved(before, caps);
-    if (moved.length === 0) return;
-    const changed = new Set([...parsed(row.changed, z.array(z.string()), []), ...moved]);
-    this.db
-      .prepare("UPDATE autonomy_day_caps SET caps = ?, changed = ? WHERE day = ?")
-      .run(JSON.stringify(caps), JSON.stringify([...changed].sort()), day);
-  }
-
-  /** The caps last seen on `day` and which moved during it. Undefined for a day nothing noted. */
-  dayCaps(day: string): { caps: DayCaps; changed: string[] } | undefined {
-    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
-      | { caps: string; changed: string }
-      | undefined;
-    if (row === undefined) return undefined;
-    return {
-      caps: parsed(row.caps, DayCapsSchema, { orgs: {} }),
-      changed: parsed(row.changed, z.array(z.string()), []),
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -510,6 +420,19 @@ export class AutonomyRepo {
          GROUP BY COALESCE(t.org, ?)`,
       )
       .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
+  }
+
+  /** How many tasks Autonomous took on in a span (`to` excluded), by workspace. */
+  tookBetween(from: string, to: string): Map<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT COALESCE(t.org, ?) AS org, COUNT(*) AS n
+           FROM autonomy_tasks a JOIN tasks t ON t.id = a.task
+          WHERE a.since >= ? AND a.since < ?
+          GROUP BY COALESCE(t.org, ?)`,
+      )
+      .all(PRIVATE, from, to, PRIVATE) as { org: string; n: number }[];
+    return new Map(rows.map((r) => [r.org, r.n]));
   }
 
   /**

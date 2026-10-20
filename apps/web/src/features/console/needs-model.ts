@@ -185,10 +185,10 @@ export function splitRow(
   return row.decisions.map((d) => rowOf(group, [d], d.at, d.id, ctx, undefined));
 }
 
-/** What the captain did by itself that the owner has not read: a reply it sent to a client, a bug it filed. */
-const CAPTAIN_NOTICE_KINDS: ReadonlySet<Notice["kind"]> = new Set(["client-reply", "bug"]);
+/** What the captain did by itself that the owner has not read: a reply it sent to a client, a bug it filed, a morning brief. */
+const CAPTAIN_NOTICE_KINDS: ReadonlySet<Notice["kind"]> = new Set(["client-reply", "bug", "brief"]);
 
-/** A reply or a bug it filed, or a deploy it started that went live. */
+/** A reply, a bug it filed, a brief, or a deploy it started that went live. */
 function doneByCaptain(notice: Notice): boolean {
   return CAPTAIN_NOTICE_KINDS.has(notice.kind) || (notice.kind === "deploy" && notice.by === "captain");
 }

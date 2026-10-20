@@ -28,10 +28,10 @@ import type { z } from "zod";
 import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
-import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
+import { briefHandlers } from "../brief/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { isRootChat } from "../captain/tell.ts";
@@ -340,8 +340,8 @@ export function createHandlers({
         await services.tasks.send({ task: chat.id, text, attachments: [], mode: "queue" });
       },
     }),
-    ...agendaHandlers({
-      agenda: services.agenda,
+    ...briefHandlers({
+      brief: services.brief,
       findings: services.findings,
       lanes: services.lanes,
       store: services.store,

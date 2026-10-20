@@ -47,6 +47,13 @@ export interface BugRow {
   at: string;
 }
 
+export interface BriefNoticeRow {
+  day: string;
+  org: string;
+  at: string;
+  lines: string;
+}
+
 export interface IncidentRow {
   id: number;
   org: string;
@@ -166,6 +173,16 @@ export class NoticesRepo {
           ORDER BY created_at DESC LIMIT ?`,
       )
       .all(since, limit) as BugRow[];
+  }
+
+  /** The morning briefs worth reading made since a time. */
+  briefs(since: string, limit: number): BriefNoticeRow[] {
+    return this.db
+      .prepare(
+        `SELECT day, org, at, lines FROM workspace_briefs
+          WHERE quiet = 0 AND at >= ? ORDER BY at DESC, org ASC LIMIT ?`,
+      )
+      .all(since, limit) as BriefNoticeRow[];
   }
 
   /** Incidents opened or resolved since a time. */

@@ -462,7 +462,7 @@ export class CaptainRepo {
     ).flatMap((r) => actionOf(r) ?? []);
   }
 
-  /** Lines made in `[from, to)` (UTC ISO), oldest first: the daily summary's upkeep. */
+  /** Lines made in `[from, to)` (UTC ISO), oldest first: the morning brief's upkeep. */
   actionsBetween(from: string, to: string): StoredAction[] {
     return (
       this.db

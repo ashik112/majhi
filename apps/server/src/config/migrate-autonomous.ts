@@ -7,7 +7,8 @@ import { editConfig } from "./write.ts";
 /**
  * Autonomous keeps its own rules (docs/briefs/captain.md): the task size it takes (`autonomy.pick`), the tasks it
  * works on at once per workspace (`autonomy.orgs.<id>.tasksAtOnce`) and its working hours (`autonomy.orgs.<id>.hours`)
- * are rules it keeps by itself now. This reads which of them a majhi.yaml still holds.
+ * are rules it keeps by itself now, and the daily summary hour (`autonomy.summary_at`) is the morning brief hour
+ * (`autonomy.brief_at`). This reads which of them a majhi.yaml still holds.
  */
 const ORG_KEYS = ["tasksAtOnce", "hours"] as const;
 
@@ -21,6 +22,7 @@ export async function legacyAutonomousKeys(file: string): Promise<string[]> {
   if (doc.errors.length > 0) return [];
   const found: string[] = [];
   if (doc.hasIn(["autonomy", "pick"])) found.push("autonomy.pick");
+  if (doc.hasIn(["autonomy", "summary_at"])) found.push("autonomy.summary_at");
   const orgs = doc.getIn(["autonomy", "orgs"], true);
   if (isMap(orgs)) {
     for (const pair of orgs.items) {
@@ -47,6 +49,11 @@ export async function dropLegacyAutonomous(file: string): Promise<void> {
   if (!kept) await copyFile(file, copy).catch(() => undefined);
   await editConfig(file, (doc) => {
     doc.deleteIn(["autonomy", "pick"]);
+    // The daily summary hour is the morning brief hour now: it moves, it is not lost.
+    // The node itself moves, so a quoted "07:30" stays quoted.
+    const hour = doc.getIn(["autonomy", "summary_at"], true);
+    if (hour !== undefined && !doc.hasIn(["autonomy", "brief_at"])) doc.setIn(["autonomy", "brief_at"], hour);
+    doc.deleteIn(["autonomy", "summary_at"]);
     const orgs = doc.getIn(["autonomy", "orgs"], true);
     if (!isMap(orgs)) return;
     for (const pair of orgs.items) {

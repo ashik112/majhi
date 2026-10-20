@@ -31,8 +31,6 @@ export const CapUseSchema = z.object({
   percent: z.number().nonnegative(),
   /** At or over the cap: no new work starts in this scope today. */
   reached: z.boolean(),
-  /** In a daily summary: the cap moved during the day it covers, and `cap` is the last one. */
-  changed: z.literal(true).optional(),
 });
 export type CapUse = z.infer<typeof CapUseSchema>;
 
@@ -159,7 +157,7 @@ export type AutonomyWaiting = z.infer<typeof AutonomyWaitingSchema>;
  * `refused`: a hard limit stopped a call. `task`: an autonomous task started, went to review, was
  * shipped, paused or failed. `answer`: the captain answered an agent's question or prompt. `guide`: the
  * owner's message, an instruction saved or removed. `cap`: a cap or a floor started or stopped
- * holding new work. `summary`: the daily summary was made.
+ * holding new work.
  */
 export const AutonomyEventKindSchema = z.enum([
   "mode",
@@ -171,7 +169,6 @@ export const AutonomyEventKindSchema = z.enum([
   "answer",
   "guide",
   "cap",
-  "summary",
 ]);
 export type AutonomyEventKind = z.infer<typeof AutonomyEventKindSchema>;
 
@@ -190,87 +187,16 @@ export const AutonomyEventSchema = z.object({
   command: z.string().optional(),
   /** For approvals and calls. */
   outcome: z.enum(["applied", "left", "refused", "failed"]).optional(),
-  /** The captain is not sure about this one: it goes into the daily summary. */
+  /** The captain is not sure about this one: it goes into the morning brief. */
   unsure: z.boolean().optional(),
   /** The room item it is about, to open it. */
   item: z.string().optional(),
-  /** For `task` events: the status the task reached. The daily summary reads it. */
+  /** For `task` events: the status the task reached. The morning brief reads it. */
   status: TaskStatusSchema.optional(),
   /** Who did it. Absent on a line from before actors were kept. */
   by: ActorSchema.optional(),
 });
 export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
-
-/** How many titles the daily summary names in a list before "and N more". */
-export const SUMMARY_TITLES = 3;
-
-/** The daily summary: what autonomous mode shipped, what it spent, what it is unsure about. */
-export const AutonomySummarySchema = z.object({
-  /**
-   * The day it covers, `YYYY-MM-DD` in the settings' zone: the day before the one it was made on.
-   * The span is that day, midnight to midnight, UTC ISO.
-   */
-  day: z.string(),
-  from: z.string(),
-  to: z.string(),
-  /** When it was made, UTC ISO. */
-  at: z.string(),
-  shipped: z.array(
-    z.object({
-      task: TaskIdSchema,
-      title: z.string(),
-      org: IdSchema.optional(),
-      /** How far it went: merged locally, pushed, an MR opened or merged, or ready for the owner's review. */
-      how: z.enum(["merged", "pushed", "mr-open", "mr-merged", "review", "done"]),
-    }),
-  ),
-  /** Per workspace: how many shipped and the first three titles, biggest first. Summaries made before it have none. */
-  shipGroups: z
-    .array(
-      z.object({
-        org: z.string(),
-        /** The workspace's name; the id when it has none. */
-        name: z.string(),
-        count: z.number().int().positive(),
-        titles: z.array(z.string()).max(SUMMARY_TITLES),
-      }),
-    )
-    .default([]),
-  spent: z.object({
-    total: CapUseSchema,
-    orgs: z.array(CapUseSchema.extend({ org: z.string(), name: z.string().optional() })),
-  }),
-  /** Decisions it marked unsure, and calls a hard limit refused. */
-  unsure: z.array(z.object({ text: z.string(), task: TaskIdSchema.optional(), item: z.string().optional() })),
-  /** Cards still waiting for the owner when it was made. */
-  waiting: z.array(AutonomyWaitingSchema).default([]),
-  /** What waits in the owner's Decisions inbox when it was made: the count and the oldest three. */
-  needs: z
-    .object({
-      count: z.number().int().nonnegative(),
-      top: z
-        .array(z.object({ id: z.string(), title: z.string(), org: z.string().optional() }))
-        .max(SUMMARY_TITLES),
-    })
-    .optional(),
-  /** The first three entries of the captain's queue: what it plans next, and why. */
-  next: z
-    .array(
-      z.object({
-        title: z.string(),
-        why: z.string(),
-        task: TaskIdSchema.optional(),
-        org: z.string().optional(),
-      }),
-    )
-    .max(SUMMARY_TITLES)
-    .default([]),
-  /** How many upkeep actions the captain took that day (memory, cards, projects, cleanup), not counting ships. */
-  upkeep: z.number().int().nonnegative().default(0),
-  /** How many decisions it logged in the span. */
-  decisions: z.number().int().nonnegative(),
-});
-export type AutonomySummary = z.infer<typeof AutonomySummarySchema>;
 
 /**
  * One workspace where the captain starts work (5.18): the captain's lane there, and what autonomous mode does in
@@ -337,8 +263,6 @@ export const AutonomyStatusSchema = z.object({
   accounts: z.array(AutonomyAccountSchema),
   waiting: z.array(AutonomyWaitingSchema),
   settings: AutonomySettingsSchema,
-  /** The newest daily summary. */
-  summary: AutonomySummarySchema.optional(),
   /** When majhi last woke the captain, UTC ISO. */
   lastTick: z.string().optional(),
   /**

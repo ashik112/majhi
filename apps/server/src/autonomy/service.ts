@@ -23,7 +23,6 @@ import {
   type AutonomySettings,
   type AutonomySpend,
   type AutonomyStatus,
-  type AutonomySummary,
   type AutonomyWaiting,
   actorOfName,
   type Budget,
@@ -62,8 +61,7 @@ import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
-import { type Overnight, overnightOf } from "../agenda/overnight.ts";
-import { briefDue } from "../agenda/time.ts";
+import { type Overnight, overnightOf } from "../brief/overnight.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, scopeWorldOf } from "../captain/lane-scope.ts";
@@ -125,7 +123,6 @@ import {
   holdsOf,
   spendOf,
 } from "./spend.ts";
-import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
 /** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
@@ -159,8 +156,6 @@ export interface AutonomyDeps {
   gitLogins?: { list(refresh?: boolean): Promise<GitLoginsResult> };
   /** Tells the owner a budget ran out and asks about it (a decision for the bell). */
   tell?: (key: string, text: string) => void;
-  /** Tells the owner the daily summary is ready. majhi sends no alert for it (SPEC 5.18: alerts are for decisions). */
-  notify?: (summary: AutonomySummary, line: string) => void;
   /** Records the captain's recommendation on a decision of the owner's inbox, from the lane's workspace. */
   recommend?: (input: DecisionRecommendInput, lane: string | undefined) => Promise<void>;
   /** The kind of action a schedule or trigger has now, for an update that leaves it as it is. */
@@ -169,12 +164,12 @@ export interface AutonomyDeps {
   rateSize?: SizeRater;
   /** The captain's lanes (5.18): autonomous mode wakes the captain in each workspace's own. */
   lanes: Lanes;
-  /** The captain's upkeep lines in a span (UTC ISO, `to` excluded), for the daily summary. */
+  /** The captain's upkeep lines in a span (UTC ISO, `to` excluded), for the morning brief. */
   upkeepBetween?: (
     from: string,
     to: string,
   ) => { chore: string; task?: string | undefined; outcome: string; at: string; org: string }[];
-  /** What waits in the owner's Decisions inbox, in its order, for the daily summary. */
+  /** What waits in the owner's Decisions inbox, in its order. */
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
   typing?: (task: string) => boolean;
@@ -247,7 +242,6 @@ const EVENT_ACTOR: Record<AutonomyEventKind, Actor> = {
   answer: CAPTAIN,
   guide: OWNER,
   cap: MAJHI,
-  summary: MAJHI,
 };
 
 export class AutonomyService {
@@ -539,10 +533,9 @@ export class AutonomyService {
 
   /**
    * The minute sweep: the day's end, a window's reset and a graceful stop are noticed here, and
-   * the driver's heartbeat and the daily summary are due here.
+   * the driver's heartbeat are due here.
    */
   async sweepNow(): Promise<void> {
-    await this.noteCaps();
     const { mode, until } = this.repo.state();
     // The end time the owner gave: majhi turns Autonomous off, and says why.
     if (mode === "on" && until !== undefined && Date.parse(until) <= this.now().getTime()) {
@@ -554,7 +547,6 @@ export class AutonomyService {
     await this.resumeWaiting();
     await this.checkWaits();
     this.driver?.sweep();
-    await this.dailySummary();
   }
 
   /** A turn was recorded: an autonomous one may have reached a cap. */
@@ -1472,8 +1464,7 @@ export class AutonomyService {
     );
     this.deps.events.emit(["autonomy", "captain"]);
     if (answer === "raise") {
-      await this.noteCaps();
-      // Looks at the spend again with the raise: the hold lifts and what it held starts.
+        // Looks at the spend again with the raise: the hold lifts and what it held starts.
       await this.refreshHolds();
     }
     return this.budgetAsks();
@@ -2198,7 +2189,6 @@ export class AutonomyService {
       { autonomy: toFile(next, patch) },
       { command: change.command, meta: change.meta, summary: describePatch(patch, sections) },
     );
-    await this.noteCaps();
     await this.refreshHolds();
     await this.liftCaps();
     this.deps.events.emit(["autonomy"]);
@@ -2629,124 +2619,43 @@ export class AutonomyService {
     return ok({ item: answered });
   }
 
-  // ---------------------------------------------------------------------------
-  // The daily summary (rule 10)
-
   /**
-   * At `summary_at` in the owner's zone, once per local day: stored once, said in the chat, written
-   * to the feed. Made whatever the mode: Off it reports the captain's upkeep and the spend. A day with
-   * the mode off all through and nothing done or spent makes none. It alerts nobody: it is not a decision.
+   * What autonomous mode did in one workspace in a span (UTC ISO, `to` excluded) and what it cost, as counts for the
+   * morning brief (SPEC 5.18). Only that workspace's events, upkeep and turns are read. Read-only: it writes nothing
+   * and asks no model.
    */
-  async dailySummary(): Promise<AutonomySummary | undefined> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const tz = zoneOr(settings.tz);
-    const now = this.now();
-    const today = localDay(now, tz);
-    const due = summaryDue(today, settings.summary_at, tz);
-    if (now.getTime() < due.getTime()) return undefined;
-    // Made today, about yesterday: the day the caps and the spend belong to.
-    const day = addDays(today, -1);
-    if (this.repo.hasSummary(day)) return undefined;
-    const from = dayStart(day, tz).toISOString();
-    const to = dayStart(today, tz).toISOString();
-    const state = this.repo.state();
-    const wasOn =
-      (state.mode !== "off" && (state.since === undefined || state.since <= to)) ||
-      this.repo.modeChangedBetween(from, to);
-    const events = this.repo.eventsBetween(from, to);
-    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter((a) => a.outcome === "done");
-    const tasks = new Map<string, { title: string; org?: string }>();
-    for (const e of events) {
-      if (e.task === undefined || tasks.has(e.task)) continue;
-      const t = this.deps.store.tasks.get(e.task);
-      if (t !== undefined) tasks.set(e.task, { title: t.title, ...orgOf(t) });
-    }
-    // The caps that applied that day, not today's. A day nothing noted (before majhi kept them) has none.
-    const noted = this.repo.dayCaps(day);
-    const caps = {
-      ...(noted?.caps.day === undefined ? {} : { day: noted.caps.day }),
-      orgs: Object.fromEntries(Object.entries(noted?.caps.orgs ?? {}).map(([org, cap]) => [org, { cap }])),
-    };
-    const spend = withChanged(
-      spendOf(this.repo.spendRows(from, to, this.spendChats()), caps, { day, end: to }, tz),
-      noted?.changed ?? [],
+  async overnight(
+    from: string,
+    to: string,
+    org: string,
+  ): Promise<Overnight & { took: number; spent: number; budget?: number }> {
+    const events = this.repo.eventsBetween(from, to).filter((e) => (e.org ?? PRIVATE) === org);
+    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter(
+      (a) => a.outcome === "done" && a.org === org,
     );
-    const spentSomething = spend.total.used.cost > 0 || spend.total.used.tokens > 0;
-    if (!wasOn && events.length === 0 && upkeep.length === 0 && !spentSomething) return undefined;
-    for (const a of upkeep) {
-      if (a.task === undefined || tasks.has(a.task)) continue;
-      const t = this.deps.store.tasks.get(a.task);
-      if (t !== undefined) tasks.set(a.task, { title: t.title, ...orgOf(t) });
-    }
-    const names = new Map<string, string>();
-    for (const org of new Set([
-      PRIVATE,
-      ...spend.orgs.map((o) => o.org),
-      ...[...tasks.values()].map((t) => t.org ?? PRIVATE),
-    ])) {
-      names.set(org, await this.orgName(org));
-    }
-    const summary = buildSummary({
-      day,
-      from,
-      to,
-      at: now.toISOString(),
-      events,
-      tasks,
-      spent: { total: spend.total, orgs: spend.orgs },
-      waiting: this.waiting(),
-      upkeep,
-      decisions: await (this.deps.decisions?.() ?? Promise.resolve([])).catch(() => []),
-      queue: state.queue,
-      names,
-    });
-    if (!this.repo.addSummary(summary)) return undefined;
-    const line = summaryLine(summary);
-    // The summary is the Today brief and the Captain sheet: it is not pasted into the workspaces' threads.
-    this.event({ kind: "summary", text: line });
-    this.deps.notify?.(summary, line);
-    return summary;
-  }
-
-  /**
-   * What autonomous mode did in a span (UTC ISO, `to` excluded) and what it cost, as counts for the morning
-   * brief (SPEC 5.18). Read-only: it writes nothing and asks no model.
-   */
-  async overnight(from: string, to: string): Promise<Overnight & { spent: number; budget?: number }> {
-    const events = this.repo.eventsBetween(from, to);
-    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter((a) => a.outcome === "done");
     const found = overnightOf({
       events,
       title: (task) => this.deps.store.tasks.get(task)?.title,
       upkeep,
     });
-    const spent = this.repo.spendRows(from, to, this.spendChats()).reduce((n, r) => n + r.cost, 0);
-    const cap = (await this.deps.config.settings()).autonomy.day.cost;
-    return { ...found, spent: Math.round(spent * 100) / 100, ...(cap === undefined ? {} : { budget: cap }) };
+    const spent = this.repo.spendRows(from, to, this.spendChats()).find((r) => r.org === org)?.cost ?? 0;
+    const settings = (await this.deps.config.settings()).autonomy;
+    const cap = settings.orgs[org]?.cap?.cost ?? settings.day.cost;
+    return {
+      ...found,
+      took: this.repo.tookBetween(from, to).get(org) ?? 0,
+      spent: Math.round(spent * 100) / 100,
+      ...(cap === undefined ? {} : { budget: cap }),
+    };
   }
 
-  /** The titles of what the captain plans next, in its queue's order, for the brief and Today. */
-  queueTitles(max: number): string[] {
+  /** The titles of what the captain plans next in a workspace, in its queue's order, for the brief. */
+  queueTitles(max: number, org: string): string[] {
     return this.repo
       .state()
-      .queue.slice(0, max)
+      .queue.filter((q) => (q.org ?? PRIVATE) === org)
+      .slice(0, max)
       .map((q) => q.title);
-  }
-
-  /** Notes today's caps, so the summary of today compares against what applied. Never throws. */
-  private async noteCaps(): Promise<void> {
-    try {
-      const saved = (await this.deps.config.settings()).autonomy;
-      const settings = withRaises(saved, this.repo.raisedBudgets(localDay(this.now(), zoneOr(saved.tz))));
-      const orgs: Record<string, Budget> = {};
-      for (const [org, o] of Object.entries(settings.orgs)) if (o.cap !== undefined) orgs[org] = o.cap;
-      this.repo.noteCaps(localDay(this.now(), zoneOr(settings.tz)), {
-        ...(settings.day === undefined ? {} : { day: settings.day }),
-        orgs,
-      });
-    } catch {
-      // The database closed under a shutdown, or the settings do not read: the next sweep notes them.
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2828,7 +2737,6 @@ export class AutonomyService {
     const chat = lanes.find((l) => l.chat !== undefined)?.chat ?? this.chat();
     const nowDoing =
       chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
-    const summary = this.repo.latestSummary();
     const after = this.repo.state();
     return {
       mode: after.mode,
@@ -2860,7 +2768,6 @@ export class AutonomyService {
       waiting: detail ? this.waiting() : [],
       settings: m.settings,
       raised: m.raised,
-      ...(summary === undefined ? {} : { summary }),
       ...(after.lastTick === undefined ? {} : { lastTick: after.lastTick }),
     };
   }
@@ -3156,11 +3063,6 @@ function instructionId(): string {
 
 export { zoneOr };
 
-/** When the day's summary is due: `HH:MM` on that local day. */
-export function summaryDue(day: string, clock: string, tz: string): Date {
-  return briefDue(day, clock, tz);
-}
-
 function ok(output: unknown): ToolResult {
   return { text: JSON.stringify(redact(output), null, 2) ?? "ok", isError: false };
 }
@@ -3172,16 +3074,6 @@ function fail(text: string): ToolResult {
 function invalid(command: string, error: z.ZodError): ToolResult {
   const details = error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
   return fail(`Invalid input for ${command}.\n${details.join("\n")}`);
-}
-
-/** Marks the caps that moved during the day: `day` for the day cap, else the org. */
-function withChanged(spend: AutonomySpend, changed: readonly string[]): AutonomySpend {
-  if (changed.length === 0) return spend;
-  return {
-    ...spend,
-    total: changed.includes("day") ? { ...spend.total, changed: true } : spend.total,
-    orgs: spend.orgs.map((o) => (changed.includes(o.org) ? { ...o, changed: true } : o)),
-  };
 }
 
 /** A backlog task with its size and why the pick rules leave it out, if they do. */

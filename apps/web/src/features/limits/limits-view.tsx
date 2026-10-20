@@ -232,14 +232,14 @@ function LimitsForm({
                 <BudgetAskCard key={ask.scope} ask={ask} />
               ))}
               <div className="flex min-w-0 items-center gap-3 border-t border-line pt-2.5 text-sm">
-                <label htmlFor={`${ids}-summary`} className="min-w-0 flex-1 text-fg-soft">
-                  Daily summary at
+                <label htmlFor={`${ids}-brief`} className="min-w-0 flex-1 text-fg-soft">
+                  Morning brief at
                 </label>
                 <Input
-                  id={`${ids}-summary`}
+                  id={`${ids}-brief`}
                   type="time"
-                  value={form.summaryAt}
-                  onChange={(e) => edit({ summaryAt: e.target.value })}
+                  value={form.briefAt}
+                  onChange={(e) => edit({ briefAt: e.target.value })}
                   className="h-8 w-[124px] px-2"
                 />
               </div>

@@ -17,7 +17,7 @@ import {
 } from "@majhi/shared";
 import { z } from "zod";
 import { oneLine } from "../notify/attention.ts";
-import type { BugRow, ClientLine, IncidentRow, TaskStatusRow } from "../store/notices.ts";
+import type { BriefNoticeRow, BugRow, ClientLine, IncidentRow, TaskStatusRow } from "../store/notices.ts";
 
 /** Everything the feed is made from, read once. The feed is a pure function of this. */
 export interface FeedSources {
@@ -26,6 +26,7 @@ export interface FeedSources {
   clientLines: readonly ClientLine[];
   taskStatuses: readonly TaskStatusRow[];
   bugs: readonly BugRow[];
+  briefs: readonly BriefNoticeRow[];
   incidents: readonly IncidentRow[];
   deploys: readonly DeployRecord[];
   /** `project · Name` of the tasks the feed names: an id is internal and never shows. */
@@ -381,6 +382,33 @@ function bugNotices(rows: readonly BugRow[]): Omit<Notice, "read">[] {
   }));
 }
 
+/** A morning brief: the captain's, one per workspace and day. The row says the first line; the rest is one click away. */
+function briefNotices(rows: readonly BriefNoticeRow[]): Omit<Notice, "read">[] {
+  return rows.flatMap((b) => {
+    let first: string | undefined;
+    try {
+      const lines: unknown = JSON.parse(b.lines);
+      if (Array.isArray(lines) && typeof lines[0] === "string") first = lines[0];
+    } catch {
+      first = undefined;
+    }
+    if (first === undefined) return [];
+    return [
+      {
+        id: `brief:${b.day}:${b.org}`,
+        kind: "brief" as const,
+        org: b.org,
+        at: b.at,
+        subject: didWords(CAPTAIN, "wrote the morning brief"),
+        detail: oneLine(first),
+        by: "captain" as const,
+        needsYou: false,
+        link: { kind: "page" as const, page: "captain" as const },
+      },
+    ];
+  });
+}
+
 function updateNotices(update: UpdateStatus | undefined, since: string): Omit<Notice, "read">[] {
   if (update === undefined || update.state === "running" || update.startedAt < since) return [];
   return [
@@ -416,6 +444,7 @@ export function buildFeed(src: FeedSources): NoticeList {
     ...deployNotices(src.deploys, src.labels),
     ...incidentNotices(src.incidents, waiting, src.since),
     ...bugNotices(src.bugs),
+    ...briefNotices(src.briefs),
     ...updateNotices(src.update, src.since),
   ];
   const { seen, rows } = src.marks;

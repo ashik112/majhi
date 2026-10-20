@@ -2108,6 +2108,32 @@ ALTER TABLE tasks DROP COLUMN no_autonomy;
 ALTER TABLE autonomy_state ADD COLUMN until TEXT;
 `,
   },
+  {
+    // Captain, step 5: a morning brief per workspace replaces the owner's agenda brief and the daily summary.
+    // `brief_pushes` is the once-per-day rule for the one combined push to the owner's alert channels.
+    id: 198,
+    name: "workspace briefs",
+    sql: `
+CREATE TABLE workspace_briefs (
+  day TEXT NOT NULL,
+  org TEXT NOT NULL,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  lines TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  quiet INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, org)
+);
+CREATE TABLE brief_pushes (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+DROP TABLE IF EXISTS morning_briefs;
+DROP TABLE IF EXISTS agenda_settings;
+DROP TABLE IF EXISTS autonomy_summaries;
+DROP TABLE IF EXISTS autonomy_day_caps;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -149,6 +149,13 @@ export class OwnerTelegram {
     return this.deliver(s, s.chat, text);
   }
 
+  /** One plain message to the paired chat, for what is not an incident (the morning brief). Never throws. */
+  async say(text: string): Promise<{ sent: boolean; error?: string }> {
+    const s = this.load();
+    if (s?.chat === undefined) return { sent: false, error: "Telegram is not set up." };
+    return this.deliver(s, s.chat, text);
+  }
+
   async test(): Promise<{ sent: boolean; error?: string }> {
     const s = this.load();
     if (s?.chat === undefined) return { sent: false, error: "Telegram is not set up." };

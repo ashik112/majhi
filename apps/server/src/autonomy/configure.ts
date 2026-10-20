@@ -55,7 +55,7 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
       window: patch.floors?.window ?? current.floors.window,
       weekly: patch.floors?.weekly ?? current.floors.weekly,
     },
-    summary_at: patch.summary_at ?? current.summary_at,
+    brief_at: patch.brief_at ?? current.brief_at,
     ...(tz === undefined ? {} : { tz }),
   };
 }
@@ -69,7 +69,7 @@ export function toFile(
     ...(patch.day === undefined ? {} : { day: next.day }),
     ...(patch.orgs === undefined ? {} : { orgs: next.orgs }),
     ...(patch.floors === undefined ? {} : { floors: next.floors }),
-    ...(patch.summary_at === undefined ? {} : { summary_at: next.summary_at }),
+    ...(patch.brief_at === undefined ? {} : { brief_at: next.brief_at }),
     ...(patch.tz === undefined ? {} : { tz: next.tz }),
   };
 }
@@ -97,7 +97,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   }
   if (patch.floors?.window !== undefined) parts.push(`the 5-hour floor to ${patch.floors.window}%`);
   if (patch.floors?.weekly !== undefined) parts.push(`the weekly floor to ${patch.floors.weekly}%`);
-  if (patch.summary_at !== undefined) parts.push(`the daily summary to ${patch.summary_at}`);
+  if (patch.brief_at !== undefined) parts.push(`the morning brief to ${patch.brief_at}`);
   if (patch.tz !== undefined) parts.push(`the time zone to ${patch.tz}`);
   const lines = [
     ...(own.length === 0 ? [] : [`set ${own.join(", ")}`]),

@@ -36,7 +36,7 @@ import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
 
-/** How often the daily chores, the hourly checks and the daily summary are looked at. */
+/** How often the daily chores, the hourly checks and the morning brief are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const _HOURLY_MS = 60 * 60_000;
@@ -91,7 +91,7 @@ export interface CaptainDeps {
 
 /**
  * The captain per workspace (SPEC 5.18): the choice per workspace, the upkeep chores under the
- * runner's guards, the stop switch, presence, the cause of events, the daily summary line and the
+ * runner's guards, the stop switch, presence, the cause of events, the morning brief and the
  * captain's log with Undo. The rules are in docs/PROGRESS.md under Phase 13.
  */
 export class CaptainService {
