@@ -1,0 +1,28 @@
+# Installed as /etc/codex/requirements.toml in the runner image. Codex reads it as a managed requirement: nothing the
+# agent writes to its own CODEX_HOME can turn these off, and the files are root's, which an agent's uid cannot write.
+#
+# majhi starts Codex in full access in a runner (INITIAL_AGENT_MODE, packages/acp/src/tools/codex.ts), because
+# Codex's own sandbox, bubblewrap, needs user namespaces that Docker's default seccomp profile refuses. This hook
+# asks majhi before every tool call instead, and majhi decides as it does for any agent (docker/codex/hook.mjs).
+allow_managed_hooks_only = true
+
+[features]
+hooks = true
+# Without it Codex keeps shells open and `write_stdin` types into them, and `write_stdin` has no PreToolUse hook.
+# A command then runs to its end (or its timeout) and cannot be fed more commands afterwards.
+unified_exec = false
+
+[hooks]
+managed_dir = "/etc/codex/hooks"
+
+[[hooks.PreToolUse]]
+# Every tool: shell commands, file edits (`apply_patch`) and MCP calls (`mcp__<server>__<tool>`).
+matcher = ".*"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+# Absolute: the hook must not depend on a PATH or a profile the agent can reach.
+command = "/usr/local/bin/node /etc/codex/hooks/majhi-pretool.mjs"
+# Seconds. Codex 0.158.0 has no upper bound (u64, default 600) and lets a call run when its hook times out, so
+# this is longer than the script's own deadline (3585 s in hook.mjs), which denies first.
+timeout = 3600
