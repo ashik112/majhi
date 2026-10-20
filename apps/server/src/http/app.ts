@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { type ApiError, COMMAND_META_HEADER, type Health } from "@majhi/shared";
+import { type ApiError, COMMAND_META_HEADER, type CaptainPlace, type Health } from "@majhi/shared";
 import { Hono } from "hono";
 import { mcpRoutes } from "../admin/mcp.ts";
 import type { AdminService } from "../admin/service.ts";
-import type { AdminTokens } from "../admin/tokens.ts";
+import type { AdminCaller, AdminTokens } from "../admin/tokens.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import { connectRoutes } from "../connect/routes.ts";
 import type { ConnectService } from "../connect/service.ts";
@@ -44,7 +44,7 @@ export interface AppDeps {
   /** The phone's action links at `/ops/phone/...` (single-use signed tokens). */
   phone?: PhoneChannel;
   /** The majhi-admin MCP server at `/mcp`. */
-  mcp?: { tokens: AdminTokens; admin: AdminService };
+  mcp?: { tokens: AdminTokens; admin: AdminService; placeOf: (caller: AdminCaller) => CaptainPlace };
   /** The majhi-decide MCP server at `/mcp/decide`. */
   decideMcp?: DecideMcpDeps;
   /** majhi-room at `/mcp/room` and majhi-tasks at `/mcp/tasks`. */

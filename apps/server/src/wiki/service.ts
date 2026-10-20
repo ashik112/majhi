@@ -51,6 +51,23 @@ import { hintFacts } from "./writer/hints.ts";
 import { plainWords } from "./writer/plain.ts";
 import { tokensOf, wikiSpendId, writePages } from "./writer/write.ts";
 
+/** A page's text without its citation marks, `[3]`. */
+function withoutCitations(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "[") {
+      const close = text.indexOf("]", i);
+      const inside = close > i + 1 ? text.slice(i + 1, close) : "";
+      if (inside !== "" && [...inside].every((ch) => ch >= "0" && ch <= "9")) {
+        i = close;
+        continue;
+      }
+    }
+    out += text[i];
+  }
+  return out;
+}
+
 /** What phase 0 measured for the writer: tokens for one page. The estimate multiplies it by the pages to write. */
 export const TOKENS_PER_PAGE = 45_000;
 /** Pages a first build is expected to write (overview, infra, a handful of components and the main flows), for an estimate made before the facts are read. */
@@ -267,6 +284,35 @@ export class WikiService {
   /** The base branch of a project moved: the pages may now be behind, so the UI looks again. */
   tipMoved(): void {
     this.deps.changed();
+  }
+
+  /**
+   * The start of each project's overview page, for the captain's turn: what the projects are, in a few lines,
+   * cut to `max` characters in all. Undefined when the wiki is off for the workspace or holds no overview yet.
+   * A read of the store: no reader, no model.
+   */
+  async summary(org: string, max: number): Promise<string | undefined> {
+    if (!(await this.deps.enabled(org))) return undefined;
+    const projects = await this.projectsOf(org, undefined);
+    const lines: string[] = [];
+    let used = 0;
+    for (const project of projects) {
+      const stored = this.deps.repo.page(org, project.id, wikiPageId({ kind: "overview" }));
+      if (stored === undefined) continue;
+      // The first paragraph that is prose, without the citation marks.
+      const first = stored.page.body
+        .split("\n\n")
+        .map((p) => p.trim())
+        .find((p) => p !== "" && !p.startsWith("#"));
+      if (first === undefined) continue;
+      const room = max - used - project.id.length - 4;
+      if (room < 80) break;
+      const text = withoutCitations(first).split("\n").join(" ");
+      const line = `- ${project.id}: ${text.length > room ? `${text.slice(0, room - 1).trimEnd()}…` : text}`;
+      lines.push(line);
+      used += line.length;
+    }
+    return lines.length === 0 ? undefined : lines.join("\n");
   }
 
   /** Projects of a workspace with a wiki that is behind the base branch (or written by older rules): what Auto-pilot would update. */

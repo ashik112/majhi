@@ -7,6 +7,7 @@ import { type Command, dockerTty, localSpawner, orphanRuns, type RuntimeOptions 
 import {
   BUILT_IN_CONNECT_APPS,
   CLIENT_CHAT_BRIEF,
+  type CaptainPlace,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
   durationMs,
@@ -36,7 +37,7 @@ import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
 import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
-import { AdminTokens } from "./admin/tokens.ts";
+import { type AdminCaller, AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
 import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
@@ -61,6 +62,7 @@ import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
 import { CannotRunDecisions } from "./captain/cannot-run.ts";
+import { TurnContext } from "./captain/context.ts";
 import { StepGuard } from "./captain/step.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
@@ -377,6 +379,8 @@ export interface Services {
   installRequests: InstallRequests;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
+  /** The captain's place for a session: its tools follow it (`CAPTAIN_PLACES`). */
+  placeOf: (caller: AdminCaller) => CaptainPlace;
   /** The captain's tool calls, approvals and secret requests. */
   admin: AdminService;
   agents: AgentService;
@@ -1253,6 +1257,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
   });
   const pointersRef: { current: Pointers | undefined } = { current: undefined };
+  const turnContextRef: { current: TurnContext | undefined } = { current: undefined };
   const tidyFolders: { run?: (ended: string | undefined) => Promise<void> } = {};
   const tasks = new TaskService({
     mergeGate,
@@ -1285,6 +1290,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     terminals,
     memory,
     memoryScopes,
+    turnContext: (task) => turnContextRef.current?.blockFor(task) ?? Promise.resolve(undefined),
     onChatTurn: (id) => void chatMemory?.afterTurn(id),
     onOpened: (task) => pointersRef.current?.opened(task),
     onDone: async (task) => {
@@ -2148,6 +2154,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   );
   admin.useAutonomy(autonomy);
+  turnContextRef.current = new TurnContext({
+    config,
+    laneOrg: (chat) => lanes.orgOf(chat),
+    autonomous: () => ({ mode: captainRepo.isStopped() ? "off" : autonomy.mode() }),
+    wiki: (org, max) => wiki.summary(org, max),
+  });
   const stepGuard = new StepGuard({ config, agents: agentStore, store });
   admin.useStrays((command, input) => stepGuard.refusal(command, input));
   admin.useProposals({
@@ -3481,6 +3493,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     installRequests,
     connectionTests,
     adminTokens,
+    placeOf: (caller) => {
+      // The on-call lane answers what waits, the main lane works, the owner's own chat talks.
+      const job = captainRepo.laneJob(caller.task);
+      return job === "reacting" ? "needs" : job === "backlog" ? "work" : "chat";
+    },
     admin,
     agents,
     agentStore,

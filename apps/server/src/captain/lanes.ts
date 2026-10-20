@@ -276,21 +276,18 @@ export class Lanes {
   }
 
   /**
-   * The captain's ask to a workspace's step, written in its lane as the captain's own message so the one
-   * conversation shows it, and sent to the step. Not sent when no account may run it.
+   * The captain's ask to a workspace's step, written in its main lane as the captain's own message so the one
+   * conversation shows it, and sent to the step. What the owner asked for is not held by the backlog's budgets
+   * (as an incident is not), and it works whatever Autonomous says. Not sent when no account may run it.
    */
-  async ask(
-    org: string,
-    text: string,
-    job: Job = "reacting",
-  ): Promise<{ sent: true; chat: string } | { sent: false; why: string }> {
+  async ask(org: string, text: string): Promise<{ sent: true; chat: string } | { sent: false; why: string }> {
     if (this.deps.halted?.() === true) return { sent: false, why: STOPPED_WHY };
     const picked = await this.account(org);
     if ("problem" in picked) return { sent: false, why: picked.problem };
-    const rest = await this.deps.rest?.(org, picked.account, job);
+    const rest = await this.deps.rest?.(org, picked.account, "reacting");
     if (rest !== undefined) return { sent: false, why: rest };
     try {
-      const chat = await this.ensure(org, job);
+      const chat = await this.ensure(org);
       const boss = chat.team[0];
       if (boss === undefined) return { sent: false, why: "the lane has no captain" };
       await this.deps.tasks.send({ task: chat.id, text, attachments: [], mode: "queue", by: boss });

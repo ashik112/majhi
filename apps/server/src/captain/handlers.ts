@@ -39,7 +39,7 @@ export function captainHandlers(
     "captain.log": async (input) => captain.log(input),
     "captain.step": async (input) => {
       // A step is the owner's own question put to one workspace, so it works whatever Autonomous says.
-      const told = await lanes.ask(input.org, input.ask, "reacting");
+      const told = await lanes.ask(input.org, input.ask);
       if (!told.sent) throw new UserError(`The step in ${input.org} did not start: ${told.why}.`, 409);
       return { org: input.org, chat: told.chat as TaskId };
     },

@@ -15,6 +15,7 @@ export * from "./backup.ts";
 export * from "./budgets.ts";
 export * from "./build-id.ts";
 export * from "./captain.ts";
+export * from "./captain-places.ts";
 export * from "./chat.ts";
 export * from "./chat-body.ts";
 export * from "./chores.ts";

@@ -259,6 +259,8 @@ export interface TaskDeps {
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
+  /** What the captain's chats start every turn with (`captain/context.ts`). */
+  turnContext?: (task: Task) => Promise<string | undefined>;
   /** An agent finished a turn in a chat: names it, and so on. Never awaited. */
   onChatTurn?: (id: string) => void;
   /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
@@ -3785,7 +3787,12 @@ export class TaskService {
     try {
       const task = this.deps.store.tasks.get(turn.task);
       if (task === undefined || task.team[0] !== turn.agent) return undefined;
-      if (isOwnerChat(task)) return await this.chatMemoryBlock(task);
+      if (isOwnerChat(task)) {
+        // The captain's chats start every turn with what it should know; any chat gets the memory of its projects.
+        const known = await this.deps.turnContext?.(task);
+        const memory = await this.chatMemoryBlock(task);
+        return [known, memory].filter((b): b is string => b !== undefined).join("\n\n") || undefined;
+      }
       const facts = await this.readFacts(task);
       if (facts === undefined) return undefined;
       await this.refreshBriefs([task.id]);

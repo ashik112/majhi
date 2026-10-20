@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CAPTAIN_PLACES, type CaptainPlace } from "@majhi/shared";
 import { Hono } from "hono";
 import { isLoopbackOrigin } from "../http/origin.ts";
 import type { AdminService } from "./service.ts";
@@ -9,16 +10,18 @@ import { adminTools } from "./tools.ts";
 
 export const MCP_PATH = "/mcp";
 
-const TOOLS = adminTools().map((t) => ({
-  name: t.name,
-  description: t.description,
-  inputSchema: t.inputSchema,
-}));
+/** The tool lists, one per place, built once. */
+const TOOLS = new Map<CaptainPlace, { name: string; description: string; inputSchema: unknown }[]>(
+  CAPTAIN_PLACES.map((place) => [
+    place,
+    adminTools(place).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+  ]),
+);
 
-/** A fresh MCP server for one request, bound to the agent that made it. */
-function serverFor(caller: AdminCaller, admin: AdminService): Server {
+/** A fresh MCP server for one request, bound to the agent that made it and offering the tools of its place. */
+function serverFor(caller: AdminCaller, admin: AdminService, place: CaptainPlace): Server {
   const server = new Server({ name: "majhi-admin", version: "1" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: TOOLS }));
+  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: TOOLS.get(place) ?? [] }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const args = request.params.arguments ?? {};
     const result = await admin.call(caller, request.params.name, args);
@@ -32,7 +35,12 @@ function serverFor(caller: AdminCaller, admin: AdminService): Server {
  * JSON answers). Every request needs the bearer token the run manager issued to that agent
  * session. A browser page from another origin is refused, like the command endpoint.
  */
-export function mcpRoutes(deps: { tokens: AdminTokens; admin: AdminService }): Hono {
+export function mcpRoutes(deps: {
+  tokens: AdminTokens;
+  admin: AdminService;
+  /** The place the caller works in: its tools follow it. */
+  placeOf: (caller: AdminCaller) => CaptainPlace;
+}): Hono {
   const app = new Hono();
   app.all(MCP_PATH, async (c) => {
     const origin = c.req.header("origin");
@@ -44,7 +52,7 @@ export function mcpRoutes(deps: { tokens: AdminTokens; admin: AdminService }): H
     if (caller === undefined) {
       return c.json({ error: "A valid bearer token is required" }, 401, { "www-authenticate": "Bearer" });
     }
-    const server = serverFor(caller, deps.admin);
+    const server = serverFor(caller, deps.admin, deps.placeOf(caller));
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
     await server.connect(transport);
     try {

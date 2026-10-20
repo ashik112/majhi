@@ -37,7 +37,7 @@ describe("the captain's steps from the All conversation", () => {
         ...args,
       });
     const spoken = (org: string): string => {
-      const chat = services.lanes.chat(org, "reacting");
+      const chat = services.lanes.chat(org);
       if (chat === undefined) throw new Error(`no step in ${org}`);
       return services.store.room
         .page(chat, 50)
@@ -48,7 +48,7 @@ describe("the captain's steps from the All conversation", () => {
     const acme = await call({ org: "acme", ask: "Check the checkout rounding in acme-api" });
     const globex = await call({ org: "globex", ask: "Check the invoice export in globex-web" });
     expect([acme.isError, globex.isError]).toEqual([false, false]);
-    expect(services.lanes.chat("acme", "reacting")).not.toEqual(services.lanes.chat("globex", "reacting"));
+    expect(services.lanes.chat("acme")).not.toEqual(services.lanes.chat("globex"));
     expect(spoken("acme")).toContain("checkout rounding in acme-api");
     expect(spoken("globex")).toContain("invoice export in globex-web");
     for (const word of ["Acme", "acme", "checkout"]) expect(spoken("globex")).not.toContain(word);

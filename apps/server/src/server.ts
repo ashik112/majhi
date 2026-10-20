@@ -121,7 +121,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         },
       }),
     },
-    mcp: { tokens: services.adminTokens, admin: services.admin },
+    mcp: { tokens: services.adminTokens, admin: services.admin, placeOf: services.placeOf },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
     roomMcp: {
       tasks: services.tasks,
