@@ -137,6 +137,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       processes: services.processes,
       handoff: services.handoff,
       captainStarts: (org) => services.autonomy.mayStartReacting(org ?? "private"),
+      codexHook: { decide: (caller, payload, signal) => services.runs.askCodexHook(caller, payload, signal) },
       ...(services.containers.available()
         ? {
             containers: {

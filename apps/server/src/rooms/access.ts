@@ -14,6 +14,9 @@ export const CONTAINERS_PATH = "/mcp/containers";
 /** The `docker` shim of a runner calls this (`docker/docker-shim.mjs`). Not an MCP server: a plain POST. */
 export const DOCKER_PATH = "/mcp/docker";
 
+/** The Codex hook of a runner (`docker/codex/hook.mjs`) asks here before every tool call. Not an MCP server: a plain POST. */
+export const CODEX_HOOK_PATH = "/mcp/codex-hook";
+
 /**
  * A repo's own `playwright test` connects here (`PW_TEST_CONNECT_WS_ENDPOINT`) with the run's token. A WebSocket
  * upgrade, handled in `sockets.ts`, not an MCP server.
@@ -38,6 +41,7 @@ export type ToolServer =
   | "connections"
   | "skills"
   | "docker"
+  | "codexHook"
   | "testBrowser";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
@@ -95,6 +99,8 @@ export class RoomAccess {
   readonly skills = new ToolTokens();
   /** Tokens of the `docker` shim: one per run, one per hand-off check. They only reach the caller's own task. */
   readonly docker = new ToolTokens();
+  /** Tokens of Codex's PreToolUse hook: one per Codex session. A token only asks about its own task and agent. */
+  readonly codexHook = new ToolTokens();
   /** Tokens for the test browser's WebSocket: one per run. They only reach the caller's own workspace. */
   readonly testBrowser = new ToolTokens();
 
@@ -146,6 +152,22 @@ export class RoomAccess {
     return {
       entry: { server: "docker", token },
       env: { MAJHI_DOCKER_URL: `${base}${DOCKER_PATH}`, MAJHI_DOCKER_TOKEN: token },
+    };
+  }
+
+  /**
+   * What a Codex session needs for its PreToolUse hook: where to ask and the session's token, as the two variables
+   * the hook script reads. Revoke `entry` with the session's other tokens, so a token never outlives its run.
+   */
+  attachCodexHook(caller: ToolCaller): {
+    entry: { server: "codexHook"; token: string };
+    env: Record<string, string>;
+  } {
+    const token = this.codexHook.issue(caller);
+    const base = this.mcpUrl().replace(/\/mcp$/, "");
+    return {
+      entry: { server: "codexHook", token },
+      env: { MAJHI_HOOK_URL: `${base}${CODEX_HOOK_PATH}`, MAJHI_HOOK_TOKEN: token },
     };
   }
 

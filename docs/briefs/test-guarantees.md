@@ -60,6 +60,10 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 44 | A destructive connection command asks even when the exact command is allow-listed. | `server/connections/gate.test.ts`: asks for kubectl delete even when allow holds the exact command |  |
 | 45 | An approval link from a phone is refused when altered, forged, for another reference or action, or taken from another decision. | `server/ops/phone.test.ts`: refuses a changed byte, a link that names another reference or action, a forged payload, and a token from another decision |  |
 | 46 | A secret in text is never saved as a memory (the sink agents feed directly; the other sinks share the detection in #6). | `server/memory/memory.test.ts`: refuses facts that hold a secret |  |
+| 46a | A Codex tool call that writes to a connection asks the owner through the managed hook, and is denied when the owner refuses (#43 and #44 for Codex). | `server/runs/codex-hook.test.ts`: asks the owner for %s, and is denied when the owner refuses | rows: a shell write to a held cluster / an MCP write in Codex's spelling of the server and tool (`acme_obs`, `reset_alerts`) |
+| 46b | A destructive command through the Codex hook asks even when the connection's `allow` holds it and the level is Full (#40 and #44 for Codex). | `server/runs/codex-hook.test.ts`: asks for a destructive command even when the connection allows it and the level is Full |  |
+| 46c | The Codex hook script fails closed (server down, garbage or error reply, no credential, no call, deadline reached) and lets a call run only on majhi's allow, with a deadline shorter than Codex's timeout. | `acp/runner/codex-hook.test.ts`: fails closed, and lets a call run only on majhi's allow |  |
+| 46d | The Codex hook endpoint answers only a session's own credential: none, a wrong one, another server's or one of a session that ended is refused, and each token asks for its own task and agent. | `server/rooms/codex-hook.test.ts`: answers only a session's own token |  |
 
 ## 2 Data loss and corruption (20)
 

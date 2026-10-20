@@ -64,6 +64,11 @@ export interface ToolDef extends ToolSpec {
    */
   runEnv?: Record<string, string>;
   /**
+   * Set on every agent session that runs in a runner container, never next to majhi. For Codex: the
+   * container is the sandbox (see docker/codex/requirements.toml), so the session starts without Codex's own.
+   */
+  containerEnv?: Record<string, string>;
+  /**
    * The CLI is started with the session's MCP servers on its command line, and expands `${NAME}`
    * in them from its environment. majhi then puts header and variable values in the environment
    * instead (`mcpValuesToEnv`), so no token shows in a process list. Absent when the CLI keeps

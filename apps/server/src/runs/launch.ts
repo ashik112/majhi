@@ -224,9 +224,15 @@ export async function launch(
   const dockerShim = on(CONTAINERS_SERVER_NAME) ? deps.rooms?.attachDocker(caller) : undefined;
   // A repo's own `playwright test` in this run gets the workspace's test browser (started when a test first connects).
   const testBrowser = deps.rooms?.attachTestBrowser(caller);
+  // A Codex session in a runner has no sandbox of its own (docker/codex/): its hook asks majhi before every tool call.
+  const codexHook =
+    deps.containerRunner === true && agent.account.tool === "codex"
+      ? deps.rooms?.attachCodexHook(caller)
+      : undefined;
   const roomTokens = [
     ...(rooms?.tokens ?? []),
     ...(dockerShim === undefined ? [] : [dockerShim.entry]),
+    ...(codexHook === undefined ? [] : [codexHook.entry]),
     ...(testBrowser === undefined ? [] : [testBrowser.entry]),
   ];
   // Before the mounts: they read each worktree's entry in its repo.
@@ -286,10 +292,18 @@ export async function launch(
       packages === undefined &&
       tools === undefined &&
       dockerShim === undefined &&
+      codexHook === undefined &&
       testBrowser === undefined
         ? {}
         : {
-            env: { ...packages?.env, ...held?.env, ...tools?.env, ...dockerShim?.env, ...testBrowser?.env },
+            env: {
+              ...packages?.env,
+              ...held?.env,
+              ...tools?.env,
+              ...dockerShim?.env,
+              ...codexHook?.env,
+              ...testBrowser?.env,
+            },
           }),
       ...(run.budget === undefined || run.budget.cap <= 0
         ? {}

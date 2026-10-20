@@ -242,11 +242,29 @@ ENV GRAPHIFY_NO_AUTO_REFRESH=1
 # They are here and not in the server: sign-in, the CLI version, the probe and the usage read run in a runner
 # container too (packages/acp tool-process.ts). Codex ships a voice host (67 MB) for its realtime voice feature,
 # which an ACP session never starts: removed in this layer (a later `rm` would not shrink the image). Its coding
-# CLI and code-mode host stay.
+# CLI and code-mode host stay. When the Codex version moves, read apps/server/src/runs/codex-hook.ts again: its list of
+# Codex's own tools, and how the hook names an MCP tool, come from this version's source.
 RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
   && find /usr/local/lib/node_modules/@agentclientprotocol -name codex-voice-host -type f -delete \
   && npm cache clean --force \
   && rm -rf /root/.npm
+# Codex's own sandbox (bubblewrap) needs user namespaces, which Docker's default seccomp profile refuses and Ubuntu's
+# AppArmor refuses again, so no Codex command runs in a runner until the sandbox is off (openai/codex#15678). majhi
+# starts Codex in full access here (packages/acp/src/tools/codex.ts) and the container is the sandbox. What the sandbox
+# would have asked, majhi asks through this managed PreToolUse hook (docker/codex/): `requirements.toml` pins it, so
+# nothing in the agent's own CODEX_HOME turns it off. The folders and files are root's and nobody else can write
+# them: the agent runs as the owner's uid with no capabilities (docker/majhi-netguard). The modes are set by hand,
+# because `COPY --chmod` would give the folders the file's mode too, and a folder Codex cannot enter means no hook,
+# which Codex does not report. The last step runs the script as an unprivileged user, with no session: Codex lets a
+# call run when its hook cannot start, so a hook that cannot run must stop the build.
+COPY docker/codex/requirements.toml /etc/codex/requirements.toml
+COPY docker/codex/hook.mjs /etc/codex/hooks/majhi-pretool.mjs
+RUN chown -R root:root /etc/codex \
+  && chmod 0755 /etc/codex /etc/codex/hooks /etc/codex/hooks/majhi-pretool.mjs \
+  && chmod 0644 /etc/codex/requirements.toml \
+  && echo '{}' | setpriv --reuid 65534 --regid 65534 --clear-groups /usr/local/bin/node /etc/codex/hooks/majhi-pretool.mjs \
+     | grep -q '"permissionDecision":"deny"' \
+  && setpriv --reuid 65534 --regid 65534 --clear-groups grep -q 'allow_managed_hooks_only = true' /etc/codex/requirements.toml
 # One apt layer, no recommends, lists removed.
 #  - python3, make, g++, curl: native modules and scripts of the projects agents work on. A non-root run cannot
 #    apt install, so these stay baked in.

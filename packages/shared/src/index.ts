@@ -21,6 +21,7 @@ export * from "./chat-body.ts";
 export * from "./chores.ts";
 export * from "./cleanup.ts";
 export * from "./cli-tools.ts";
+export * from "./codex-hook.ts";
 export * from "./command-risk.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
