@@ -62,7 +62,9 @@ export class CleanupService {
     const age = cachesOnly ? (cachesAfterDays ?? 0) : days;
     const done = this.deps.store.tasks.doneBefore(this.cutoff(age));
     // Four queries for all of them, not four per task.
-    const loaded = new Map(this.deps.store.tasks.getMany(done.map((d) => d.id)).map((t) => [t.id as string, t]));
+    const loaded = new Map(
+      this.deps.store.tasks.getMany(done.map((d) => d.id)).map((t) => [t.id as string, t]),
+    );
     for (const { id, doneAt } of done) {
       const task = loaded.get(id);
       if (task === undefined) continue;
