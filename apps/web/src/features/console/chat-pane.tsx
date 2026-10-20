@@ -1,6 +1,7 @@
 import { type OrgView, type TaskSummary, taskLabel } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
-import { lazy, Suspense, useMemo } from "react";
+import { ChevronDown } from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Menu } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentEntryOptions } from "@/features/chats/new-chat-options";
@@ -17,7 +18,20 @@ const ChatBody = lazy(() => import("./chat-body"));
 /** The id of the pseudo chat for client chats that wait to be linked (see `chat-body.tsx`). */
 const NEW_CHATS = "new-chats";
 
-/** The header of a task's chat: `project · Name`, its workspace, the three lines and the facts. */
+const HEADER_OPEN_KEY = "majhi.taskHeader.open";
+
+function readHeaderOpen(): boolean {
+  try {
+    return window.localStorage.getItem(HEADER_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The header of a task's chat, a raised card above the conversation: workspace, `project · Name` and the facts on one
+ * line, then Now. Next and Done when open with the chevron, which is remembered.
+ */
 function TaskHeader({
   task,
   hues,
@@ -27,17 +41,29 @@ function TaskHeader({
   hues: ReadonlyMap<string, number>;
   orgs: readonly OrgView[] | undefined;
 }) {
+  const [open, setOpen] = useState(readHeaderOpen);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      window.localStorage.setItem(HEADER_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // Without storage the choice lasts until the page reloads.
+    }
+  };
   const branch = task.repos[0]?.branch;
   const facts = [
-    branch,
     `${task.team.length} ${task.team.length === 1 ? "agent" : "agents"}`,
     task.priority !== undefined && task.priority !== "normal" ? `${task.priority} priority` : undefined,
     task.due === undefined ? undefined : `due ${task.due}`,
+    open ? branch : undefined,
   ].filter((f): f is string => f !== undefined);
   const project = projectOf(task);
+  const more = task.next !== undefined || task.doneWhen !== undefined;
   return (
     <div className="cs-th" style={wsStyle(hues, task.org)}>
       <div className="cs-t">
+        <WorkspaceTag name={workspaceName(orgs, task.org)} org={task.org} hues={hues} />
         <Link
           to="/t/$taskId"
           params={{ taskId: task.id }}
@@ -47,25 +73,40 @@ function TaskHeader({
           {project !== "" && <span className="cs-p">{project} · </span>}
           {nameOf(task)}
         </Link>
+        <span className="cs-facts">
+          {facts.map((f) => (
+            <span key={f} className="cs-fact">
+              {f}
+            </span>
+          ))}
+        </span>
+        {more && (
+          <button
+            type="button"
+            className="cs-th-more"
+            aria-expanded={open}
+            aria-label={open ? "Hide Next and Done when" : "Show Next and Done when"}
+            onClick={toggle}
+          >
+            <ChevronDown aria-hidden="true" className="size-4" />
+          </button>
+        )}
       </div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
-        <WorkspaceTag name={workspaceName(orgs, task.org)} org={task.org} hues={hues} />
-      </div>
-      {(task.now !== undefined || task.next !== undefined || task.doneWhen !== undefined) && (
-        <div className="cs-kv">
+      {(task.now !== undefined || (open && more)) && (
+        <div className="cs-kv" data-open={open || undefined}>
           {task.now !== undefined && (
             <>
               <i>Now</i>
-              <span>{task.now}</span>
+              <span title={task.now}>{task.now}</span>
             </>
           )}
-          {task.next !== undefined && (
+          {open && task.next !== undefined && (
             <>
               <i>Next</i>
               <span>{task.next}</span>
             </>
           )}
-          {task.doneWhen !== undefined && (
+          {open && task.doneWhen !== undefined && (
             <>
               <i>Done when</i>
               <span>{task.doneWhen}</span>
@@ -73,13 +114,6 @@ function TaskHeader({
           )}
         </div>
       )}
-      <div className="cs-facts">
-        {facts.map((f) => (
-          <span key={f} className="cs-fact">
-            {f}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }

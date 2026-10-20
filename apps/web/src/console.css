@@ -664,6 +664,12 @@
   color: var(--c-fg);
   overflow-wrap: anywhere;
 }
+/* The whole text of a done item, read in place: its own lines, scrolling when long. */
+.cs-det .cs-q[data-full="true"] {
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+}
 .cs-det .cs-q .cs-lbl {
   color: var(--c-fg-muted);
   margin-right: 8px;
@@ -1007,11 +1013,16 @@
 .cs-opt[data-current] .cs-t {
   font-weight: 600;
 }
+/* A raised card above the conversation, so it is clear where the conversation begins. */
 .cs-th {
-  padding: 8px 14px 10px;
+  margin: 2px 10px 6px;
+  padding: 8px 10px 8px 12px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
   flex: none;
+  background: var(--c-raised);
+  border: 1px solid var(--c-line);
+  border-radius: 10px;
 }
 .cs-th .cs-t {
   display: flex;
@@ -1024,6 +1035,36 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.cs-th .cs-t .cs-facts {
+  margin-left: auto;
+  flex: none;
+  flex-wrap: nowrap;
+}
+.cs-th-more {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--c-fg-muted);
+  cursor: pointer;
+}
+.cs-th-more:hover {
+  background: var(--c-selected, var(--c-line));
+  color: var(--c-fg);
+}
+.cs-th-more[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+/* Folded, each line is one line; open, they wrap in full. */
+.cs-th .cs-kv:not([data-open]) span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cs-th .cs-t .cs-p {
   color: var(--ws, var(--c-fg-muted));

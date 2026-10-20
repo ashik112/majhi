@@ -43,6 +43,8 @@ export const NoticeSchema = z.object({
   subject: z.string().min(1).max(200),
   /** The task title, or the speaker and words. One line. */
   detail: z.string().max(300).optional(),
+  /** The whole text, read in place: a reply the captain sent, a morning brief. */
+  body: z.string().max(4000).optional(),
   /** It waits for the owner: a decision. Such a row carries `answer` when one click can answer it. */
   /** Who did it, for what the captain did by itself: a deploy it started that went live. */
   by: z.enum(["owner", "captain"]).optional(),
