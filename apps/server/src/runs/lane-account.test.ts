@@ -68,6 +68,11 @@ describe("the captain's account in a workspace's step", () => {
     const named = lanes({ acme: { account: "claude-acme" } });
     expect(await named.account("acme")).toEqual({ account: "claude-acme", own: false });
     expect(await named.account("globex")).toEqual({ account: "claude-own", own: true });
+    // The owner's own account named for a workspace runs it too (a setting kept from before the one captain).
+    expect(await lanes({ acme: { account: "claude-own" } }).account("acme")).toEqual({
+      account: "claude-own",
+      own: true,
+    });
     // Another workspace's account is refused, whatever is asked.
     expect(await lanes({ acme: { account: "claude-globex" } }).account("acme")).toMatchObject({
       why: "account-of-another-workspace",
