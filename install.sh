@@ -225,6 +225,70 @@ add_secret_tool() {
   fi || say "Could not install secret-tool. majhi still runs; the warning below says what to do"
 }
 
+# Asks a yes or no question on the terminal, even when the script itself arrives on stdin through a pipe.
+# No terminal, no yes: nothing is installed without the owner saying so.
+ask() {
+  ( : </dev/tty ) 2>/dev/null || return 1
+  printf '%s [Y/n] ' "$1" >/dev/tty
+  read -r answer </dev/tty || return 1
+  case $answer in "" | y | Y | yes | Yes | YES) return 0 ;; *) return 1 ;; esac
+}
+
+# majhi runs in Docker. When it is missing the installer offers to add it: Docker Engine on Linux through
+# Docker's own install script (it sets up Docker's package repository, Compose and Buildx), the distro's
+# packages on Arch, and OrbStack through Homebrew on macOS. A no, or a failure, leaves scripts/check.sh to
+# stop with the manual step. On Linux the owner joins the docker group; `with_docker` covers this session.
+add_docker() {
+  command -v docker >/dev/null 2>&1 && return 0
+  case $1 in
+    linux)
+      root=
+      if [ "$(id -u)" != 0 ]; then
+        command -v sudo >/dev/null 2>&1 || return 0
+        root=sudo
+      fi
+      ask "Docker is not installed. Install Docker Engine now? It runs Docker's install script with sudo" || return 0
+      if command -v pacman >/dev/null 2>&1; then
+        $root pacman -S --noconfirm --needed docker docker-compose docker-buildx || return 0
+      else
+        script=$(mktemp)
+        if curl -fsSL --connect-timeout 15 --max-time 120 https://get.docker.com -o "$script" && $root sh "$script"; then
+          rm -f "$script"
+        else
+          rm -f "$script"
+          say "Docker could not be installed here"
+          return 0
+        fi
+      fi
+      $root systemctl enable --now docker >/dev/null 2>&1 || true
+      if [ "$(id -u)" != 0 ] && $root usermod -aG docker "$(id -un)"; then
+        docker_group_added=1
+      fi
+      ;;
+    macos)
+      command -v brew >/dev/null 2>&1 || return 0
+      ask "Docker is not installed. Install OrbStack now with Homebrew?" || return 0
+      brew install --cask orbstack || return 0
+      open -a OrbStack >/dev/null 2>&1 || true
+      say "Waiting for OrbStack to start"
+      tries=0
+      until docker info >/dev/null 2>&1 || [ "$tries" -ge 60 ]; do
+        sleep 2
+        tries=$((tries + 1))
+      done
+      ;;
+  esac
+}
+
+# Runs a command with the docker group when the owner just joined it: this login session predates that.
+with_docker() {
+  if [ "${docker_group_added:-0}" = 1 ] && ! docker info >/dev/null 2>&1 && command -v sg >/dev/null 2>&1; then
+    sg docker -c "$*"
+  else
+    sh -c "$*"
+  fi
+}
+
 main() {
   os=$(detect_os)
   arch=$(detect_arch)
@@ -236,12 +300,13 @@ main() {
   fetch_package
   record_release "$version"
   if [ "${MAJHI_INSTALL_ONLY:-0}" != 1 ]; then
+    case $os in linux | macos) add_docker "$os" ;; esac
     case $os in linux | wsl) add_secret_tool ;; esac
-    if ! (unset MAJHI_VERSION; sh "$APP_DIR/scripts/up.sh"); then
+    if ! (unset MAJHI_VERSION; with_docker "sh '$APP_DIR/scripts/up.sh'"); then
       if [ -d "$APP_DIR.previous" ]; then
         rm -rf "$APP_DIR"
         mv "$APP_DIR.previous" "$APP_DIR"
-        (unset MAJHI_VERSION; sh "$APP_DIR/scripts/up.sh") || true
+        (unset MAJHI_VERSION; with_docker "sh '$APP_DIR/scripts/up.sh'") || true
       fi
       fail "majhi did not start. The previous package was restored when available."
     fi
@@ -253,6 +318,9 @@ main() {
   url="http://127.0.0.1:${MAJHI_PORT:-${port:-7070}}"
   say "majhi $version is running on $url"
   say "To update, run $MAJHI_RERUN again, or press Update in majhi."
+  if [ "${docker_group_added:-0}" = 1 ]; then
+    say "Log out and back in once, so the host helper can use Docker too."
+  fi
   open_browser "$os" "$url"
 }
 
