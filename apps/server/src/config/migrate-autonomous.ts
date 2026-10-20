@@ -5,7 +5,7 @@ import { errorCode } from "../errors.ts";
 import { editConfig } from "./write.ts";
 
 /**
- * Autonomous replaced Auto-pilot (docs/briefs/captain.md): the task size it takes (`autonomy.pick`), the tasks it
+ * Autonomous keeps its own rules (docs/briefs/captain.md): the task size it takes (`autonomy.pick`), the tasks it
  * works on at once per workspace (`autonomy.orgs.<id>.tasksAtOnce`) and its working hours (`autonomy.orgs.<id>.hours`)
  * are rules it keeps by itself now. This reads which of them a majhi.yaml still holds.
  */

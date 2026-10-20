@@ -80,9 +80,9 @@ function rawSecret({ command, input }: LimitCall): string | undefined {
   const field = RAW_SECRET_FIELDS[command];
   if (field === undefined || input[field] === undefined) return undefined;
   if (command === "connections.setFile") {
-    return "Refused: Auto-pilot never sets a connection's file. Only the owner does, from the connection's page.";
+    return "Refused: Autonomous never sets a connection's file. Only the owner does, from the connection's page.";
   }
-  return `Refused: Auto-pilot never passes a secret's value (${field}). Ask the owner with majhi_request_secret and pass the secret:<name> it gives back.`;
+  return `Refused: Autonomous never passes a secret's value (${field}). Ask the owner with majhi_request_secret and pass the secret:<name> it gives back.`;
 }
 
 /** Every string in a value, with where it sits, like `children.0.text`. */
@@ -154,13 +154,13 @@ function noForce({ command, input, pushDecides }: LimitCall): string | undefined
     return "Refused: this merge would push, and pushing is the owner's for this task. Merge without push, or leave it for the owner.";
   }
   if (input.deleteAfter === true) {
-    return "Refused: Auto-pilot never deletes a worktree after a ship. Ship without deleteAfter; the owner cleans up.";
+    return "Refused: Autonomous never deletes a worktree after a ship. Ship without deleteAfter; the owner cleans up.";
   }
   if (command === "tasks.markMerged" && input.force === true) {
-    return "Refused: Auto-pilot never marks a merge request merged without its host's word. Leave force to the owner.";
+    return "Refused: Autonomous never marks a merge request merged without its host's word. Leave force to the owner.";
   }
   if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
-    return "Refused: Auto-pilot never removes a task over uncommitted work.";
+    return "Refused: Autonomous never removes a task over uncommitted work.";
   }
   return undefined;
 }

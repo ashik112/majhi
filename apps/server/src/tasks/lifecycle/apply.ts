@@ -273,7 +273,7 @@ export function assertedReading(hold: Hold, now: string): lifecycle.ClearReading
     online: true,
     accounts: "account" in hold ? { [hold.account]: { signedIn: true } } : {},
     budgetHasRoom: true,
-    autopilot: "on",
+    autonomous: "on",
     runAtStep: true,
     slotFree: true,
     anyAccountUp: true,

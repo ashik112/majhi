@@ -6,7 +6,7 @@ type Hold = lifecycle.Hold;
 const HOLD_LABEL: { readonly [C in lifecycle.HoldCause]: string } = {
   "owner-stop": "stopped by you",
   "captain-stop": "paused by the captain",
-  "autopilot-off": "Auto-pilot is off",
+  "autonomous-off": "Autonomous is off",
   "budget-limit": "budget",
   "account-limit": "usage limit",
   offline: "offline",
@@ -28,7 +28,7 @@ const HOLD_LABEL: { readonly [C in lifecycle.HoldCause]: string } = {
 const HOLD_FIX: { readonly [C in lifecycle.HoldCause]: (h: lifecycle.HoldOf<C>) => HoldFix } = {
   "owner-stop": () => ({ kind: "resume" }),
   "captain-stop": () => ({ kind: "resume" }),
-  "autopilot-off": (h) => (h.mode === "step" ? { kind: "wait" } : { kind: "resume" }),
+  "autonomous-off": (h) => (h.mode === "step" ? { kind: "wait" } : { kind: "resume" }),
   "budget-limit": (h) => ({
     kind: "raise-budget",
     scope: h.scope,

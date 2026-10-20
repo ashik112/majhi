@@ -23,8 +23,8 @@ export interface UsageLimits {
   accountList(): Promise<{ id: string; org: string }[]>;
   /** A weekly budget of a workspace or an account; undefined when none is set. */
   budget(scope: "org" | "account", id: string): Promise<LimitUse | undefined>;
-  /** The Auto-pilot daily budget; undefined when it has no cap. */
-  autopilotDay(): Promise<LimitUse | undefined>;
+  /** The Autonomous daily budget; undefined when it has no cap. */
+  autonomousDay(): Promise<LimitUse | undefined>;
   /** The monthly ceiling; undefined when none is set. */
   monthly(): Promise<LimitUse | undefined>;
 }

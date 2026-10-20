@@ -101,7 +101,7 @@ async function planConfigure(world: ProposalWorld, input: unknown, lane: string)
   try {
     next = mergePatch(current, patch);
   } catch {
-    return { kind: "refuse", error: "That change is not valid for Auto-pilot's settings." };
+    return { kind: "refuse", error: "That change is not valid for Autonomous's settings." };
   }
   const { lines, other } = orgChanges(current, next, lane);
   const gone = patch.orgs?.[lane] === null && lines.length === 0 && current.orgs[lane] !== undefined;

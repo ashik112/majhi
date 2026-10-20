@@ -345,7 +345,7 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Auto-pilot is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
         );
       }
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
@@ -823,7 +823,7 @@ export class AdminService {
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
-    // The captain decides what would wait for the owner, within its limits and its Approvals line, whatever Auto-pilot says.
+    // The captain decides what would wait for the owner, within its limits and its Approvals line, whatever Autonomous says.
     if (auto !== undefined && autonomy !== undefined && !autonomy.halted()) {
       return this.decideAutonomously(caller, auto, command, input, parsed, meta, ask);
     }
@@ -851,7 +851,7 @@ export class AdminService {
     ask: { reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
-    if (autonomy === undefined) return error("Auto-pilot is not available.");
+    if (autonomy === undefined) return error("Autonomous is not available.");
     const verdict = await autonomy.decide(caller, command, parsed, input, {
       confirm: ask.confirm === true,
       reason: ask.reason,

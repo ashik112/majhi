@@ -73,7 +73,7 @@ export function mayResume(task: PausedTask, env: ResumeEnv): boolean {
 
 /** Who paused it, in words, for the digest. */
 export function pausedLabel(task: PausedTask): string {
-  if (task.pausedBy === "autonomy-off") return "paused when Auto-pilot was turned off";
+  if (task.pausedBy === "autonomy-off") return "paused when Autonomous was turned off";
   if (task.pausedBy === "autonomy-stop") return "stopped by Autonomous: it failed twice or spent its budget";
   if (task.pausedBy === "captain") return "paused by the captain";
   switch (task.pausedReason ?? "owner") {

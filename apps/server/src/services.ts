@@ -1616,7 +1616,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         const row = (await budgets.status()).rows.find((r) => r.scope === scope && r.id === id);
         return row === undefined ? undefined : { percent: row.percent, resetsAt: row.resetsAt };
       },
-      autopilotDay: () => autonomy.dayUse(),
+      autonomousDay: () => autonomy.dayUse(),
       monthly: async () => {
         const m = await outcomes.money();
         return m.ceilingUsd === undefined

@@ -20,7 +20,6 @@ import {
   type AutonomyNow,
   type AutonomyPatch,
   AutonomyPlanInputSchema,
-  type AutonomyReport,
   type AutonomySettings,
   type AutonomySpend,
   type AutonomyStatus,
@@ -113,7 +112,6 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW, TASK_BUDGET } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
-import { finishedByDay, flowByDay, hourlySpend, machineOf, spendByDay } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, TaskSizes } from "./sizes.ts";
 import {
@@ -127,11 +125,10 @@ import {
   holdsOf,
   spendOf,
 } from "./spend.ts";
-import { stuckTasks } from "./stuck.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
-/** Who the pause is credited to: the labels read "Paused when Auto-pilot was turned off". */
+/** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
 const OFF_BY = "autonomy-off";
 /** Credited when Autonomous stops a task of its own: it failed twice. */
 const STOP_BY = "autonomy-stop";
@@ -350,7 +347,7 @@ export class AutonomyService {
 
   /**
    * Whether the captain starts a task that came in (a fix task a lead opened, a finding turned into a task): the
-   * Start line, Stop everything and the hours, and never Auto-pilot, because it is a reaction.
+   * Start line, Stop everything and the hours, and never Autonomous, because it is a reaction.
    */
   async mayStartReacting(org: string): Promise<boolean> {
     return may(await this.policy(org), { now: this.now() }, { job: "reacting", act: "start" }, askedWhy).ok;
@@ -358,10 +355,10 @@ export class AutonomyService {
 
   /**
    * Why a reaction (an incident's investigation, a client's request) may not start work now, or undefined: only
-   * Stop everything holds it. Auto-pilot, the rows and the hours do not.
+   * Stop everything holds it. Autonomous, the rows and the hours do not.
    */
   reactingBlocked(): string | undefined {
-    const work = mayWork({ autopilot: this.repo.state().mode, stopped: this.halted() }, "reacting");
+    const work = mayWork({ autonomous: this.repo.state().mode, stopped: this.halted() }, "reacting");
     return work.ok ? undefined : work.why;
   }
 
@@ -370,14 +367,14 @@ export class AutonomyService {
     const settings = (await this.deps.config.settings()).autonomy;
     return captainPolicyOf(settings, org, {
       name: await this.orgName(org),
-      autopilot: this.repo.state().mode,
+      autonomous: this.repo.state().mode,
       stopped: this.halted(),
     });
   }
 
   /**
    * Why nobody looked at this workspace's alerts, in the owner's words, or undefined when the captain is listening.
-   * Only Stop everything keeps it from looking: an incident is read-only work, so Auto-pilot, the rows, the hours
+   * Only Stop everything keeps it from looking: an incident is read-only work, so Autonomous, the rows, the hours
    * and the day's cap do not hold it.
    */
   async quietWhy(_org: string): Promise<string | undefined> {
@@ -386,12 +383,12 @@ export class AutonomyService {
 
   /**
    * The lane a tick goes to, for a reaction (the default) or for backlog news. A reaction goes to any workspace
-   * whatever Auto-pilot, the rows and the hours say. Backlog news needs Auto-pilot on, a workspace where the captain
+   * whatever Autonomous, the rows and the hours say. Backlog news needs Autonomous on, a workspace where the captain
    * starts work or does upkeep, and no rest. When the lane's chat was removed or closed, majhi makes or reopens it
    * first and says so in the feed. Undefined: Stop everything is on, nothing waits for this job, or there is no captain.
    */
   async laneChat(org: string, job: Job = "reacting", into: Job = job): Promise<string | undefined> {
-    if (mayWork({ autopilot: this.repo.state().mode, stopped: this.halted() }, job).ok !== true)
+    if (mayWork({ autonomous: this.repo.state().mode, stopped: this.halted() }, job).ok !== true)
       return undefined;
     if (job === "backlog") {
       const policy = await this.policy(org);
@@ -484,7 +481,7 @@ export class AutonomyService {
   }
 
   /**
-   * Routine news (an update, a chore's note): it goes to the workspace's main lane only, and only while Auto-pilot is
+   * Routine news (an update, a chore's note): it goes to the workspace's main lane only, and only while Autonomous is
    * on. The Urgent lane hears only reactions: client chats, incidents and watch fires (`news`).
    */
   routine(line: string, org: string): boolean {
@@ -1019,7 +1016,7 @@ export class AutonomyService {
     const resumed = row.resumedAt !== undefined && since !== undefined && row.resumedAt >= since;
     if (mode === "stopping" && resumed) return undefined;
     if (mode === "stopping") {
-      return { reason: "owner", why: "Auto-pilot is stopping, so this agent starts nothing new." };
+      return { reason: "owner", why: "Autonomous is stopping, so this agent starts nothing new." };
     }
     const org = this.deps.store.tasks.get(task)?.org ?? PRIVATE;
     const cap = capHoldFor(this.holds, org);
@@ -1090,7 +1087,7 @@ export class AutonomyService {
     // After a restart the held prompts are gone, so the lead is told to go on.
     const lead = task.team[0];
     if (resumed === 0 && lead !== undefined && this.deps.runs.working(id).length === 0) {
-      this.deps.runs.notify(id, lead, "Auto-pilot resumed this task. Continue from where you stopped.");
+      this.deps.runs.notify(id, lead, "Autonomous resumed this task. Continue from where you stopped.");
     }
     this.event({ kind: "task", text: `${id} resumed: ${why}`, task: id, ...orgOf(task) });
   }
@@ -1240,7 +1237,7 @@ export class AutonomyService {
         budgets.push({ gate: "budget", scope: "all", period: "month" });
     }
     const world: lifecycle.BlockerWorld = {
-      autopilot: on ? "on" : "off",
+      autonomous: on ? "on" : "off",
       machine: busyKind(this.deps.machine?.()?.host),
       slots: {
         agents: room(capacity.agents),
@@ -1351,7 +1348,7 @@ export class AutonomyService {
     return measured;
   }
 
-  /** How far the Auto-pilot daily budget is today, for a usage watch. Undefined without a cap. */
+  /** How far the Autonomous daily budget is today, for a usage watch. Undefined without a cap. */
   async dayUse(): Promise<{ percent: number; resetsAt: string } | undefined> {
     const m = await this.measure(false);
     const total = m.spend.total;
@@ -1679,16 +1676,16 @@ export class AutonomyService {
       if (outside !== undefined) return `Refused: ${outside}.`;
     }
     if (starts) {
-      // Picking a task from the backlog is backlog work: it needs Auto-pilot. A reaction (an incident, a finding, a fix task) does not.
+      // Picking a task from the backlog is backlog work: it needs Autonomous. A reaction (an incident, a finding, a fix task) does not.
       const target = touched.find((t) => t.id === str(input.id));
       const job: Job = command === "tasks.start" && target !== undefined ? jobOfStart(target) : "reacting";
-      const work = mayWork({ autopilot: state.mode, stopped: this.halted() }, job);
+      const work = mayWork({ autonomous: state.mode, stopped: this.halted() }, job);
       if (!work.ok) return `Refused: ${work.why}.`;
       // Hours and freeze dates hold a start, as they hold every change.
       const rest = restOf(
         captainPolicyOf(settings, org, {
           name: orgName(org, names),
-          autopilot: state.mode,
+          autonomous: state.mode,
           stopped: this.halted(),
         }),
         this.now(),
@@ -1758,7 +1755,7 @@ export class AutonomyService {
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
     if (mode !== "stopping" || !startsWork(command, input)) return undefined;
-    return "Auto-pilot is turning off: nothing new starts.";
+    return "Autonomous is turning off: nothing new starts.";
   }
 
   /**
@@ -2261,7 +2258,7 @@ export class AutonomyService {
         {
           command: change.command,
           meta: change.meta,
-          summary: `added an instruction for Auto-pilot: ${clip(input.text, 80)}`,
+          summary: `added an instruction for Autonomous: ${clip(input.text, 80)}`,
         },
       );
       this.event({
@@ -2294,7 +2291,7 @@ export class AutonomyService {
       {
         command: change.command,
         meta: change.meta,
-        summary: `removed an instruction of Auto-pilot: ${clip(gone.text, 80)}`,
+        summary: `removed an instruction of Autonomous: ${clip(gone.text, 80)}`,
       },
     );
     this.event({
@@ -2493,7 +2490,7 @@ export class AutonomyService {
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
     // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`).
     const work = mayWork(
-      { autopilot: mode, stopped: this.halted() },
+      { autonomous: mode, stopped: this.halted() },
       command === "autonomy.plan" ? "backlog" : "reacting",
     );
     if (!work.ok) return fail(`${work.why}.`);
@@ -2546,7 +2543,7 @@ export class AutonomyService {
       if (!parsed.success) return invalid(command, parsed.error);
       return this.answer(caller, parsed.data, reason, lane, authority);
     }
-    return fail(`${command} is not a tool of Auto-pilot.`);
+    return fail(`${command} is not a tool of Autonomous.`);
   }
 
   /**
@@ -2607,7 +2604,7 @@ export class AutonomyService {
         case "secret-request":
           return fail("Only the owner gives secrets.");
         case "approval":
-          return fail("Approval cards follow the policy. Auto-pilot does not answer them.");
+          return fail("Approval cards follow the policy. Autonomous does not answer them.");
         default:
           return fail("That item takes no answer.");
       }
@@ -2787,7 +2784,7 @@ export class AutonomyService {
       const hold = capHoldFor(holds, org);
       const rest =
         hold?.text ??
-        restOf(captainPolicyOf(settings, org, { name: org, autopilot: "on", stopped: false }), this.now());
+        restOf(captainPolicyOf(settings, org, { name: org, autonomous: "on", stopped: false }), this.now());
       out.push({
         org,
         name: org === PRIVATE ? "Private" : (m.names[org] ?? org),
@@ -2865,81 +2862,13 @@ export class AutonomyService {
       raised: m.raised,
       ...(summary === undefined ? {} : { summary }),
       ...(after.lastTick === undefined ? {} : { lastTick: after.lastTick }),
-      stopped: this.stoppedNow(),
     };
-  }
-
-  /** Tasks Stop now paused that are still paused, for the turn-on dialog. */
-  private stoppedNow(): string[] {
-    return this.repo
-      .tasks()
-      .filter((r) => r.held === "owner" && r.heldScope === STOPPED_NOW)
-      .filter((r) => this.deps.store.tasks.get(r.task)?.status === "paused")
-      .map((r) => r.task);
   }
 
   events(q: { before?: number | undefined; limit: number; decisions: boolean; task?: string | undefined }): {
     events: AutonomyEvent[];
   } {
     return { events: this.repo.events(q) };
-  }
-
-  /** The dashboard's charts: today's spend by hour and the tasks finished over the last `days` days. */
-  async report(days: number): Promise<AutonomyReport> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const tz = zoneOr(settings.tz);
-    const now = this.now();
-    const window = dayWindow(now, tz);
-    const first = dayStart(addDays(window.day, 1 - days), tz).toISOString();
-    const events = this.repo.eventsBetween(first, window.end);
-    return {
-      tz,
-      today: window.day,
-      hours: hourlySpend(
-        this.repo.spendTurns(window.start, window.end, this.spendChats()),
-        window.start,
-        now,
-      ),
-      // The ship chore's own merges leave no feed line: its log counts them, or a captain-shipped task reads as 0.
-      days: finishedByDay(
-        [
-          ...events,
-          ...(this.deps.upkeepBetween?.(first, window.end) ?? [])
-            .filter((a) => a.chore === "ship" && a.outcome === "done" && a.task !== undefined)
-            .map((a, i) => ({
-              seq: events.length + i + 1,
-              at: a.at,
-              kind: "task" as const,
-              text: "Shipped",
-              status: "done" as const,
-              ...(a.task === undefined ? {} : { task: a.task as TaskId }),
-              org: a.org,
-            })),
-        ],
-        window.day,
-        days,
-        tz,
-      ),
-      spend: spendByDay(
-        this.repo.spendTurnsByOrg(first, window.end, this.spendChats()),
-        window.day,
-        days,
-        tz,
-      ),
-      flow: flowByDay(events, window.day, days, tz),
-      stuck: stuckTasks({
-        now,
-        tasks: this.openTasks().map((t) => ({
-          id: t.id,
-          title: t.title,
-          ...(t.org === undefined ? {} : { org: t.org }),
-          status: t.status,
-          updatedAt: t.updatedAt,
-        })),
-        waiting: this.waiting(),
-      }),
-      ...machineOf(this.deps.machine?.(), this.deps.diskUsage?.()),
-    };
   }
 
   /** Autonomous tasks that are not done, newest first. */
@@ -3134,7 +3063,7 @@ export class AutonomyService {
 
   /**
    * Stop everything was pressed (the flag is the captain's, `captain_state.stopped`): the captain's turns in
-   * every lane end and the tasks it drives pause. Auto-pilot's switch is untouched. Tasks the owner started keep
+   * every lane end and the tasks it drives pause. Autonomous's switch is untouched. Tasks the owner started keep
    * their own controls.
    */
   async haltNow(): Promise<void> {
@@ -3149,7 +3078,7 @@ export class AutonomyService {
     this.deps.events.emit(["autonomy", "tasks"]);
   }
 
-  /** Stop everything was pressed again: the tasks it paused continue while Auto-pilot is on, else they stay the owner's. */
+  /** Stop everything was pressed again: the tasks it paused continue while Autonomous is on, else they stay the owner's. */
   async resumeHalt(): Promise<void> {
     const on = this.repo.state().mode === "on";
     for (const row of this.repo.tasks()) {

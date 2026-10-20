@@ -341,8 +341,6 @@ export const AutonomyStatusSchema = z.object({
   summary: AutonomySummarySchema.optional(),
   /** When majhi last woke the captain, UTC ISO. */
   lastTick: z.string().optional(),
-  /** Tasks Stop now paused that are still paused: turning on can resume them. */
-  stopped: z.array(TaskIdSchema).default([]),
   /**
    * Budgets the owner raised for today only, by scope (`day` or a workspace id). `spend` already
    * counts them; `settings` holds the saved budgets, which they never change.
@@ -363,80 +361,6 @@ export const AutonomyEventsInputSchema = z.object({
   task: TaskIdSchema.optional(),
 });
 
-/** `autonomy.report`: the charts of the Auto-pilot dashboard. `days` is how far back finished tasks go. */
-export const AutonomyReportInputSchema = z.object({ days: z.number().int().min(1).max(30).default(14) });
-
-/** Why a task shows in the dashboard's Stuck list: a running task or one in review that has gone quiet. */
-export const StuckKindSchema = z.enum(["idle", "waiting"]);
-export type StuckKind = z.infer<typeof StuckKindSchema>;
-
-export const StuckTaskSchema = z.object({
-  task: TaskIdSchema,
-  title: z.string(),
-  org: z.string().optional(),
-  kind: StuckKindSchema,
-  /** Since when it has not moved (UTC ISO). */
-  since: z.string(),
-  /** One line: what it is quiet about. */
-  text: z.string(),
-});
-export type StuckTask = z.infer<typeof StuckTaskSchema>;
-
-/** The owner's computer and majhi's containers, as the machine sensor last read them. */
-export const AutonomyMachineSchema = z.object({
-  cores: z.number().int().positive(),
-  load1: z.number().nonnegative(),
-  idleCpuPct: z.number().optional(),
-  memFreePct: z.number().optional(),
-  diskFreeGb: z.number().optional(),
-  /** What majhi itself holds on the disk, when measured: the task folders and Docker (images, volumes, containers). */
-  usage: z.object({ tasksGb: z.number(), dockerGb: z.number().optional() }).optional(),
-  containers: z.number().int().nonnegative(),
-  /** Why new work does not start: the machine is busy. */
-  busy: z.string().optional(),
-});
-export type AutonomyMachine = z.infer<typeof AutonomyMachineSchema>;
-
-/** `autonomy.report`: today's spend by hour and the tasks the captain finished, by day and workspace. */
-export const AutonomyReportSchema = z.object({
-  tz: z.string(),
-  /** Today in `tz`, `YYYY-MM-DD`. */
-  today: z.string(),
-  /** Auto-pilot spend today, one entry per hour from midnight to the end of the current hour (UTC ISO start). */
-  hours: z.array(z.object({ start: z.string(), cost: z.number(), tokens: z.number().int() })),
-  /** Tasks that reached review, an MR or done, one entry per day oldest first, today last. */
-  days: z.array(
-    z.object({
-      day: z.string(),
-      orgs: z.array(z.object({ org: z.string(), count: z.number().int().positive() })),
-    }),
-  ),
-  /** Auto-pilot spend per day and workspace over the same days, oldest first. */
-  spend: z
-    .array(
-      z.object({
-        day: z.string(),
-        orgs: z.array(z.object({ org: z.string(), cost: z.number().positive() })),
-      }),
-    )
-    .default([]),
-  /** Tasks started, finished and paused per day over the same days, oldest first. A task counts once per day and kind. */
-  flow: z
-    .array(
-      z.object({
-        day: z.string(),
-        started: z.number().int().nonnegative(),
-        finished: z.number().int().nonnegative(),
-        paused: z.number().int().nonnegative(),
-      }),
-    )
-    .default([]),
-  /** Autonomous tasks and cards that are not moving, longest first. */
-  stuck: z.array(StuckTaskSchema).default([]),
-  /** Absent while the host helper is not connected. */
-  machine: AutonomyMachineSchema.optional(),
-});
-export type AutonomyReport = z.infer<typeof AutonomyReportSchema>;
 
 /** `autonomy.plan`: the captain replaces its queue. */
 export const AutonomyPlanInputSchema = z.object({ items: z.array(QueueItemSchema).max(20) });

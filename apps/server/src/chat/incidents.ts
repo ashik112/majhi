@@ -62,7 +62,7 @@ export interface IncidentsDeps {
   write?: ((org: string, key: string, prompt: string) => Promise<string | undefined>) | undefined;
   /** The workspace's Client update switch: who sends what clients are told. */
   clientUpdate: (org: string) => Promise<"ask" | "sends">;
-  /** Why nobody has looked at this workspace's incidents (Auto-pilot off, outside hours), or undefined. */
+  /** Why nobody has looked at this workspace's incidents (Autonomous off, outside hours), or undefined. */
   quiet?: ((org: string) => Promise<string | undefined>) | undefined;
   changed: () => void;
   now?: () => Date;

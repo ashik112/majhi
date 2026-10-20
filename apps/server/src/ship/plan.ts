@@ -61,7 +61,7 @@ export interface ShipPlannerDeps {
   mode(): AutonomyMode;
   /** Stop everything is on. */
   halted(): boolean;
-  /** The captain picked this task from the backlog (it is Auto-pilot's), not the owner or something that came in. */
+  /** The captain picked this task from the backlog (it is Autonomous's), not the owner or something that came in. */
   backlog(task: string): boolean;
   /** An incident's own task: working hours do not hold it. */
   incident(task: Task): boolean;
@@ -94,11 +94,11 @@ export class ShipPlanner {
     const org = task.org ?? PRIVATE;
     const settings = await this.deps.settings();
     const facts = await this.facts(task);
-    // Only a backlog task waits for Auto-pilot; the owner's task and a reaction ship by their own lines. A task
+    // Only a backlog task waits for Autonomous; the owner's task and a reaction ship by their own lines. A task
     // marked Not for the captain is never the captain's.
     const policy = captainPolicyOf(settings, org, {
       name: org,
-      autopilot: this.deps.mode(),
+      autonomous: this.deps.mode(),
       stopped: this.deps.halted(),
     });
     const acts =

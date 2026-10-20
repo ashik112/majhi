@@ -16,13 +16,13 @@ import {
  *   2. another client's or another workspace's name in the text (fixed);
  *   2b. an internal id, branch name, commit or checkpoint in the text (fixed);
  *   3. a report to a client, such as an RCA (fixed);
- *   4. Tell on Ask me: every reply waits (Tell does not wait for Auto-pilot: it is the row as the owner set it);
+ *   4. Tell on Ask me: every reply waits (Tell does not wait for Autonomous: it is the row as the owner set it);
  *   5. under Captain decides, the classes of the Hold list the owner left on.
  * A reply the writer gave no flags for waits: a missing answer is never a yes.
  */
 
 export interface RailsInput {
-  /** The workspace's Tell row as it is now (Ask me while Auto-pilot is not On). */
+  /** The workspace's Tell row as it is now (Ask me while Autonomous is not On). */
   tell: AuthorityChoice;
   holds: Holds;
   text: string;

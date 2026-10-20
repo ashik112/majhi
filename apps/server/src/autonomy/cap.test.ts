@@ -99,7 +99,7 @@ describe("the day cap of autonomous mode", () => {
     // The paused card names the cap that stopped it, not a generic budget.
     const items = (await h.cmd("room.items", { task: id, limit: 500 })).body.items as RoomItem[];
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("Waiting for the Auto-pilot daily budget, $");
+    expect(card?.type === "paused" && card.why).toContain("Waiting for the Autonomous daily budget, $");
 
     const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     const used = status.spend.total.used.cost;
@@ -119,7 +119,7 @@ describe("the day cap of autonomous mode", () => {
     // The owner is asked once, with the doubled budget, and the answer lifts the hold for today only.
     const asked = async () => (await h.cmd("captain.asks")).body.budgets as BudgetAsk[];
     expect(await asked()).toMatchObject([
-      { scope: "day", name: "Auto-pilot work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
+      { scope: "day", name: "Autonomous work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
     ]);
     await h.majhi.services.autonomy.refreshHolds();
     expect(await asked()).toHaveLength(1);

@@ -99,7 +99,7 @@ function pausedHold(f: StoredFields, c: StoredContext, lane: Lane): Hold {
       if (f.pausedBy === "autonomy-stop")
         return { cause: "autonomous-stop", at: c.at, why: c.why ?? "Autonomous stopped it." };
       if (f.pausedBy === "autonomy-off" || (f.held === "owner" && f.heldScope === STOPPED_NOW))
-        return { cause: "autopilot-off", at: c.at, mode: "now" };
+        return { cause: "autonomous-off", at: c.at, mode: "now" };
       return { cause: "owner-stop", at: c.at };
     case "limit":
       return limitHold(f, c);
@@ -129,7 +129,7 @@ const defaultLane = (f: StoredFields, c: StoredContext): Lane =>
 /**
  * Stored fields to the new model. A `paused` row becomes its lane plus a hold. A row that is not
  * paused but carries a run-gate `held` (the async window where the run is held and the task still
- * says running) becomes the same lane plus the matching hold: `held = owner` is Auto-pilot
+ * says running) becomes the same lane plus the matching hold: `held = owner` is Autonomous
  * stopping, `held = limit` a budget cap. `held` on inbox, ready, mr and done rows is stale and ignored.
  */
 export function fromStored(f: StoredFields, c: StoredContext): Lifecycle {
@@ -143,8 +143,8 @@ export function fromStored(f: StoredFields, c: StoredContext): Lifecycle {
     if (f.held === "owner")
       hold =
         f.heldScope === STOPPED_NOW
-          ? { cause: "autopilot-off", at: c.at, mode: "now" }
-          : { cause: "autopilot-off", at: c.at, mode: "step" };
+          ? { cause: "autonomous-off", at: c.at, mode: "now" }
+          : { cause: "autonomous-off", at: c.at, mode: "step" };
     else if (f.held === "limit") hold = limitHold({ ...f, held: "limit" }, c);
   }
   return { status: f.status, hold, exemptUntilRunEnds };
@@ -157,7 +157,7 @@ export interface StoredOut {
 }
 
 /**
- * The new model to stored fields. Every hold but Auto-pilot `step` is written as `status = paused`
+ * The new model to stored fields. Every hold but Autonomous `step` is written as `status = paused`
  * with its reason. `step` has no paused form: it stays in its lane with `held = owner`.
  * `mr` and `done` carry no hold in the old fields: a hold there is dropped.
  */
@@ -180,7 +180,7 @@ export function toStored(state: Lifecycle, c: Pick<StoredContext, "at" | "resume
       return paused({ pausedReason: "owner", pausedBy: "captain" });
     case "autonomous-stop":
       return paused({ pausedReason: "owner", pausedBy: "autonomy-stop" });
-    case "autopilot-off":
+    case "autonomous-off":
       return hold.mode === "now"
         ? paused({ pausedReason: "owner", pausedBy: "autonomy-off", held: "owner", heldScope: STOPPED_NOW })
         : { fields: withResumed({ status: state.status, held: "owner" }) };

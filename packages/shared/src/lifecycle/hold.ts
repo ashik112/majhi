@@ -25,10 +25,10 @@ export const HoldSchema = z.discriminatedUnion("cause", [
   z.object({ cause: z.literal("owner-stop"), at: At }),
   z.object({ cause: z.literal("captain-stop"), at: At, why: z.string().optional() }),
   // The Autonomous switch: `now` paused it at once, `step` lets the run finish its step.
-  z.object({ cause: z.literal("autopilot-off"), at: At, mode: z.enum(["now", "step"]) }),
+  z.object({ cause: z.literal("autonomous-off"), at: At, mode: z.enum(["now", "step"]) }),
   // One budget model: scope x period, plus the per-account reserve. `scopeId` names the org or
   // account when the scope is one. `alertId` is set when a budget alert fired it; the run gate's
-  // own cap hold (Auto-pilot day and org caps until they fold in) has none.
+  // own cap hold (Autonomous day and org caps until they fold in) has none.
   z.object({
     cause: z.literal("budget-limit"),
     at: At,
@@ -73,7 +73,7 @@ export interface ClearReading {
   accounts: Readonly<Record<string, { signedIn: boolean; limitedUntil?: string | undefined }>>;
   /** Whether the budget behind a `budget-limit` hold has room again (limit raised or period rolled). */
   budgetHasRoom: boolean;
-  autopilot: "on" | "off" | "stopping";
+  autonomous: "on" | "off" | "stopping";
   /** The held run reached the end of its current step. */
   runAtStep: boolean;
   /** A running place is free (the running cap has room). Absent: not known, so a slot hold does not lift. */
@@ -96,7 +96,7 @@ export type AutoClear =
   | { kind: "account-signed-in"; account: string }
   | { kind: "account-available"; account: string }
   | { kind: "budget-room"; until?: string | undefined }
-  | { kind: "step-or-autopilot-on" }
+  | { kind: "step-or-autonomous-on" }
   | { kind: "slot-free" }
   | { kind: "any-account-available"; accounts: readonly string[] }
   | { kind: "activity-after"; at: string }
@@ -119,8 +119,8 @@ export function conditionMet(condition: AutoClear, reading: ClearReading): boole
     }
     case "budget-room":
       return reading.budgetHasRoom || (condition.until !== undefined && condition.until <= reading.now);
-    case "step-or-autopilot-on":
-      return reading.runAtStep || reading.autopilot === "on";
+    case "step-or-autonomous-on":
+      return reading.runAtStep || reading.autonomous === "on";
     case "slot-free":
       return reading.slotFree === true;
     case "any-account-available":
@@ -177,13 +177,13 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
     sentence: (h) =>
       h.why === undefined ? "The captain paused it." : `The captain paused it: ${sentenceEnd(h.why)}`,
   },
-  "autopilot-off": {
+  "autonomous-off": {
     lifters: (h) => (h.mode === "now" ? ["owner", "captain"] : ["owner", "majhi"]),
-    autoClears: (h) => (h.mode === "now" ? { kind: "never" } : { kind: "step-or-autopilot-on" }),
+    autoClears: (h) => (h.mode === "now" ? { kind: "never" } : { kind: "step-or-autonomous-on" }),
     sentence: (h) =>
       h.mode === "now"
-        ? "Paused when Auto-pilot was turned off."
-        : "Auto-pilot is stopping. It stops at the end of this step.",
+        ? "Paused when Autonomous was turned off."
+        : "Autonomous is stopping. It stops at the end of this step.",
   },
   "budget-limit": {
     lifters: () => ["owner", "majhi"],
@@ -267,13 +267,13 @@ export const majhiMayLift = (h: Hold, reading: ClearReading): boolean =>
 
 /**
  * Which hold stays when a second one arrives for the same task. The same cause: the newer one
- * (fresher data; for Auto-pilot, `now` beats `step`). Otherwise the one fewer parties can lift, so an owner-only hold is never
+ * (fresher data; for Autonomous, `now` beats `step`). Otherwise the one fewer parties can lift, so an owner-only hold is never
  * replaced by one majhi can clear. A tie keeps the existing hold, except that a removed
  * dependency replaces a closed one (it is the later fact).
  */
 export function mergeHold(existing: Hold | undefined, incoming: Hold): Hold {
   if (existing === undefined) return incoming;
-  if (existing.cause === "autopilot-off" && incoming.cause === "autopilot-off")
+  if (existing.cause === "autonomous-off" && incoming.cause === "autonomous-off")
     return existing.mode === "now" ? existing : incoming;
   if (existing.cause === incoming.cause) return incoming;
   if (existing.cause === "dependency-closed" && incoming.cause === "dependency-removed") return incoming;

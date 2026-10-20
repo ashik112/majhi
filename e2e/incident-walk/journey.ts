@@ -48,7 +48,7 @@ async function setup(w: World): Promise<string> {
   room = row.id;
   setReplies([{ when: "Write a short title", say: TITLE }]);
   void w;
-  return `Acme: Routine, Fix ${FIX}, Client update ${TELL}; Auto-pilot on; soak 1 min; Slack channel linked`;
+  return `Acme: Routine, Fix ${FIX}, Client update ${TELL}; Autonomous on; soak 1 min; Slack channel linked`;
 }
 
 /** Needs you, in light and dark, as it stands now. */

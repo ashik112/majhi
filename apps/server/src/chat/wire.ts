@@ -78,7 +78,7 @@ export interface ClientChatWiring {
   createTask: WorkDeps["create"];
   /** Task changes: a task started from a chat tells its client when it is ready. */
   events: { subscribe(listener: (event: ServerEvent) => void): () => void };
-  /** Starts a task the captain made for a chat, the way the incident engine starts one: whatever Auto-pilot says. */
+  /** Starts a task the captain made for a chat, the way the incident engine starts one: whatever Autonomous says. */
   startTask: (task: string) => Promise<void>;
   /** The captain's History, through the autonomy event log. */
   history?: ChatHistory | undefined;

@@ -129,7 +129,7 @@ export interface IncidentTaskNote {
   started: boolean;
   /** Start and Upkeep are the owner's here: the captain only investigates, read only. */
   readOnly: boolean;
-  /** Why nobody was woken: Auto-pilot is off, outside working hours. Absent when the captain will hear of it. */
+  /** Why nobody was woken: Autonomous is off, outside working hours. Absent when the captain will hear of it. */
   quiet?: string | undefined;
 }
 

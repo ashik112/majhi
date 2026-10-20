@@ -1,6 +1,5 @@
 import type {
   AutonomyEvent,
-  AutonomyReport,
   AutonomyStatus,
   CommandInput,
   CommandOutput,
@@ -29,17 +28,6 @@ export function useAutonomyStatus(detail = false) {
     queryFn: () => cmd("autonomy.status", { detail }),
     retry: (count, error) => !autonomyMissing(error) && count < 2,
     refetchInterval: (query) => (query.state.data && query.state.data.mode !== "off" ? 30_000 : false),
-    refetchIntervalInBackground: false,
-  });
-}
-
-/** `autonomy.report`: the dashboard's charts. Read every minute while the page shows, since turns emit no event. */
-export function useAutonomyReport(days = 14) {
-  return useQuery<AutonomyReport, ApiRequestError>({
-    queryKey: [...queryKeys.autonomy, "report", days],
-    queryFn: () => cmd("autonomy.report", { days }),
-    retry: (count, error) => !autonomyMissing(error) && count < 2,
-    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 }

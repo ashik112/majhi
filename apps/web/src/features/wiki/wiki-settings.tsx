@@ -55,7 +55,7 @@ export function WikiSection() {
   const model = settings?.wiki.writer_model ?? "";
   const on = useMemo(() => workspaces.filter((w) => w.enabled), [workspaces]);
   const upkeep = usePlaybooksAcross(on.map((w) => w.org.id));
-  const autopilot = useAutonomyStatus().data;
+  const autonomous = useAutonomyStatus().data;
   const turnOn = useAutonomyCommand("autonomy.start");
   const fail = (e: unknown) => toast("Could not change it", { detail: describeError(e), tone: "error" });
 
@@ -168,7 +168,7 @@ export function WikiSection() {
                   <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />
                   <span className="min-w-0 flex-1 truncate text-fg">{w.org.name}</span>
                   <span className="text-sm text-fg-muted">{upkeepState(row)}</span>
-                  {row?.held !== undefined && autopilot?.mode === "off" && (
+                  {row?.held !== undefined && autonomous?.mode === "off" && (
                     <Button
                       size="sm"
                       disabled={turnOn.isPending}

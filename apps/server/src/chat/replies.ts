@@ -34,7 +34,7 @@ export interface RepliesDeps {
   gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide" | "pending">;
   hub: Pick<ChatHub, "send">;
   rooms: ClientRooms;
-  /** The Tell row of a workspace as it is now: Ask me whenever Auto-pilot is not On. */
+  /** The Tell row of a workspace as it is now: Ask me whenever Autonomous is not On. */
   tell: (org: string) => Promise<AuthorityChoice>;
   /** The Hold list of a workspace, every class filled in. */
   holds: (org: string) => Promise<Holds>;

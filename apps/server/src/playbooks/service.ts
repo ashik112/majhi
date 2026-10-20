@@ -233,7 +233,7 @@ export class PlaybookService implements ChorePlaybooks {
     if (def.scope === "business" && org !== PRIVATE)
       return "It runs once for the whole business, from Private.";
     const e = this.effective(def, org);
-    const switches = { autopilot: this.deps.mode(), stopped: ws.stopped === true };
+    const switches = { autonomous: this.deps.mode(), stopped: ws.stopped === true };
     // Looking only (a chore that files findings, a read-only sensor) is never held by hours.
     let looksOnly = def.readOnly === true;
     if (def.runner.kind === "chore") {
@@ -248,7 +248,7 @@ export class PlaybookService implements ChorePlaybooks {
       if (pausedToday(off.offAt, this.now(), ws.tz))
         return `Failed twice in a row, tries again tomorrow: ${off.offWhy ?? "two runs failed"}.`;
     } else {
-      // A read-only playbook (the sensors) only files findings that wait, so Auto-pilot off and
+      // A read-only playbook (the sensors) only files findings that wait, so Autonomous off and
       // Upkeep on You do not hold it. Stop everything holds every playbook.
       const work = mayWork(switches, def.readOnly === true ? "reacting" : "backlog");
       if (!work.ok) return `${work.why}.`;

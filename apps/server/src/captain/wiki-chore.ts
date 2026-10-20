@@ -3,11 +3,11 @@ import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 
 /**
- * Keeps each workspace's project wikis current while Auto-pilot is on (`upkeep-wiki`). One chore, one action a day: it
+ * Keeps each workspace's project wikis current while Autonomous is on (`upkeep-wiki`). One chore, one action a day: it
  * runs the same update the owner's button runs, for a workspace whose wiki is on and whose projects moved past the
  * commit their pages were built from, and only while the workspace's budget has room. A wiki nothing has changed
  * since costs nothing: the check is git, no model. A project never built is left to the owner's first Update, which
- * is the one that costs a first build. While Auto-pilot is off the chore never runs (`choresNow`).
+ * is the one that costs a first build. While Autonomous is off the chore never runs (`choresNow`).
  */
 export function createWikiChore(
   ports: CaptainPorts,

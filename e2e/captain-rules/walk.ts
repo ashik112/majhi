@@ -1,7 +1,7 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: a proof script reading untyped JSON from the API
 /**
  * The captain-rules walk on a throwaway majhi with fakes (the incident walk's world). Four journeys of the one rule
- * set: Auto-pilot off and an incident (it investigates), Merge on Captain with Auto-pilot off (it merges), Undo of that
+ * set: Autonomous off and an incident (it investigates), Merge on Captain with Autonomous off (it merges), Undo of that
  * merge (the Merge line drops and the owner is told), and Stop everything (nothing moves). Run from the repository root:
  *
  *   WALK_PORT=7790 MAJHI_E2E_ROOT=<scratch>/root WALK_SHOTS=<scratch>/shots node --import tsx e2e/captain-rules/walk.ts
@@ -43,12 +43,12 @@ async function incidentTasks(): Promise<any[]> {
   return (Array.isArray(list) ? list : (list.tasks ?? [])).filter((t: any) => t.typing?.type === "incident");
 }
 
-async function autopilotOffIncident(w: World): Promise<string> {
+async function autonomousOffIncident(w: World): Promise<string> {
   await cmd("autonomy.configure", {
     orgs: { acme: { authority: ROWS, incident: { soakMin: 1, cadenceMin: 5 } } },
   });
   const mode = (await cmd("autonomy.status", {})).mode;
-  if (mode !== "off") throw new Error(`Auto-pilot should be off, it is ${mode}`);
+  if (mode !== "off") throw new Error(`Autonomous should be off, it is ${mode}`);
   w.db.usage = 95;
   await cmd("watch.save", {
     org: "acme",
@@ -71,7 +71,7 @@ async function autopilotOffIncident(w: World): Promise<string> {
     90_000,
   );
   const cap = (await cmd("captain.status", {})) as any;
-  return `Auto-pilot ${mode}, stopped ${cap.stopped}; incident ${task.id} is ${running.status} (it investigates without Auto-pilot)`;
+  return `Autonomous ${mode}, stopped ${cap.stopped}; incident ${task.id} is ${running.status} (it investigates without Autonomous)`;
 }
 
 async function leadCommits(id: string, file: string): Promise<void> {
@@ -131,7 +131,7 @@ async function captainMerges(w: World): Promise<string> {
   if (!(await merged(id))) throw new Error(`${id} was not merged`);
   (w as any).mergedAction = log;
   (w as any).mergedTask = id;
-  return `Merge = Captain, Auto-pilot ${mode}: ${id} merged by the captain ("${log.text}", undo ${log.undo})`;
+  return `Merge = Captain, Autonomous ${mode}: ${id} merged by the captain ("${log.text}", undo ${log.undo})`;
 }
 
 async function undoDropsLine(w: World): Promise<string> {
@@ -245,9 +245,9 @@ try {
     await w.close();
     process.exit(0);
   }
-  await stage("A Auto-pilot off, incident investigates", () => autopilotOffIncident(w));
+  await stage("A Autonomous off, incident investigates", () => autonomousOffIncident(w));
   console.log(await shot(w, "09-incident", "/"));
-  await stage("B Merge = Captain, Auto-pilot off, ready task merges", () => captainMerges(w));
+  await stage("B Merge = Captain, Autonomous off, ready task merges", () => captainMerges(w));
   await stage("D undo the captain's merge: line drops, owner told", () => undoDropsLine(w));
   await stage("C Stop everything: nothing moves", () => stopEverything(w));
   await stage("E Stop everything button in the UI", () => stopButton(w));

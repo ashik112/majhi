@@ -155,7 +155,7 @@ const USAGE_SOURCE_WORDS: Record<Exclude<UsageSource, "spend">, (account: string
   account5h: (a) => `${a ?? "an account"}'s 5-hour window`,
   accountWeek: (a) => `${a ?? "an account"}'s weekly window`,
   budget: (a) => (a === undefined ? "the workspace's weekly budget" : `${a}'s weekly budget`),
-  autopilotDay: () => "the Auto-pilot daily budget",
+  autonomousDay: () => "the Autonomous daily budget",
   monthlyCeiling: () => "the monthly ceiling",
 };
 

@@ -240,7 +240,7 @@ export class ConfigService {
   }
 
   /**
-   * Startup migration: Autonomous keeps its rules by itself, so the settings Auto-pilot had for them
+   * Startup migration: Autonomous keeps its rules by itself, so the settings Autonomous had for them
    * (`autonomy.pick`, `tasksAtOnce`, `hours`) leave majhi.yaml (see `migrate-autonomous.ts`). The file is written
    * atomically and a copy of the old one is kept. Returns whether it changed anything; a second run finds nothing.
    */

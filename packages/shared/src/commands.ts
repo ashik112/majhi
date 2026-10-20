@@ -61,8 +61,6 @@ import {
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
   AutonomyPlanInputSchema,
-  AutonomyReportInputSchema,
-  AutonomyReportSchema,
   AutonomyStartInputSchema,
   AutonomyStatusInputSchema,
   AutonomyStatusSchema,
@@ -1713,7 +1711,7 @@ export const commands = {
   "incident.askCaptain": {
     risk: "change",
     summary:
-      "The owner asks the captain of an incident's workspace to look at it now, even when nobody did (Auto-pilot off, outside working hours). It is the owner's message in the captain's lane. Owner only",
+      "The owner asks the captain of an incident's workspace to look at it now, even when nobody did (Autonomous off, outside working hours). It is the owner's message in the captain's lane. Owner only",
     input: IncidentTaskInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
@@ -4206,13 +4204,6 @@ export const commands = {
       "The autonomous feed, newest first: mode changes, ticks, decisions with their one-line reasons, approvals, refusals, task changes, answers, guidance and cap holds. decisions true keeps only decisions, approvals and refusals",
     input: AutonomyEventsInputSchema,
     output: z.object({ events: z.array(AutonomyEventSchema) }),
-  },
-  "autonomy.report": {
-    risk: "read",
-    summary:
-      "Charts for the Auto-pilot dashboard: today's Auto-pilot spend by hour, and the tasks it finished (reached review, an MR or done) per day and workspace over the last days (default 14); the Stuck list (tasks with no progress for hours, repeated failures or loops, cards waiting longest); and the machine's load",
-    input: AutonomyReportInputSchema,
-    output: AutonomyReportSchema,
   },
   "autonomy.start": {
     risk: "change",

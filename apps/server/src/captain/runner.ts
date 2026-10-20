@@ -26,7 +26,7 @@ import { FAILURES_PAUSE, PASS_BOUND, pausedToday, restHolds } from "./rules.ts";
 export interface Workspace {
   org: string;
   name: string;
-  /** Auto-pilot now: the scheduled upkeep runs only while it is On. */
+  /** Autonomous now: the scheduled upkeep runs only while it is On. */
   mode: AutonomyMode;
   /** Stop everything is on. */
   stopped?: boolean | undefined;

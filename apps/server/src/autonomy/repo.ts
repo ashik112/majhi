@@ -18,7 +18,6 @@ import {
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import type { SpendTurn } from "./report.ts";
 import type { OrgSpendRow } from "./spend.ts";
 
 /** The one row of autonomous mode's state (migration 112). */
@@ -540,29 +539,7 @@ export class AutonomyRepo {
     return row?.n ?? 0;
   }
 
-  /** The same turns as `spendRows`, with their workspace, for the per-day chart. */
-  spendTurnsByOrg(start: string, end: string, chats: readonly string[]): (SpendTurn & { org: string })[] {
-    const marks = chats.map(() => "?").join(", ");
-    return this.db
-      .prepare(
-        `SELECT t.at AS at, t.cost_usd AS cost, 0 AS tokens, COALESCE(t.org, ?) AS org
-         FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})`,
-      )
-      .all(PRIVATE, start, end, ...chats) as (SpendTurn & { org: string })[];
-  }
 
-  /** The same turns as `spendRows`, one row each, for the hourly chart. */
-  spendTurns(start: string, end: string, chats: readonly string[]): SpendTurn[] {
-    const marks = chats.map(() => "?").join(", ");
-    return this.db
-      .prepare(
-        `SELECT t.at AS at, t.cost_usd AS cost, (t.input_tokens + t.output_tokens + t.cache_write_tokens) AS tokens
-         FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})`,
-      )
-      .all(start, end, ...chats) as SpendTurn[];
-  }
 }
 
 function eventOf(r: EventDbRow): AutonomyEvent[] {

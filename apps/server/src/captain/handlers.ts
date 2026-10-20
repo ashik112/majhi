@@ -22,7 +22,7 @@ type CaptainCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. The captain never changes its own switch; the owner does it on ${pageRef("captain")}.`,
+      `${ctx.command} is the owner's. The captain never changes its own switch; the owner does it from the Autonomous menu in the top bar.`,
       409,
     );
   }

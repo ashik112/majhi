@@ -315,7 +315,7 @@ export class WikiService {
     return lines.length === 0 ? undefined : lines.join("\n");
   }
 
-  /** Projects of a workspace with a wiki that is behind the base branch (or written by older rules): what Auto-pilot would update. */
+  /** Projects of a workspace with a wiki that is behind the base branch (or written by older rules): what Autonomous would update. */
   async stale(org: string): Promise<{ projects: string[]; commits: number }> {
     const out: string[] = [];
     let commits = 0;

@@ -80,7 +80,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("p", PAGE_PATH.projects, "Go to projects and links"),
   go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),
-  go("j", PAGE_PATH.captain, "Go to the captain page (rules, history, Auto-pilot)"),
+  go("j", PAGE_PATH.captain, "Go to the captain page (history, results, findings)"),
   go("w", PAGE_PATH.watch, "Go to watch (services and incidents)"),
   go("r", PAGE_PATH.playbooks, "Go to playbooks"),
   { id: "next-task", keys: ["]"], what: "Next task", group: "Task", press: { key: "]" }, scope: "task" },

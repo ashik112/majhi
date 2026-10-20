@@ -2082,6 +2082,14 @@ WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
 `,
   },
   {
+    // Captain, step 5: the usage watch on the daily budget of Autonomous changed its name.
+    id: 197,
+    name: "autonomous day watches",
+    sql: `
+UPDATE watches SET def = replace(def, '"autopilotDay"', '"autonomousDay"');
+`,
+  },
+  {
     // Captain, step 5: the owner's mark "Not for the captain" is an idea the owner keeps (`held-by-owner`): only the
     // owner starts it, which is what the mark meant. The column goes.
     id: 196,

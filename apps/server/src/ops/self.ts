@@ -182,7 +182,7 @@ export class SelfChecks {
     const stall = deps.queueStall();
     out.push({
       id: "self-queue",
-      name: "Auto-pilot queue",
+      name: "Autonomous queue",
       status: stall !== undefined && stall > LIMITS.queueStuckMin ? "fail" : "pass",
       detail:
         stall !== undefined && stall > LIMITS.queueStuckMin
