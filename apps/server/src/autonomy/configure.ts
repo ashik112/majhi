@@ -7,7 +7,6 @@ import {
 } from "@majhi/shared";
 import type { z } from "zod";
 import type { ConfigSections } from "../config/sections.ts";
-import { limitWord } from "./sizes.ts";
 import { capText } from "./spend.ts";
 
 /**
@@ -48,18 +47,15 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
     else delete orgs[id];
   }
   const tz = patch.tz ?? current.tz;
-  // The pick rule's workspace list moved to the per-workspace choice (5.18); it is not kept.
-  const pick = { size: patch.pick?.size ?? current.pick.size };
   return {
     ...current,
-    pick,
     day: patch.day ?? current.day,
     orgs,
     floors: {
       window: patch.floors?.window ?? current.floors.window,
       weekly: patch.floors?.weekly ?? current.floors.weekly,
     },
-    summary_at: patch.summary_at ?? current.summary_at,
+    brief_at: patch.brief_at ?? current.brief_at,
     ...(tz === undefined ? {} : { tz }),
   };
 }
@@ -73,9 +69,8 @@ export function toFile(
     ...(patch.day === undefined ? {} : { day: next.day }),
     ...(patch.orgs === undefined ? {} : { orgs: next.orgs }),
     ...(patch.floors === undefined ? {} : { floors: next.floors }),
-    ...(patch.summary_at === undefined ? {} : { summary_at: next.summary_at }),
+    ...(patch.brief_at === undefined ? {} : { brief_at: next.brief_at }),
     ...(patch.tz === undefined ? {} : { tz: next.tz }),
-    ...(patch.pick === undefined ? {} : { pick: next.pick }),
   };
 }
 
@@ -95,27 +90,24 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
     }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
+    const rules = (["freeze", "tz", "branches", "providers", "account", "reportCost"] as const).filter(
       (k) => change[k] !== undefined,
     );
     if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
   }
   if (patch.floors?.window !== undefined) parts.push(`the 5-hour floor to ${patch.floors.window}%`);
   if (patch.floors?.weekly !== undefined) parts.push(`the weekly floor to ${patch.floors.weekly}%`);
-  if (patch.summary_at !== undefined) parts.push(`the daily summary to ${patch.summary_at}`);
+  if (patch.brief_at !== undefined) parts.push(`the morning brief to ${patch.brief_at}`);
   if (patch.tz !== undefined) parts.push(`the time zone to ${patch.tz}`);
-  if (patch.pick?.size !== undefined) parts.push(`the task size it takes to ${limitWord(patch.pick.size)}`);
   const lines = [
     ...(own.length === 0 ? [] : [`set ${own.join(", ")}`]),
-    ...(parts.length === 0 ? [] : [`set Auto-pilot's ${parts.join(", ")}`]),
+    ...(parts.length === 0 ? [] : [`set Autonomous's ${parts.join(", ")}`]),
   ];
-  return lines.length === 0 ? "changed nothing in Auto-pilot" : lines.join("; ");
+  return lines.length === 0 ? "changed nothing in Autonomous" : lines.join("; ");
 }
 
-function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
+function ruleWord(key: "freeze" | "tz" | "branches" | "providers" | "account" | "reportCost"): string {
   switch (key) {
-    case "hours":
-      return "working hours";
     case "freeze":
       return "freeze dates";
     case "tz":
@@ -126,5 +118,7 @@ function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "a
       return "AI providers";
     case "account":
       return "paying account";
+    case "reportCost":
+      return "weekly report cost line";
   }
 }

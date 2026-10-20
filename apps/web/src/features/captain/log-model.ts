@@ -61,8 +61,8 @@ export function eventKind(event: Pick<AutonomyEvent, "kind" | "status" | "text">
   }
 }
 
-/** Events about the whole captain (the switch, wake-ups, summaries) belong to no workspace. */
-const WHOLE = new Set<AutonomyEvent["kind"]>(["mode", "summary", "tick"]);
+/** Events about the whole captain (the switch, wake-ups) belong to no workspace. */
+const WHOLE = new Set<AutonomyEvent["kind"]>(["mode", "tick"]);
 
 /**
  * Both records in one list, newest first. An event with no workspace belongs to Private, except the

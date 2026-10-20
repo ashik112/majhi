@@ -9,8 +9,6 @@ import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { useToast } from "@/components/ui/toast";
 import { useBoss } from "@/features/boss/boss-context";
-import { wsTab } from "@/features/captain/panel-model";
-import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -111,7 +109,6 @@ export function IncidentDetail({
   const toast = useToast();
   const navigate = useNavigate();
   const boss = useBoss();
-  const mode = useAutonomyStatus().data?.mode;
   const lane = useCaptainStatus().data?.orgs.find((o) => o.org === incident.org)?.lane;
   const open = incident.status === "open";
   const looked = incident.timeline.filter((t) => t.kind === "action");
@@ -219,7 +216,7 @@ export function IncidentDetail({
                   disabled={askNow.isPending}
                   onClick={() =>
                     incident.task === undefined
-                      ? boss.show(wsTab(incident.org), asked)
+                      ? boss.show({ org: incident.org, draft: asked })
                       : askNow.mutate(incident.task, {
                           onSuccess: () =>
                             toast("Asked the captain", { detail: `It is looking at ${incident.task}.` }),

@@ -82,7 +82,7 @@ describe("a client room of another workspace", () => {
     }));
     expect(blocked.isError).toBe(true);
     // Its proposal for another workspace is refused too.
-    const proposal = await call("autonomy.configure", { orgs: { globex: { tasksAtOnce: 2 } } });
+    const proposal = await call("autonomy.configure", { orgs: { globex: { cap: { cost: 2 } } } });
     expect(proposal.isError).toBe(true);
     expect(proposal.text).toMatch(/Refused|own workspace/);
   });

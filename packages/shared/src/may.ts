@@ -1,15 +1,15 @@
 import type { Authority, AuthorityRow } from "./authority.ts";
 import type { AutonomyMode } from "./autonomy.ts";
 import type { CaptainChore } from "./chores.ts";
-import type { Freeze, WorkHours } from "./settings.ts";
+import type { Freeze } from "./settings.ts";
 
 /**
  * May the captain do this now? The one place that answers it (rule set of 2026-10-08).
  *
  * Two jobs. `reacting`: something came in (an incident, a finding, an agent's question, an owner's task
- * reaching review, a fix task a lead opened). It never waits for Auto-pilot. `backlog`: the captain picks
+ * reaching review, a fix task a lead opened). It never waits for Autonomous. `backlog`: the captain picks
  * tasks from the backlog by the owner's rules, drives them to done and ships them, and runs upkeep on
- * schedule. It needs Auto-pilot on.
+ * schedule. It needs Autonomous on.
  *
  * Each action then checks only its own Permissions line (`act`). `read` is the actions that change
  * nothing (investigating, triage, answering from the wiki, reviewing, planning a deploy): no line, no
@@ -31,12 +31,11 @@ export interface CaptainPolicy {
   /** The workspace's name, for the lines the owner reads. */
   name: string;
   authority: Authority;
-  /** Auto-pilot's switch. Only backlog work reads it. */
-  autopilot: AutonomyMode;
+  /** Autonomous's switch. Only backlog work reads it. */
+  autonomous: AutonomyMode;
   /** The owner pressed Stop everything. */
   stopped: boolean;
-  /** Working hours and freeze dates, in `tz`. Absent: any time. */
-  hours?: WorkHours | undefined;
+  /** Freeze dates, in `tz`. */
   freeze?: readonly Freeze[] | undefined;
   tz: string;
 }
@@ -55,16 +54,16 @@ export interface MayAsk {
 
 export type May =
   | { ok: true }
-  | { ok: false; because: "stopped" | "autopilot" | "line" | "rest"; why: string; row?: AuthorityRow };
+  | { ok: false; because: "stopped" | "autonomous" | "line" | "rest"; why: string; row?: AuthorityRow };
 
 export const STOPPED_WHY = "Stop everything is on";
-export const AUTOPILOT_WHY = "Auto-pilot is off, so the captain takes no backlog work";
+export const AUTONOMOUS_WHY = "Autonomous is off, so the captain takes no backlog work";
 
-/** What Auto-pilot and the Stop switch alone say: no line, no hours. */
-export function mayWork(policy: Pick<CaptainPolicy, "autopilot" | "stopped">, job: Job): May {
+/** What Autonomous and the Stop switch alone say: no line, no hours. */
+export function mayWork(policy: Pick<CaptainPolicy, "autonomous" | "stopped">, job: Job): May {
   if (policy.stopped) return { ok: false, because: "stopped", why: STOPPED_WHY };
-  if (job === "backlog" && policy.autopilot !== "on") {
-    return { ok: false, because: "autopilot", why: AUTOPILOT_WHY };
+  if (job === "backlog" && policy.autonomous !== "on") {
+    return { ok: false, because: "autonomous", why: AUTONOMOUS_WHY };
   }
   return { ok: true };
 }
@@ -76,9 +75,9 @@ export function may(
   ask: MayAsk,
   lineWhy: (row: AuthorityRow, name: string) => string,
 ): May {
-  const work = mayWork(policy, ask.job);
-  if (!work.ok) return work;
-  if (ask.act === "read") return work;
+  // Reading changes nothing: only Stop everything holds it, never the Autonomous switch.
+  const work = mayWork(policy, ask.act === "read" ? "reacting" : ask.job);
+  if (!work.ok || ask.act === "read") return work;
   if (policy.authority[ask.act] !== "decide") {
     return { ok: false, because: "line", row: ask.act, why: lineWhy(ask.act, policy.name) };
   }
@@ -87,20 +86,14 @@ export function may(
   return { ok: true };
 }
 
-/** Why the workspace rests now (a freeze date, or outside working hours), or undefined. */
-export function restOf(
-  policy: Pick<CaptainPolicy, "hours" | "freeze" | "tz">,
-  now: Date,
-): string | undefined {
+/** Why the workspace rests now (a freeze date), or undefined. */
+export function restOf(policy: Pick<CaptainPolicy, "freeze" | "tz">, now: Date): string | undefined {
   const day = dayIn(now, policy.tz);
   const frozen = (policy.freeze ?? []).find((f) => f.from <= day && day <= f.to);
   if (frozen !== undefined) {
     return frozen.from === frozen.to
       ? `${day} is a freeze date`
       : `${frozen.from} to ${frozen.to} is a freeze`;
-  }
-  if (policy.hours !== undefined && !withinHours(policy.hours, clockIn(now, policy.tz))) {
-    return `outside working hours (${policy.hours.from} to ${policy.hours.to})`;
   }
   return undefined;
 }
@@ -149,7 +142,7 @@ export function jobOfStart(task: {
 
 /**
  * Each chore's job. Cards, questions and ship react to what agents and owner-started tasks do; memory and
- * cleanup have always run with Auto-pilot off. The rest is upkeep on a schedule: backlog work.
+ * cleanup have always run with Autonomous off. The rest is upkeep on a schedule: backlog work.
  */
 export const CHORE_JOB: Readonly<Record<CaptainChore, Job>> = {
   ship: "reacting",
@@ -179,7 +172,7 @@ export const READ_ONLY_CHORES: ReadonlySet<CaptainChore> = new Set([
 
 /** Why a chore may not run now for the switches alone, or undefined. */
 export function choreSwitchWhy(
-  policy: Pick<CaptainPolicy, "autopilot" | "stopped">,
+  policy: Pick<CaptainPolicy, "autonomous" | "stopped">,
   chore: CaptainChore,
 ): string | undefined {
   const work = mayWork(policy, CHORE_JOB[chore]);

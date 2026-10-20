@@ -14,7 +14,7 @@ import type { AutonomyService } from "./service.ts";
  * batch: events are batched for `DEBOUNCE_MS`, at most one tick waits per lane, and while the captain
  * is in a turn in that lane the next tick goes when the turn ends. A tick holds only its workspace's
  * tasks, cards, backlog and spend. A wake is a reaction (a finding, an incident, a card, a task in
- * review) or backlog news. Reactions go whatever Auto-pilot says; backlog news goes only while it is on.
+ * review) or backlog news. Reactions go whatever Autonomous says; backlog news goes only while it is on.
  * Nothing ticks while Stop everything is on.
  *
  * A tick carries news only (SPEC 5.18, "Wakes carry news"). Each wake is `news` (a task finished, a
@@ -73,7 +73,7 @@ interface Lane {
   counts: Map<string, number>;
   /** Lines of the batch that are news. */
   news: Set<string>;
-  /** Lines of the batch that are backlog news: they go only while Auto-pilot is on and under no cap. */
+  /** Lines of the batch that are backlog news: they go only while Autonomous is on and under no cap. */
   backlog: Set<string>;
   /** Lines that go to the main lane whatever their gate: which lane hears a line is not which gate holds it. */
   main: Set<string>;
@@ -194,7 +194,7 @@ export class AutonomyDriver {
   }
 
   /**
-   * Auto-pilot is not on, or Stop everything is on. Backlog news goes at once; with Stop everything on,
+   * Autonomous is not on, or Stop everything is on. Backlog news goes at once; with Stop everything on,
    * every lane's batch and tick go.
    */
   onMode(mode: AutonomyMode): void {
@@ -272,7 +272,7 @@ export class AutonomyDriver {
       this.clearBatch(lane);
       return;
     }
-    // Backlog news goes only while Auto-pilot is on and under the day cap. Reactions (an incident, a finding, a card) always go.
+    // Backlog news goes only while Autonomous is on and under the day cap. Reactions (an incident, a finding, a card) always go.
     if (autonomy.mode() !== "on" || autonomy.dayCapped()) this.dropBacklog(lane);
     if (lane.reasons.length === 0) return;
     lane.sending = this.deliver(org, lane).finally(() => {
@@ -284,7 +284,7 @@ export class AutonomyDriver {
   private async deliver(org: string, lane: Lane): Promise<void> {
     // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
     const job: Job = lane.reasons.every((r) => lane.backlog.has(r)) ? "backlog" : "reacting";
-    // The gate (Auto-pilot, hours) follows `job`; the lane that hears it is the main one when every line goes there.
+    // The gate (Autonomous, hours) follows `job`; the lane that hears it is the main one when every line goes there.
     const into: Job = lane.reasons.every((r) => lane.backlog.has(r) || lane.main.has(r))
       ? "backlog"
       : "reacting";
@@ -365,7 +365,7 @@ export class AutonomyDriver {
       ...this.deskTasks(org, new Set(status.now.map((t) => t.task))),
       secretRequests: this.secretLines(org),
       starts: authorityOf(status.settings, org).start === "decide",
-      ...(autonomy.mode() === "on" ? {} : { autopilotOff: true }),
+      ...(autonomy.mode() === "on" ? {} : { autonomousOff: true }),
       machine: machineOf(autonomy),
     };
     return { input, boss };
@@ -441,7 +441,7 @@ export class AutonomyDriver {
       task: chat,
       agent: boss,
       text,
-      settled: "Auto-pilot mode woke the captain",
+      settled: "Autonomous mode woke the captain",
       by: "majhi",
     });
     lane.lastFacts = facts;
@@ -565,7 +565,7 @@ export class AutonomyDriver {
 
 /** Why a task paused, in words for the log. The owner is named only when the owner did it. */
 function pauseWhy(t: Pick<Task, "pausedReason" | "pausedBy">): string {
-  if (t.pausedBy === "autonomy-off") return "because Auto-pilot was turned off";
+  if (t.pausedBy === "autonomy-off") return "because Autonomous was turned off";
   if (t.pausedBy === "captain") return "by Captain";
   switch (t.pausedReason ?? "owner") {
     case "owner":

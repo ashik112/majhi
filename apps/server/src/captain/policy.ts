@@ -11,15 +11,14 @@ import { authorityOf } from "./levels.ts";
 export function captainPolicyOf(
   settings: Pick<AutonomySettings, "orgs" | "tz">,
   org: string,
-  live: { name: string; autopilot: AutonomyMode; stopped: boolean },
+  live: { name: string; autonomous: AutonomyMode; stopped: boolean },
 ): CaptainPolicy {
   const rules = settings.orgs[org];
   return {
     name: live.name,
     authority: authorityOf(settings, org),
-    autopilot: live.autopilot,
+    autonomous: live.autonomous,
     stopped: live.stopped,
-    hours: rules?.hours,
     freeze: rules?.freeze,
     tz: zoneOr(rules?.tz ?? settings.tz),
   };

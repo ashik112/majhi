@@ -23,7 +23,7 @@ export const BURST_WINDOW_MS = 10_000;
 export const CAPTAIN_GRACE_MS = 120_000;
 const SEEN_MAX = 2_000;
 /** Where a click on the morning brief's notification goes. */
-export const BRIEF_PATH = "/today";
+export const BRIEF_PATH = "/";
 
 export interface DesktopNotice {
   title: string;
@@ -228,10 +228,11 @@ export class Notifier {
 
   /**
    * The morning brief is ready (SPEC 5.18): one desktop notification and one `attention` event per day, whose
-   * click opens Today. It is not a decision, so it never joins a burst; the owner's mute and quiet hours still
-   * apply. Told once per day, whatever calls it.
+   * click opens the console, and `also` for the owner's other alert channels (ntfy, Telegram). It is not a decision,
+   * so it never joins a burst; the owner's mute and quiet hours still apply to all of them. Told once per day,
+   * whatever calls it. It is not an incident ping and does not touch the incident ping rules.
    */
-  brief(day: string, text: string): void {
+  brief(day: string, text: string, also?: () => Promise<void>): void {
     const key = `brief:${day}`;
     if (this.seen.has(key)) return;
     this.seen.add(key);
@@ -240,11 +241,13 @@ export class Notifier {
       .then(async (settings) => {
         if (settings.muted.includes("brief")) return;
         const quiet = { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz };
-        const send = () =>
-          this.deliver(
+        const send = async () => {
+          await this.deliver(
             { id: key, kind: "brief", title: "Morning brief", text, path: BRIEF_PATH, count: 1 },
             settings,
           );
+          await also?.().catch(() => undefined);
+        };
         if (inQuietHours(this.now(), quiet)) {
           this.holdForQuiet(send, quiet);
           return;

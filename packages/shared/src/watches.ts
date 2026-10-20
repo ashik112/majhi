@@ -89,7 +89,7 @@ export const USAGE_SOURCES = [
   "account5h",
   "accountWeek",
   "budget",
-  "autopilotDay",
+  "autonomousDay",
   "monthlyCeiling",
 ] as const;
 export type UsageSource = (typeof USAGE_SOURCES)[number];
@@ -217,7 +217,7 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     kind: z.literal("usage"),
     /**
      * `spend`: what the workspace used (metric and period). The others read a percent of a limit:
-     * an account's 5-hour or weekly window, a workspace's or account's weekly budget, the Auto-pilot
+     * an account's 5-hour or weekly window, a workspace's or account's weekly budget, the Autonomous
      * daily budget or the monthly ceiling.
      */
     source: z.enum(USAGE_SOURCES).default("spend"),

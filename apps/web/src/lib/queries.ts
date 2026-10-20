@@ -72,8 +72,6 @@ export const queryKeys = {
   incident: ["incident"],
   /** Every `wiki.*` read: a workspace's or project's wiki, its pages and what the next update would cost. */
   wiki: ["wiki"],
-  /** `agenda.today`: the brief, the agenda, Watch and Plan. */
-  agenda: ["agenda"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
   /** `notices.list`: the bell's feed. Task, ops, client and captain changes refetch it; the owner's reads do too. */

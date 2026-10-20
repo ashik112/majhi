@@ -36,7 +36,7 @@ import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
 
-/** How often the daily chores, the hourly checks and the daily summary are looked at. */
+/** How often the daily chores, the hourly checks and the morning brief are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const _HOURLY_MS = 60 * 60_000;
@@ -91,7 +91,7 @@ export interface CaptainDeps {
 
 /**
  * The captain per workspace (SPEC 5.18): the choice per workspace, the upkeep chores under the
- * runner's guards, the stop switch, presence, the cause of events, the daily summary line and the
+ * runner's guards, the stop switch, presence, the cause of events, the morning brief and the
  * captain's log with Undo. The rules are in docs/PROGRESS.md under Phase 13.
  */
 export class CaptainService {
@@ -148,7 +148,7 @@ export class CaptainService {
   }
 
   /**
-   * This service closed, or the owner pressed Stop everything: nothing of the captain acts. Auto-pilot
+   * This service closed, or the owner pressed Stop everything: nothing of the captain acts. Autonomous
    * being Off is not this: it holds only the backlog work (`may.ts`).
    */
   stopped(): boolean {
@@ -391,7 +391,7 @@ export class CaptainService {
     const now = this.now();
     const policy = captainPolicyOf(autonomy, org, {
       name: name ?? (org === PRIVATE ? "Private" : org),
-      autopilot: this.deps.autonomy.mode(),
+      autonomous: this.deps.autonomy.mode(),
       stopped: this.repo.isStopped(),
     });
     const { tz } = policy;
@@ -400,7 +400,7 @@ export class CaptainService {
     return {
       org,
       name: policy.name,
-      mode: policy.autopilot,
+      mode: policy.autonomous,
       stopped: policy.stopped,
       authority: policy.authority,
       rules,
@@ -494,7 +494,7 @@ export class CaptainService {
 
   /**
    * Stop everything: every captain run ends at its next step, the lanes' turns end, the tasks the captain
-   * drives pause, and nothing new starts until it is pressed again. Auto-pilot's switch is not touched.
+   * drives pause, and nothing new starts until it is pressed again. Autonomous's switch is not touched.
    */
   async stop(): Promise<CaptainStatus> {
     for (const p of this.pending.values()) clearTimeout(p.timer);
@@ -505,7 +505,7 @@ export class CaptainService {
     return this.status();
   }
 
-  /** Stop everything pressed again: the captain works as its Permissions and Auto-pilot say. */
+  /** Stop everything pressed again: the captain works as its Permissions and Autonomous say. */
   async resume(): Promise<CaptainStatus> {
     this.repo.setStopped(false, this.now().toISOString());
     await this.deps.autonomy.resumeHalt();

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
-import { IdSchema } from "./ids.ts";
+import { IdSchema, OrgIdSchema } from "./ids.ts";
 import { AuthorityLevelSchema } from "./risk-kinds.ts";
 import { AutonomyOrgSchema, BudgetSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
@@ -32,6 +32,20 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   checklist: "Owner checklist",
   wiki: "Project wiki",
 };
+
+/**
+ * Why the captain cannot run a step in a workspace (docs/briefs/captain.md): typed, so Needs you names the
+ * fix and nothing reads the words. `signed-out` is told by the account's own sign-in decision.
+ */
+export const CannotRunReasonSchema = z.enum([
+  "no-captain",
+  "no-account",
+  "provider-not-allowed",
+  "account-of-another-workspace",
+  "signed-out",
+  "at-limit",
+]);
+export type CannotRunReason = z.infer<typeof CannotRunReasonSchema>;
 
 /** Who caused an event. The captain's own events never start an upkeep run. */
 export const CaptainCauseSchema = z.enum(["owner", "agent", "captain", "majhi"]);
@@ -202,6 +216,17 @@ export const CaptainStatusSchema = z.object({
   orgs: z.array(CaptainOrgSchema),
 });
 export type CaptainStatus = z.infer<typeof CaptainStatusSchema>;
+
+/**
+ * `captain.step`: from the owner's All conversation, ask the captain's step in one workspace to do or answer
+ * something. The step runs there with that workspace's access only; its answer shows in the conversation,
+ * tagged with the workspace.
+ */
+export const CaptainStepInputSchema = z.object({
+  org: OrgIdSchema,
+  ask: z.string().trim().min(1).max(4000),
+});
+export const CaptainStepResultSchema = z.object({ org: z.string(), chat: TaskIdSchema });
 
 export const CaptainLogInputSchema = z.object({
   org: z.string().optional(),

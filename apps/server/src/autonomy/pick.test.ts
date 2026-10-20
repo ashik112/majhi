@@ -1,6 +1,5 @@
-import type { AutonomyEvent, AutonomyStatus, Task, TaskSummary } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 let w: BossWorld | undefined;
@@ -9,93 +8,68 @@ afterEach(async () => {
   w = undefined;
 });
 
-/** A rating as Laya gives it, counted. */
-const rated = (level: TaskRating["level"]): TaskRating => ({
-  ...(level === undefined ? {} : { level }),
-  confidence: 0.7,
-  counted: level !== undefined,
-  why: "",
-  decisionId: "dec_test",
-  provider: "laya",
-  by: "Laya",
-});
-
-/**
- * A captain world with Acme set to "Runs it" and autonomous mode on; the captain calls from Acme's
- * lane. Sizes come from a fixed rater: a task whose text says "large", "medium" or "small" is rated
- * so, anything else is not rated.
- */
+/** A captain world with Acme at Routine and Autonomous on; the captain calls from Acme's lane. */
 async function on() {
   w = await bossWorld({ real: false });
   const { h } = w;
-  const autonomy = h.majhi.services.autonomy;
-  autonomy.sizes.useRater(async (t) => {
-    const level = (["large", "medium", "small"] as const).find((l) => t.brief.includes(l));
-    return level === undefined ? undefined : rated(level);
-  });
   expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
-  expect((await h.cmd("autonomy.start")).status).toBe(200);
-  const chat = await autonomy.laneChat("acme");
+  expect((await h.cmd("autonomy.start", { until: null })).status).toBe(200);
+  const chat = await h.majhi.services.autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
   const call = (tool: string, args: Record<string, unknown>) =>
     h.majhi.services.admin.call({ task: chat, agent: "boss" }, tool, { reason: "it is next", ...args });
-  /** A task the owner made in Acme, not started. */
-  const ownerTask = async (text: string, repos = [{ project: "acme-api" }]): Promise<string> => {
-    const made = await h.cmd("tasks.create", { text, repos, start: false });
+  const ownerTask = async (text: string, extra: Record<string, unknown> = {}): Promise<Task> => {
+    const made = await h.cmd("tasks.create", {
+      text,
+      repos: [{ project: "acme-api" }],
+      start: false,
+      ...extra,
+    });
     expect(made.status).toBe(200);
-    return (made.body as Task).id;
+    return made.body as Task;
   };
-  const configure = async (pick: Record<string, unknown>) => {
-    const res = await h.cmd("autonomy.configure", { pick });
-    expect(res.status).toBe(200);
-    return res.body as AutonomyStatus;
-  };
-  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status", { detail: true })).body;
-  const refused = async (): Promise<AutonomyEvent[]> =>
-    ((await h.cmd("autonomy.events", { limit: 100 })).body.events as AutonomyEvent[]).filter(
-      (e) => e.kind === "refused",
-    );
-  return { h, chat, autonomy, call, ownerTask, configure, status, refused };
+  return { h, call, ownerTask };
 }
 
-describe("tasks marked Not for autonomous mode", () => {
-  it("are left alone by the captain, show in tasks.list, and only the owner sets the mark", async () => {
+describe("what Autonomous may start", () => {
+  it("never starts an idea, nothing in a workspace at Ask me, and nothing at all while it is off, and still reads", async () => {
     const t = await on();
-    const id = await t.ownerTask("Migrate the billing tables\n\nsmall");
-    const marked = await t.h.cmd("autonomy.exclude", { task: id, exclude: true });
-    expect(marked.status).toBe(200);
-    const list = (await t.h.cmd("tasks.list")).body as TaskSummary[];
-    expect(list.find((s) => s.id === id)?.noAutonomy).toBe(true);
-    expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBe(true);
+    const fix = await t.ownerTask("Fix the typo on the login page");
 
-    const why = `Refused: the owner marked ${id} Not for the captain, so the captain leaves it alone.`;
-    expect(await t.call("majhi_tasks_start", { id })).toEqual({ isError: true, text: why });
-    expect(await t.call("majhi_tasks_update", { id, title: "Renamed" })).toEqual({
-      isError: true,
-      text: why,
+    // An idea the owner kept for themselves, and one the captain filed for itself: both wait for the owner.
+    const kept = await t.ownerTask("Rewrite the invoice export", { heldByOwner: true });
+    expect(kept.idea).toBe("held-by-owner");
+    const own = await t.call("majhi_tasks_create", {
+      name: "Captain idea",
+      text: "Tidy the api folder",
+      repos: [{ project: "acme-api" }],
+      start: true,
     });
-    expect(
-      await t.call("majhi_tasks_create", {
-        name: "Test task",
-        text: "A child of it",
-        parent: id,
-        start: false,
-      }),
-    ).toEqual({
-      isError: true,
-      text: why,
-    });
-    // Reading it is fine.
-    expect((await t.call("majhi_tasks_get", { id })).isError).toBe(false);
+    const ownId = (JSON.parse(own.text) as { id: string }).id;
+    expect(t.h.majhi.services.store.tasks.get(ownId)?.idea).toBe("captain-made");
+    for (const id of [kept.id, ownId]) {
+      const refused = await t.call("majhi_tasks_start", { id });
+      expect(refused.isError).toBe(true);
+      expect(refused.text).toContain("is an idea");
+    }
+    // The owner starts either one freely.
+    expect((await t.h.cmd("tasks.start", { id: kept.id })).status).toBe(200);
+    expect(t.h.majhi.services.store.tasks.get(kept.id)?.idea).toBeUndefined();
 
-    // The captain cannot clear the mark.
-    const agent = await t.call("majhi_autonomy_exclude", { task: id, exclude: false });
-    expect(agent.isError).toBe(true);
-    expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBe(true);
+    // At Ask me the owner decides when work starts: the captain starts nothing there.
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "ask" })).status).toBe(200);
+    const asked = await t.call("majhi_tasks_start", { id: fix.id });
+    expect(asked.isError).toBe(true);
+    expect(asked.text).toContain("you decide when work starts");
+    expect((await t.h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
 
-    // The owner clears it, and the captain may take it again.
-    expect((await t.h.cmd("autonomy.exclude", { task: id, exclude: false })).status).toBe(200);
-    expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBeUndefined();
-    expect((await t.call("majhi_tasks_start", { id })).text).not.toContain("Not for autonomous mode");
+    // Off, it picks nothing from the backlog, and a read still answers.
+    expect((await t.h.cmd("autonomy.stop")).status).toBe(200);
+    const off = await t.call("majhi_tasks_start", { id: fix.id });
+    expect(off.isError).toBe(true);
+    expect(off.text).toContain("Autonomous is off");
+    const list = await t.call("majhi_tasks_list", {});
+    expect(list.isError).toBe(false);
+    expect(list.text).toContain(fix.id);
   });
 });

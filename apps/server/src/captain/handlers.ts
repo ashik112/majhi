@@ -1,12 +1,14 @@
-import { pageRef } from "@majhi/shared";
+import type { TaskId } from "@majhi/shared";
 import type { AutonomyService } from "../autonomy/service.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
+import type { Lanes } from "./lanes.ts";
 import type { CaptainService } from "./service.ts";
 
 type CaptainCommand =
   | "captain.status"
   | "captain.log"
+  | "captain.step"
   | "captain.stop"
   | "captain.resume"
   | "captain.startFresh"
@@ -20,7 +22,7 @@ type CaptainCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. The captain never changes its own switch; the owner does it on ${pageRef("captain")}.`,
+      `${ctx.command} is the owner's. The captain never changes its own switch; the owner does it from the Autonomous menu in the top bar.`,
       409,
     );
   }
@@ -30,10 +32,17 @@ function ownerOnly(ctx: CommandContext): void {
 export function captainHandlers(
   captain: CaptainService,
   autonomy: AutonomyService,
+  lanes: Pick<Lanes, "ask">,
 ): Pick<CommandHandlers, CaptainCommand> {
   return {
     "captain.status": async () => captain.status(),
     "captain.log": async (input) => captain.log(input),
+    "captain.step": async (input) => {
+      // A step is the owner's own question put to one workspace, so it works whatever Autonomous says.
+      const told = await lanes.ask(input.org, input.ask);
+      if (!told.sent) throw new UserError(`The step in ${input.org} did not start: ${told.why}.`, 409);
+      return { org: input.org, chat: told.chat as TaskId };
+    },
     "captain.stop": async (_input, ctx) => {
       ownerOnly(ctx);
       return captain.stop();

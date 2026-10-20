@@ -110,6 +110,11 @@ export interface Ops {
   telegram: OwnerTelegram;
   repo: OpsRepo;
   tokens: PhoneTokens;
+  /**
+   * One short message to every alert channel that is set up (ntfy, Telegram), for what is not an incident: the morning
+   * brief. It is outside the incident ping rules (`pingFor`, `IncidentPings`) and never counts toward them.
+   */
+  tellOwner(title: string, text: string): Promise<void>;
   /** Starts the half-minute tick. */
   start(): void;
   close(): void;
@@ -292,6 +297,10 @@ export function createOps(w: OpsWiring): Ops {
     telegram,
     repo,
     tokens,
+    async tellOwner(title, text) {
+      await phone.publish({ title, message: text, priority: 3, tags: ["sunrise"] }).catch(() => undefined);
+      await telegram.say(`${title}: ${text}`).catch(() => undefined);
+    },
     start() {
       timer ??= setInterval(() => void watch.tick().catch(() => undefined), TICK_MS);
       timer.unref();

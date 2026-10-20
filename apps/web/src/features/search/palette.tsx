@@ -258,23 +258,16 @@ export function Palette({ onClose }: { onClose: () => void }) {
       run: () => (onClose(), boss.show()),
     },
     {
-      id: "captain-today",
-      name: "Captain: what it is doing now",
-      keywords: "autonomous autopilot away summary running next queue decisions",
-      run: () => go(PAGE_PATH.captain, {}),
-    },
-    {
       id: "captain-log",
       name: "Captain: history",
       keywords: "autonomous decisions undo feed log",
-      run: () => go(PAGE_PATH.captain, { tab: "log" }),
+      run: () => go(PAGE_PATH.captain, {}),
     },
     {
-      id: "captain-rules",
-      name: "Captain: permissions",
-      keywords:
-        "autonomous delegation rules authority who decides what budget leave alone standing instructions",
-      run: () => go(PAGE_PATH.captain, { tab: "rules" }),
+      id: "captain-results",
+      name: "Captain: results",
+      keywords: "autonomous scorecard shipped cost outcomes",
+      run: () => go(PAGE_PATH.captain, { tab: "results" }),
     },
   ];
 

@@ -10,7 +10,6 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
 import { useBoss } from "@/features/boss/boss-context";
-import { wsTab } from "@/features/captain/panel-model";
 import { useProjectCards } from "@/lib/card-queries";
 import { cn } from "@/lib/cn";
 import { useDeployView, useSetEnvironments } from "@/lib/deploy-queries";
@@ -115,7 +114,10 @@ export function DeploySection({ project }: { project: ProjectView }) {
               ? `No environments yet. The repo has ${found.join(", ")}.`
               : "No environments yet."}
           </p>
-          <Button size="sm" onClick={() => boss.show(wsTab(project.org), setupDeploysAsk(project.id))}>
+          <Button
+            size="sm"
+            onClick={() => boss.show({ org: project.org, draft: setupDeploysAsk(project.id) })}
+          >
             <MessageSquare aria-hidden="true" />
             Set up deploys
           </Button>

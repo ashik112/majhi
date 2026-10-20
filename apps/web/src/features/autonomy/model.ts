@@ -3,17 +3,12 @@ import type {
   AutonomyEventKind,
   AutonomyMode,
   AutonomyPatch,
-  AutonomyPick,
   AutonomySettings,
-  AutonomySummary,
   Budget,
   CapUse,
   TaskPriority,
-  TaskSize,
-  TaskSizeLimit,
 } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
-import { readStored, writeStored } from "@/features/memory/storage";
 import { parseDollars, parseTokens } from "@/features/usage/budget-model";
 import { formatMoney, formatTokens } from "@/lib/format";
 
@@ -22,8 +17,6 @@ import { formatMoney, formatTokens } from "@/lib/format";
 export const MODE_WORD: Record<AutonomyMode, string> = {
   off: "Off",
   on: "On",
-  // Not a state any more: the server reads it as On.
-  paused: "On",
   stopping: "Turning off",
 };
 
@@ -31,7 +24,6 @@ export const MODE_WORD: Record<AutonomyMode, string> = {
 export const MODE_LAMP: Record<AutonomyMode, LampState> = {
   off: "idle",
   on: "working",
-  paused: "working",
   stopping: "paused",
 };
 
@@ -41,8 +33,6 @@ export function modeLine(mode: AutonomyMode): string {
     case "off":
       return "The captain works only when you ask it to.";
     case "on":
-      return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
-    case "paused":
       return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "stopping":
       return "Turning off. Tasks finish their current step, nothing new starts, then they pause.";
@@ -59,7 +49,6 @@ export function capText(use: CapUse): string {
   if (use.cap?.tokens !== undefined)
     parts.push(`${formatTokens(use.used.tokens)} of ${formatTokens(use.cap.tokens)} tokens`);
   if (parts.length === 0) parts.push(formatMoney(use.used.cost), `${formatTokens(use.used.tokens)} tokens`);
-  if (use.changed === true) parts.push("cap changed during the day");
   return parts.join(" · ");
 }
 
@@ -97,7 +86,7 @@ export function capTone(use: Pick<CapUse, "percent" | "reached">): "calm" | "amb
 // The feed ------------------------------------------------------------------
 
 export const EVENT_WORD: Record<AutonomyEventKind, string> = {
-  mode: "Auto-pilot",
+  mode: "Autonomous",
   tick: "Woke",
   decision: "Decision",
   approval: "Approval",
@@ -106,7 +95,6 @@ export const EVENT_WORD: Record<AutonomyEventKind, string> = {
   answer: "Answer",
   guide: "Guidance",
   cap: "Limit",
-  summary: "Summary",
 };
 
 export type Tone = "neutral" | "amber" | "blue" | "green" | "red";
@@ -142,28 +130,6 @@ export function clockTime(iso: string, now: number): string {
     minute: "2-digit",
     hourCycle: "h23",
   });
-}
-
-// The daily summary ----------------------------------------------------------
-
-export const HOW_WORD: Record<AutonomySummary["shipped"][number]["how"], string> = {
-  merged: "Merged",
-  pushed: "Pushed",
-  "mr-open": "MR open",
-  "mr-merged": "MR merged",
-  review: "Ready to ship",
-  done: "Done",
-};
-
-const SEEN_KEY = "majhi.autonomy.summary-seen";
-
-/** The day of the newest summary the owner has opened on the Auto-pilot page. */
-export function seenSummary(): string | undefined {
-  return readStored(SEEN_KEY);
-}
-
-export function markSummarySeen(day: string): void {
-  writeStored(SEEN_KEY, day);
 }
 
 /**
@@ -221,7 +187,7 @@ export interface LimitsDraft {
   orgs: Record<string, OrgDraft>;
   window: string;
   weekly: string;
-  summaryAt: string;
+  briefAt: string;
 }
 
 const capDraft = (budget: Budget | undefined): CapDraft => ({
@@ -241,7 +207,7 @@ export function limitsDraft(settings: AutonomySettings, orgIds: readonly string[
     orgs,
     window: String(settings.floors.window),
     weekly: String(settings.floors.weekly),
-    summaryAt: settings.summary_at,
+    briefAt: settings.brief_at,
   };
 }
 
@@ -275,15 +241,15 @@ export function limitsPatch(
   settings: AutonomySettings,
   tz: string,
 ): { patch: AutonomyPatch } | { problem: string } {
-  const day = parseCap(draft.day, "Auto-pilot budget");
+  const day = parseCap(draft.day, "Autonomous budget");
   if (day.problem) return { problem: day.problem };
   if (!day.budget)
-    return { problem: "Auto-pilot budget: set dollars, tokens or both. Auto-pilot needs one." };
+    return { problem: "Autonomous budget: set dollars, tokens or both. Autonomous needs one." };
   const window = parsePercent(draft.window, "5-hour floor");
   if (window.problem !== undefined || window.value === undefined) return { problem: window.problem ?? "" };
   const weekly = parsePercent(draft.weekly, "Weekly floor");
   if (weekly.problem !== undefined || weekly.value === undefined) return { problem: weekly.problem ?? "" };
-  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.summaryAt))
+  if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(draft.briefAt))
     return { problem: "Summary time: use a time like 08:00." };
 
   const patch: AutonomyPatch = { tz };
@@ -299,31 +265,8 @@ export function limitsPatch(
   if (Object.keys(orgs).length > 0) patch.orgs = orgs;
   if (window.value !== settings.floors.window || weekly.value !== settings.floors.weekly)
     patch.floors = { window: window.value, weekly: weekly.value };
-  if (draft.summaryAt !== settings.summary_at) patch.summary_at = draft.summaryAt;
+  if (draft.briefAt !== settings.brief_at) patch.brief_at = draft.briefAt;
   return { patch };
-}
-
-// The pick rules ------------------------------------------------------------
-
-export const SIZE_LIMIT_WORD: Record<TaskSizeLimit, string> = {
-  small: "Small only",
-  medium: "Up to medium",
-  any: "Any size",
-};
-
-export const SIZE_WORD: Record<TaskSize, string> = { small: "Small", medium: "Medium", large: "Large" };
-
-export interface PickDraft {
-  size: TaskSizeLimit;
-}
-
-export function pickDraft(pick: AutonomyPick): PickDraft {
-  return { size: pick.size };
-}
-
-/** The `autonomy.configure` input for the pick rules, or undefined when nothing changed. */
-export function pickPatch(draft: PickDraft, pick: AutonomyPick): AutonomyPatch | undefined {
-  return draft.size === pick.size ? undefined : { pick: { size: draft.size } };
 }
 
 // The log --------------------------------------------------------------------

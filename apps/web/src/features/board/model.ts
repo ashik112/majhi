@@ -92,6 +92,7 @@ const PAUSE_TEXT: Record<string, string> = {
   error: "Paused: an error stopped it",
   "signed-out": "Paused: an account is signed out",
   owner: "Paused by you",
+  autonomy: "Stopped by Autonomous",
 };
 
 /** "Waiting on GLX-412", or "Waiting on GLX-412, GLX-413 +1" when there are more than two. */
@@ -134,7 +135,7 @@ export function cardLine(task: TaskSummary): CardLine | null {
       if (task.pausedReason === "owner" && task.pausedBy === "captain")
         return { text: "Paused by Captain", lamp: "paused" };
       if (task.pausedReason === "owner" && task.pausedBy === "autonomy-off")
-        return { text: "Paused when Auto-pilot was turned off", lamp: "paused" };
+        return { text: "Paused when Autonomous was turned off", lamp: "paused" };
       return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", lamp: "paused" };
     case "review":
       return { text: "Finished: reply or mark done", lamp: "needs" };

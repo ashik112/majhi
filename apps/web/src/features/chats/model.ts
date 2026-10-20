@@ -39,9 +39,8 @@ export function workspaceOf(row: Conversation, all: readonly Workspace[]): Works
   return all.find((w) => w.id === id) ?? { id, name: id, letters: badgeLetters(id), color: undefined };
 }
 
-/** A row's name: a captain thread is the workspace's captain, an untitled agent chat is a new chat. */
+/** A row's name: an untitled agent chat is a new chat. */
 export function rowTitle(row: Conversation, workspace: string): string {
-  if (row.kind === "captain") return `Captain in ${workspace}`;
   return row.kind === "agent" ? chatTitle(row) : row.title;
 }
 

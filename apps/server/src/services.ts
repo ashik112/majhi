@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns, type RuntimeOptions } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
+  type CaptainPlace,
   CLIENT_CHAT_BRIEF,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
@@ -36,9 +37,7 @@ import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
 import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
-import { AdminTokens } from "./admin/tokens.ts";
-import { AgendaRepo } from "./agenda/repo.ts";
-import { AgendaService } from "./agenda/service.ts";
+import { type AdminCaller, AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -49,21 +48,27 @@ import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
+import { BriefRepo } from "./brief/repo.ts";
+import { ReportRepo } from "./brief/report-repo.ts";
+import { ReportService } from "./brief/report-service.ts";
+import { BriefService } from "./brief/service.ts";
 import { BrowserService } from "./browsers/service.ts";
 import { TestBrowserService } from "./browsers/test-service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { CannotRunDecisions } from "./captain/cannot-run.ts";
+import { TurnContext } from "./captain/context.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
-import { PayDecisions } from "./captain/pay-decisions.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
+import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { ClientChat } from "./chat/service.ts";
@@ -269,7 +274,7 @@ const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
 const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
-const AGENDA_SWEEP_MS = 60_000;
+const BRIEF_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
 
@@ -376,6 +381,8 @@ export interface Services {
   installRequests: InstallRequests;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
+  /** The captain's place for a session: its tools follow it (`CAPTAIN_PLACES`). */
+  placeOf: (caller: AdminCaller) => CaptainPlace;
   /** The captain's tool calls, approvals and secret requests. */
   admin: AdminService;
   agents: AgentService;
@@ -464,8 +471,8 @@ export interface Services {
   homeChecks: HomeChecks;
   /** A task's origin, areas and whole trail in one read, and the areas of many tasks for a board. */
   taskDetails: TaskDetails;
-  /** The owner's agenda and the morning brief (5.18). */
-  agenda: AgendaService;
+  /** The morning brief per workspace (5.18). */
+  brief: BriefService;
   /** `code_graph`: agents ask a task's own repos' code graph (5.21). */
   codeGraph: CodeGraphTools;
   /** The sealed reader runner: no network, read-only checkout. Absent unless agents run in containers. */
@@ -646,6 +653,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           return found === undefined ? undefined : (found.org ?? PRIVATE);
         },
       });
+      await config.migrateAutonomous();
     },
     (err) => console.error(`Could not move the workspaces to authority levels: ${errorMessage(err)}`),
   );
@@ -1052,6 +1060,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return tasks.crew.successor(task, agent);
     },
     onTurnFailed: (turn) => idleWatch.turnFailed(turn),
+    onRunFailed: (task) => autonomy.runFailed(task),
     // Bound below: autonomous mode is built after the task service.
     overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
@@ -1252,6 +1261,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
   });
   const pointersRef: { current: Pointers | undefined } = { current: undefined };
+  const turnContextRef: { current: TurnContext | undefined } = { current: undefined };
   const tidyFolders: { run?: (ended: string | undefined) => Promise<void> } = {};
   const tasks = new TaskService({
     mergeGate,
@@ -1284,6 +1294,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     terminals,
     memory,
     memoryScopes,
+    turnContext: (task) => turnContextRef.current?.blockFor(task) ?? Promise.resolve(undefined),
     onChatTurn: (id) => void chatMemory?.afterTurn(id),
     onOpened: (task) => pointersRef.current?.opened(task),
     onDone: async (task) => {
@@ -1434,12 +1445,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
+  /** The owner's current Captain chat, the desk. Found by a scan, so remembered for a few seconds and forgotten when it changes. */
+  let deskMemo: { id: string | undefined; at: number } | undefined;
+  const deskChatOf = (): string | undefined => {
+    const now = Date.now();
+    if (deskMemo === undefined || now - deskMemo.at > 5_000) {
+      const boss = config.knownBoss();
+      deskMemo = { id: boss === undefined ? undefined : findBossChat({ store, tasks }, boss)?.id, at: now };
+    }
+    return deskMemo.id;
+  };
   const conversations = new ConversationsService({
     store,
     events,
-    currentChat: () => {
-      const boss = config.knownBoss();
-      return boss === undefined ? undefined : findBossChat({ store, tasks }, boss)?.id;
+    currentChat: deskChatOf,
+    forgetCurrent: () => {
+      deskMemo = undefined;
     },
   });
   room.onWrite((task, item) => conversations.observe(task, item));
@@ -1597,7 +1618,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         const row = (await budgets.status()).rows.find((r) => r.scope === scope && r.id === id);
         return row === undefined ? undefined : { percent: row.percent, resetsAt: row.resetsAt };
       },
-      autopilotDay: () => autonomy.dayUse(),
+      autonomousDay: () => autonomy.dayUse(),
       monthly: async () => {
         const m = await outcomes.money();
         return m.ceilingUsd === undefined
@@ -1798,12 +1819,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);
       },
-      answerCaptainPay: async (org, account) => {
+      answerCaptainCannotRun: async (org) => {
+        // The one fix a decision offers: the workspace goes back to the captain's own account.
         await autonomy.configure(
-          { orgs: { [org]: { account } } },
+          { orgs: { [org]: { account: null } } },
           {
             command: "autonomy.configure",
-            meta: { actor: { kind: "owner" }, reason: "Owner picked the account that pays" },
+            meta: { actor: { kind: "owner" }, reason: "Owner let the captain use its own account" },
           },
         );
         clientChat?.desk.retry();
@@ -1855,7 +1877,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(incidentEngine?.decisions(() => undefined) ?? []),
       ...(clientChat?.incidents.decisions() ?? []),
       ...(clientChat?.waits.decisions() ?? []),
-      ...(await payDecisions.decisions()),
+      ...(await cannotRunDecisions.decisions()),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
       ...failingMrDecisions(
@@ -1895,6 +1917,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
     // Bound below: autonomous mode measures the spend.
     rest: (org, account, job) => autonomy.laneRest(org, account, job),
+    accountState: async (account) => {
+      const view = (await accounts.list()).find((v) => v.id === account);
+      return view === undefined ? undefined : { status: view.status, until: view.limit?.until };
+    },
     halted: () => captainRepo.isStopped(),
     about: (chat, task) => {
       if (runs.working(chat).length === 0) room.setSubject(chat, task as TaskId);
@@ -1945,8 +1971,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   room.useCaptain({
     lanesOf: (org) => lanes.chatsOf(org),
     orgOfLane: (chat) => lanes.orgOf(chat),
+    deskChat: deskChatOf,
+    allLanes: () => lanes.all().map(({ org, chat }) => ({ org, chat })),
   });
-  const payDecisions = new PayDecisions(lanes, () => options.runClock?.() ?? new Date());
+  const cannotRunDecisions = new CannotRunDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
   const memoryWatch = new MemoryWatch();
   /** A run container that sits at its memory limit is noted once on its task, so the captain or owner sees it. */
@@ -2130,6 +2158,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   );
   admin.useAutonomy(autonomy);
+  turnContextRef.current = new TurnContext({
+    config,
+    laneOrg: (chat) => lanes.orgOf(chat),
+    autonomous: () => ({ mode: captainRepo.isStopped() ? "off" : autonomy.mode() }),
+    wiki: (org, max) => wiki.summary(org, max),
+  });
+  const stepGuard = new StepGuard({ config, agents: agentStore, store });
+  admin.useStrays((command, input) => stepGuard.refusal(command, input));
   admin.useProposals({
     autonomy: async () => (await config.settings()).autonomy,
     mode: () => autonomy.mode(),
@@ -2216,52 +2252,42 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
-  const agendaOwner = { kind: "owner" } as const;
-  const agenda = new AgendaService({
-    repo: new AgendaRepo(store.raw),
+  const briefOwner = { kind: "owner" } as const;
+  // Bound below, once the ops watch exists: the one combined push goes to its channels.
+  let tellOwner: ((day: string, text: string) => Promise<void>) | undefined;
+  const brief = new BriefService({
+    repo: new BriefRepo(store.raw),
     clock: async () => {
       const a = (await config.settings()).autonomy;
-      return { at: a.summary_at, tz: a.tz };
+      return { at: a.brief_at, tz: a.tz };
     },
-    decisions: (org) => inbox.list(org),
-    findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    orgs: async () => [
+      { id: PRIVATE, name: "Private" },
+      ...Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
+    ],
+    decisions: () => inbox.list(),
+    findings: () => findings.list({ limit: 500 }, briefOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
-    incidentOf: (finding) => opsWatch?.incidentOfFinding(finding)?.id,
-    goals: () => goals.list({}, agendaOwner),
-    running: () =>
-      store.tasks
-        .list(false)
-        .filter((t) => t.status === "running" && t.chat !== true && t.lane !== true)
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          ...(t.name === undefined ? {} : { name: t.name }),
-          ...(t.repos[0] === undefined ? {} : { project: t.repos[0].project }),
-          ...(t.org === undefined ? {} : { org: t.org }),
-          since: t.updatedAt,
-        })),
-    names: async () => {
-      const orgs = (await config.sections()).orgs;
-      return new Map<string, string>([
-        [PRIVATE, "Private"],
-        ...Object.entries(orgs).map(([id, o]) => [id, o.name] as [string, string]),
-      ]);
-    },
-    overnight: (from, to) => autonomy.overnight(from, to),
+    overnight: (from, to, org) => autonomy.overnight(from, to, org),
     write: async (prompt) =>
       (
         await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
           reply.trim() === "" ? { ok: false, problem: "The reply was empty." } : { ok: true, value: reply },
         )
       ).value,
-    next: (max) => autonomy.queueTitles(max),
-    notify: (day, text) => notifier.brief(day, text),
-    changed: () => events.emit(["agenda"]),
+    next: (org, max) => autonomy.queueTitles(max, org),
+    tell: (day, text) => notifier.brief(day, text, () => tellOwner?.(day, text) ?? Promise.resolve()),
+    // The brief is a line in the workspace's own captain conversation. It is posted, never sent to the captain.
+    chatLine: async (org, day, lines) => {
+      const chat = await lanes.ensure(org);
+      room.post(chat.id as TaskId, `brief:${day}`, { type: "system", level: "info", text: lines.join(" ") });
+    },
+    changed: () => events.emit(["briefs", "notices"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
-  const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
-  agendaSweep.unref();
-  background.run(() => agenda.sweep());
+  const briefSweep = setInterval(() => background.run(() => brief.sweep()), BRIEF_SWEEP_MS);
+  briefSweep.unref();
+  background.run(() => brief.sweep());
   const handoff = createHandoff({
     db: store.raw,
     store,
@@ -3008,6 +3034,46 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     INCIDENT_SWEEP_MS,
   );
   incidentSweep.unref();
+  // The weekly client report: Monday at the brief hour, once per workspace and week.
+  const weeklyReports = new ReportService({
+    repo: new ReportRepo(store.raw),
+    clock: async () => {
+      const a = (await config.settings()).autonomy;
+      return { at: a.brief_at, tz: a.tz };
+    },
+    orgs: async () => {
+      const settings = (await config.settings()).autonomy;
+      return Object.entries((await config.sections()).orgs).map(([id, o]) => ({
+        id,
+        name: o.name,
+        tz: settings.orgs[id]?.tz,
+      }));
+    },
+    clientUpdate: async (org) =>
+      (await config.settings()).autonomy.orgs[org]?.incident?.clientUpdate === "sends" ? "sends" : "ask",
+    showCost: async (org) => (await config.settings()).autonomy.orgs[org]?.reportCost === true,
+    rooms: (org) =>
+      store.client
+        .rooms()
+        .filter((r) => r.org === org && r.chat.archived !== true)
+        .map((r) => ({ room: r.id, weekly: r.chat.weeklyReport === true })),
+    send: async (roomId, _org, text, mode) => {
+      await chatParts.replies.captain({
+        room: roomId,
+        text,
+        weekly: mode,
+        note: `Sent the weekly report to ${store.client.room(roomId)?.chat.title ?? "a chat"}`,
+      });
+    },
+    internal: async (org, week, text) => {
+      const chat = await lanes.ensure(org);
+      room.post(chat.id as TaskId, `weekly:${week}`, { type: "system", level: "info", text });
+    },
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const reportSweep = setInterval(() => background.run(() => weeklyReports.sweep()), BRIEF_SWEEP_MS);
+  reportSweep.unref();
+  background.run(() => weeklyReports.sweep());
   // Each chat keeps only the newest messages its Keep says, once a day (and once at start).
   const keepSweep = setInterval(
     () => background.run(async () => void chatParts.settings.sweep()),
@@ -3343,6 +3409,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
   });
   ownerTelegram = ops.telegram;
+  tellOwner = async (_day, text) => {
+    await ops.tellOwner("Morning brief", text);
+  };
   admin.useScript({
     run: runScript,
     holds: async (org, id) => {
@@ -3461,6 +3530,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     installRequests,
     connectionTests,
     adminTokens,
+    placeOf: (caller) => {
+      // The on-call lane answers what waits, the main lane works, the owner's own chat talks.
+      const job = captainRepo.laneJob(caller.task);
+      return job === "reacting" ? "needs" : job === "backlog" ? "work" : "chat";
+    },
     admin,
     agents,
     agentStore,
@@ -3519,7 +3593,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           .map(([id]) => id),
     }),
     homeChecks,
-    agenda,
+    brief,
     codeGraph,
     graphRunner,
     pdfPrinter,
@@ -3569,7 +3643,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       conversations.stop();
       chatParts.hub.stop();
       clearInterval(limitSweep);
-      clearInterval(agendaSweep);
+      clearInterval(briefSweep);
+      clearInterval(reportSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

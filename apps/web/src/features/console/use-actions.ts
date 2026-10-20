@@ -14,6 +14,7 @@ import { actionOf, openLabel } from "@/features/decisions/model";
 import { cmd } from "@/lib/api";
 import { useAfterBatch, useAnswerDecision } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
+import { useOrgFilter } from "@/lib/org-filter";
 import { queryKeys } from "@/lib/queries";
 import { hold, holdOnServer, LATER_MS, later, say, UNDO_MS } from "./actions";
 import { blockersOf } from "./model";
@@ -32,6 +33,7 @@ export function useConsoleActions(openChat: (id: string) => void) {
   const afterBatch = useAfterBatch();
   const lost = useFeedLost();
   const toast = useToast();
+  const filter = useOrgFilter();
 
   const refresh = useCallback(() => {
     void client.invalidateQueries({ queryKey: queryKeys.decisions });
@@ -203,11 +205,17 @@ export function useConsoleActions(openChat: (id: string) => void) {
       void cmd("notices.markRead", { id: notice.id }, { reason: "Owner read a notice" }).then(() =>
         client.invalidateQueries({ queryKey: queryKeys.notices }),
       );
-      if (notice.link.kind === "page") {
+      if (notice.kind === "brief") {
+        // The brief is a line in the workspace's own captain conversation: open it there.
+        if (filter.org !== undefined && notice.org !== undefined && filter.org !== notice.org) {
+          filter.setOrg(notice.org);
+        }
+        openChat("captain");
+      } else if (notice.link.kind === "page") {
         void navigate({ to: PAGE_PATH[notice.link.page] });
       } else open(notice.link);
     },
-    [client, navigate, open],
+    [client, filter, navigate, open, openChat],
   );
 
   const start = useCallback(

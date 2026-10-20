@@ -349,7 +349,7 @@
     });
   }
 
-  // ---------------------------------------------------------------- 5. auto-pilot night
+  // ---------------------------------------------------------------- 5. autonomous night
   function night() {
     const root = $("#night"); if (!root) return;
     const tg = $("#nt-tg"), bar = $("#nt-bar"), sp = $("#nt-sp");

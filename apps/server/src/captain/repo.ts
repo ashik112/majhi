@@ -182,6 +182,14 @@ export class CaptainRepo {
     return row?.chat;
   }
 
+  /** The job of a lane chat: `backlog` is the workspace's main lane, `reacting` the on-call one. */
+  laneJob(chat: string): Job | undefined {
+    const row = this.db.prepare("SELECT job FROM captain_lanes WHERE chat = ?").get(chat) as
+      | { job: Job }
+      | undefined;
+    return row?.job;
+  }
+
   laneOrg(chat: string): string | undefined {
     const row = this.db.prepare("SELECT org FROM captain_lanes WHERE chat = ?").get(chat) as
       | { org: string }
@@ -454,7 +462,7 @@ export class CaptainRepo {
     ).flatMap((r) => actionOf(r) ?? []);
   }
 
-  /** Lines made in `[from, to)` (UTC ISO), oldest first: the daily summary's upkeep. */
+  /** Lines made in `[from, to)` (UTC ISO), oldest first: the morning brief's upkeep. */
   actionsBetween(from: string, to: string): StoredAction[] {
     return (
       this.db

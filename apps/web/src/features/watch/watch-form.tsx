@@ -748,7 +748,7 @@ export function WatchForm({
                   <option value="account5h">An account's 5-hour window</option>
                   <option value="accountWeek">An account's weekly window</option>
                   <option value="budget">A weekly budget</option>
-                  <option value="autopilotDay">The Auto-pilot daily budget</option>
+                  <option value="autonomousDay">The Autonomous daily budget</option>
                   <option value="monthlyCeiling">The monthly ceiling</option>
                 </Select>
               )}

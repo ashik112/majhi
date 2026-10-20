@@ -234,17 +234,6 @@ const automationsRoute = createRoute({
     throw redirect({ to: PAGE_PATH.playbooks });
   },
 });
-// The Auto-pilot page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
-const autonomousRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/autonomous",
-  beforeLoad: ({ search }) => {
-    throw redirect({
-      to: PAGE_PATH.captain,
-      search: search.tab === "rules" || search.tab === "log" ? { tab: search.tab } : {},
-    });
-  },
-});
 const limitsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.limits,
@@ -326,7 +315,6 @@ export const router = createRouter({
     skillsRoute,
     memoryRoute,
     automationsRoute,
-    autonomousRoute,
     captainRoute,
     playbooksRoute,
     wikiRoute,

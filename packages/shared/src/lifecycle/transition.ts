@@ -42,8 +42,8 @@ export type LifecycleEvent =
   | { type: "sendBack"; by: Lifter }
   | { type: "ownerStop"; at: string }
   | { type: "captainStop"; at: string; why?: string }
-  | { type: "autopilotOff"; at: string; mode: "now" | "step" }
-  | { type: "autopilotOn"; resume: boolean; at: string }
+  | { type: "autonomousOff"; at: string; mode: "now" | "step" }
+  | { type: "autonomousOn"; resume: boolean; at: string }
   | { type: "runPaused"; hold: Hold }
   | { type: "runResumed" }
   | { type: "holdPlaced"; hold: Hold }
@@ -141,13 +141,13 @@ const pausedEffects = (hold: Hold): Effect[] => [
 /**
  * Sets a hold with `effects`. A hold that lost the merge changes nothing. A hold of the cause the
  * task already has refreshes its data and runs no effects again (repeating a stop is a no-op, G1),
- * except Auto-pilot stepping up from `step` to `now`.
+ * except Autonomous stepping up from `step` to `now`.
  */
 function place(task: TaskState, incoming: Hold, effects: (kept: Hold) => Effect[]): Transition {
   const kept = mergeHold(task.hold, incoming);
   if (kept === task.hold) return { next: task, effects: [] };
   const was = task.hold;
-  const stepUp = was?.cause === "autopilot-off" && kept.cause === "autopilot-off" && was.mode !== kept.mode;
+  const stepUp = was?.cause === "autonomous-off" && kept.cause === "autonomous-off" && was.mode !== kept.mode;
   if (was?.cause === kept.cause && !stepUp) return { next: { ...task, hold: kept }, effects: [] };
   return { next: { ...task, hold: kept }, effects: effects(kept) };
 }
@@ -258,19 +258,19 @@ function step(task: TaskState | undefined, event: LifecycleEvent): Transition | 
         () => stopEffects("the captain stopped the task"),
       );
 
-    case "autopilotOff": {
+    case "autonomousOff": {
       if (!IN_FLIGHT.includes(task.status)) return wrongStatus(event.type, task);
-      const hold: Hold = { cause: "autopilot-off", at: event.at, mode: event.mode };
+      const hold: Hold = { cause: "autonomous-off", at: event.at, mode: event.mode };
       return place(task, hold, (kept) =>
-        kept.cause === "autopilot-off" && kept.mode === "step"
+        kept.cause === "autonomous-off" && kept.mode === "step"
           ? [{ kind: "publishTask" }]
-          : stopEffects("Auto-pilot was turned off"),
+          : stopEffects("Autonomous was turned off"),
       );
     }
 
-    case "autopilotOn": {
+    case "autonomousOn": {
       const hold = task.hold;
-      if (hold?.cause !== "autopilot-off") return { next: task, effects: [] };
+      if (hold?.cause !== "autonomous-off") return { next: task, effects: [] };
       if (!event.resume && hold.mode === "now") {
         // "Leave paused": the owner now owns the pause, so only the owner can lift it.
         return {

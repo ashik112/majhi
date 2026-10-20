@@ -57,6 +57,8 @@ describe("machine-wide run cap", () => {
       idle_timeout: "3m",
       tasks_running: 4,
       open_by_others: 5,
+      captain_tasks: 2,
+      captain_task_cost: { small: 2, medium: 5, large: 12 },
       worktrees: 15,
       env_wait: "30m",
     };

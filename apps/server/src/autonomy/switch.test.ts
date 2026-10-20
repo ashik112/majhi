@@ -16,7 +16,7 @@ async function world() {
 }
 
 describe("the Autonomous switch is On or Off", () => {
-  it("Stop everything halts captain work: no lane, no tools, no start, whatever Auto-pilot says", async () => {
+  it("Stop everything halts captain work: no lane, no tools, no start, whatever Autonomous says", async () => {
     const { h, services } = await world();
     await h.cmd("autonomy.start");
     const chat = await services.autonomy.laneChat("acme");

@@ -6,12 +6,13 @@ type Hold = lifecycle.Hold;
 const HOLD_LABEL: { readonly [C in lifecycle.HoldCause]: string } = {
   "owner-stop": "stopped by you",
   "captain-stop": "paused by the captain",
-  "autopilot-off": "Auto-pilot is off",
+  "autonomous-off": "Autonomous is off",
   "budget-limit": "budget",
   "account-limit": "usage limit",
   offline: "offline",
   "signed-out": "signed out",
   error: "stopped with an error",
+  "autonomous-stop": "stopped by Autonomous",
   "loop-guard": "going in circles",
   idle: "nobody is working on it",
   preempted: "paused for an urgent task",
@@ -27,7 +28,7 @@ const HOLD_LABEL: { readonly [C in lifecycle.HoldCause]: string } = {
 const HOLD_FIX: { readonly [C in lifecycle.HoldCause]: (h: lifecycle.HoldOf<C>) => HoldFix } = {
   "owner-stop": () => ({ kind: "resume" }),
   "captain-stop": () => ({ kind: "resume" }),
-  "autopilot-off": (h) => (h.mode === "step" ? { kind: "wait" } : { kind: "resume" }),
+  "autonomous-off": (h) => (h.mode === "step" ? { kind: "wait" } : { kind: "resume" }),
   "budget-limit": (h) => ({
     kind: "raise-budget",
     scope: h.scope,
@@ -37,6 +38,7 @@ const HOLD_FIX: { readonly [C in lifecycle.HoldCause]: (h: lifecycle.HoldOf<C>) 
   offline: () => ({ kind: "wait" }),
   "signed-out": (h) => ({ kind: "sign-in", account: h.account }),
   error: () => ({ kind: "resume" }),
+  "autonomous-stop": () => ({ kind: "resume" }),
   "loop-guard": () => ({ kind: "resume" }),
   idle: () => ({ kind: "resume" }),
   preempted: () => ({ kind: "wait" }),

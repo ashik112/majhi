@@ -76,6 +76,14 @@ const limitsFields = {
   tasks_running: z.number().int().min(1).max(64),
   /** Open tasks per workspace that the owner did not make. Over it, a new one is filed as an idea. */
   open_by_others: z.number().int().min(0).max(100),
+  /** Tasks Autonomous works on at once, across every workspace (docs/briefs/captain.md). The owner's come first in line. */
+  captain_tasks: z.number().int().min(1).max(10),
+  /** What a task Autonomous works on may spend, by its size, in dollars. Over it, the task stops for the owner. */
+  captain_task_cost: z.strictObject({
+    small: z.number().positive().max(1000),
+    medium: z.number().positive().max(1000),
+    large: z.number().positive().max(1000),
+  }),
   /**
    * Task folders kept at once. Over it, the oldest done or idle task folder goes after its branch is
    * saved; a running, pinned or dirty one never does.
@@ -92,6 +100,8 @@ export const LimitsSettingsSchema = z.strictObject({
   idle_timeout: limitsFields.idle_timeout.default("3m"),
   tasks_running: limitsFields.tasks_running.default(4),
   open_by_others: limitsFields.open_by_others.default(5),
+  captain_tasks: limitsFields.captain_tasks.default(2),
+  captain_task_cost: limitsFields.captain_task_cost.default({ small: 2, medium: 5, large: 12 }),
   worktrees: limitsFields.worktrees.default(15),
   env_wait: limitsFields.env_wait.default("30m"),
 });
@@ -458,7 +468,7 @@ export const PolicyFilePatchSchema = PolicyPatchSchema.extend({ rules: z.array(S
 
 /**
  * Autonomous mode (PRV-74): the caps it spends within, the account floors it keeps, what it may do
- * per org, when the daily summary is made, and the owner's standing instructions. Whether it is on
+ * per org, when the morning brief is made, and the owner's standing instructions. Whether it is on
  * is runtime state (`autonomy.status`), not config. Only the owner changes this section.
  */
 /**
@@ -478,11 +488,6 @@ export const FreezeSchema = z
   .strictObject({ from: DaySchema, to: DaySchema })
   .refine((f) => f.from <= f.to, { message: "The freeze ends before it starts" });
 export type Freeze = z.infer<typeof FreezeSchema>;
-/** The captain acts on its own only between `from` and `to` (24 h clock, may run over midnight). */
-export const WorkHoursSchema = z
-  .strictObject({ from: ClockSchema, to: ClockSchema })
-  .refine((h) => h.from !== h.to, { message: "Working hours need a start and an end" });
-export type WorkHours = z.infer<typeof WorkHoursSchema>;
 /** A branch name the captain may ship to, like main or develop. */
 const ShipBranchSchema = z
   .string()
@@ -506,8 +511,8 @@ export const AutonomyOrgSchema = z.strictObject({
   push: z.boolean().optional(),
   /** Before the level: may merge. Read only by `levelOfOrg` and the migration that removes it. */
   merge: z.boolean().optional(),
-  /** "More rules": when the captain may act on its own, in `tz`. Absent: any time. */
-  hours: WorkHoursSchema.optional(),
+  /** Removed with the working hours: Autonomous has an end time instead. The startup migration drops it; until then a file that holds it loads. */
+  hours: z.unknown().optional(),
   /** "More rules": days it does nothing on its own. */
   freeze: z.array(FreezeSchema).max(50).optional(),
   /** "More rules": the workspace's time zone for hours, freezes and its day. Absent: autonomous mode's. */
@@ -518,12 +523,14 @@ export const AutonomyOrgSchema = z.strictObject({
   providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
   /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
   account: z.string().regex(ACCOUNT_ID).optional(),
+  /** The weekly client report shows the agent cost. Off unless the owner turns it on. */
+  reportCost: z.boolean().optional(),
   /** Removed in D9, kept so old config loads. */
   chores: z.unknown().optional(),
   /** Before the level: full access. Read only by `levelOfOrg` and the migration that removes it. */
   fullAccess: z.boolean().optional(),
-  /** How many tasks the captain keeps working at once in this workspace. Absent: 1. */
-  tasksAtOnce: z.number().int().min(1).max(10).optional(),
+  /** Removed: Autonomous works on at most `limits.captain_tasks` tasks at once. The startup migration drops it. */
+  tasksAtOnce: z.unknown().optional(),
   /**
    * The Hold list (docs/briefs/client-chats.md): what the owner keeps for themselves when the captain decides
    * Tell. A class set to `false` is switched off; absent means on. Only the owner changes it.
@@ -533,9 +540,6 @@ export const AutonomyOrgSchema = z.strictObject({
   incident: IncidentSettingsSchema.optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
-
-/** Tasks the captain works on at once in a workspace when the owner set nothing. */
-export const TASKS_AT_ONCE = 1;
 
 /** Guidance the owner gave on the Autonomous page, which the captain follows until it is removed. */
 export const AutonomyInstructionSchema = z.strictObject({
@@ -550,49 +554,31 @@ export type AutonomyInstruction = z.infer<typeof AutonomyInstructionSchema>;
 
 const PercentLeftSchema = z.number().int().min(0).max(100);
 
-/**
- * The largest task autonomous mode may start, by the size the decision provider rated it (Laya):
- * `small` (a small change in one or two files), `medium` (a feature or fix across several files) or
- * `any`. Under `small` or `medium`, a task whose size is not known is not started.
- */
-export const TaskSizeLimitSchema = z.enum(["small", "medium", "any"]);
-export type TaskSizeLimit = z.infer<typeof TaskSizeLimitSchema>;
-
-/**
- * What autonomous mode may pick: the task sizes. Tasks marked `noAutonomy` are left alone, and it
- * works only in workspaces where `orgs.<org>.authority.start` is `decide`.
- */
-export const AutonomyPickSchema = z.strictObject({
-  size: TaskSizeLimitSchema.default("any"),
-  /**
-   * Before Phase 13: the orgs it could work in. Read once at start, when majhi moves the listed orgs
-   * to the old "Runs it" level and removes this list. Nothing else reads it.
-   */
-  orgs: z.array(BudgetIdSchema).max(100).optional(),
-});
-export type AutonomyPick = z.infer<typeof AutonomyPickSchema>;
-
 const autonomyFields = {
   /** Spend per day of everything autonomous mode runs, from midnight in `tz`. Always set. */
   day: BudgetSchema,
   orgs: z.record(BudgetIdSchema, AutonomyOrgSchema),
   /** No new work starts on an account with less than this share of a window left, in percent. */
   floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }),
-  /** When the daily summary is made, 24 h clock in `tz`. */
-  summary_at: ClockSchema,
+  /** When the morning brief is made, 24 h clock in `tz`. */
+  brief_at: ClockSchema,
+  /** Removed: the daily summary is the morning brief now. The startup migration renames it to `brief_at`. */
+  summary_at: z.unknown(),
   /** An IANA zone like Europe/Berlin: the browser that saved the settings knows it. Absent: the server's. */
   tz: z.string().trim().min(1).max(64),
   instructions: z.array(AutonomyInstructionSchema).max(50),
-  pick: AutonomyPickSchema,
+  /** Removed: Autonomous takes tasks of any size and gives each a budget by its size. The startup migration drops it. */
+  pick: z.unknown(),
 };
 export const AutonomySettingsSchema = z.strictObject({
   day: autonomyFields.day.default({ cost: 20 }),
   orgs: autonomyFields.orgs.default({}),
   floors: autonomyFields.floors.default({ window: 10, weekly: 5 }),
-  summary_at: autonomyFields.summary_at.default("08:00"),
+  brief_at: autonomyFields.brief_at.default("08:00"),
+  summary_at: autonomyFields.summary_at.optional(),
   tz: autonomyFields.tz.optional(),
   instructions: autonomyFields.instructions.default([]),
-  pick: autonomyFields.pick.default({ size: "any" }),
+  pick: autonomyFields.pick.optional(),
 });
 export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
 /**
@@ -602,13 +588,12 @@ export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
 export const AutonomyOrgPatchSchema = z
   .strictObject({
     cap: BudgetSchema.nullable(),
-    hours: WorkHoursSchema.nullable(),
     freeze: z.array(FreezeSchema).max(50).nullable(),
     tz: z.string().trim().min(1).max(64).nullable(),
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
-    tasksAtOnce: z.number().int().min(1).max(10).nullable(),
+    reportCost: z.boolean().nullable(),
     /** Only the classes that change. `null` switches every class back on. */
     holds: HoldsPatchSchema.nullable(),
     /** Only the fields that change. `null` goes back to the defaults. */
@@ -628,9 +613,8 @@ export const AutonomyPatchSchema = z
     day: BudgetSchema,
     orgs: z.record(BudgetIdSchema, AutonomyOrgPatchSchema.nullable()),
     floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }).partial(),
-    summary_at: ClockSchema,
+    brief_at: ClockSchema,
     tz: autonomyFields.tz,
-    pick: z.strictObject({ size: TaskSizeLimitSchema }).partial(),
   })
   .partial();
 export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;

@@ -273,7 +273,7 @@ export function nameOf(task: TaskSummary): string {
 export interface ChatChip {
   /** The conversation id, or `captain` for the owner's own captain chat. */
   id: string;
-  kind: "captain" | "task" | "conversation" | "lane";
+  kind: "captain" | "task" | "conversation";
   title: string;
   org: string | undefined;
   unread: number;
@@ -322,7 +322,7 @@ export function buildChips(input: {
   for (const c of rest) {
     chips.push({
       id: c.id,
-      kind: c.kind === "captain" ? "lane" : "conversation",
+      kind: "conversation",
       title: c.title,
       org: c.org,
       unread: c.unread,

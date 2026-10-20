@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
-  type AccountStatus,
   type AccountView,
   type AgentFrontmatter,
   type Attachment,
@@ -28,6 +27,7 @@ import {
   LOCAL_TASK_PREFIX,
   lifecycle,
   type MergeChecks,
+  madeByOwner,
   mayRetype,
   mergeCanBeOverridden,
   nameFromTitle,
@@ -259,6 +259,8 @@ export interface TaskDeps {
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
+  /** What the captain's chats start every turn with (`captain/context.ts`). */
+  turnContext?: (task: Task) => Promise<string | undefined>;
   /** An agent finished a turn in a chat: names it, and so on. Never awaited. */
   onChatTurn?: (id: string) => void;
   /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
@@ -322,8 +324,10 @@ export interface CreateInput {
   dependsOn?: string[] | undefined;
   /** Makes the new task a fix task of this one: a `follow-up` link to it. */
   followUpOf?: string | undefined;
-  /** Marked Not for the captain from the start. */
-  noAutonomy?: boolean | undefined;
+  /** For the captain's origin: false when the owner did not ask for this task, so it is the captain's own idea. */
+  ownerAsked?: boolean | undefined;
+  /** Kept from the captain from the start: filed as an idea, and only the owner starts it. */
+  heldByOwner?: boolean | undefined;
   /** When those count as met. Default `merged`. */
   dependsWhen?: "merged" | "ready" | undefined;
   /** Connection ids its root agents get beyond the task's org's. */
@@ -602,8 +606,13 @@ export class TaskService {
     const admission =
       promoting !== undefined || kind === "chat"
         ? undefined
-        : await this.admission(input.gate, org ?? PRIVATE, input.start);
-    const idea = admission?.kind === "idea" ? admission.reason : undefined;
+        : await this.admission(input.gate, org ?? PRIVATE, input.start, input.ownerAsked);
+    const idea: IdeaReason | undefined =
+      input.heldByOwner === true
+        ? "held-by-owner"
+        : admission?.kind === "idea"
+          ? admission.reason
+          : undefined;
     const wantsStart = input.start && idea === undefined;
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
@@ -717,7 +726,6 @@ export class TaskService {
       await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
       if (promoting === undefined) {
         store.tasks.insert(task);
-        if (input.noAutonomy === true) store.tasks.setNoAutonomy(id, true);
         if (wantsStart) store.tasks.setStartWhenReady(id, true);
       } else {
         // The same row, room and folder: only what makes it a task is added.
@@ -1041,12 +1049,18 @@ export class TaskService {
    * What the gate says about a new task of this origin in this workspace. Reads the limits and counts
    * what is running and open; the decision is `admit`'s alone.
    */
-  private async admission(origin: GateOrigin, org: string, wantsStart: boolean): Promise<Admission> {
+  private async admission(
+    origin: GateOrigin,
+    org: string,
+    wantsStart: boolean,
+    ownerAsked?: boolean,
+  ): Promise<Admission> {
     const limits = await this.gateLimits();
     return admit({
       origin,
       org,
       wantsStart,
+      ownerAsked,
       counts: { running: this.runningCount(undefined), openByOthers: this.deps.store.tasks.openByOthers() },
       limits,
     });
@@ -1338,7 +1352,7 @@ export class TaskService {
       .map((t) => ({
         id: t.id,
         priority: t.priority,
-        ownedByOwner: t.origin === undefined || t.origin.kind === "owner" || t.origin.kind === "chat",
+        ownedByOwner: madeByOwner(t.origin),
       }));
     return preemptionVictim({ wanted: task.priority, ...preempt, running });
   }
@@ -1520,7 +1534,7 @@ export class TaskService {
         ctx,
         skip,
         ...(options.gateReleased === true
-          ? { holdAs: { cause: "autopilot-off", at: this.now().toISOString(), mode: "now" } as const }
+          ? { holdAs: { cause: "autonomous-off", at: this.now().toISOString(), mode: "now" } as const }
           : {}),
       });
       if (wasRefused(out)) throw new UserError(out.text, 409);
@@ -1679,12 +1693,18 @@ export class TaskService {
     by = "owner",
   ): Promise<Task> {
     const task = this.get(id);
-    const ctx: Partial<EffectContext> = { by, why, reason };
+    // Autonomous's stop says why through its hold: the card reads the reason from it.
+    const ctx: Partial<EffectContext> = { by, why, ...(by === "autonomy-stop" ? {} : { reason }) };
     const inFlight = task.status === "running" || task.status === "paused" || task.status === "review";
     if (inFlight) {
       const at = this.now().toISOString();
       let event: lifecycle.LifecycleEvent;
-      if (by === "autonomy-off") event = { type: "autopilotOff", at, mode: "now" };
+      if (by === "autonomy-off") event = { type: "autonomousOff", at, mode: "now" };
+      else if (by === "autonomy-stop")
+        event = {
+          type: "holdPlaced",
+          hold: { cause: "autonomous-stop", at, why: why ?? "Autonomous stopped it." },
+        };
       else if (reason === "owner")
         event = this.cards.byCaptain(by)
           ? { type: "captainStop", at, ...(why === undefined ? {} : { why }) }
@@ -1698,12 +1718,12 @@ export class TaskService {
         event = { type: "holdPlaced", hold: { cause: "idle", at, why: why ?? "No agent is left to wake." } };
       // A hold placed from outside carries no stop effects of its own: tear down first, as a stop does.
       if (event.type === "holdPlaced") await this.teardown(id, ctx);
-      // A task the run gate already paused reads as an owner's stop; turning Auto-pilot off marks it as its own.
+      // A task the run gate already paused reads as an owner's stop; turning Autonomous off marks it as its own.
       const out = await this.lifecycle.apply(id, event, {
         ctx,
         skip: ["publishTask"],
-        ...(event.type === "autopilotOff"
-          ? { holdAs: { cause: "autopilot-off", at, mode: "now" } as const }
+        ...(event.type === "autonomousOff"
+          ? { holdAs: { cause: "autonomous-off", at, mode: "now" } as const }
           : {}),
       });
       if (wasRefused(out)) await this.teardown(id, ctx);
@@ -3785,7 +3805,12 @@ export class TaskService {
     try {
       const task = this.deps.store.tasks.get(turn.task);
       if (task === undefined || task.team[0] !== turn.agent) return undefined;
-      if (isOwnerChat(task)) return await this.chatMemoryBlock(task);
+      if (isOwnerChat(task)) {
+        // The captain's chats start every turn with what it should know; any chat gets the memory of its projects.
+        const known = await this.deps.turnContext?.(task);
+        const memory = await this.chatMemoryBlock(task);
+        return [known, memory].filter((b): b is string => b !== undefined).join("\n\n") || undefined;
+      }
       const facts = await this.readFacts(task);
       if (facts === undefined) return undefined;
       await this.refreshBriefs([task.id]);
@@ -4593,7 +4618,11 @@ function ideaLine(reason: IdeaReason, askedToStart: boolean): string {
   const why =
     reason === "agent-made"
       ? "It was made by an agent or a scan, so it does not start by itself."
-      : "Its workspace already has the most open tasks you did not start.";
+      : reason === "captain-made"
+        ? "The captain filed it on its own, so Autonomous does not start it."
+        : reason === "held-by-owner"
+          ? "You kept it from the captain."
+          : "Its workspace already has the most open tasks you did not start.";
   return `Filed as an idea${askedToStart ? " (it was not started)" : ""}. ${why} Start it when you want it done.`;
 }
 

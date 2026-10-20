@@ -209,7 +209,7 @@ export interface AutonomyGate {
 
 /** One lane's reads: refused when they ask about another workspace, narrowed to its own rows. */
 export interface LaneReads {
-  refusal(input: Record<string, unknown>): string | undefined;
+  refusal(command: CommandName, input: Record<string, unknown>): string | undefined;
   input(command: CommandName, input: Record<string, unknown>): Record<string, unknown>;
   output(value: unknown): { value: unknown; refused?: string };
 }
@@ -233,6 +233,9 @@ export class AdminService {
   private readonly ownerCards = new Set<string>();
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
   private autonomy: AutonomyGate | undefined;
+  private strays:
+    | ((command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>)
+    | undefined;
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
   private proposals: ProposalWorld | undefined;
@@ -253,6 +256,13 @@ export class AdminService {
   /** Autonomous mode is built after this service, which it decides for. */
   useAutonomy(gate: AutonomyGate): void {
     this.autonomy = gate;
+  }
+
+  /** The guard that keeps one workspace's words out of a call for another (`StepGuard`). */
+  useStrays(
+    guard: (command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>,
+  ): void {
+    this.strays = guard;
   }
 
   /** The runner a captain's secret fetch uses: built after this service, from the connections. */
@@ -323,7 +333,10 @@ export class AdminService {
       // Starting a task on priority, or making it urgent, may pause a running one: the command needs to know
       // whether the owner asked for it in the conversation.
       const input =
-        (spec.command === "tasks.start" || spec.command === "tasks.update") && ownerAsked === true
+        (spec.command === "tasks.start" ||
+          spec.command === "tasks.update" ||
+          spec.command === "tasks.create") &&
+        ownerAsked === true
           ? { ...rest, ownerAsked: true }
           : rest;
       this.aboutTask(caller, spec.command, input);
@@ -336,7 +349,7 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Auto-pilot is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
         );
       }
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
@@ -357,6 +370,7 @@ export class AdminService {
       // The captain's note to a lead: no card waits for it. The handler checks who and where, and the
       // limit per task; the autonomy limits (workspace, secrets) hold for the captain first.
       if (spec.command === "tasks.tell") return await this.tell(caller, input, why, ownerAsked === true);
+      if (spec.command === "captain.step") return await this.step(caller, input, why, ownerAsked === true);
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
@@ -505,6 +519,48 @@ export class AdminService {
   }
 
   /**
+   * `captain.step`: only the captain in the owner's All conversation, for something the owner asked. The step is
+   * a turn in one workspace's lane; the call checks that its words come from that workspace.
+   */
+  private async step(
+    caller: AdminCaller,
+    input: Record<string, unknown>,
+    why: string,
+    ownerAsked: boolean,
+  ): Promise<ToolResult> {
+    const checked = commands["captain.step"].input.safeParse(input);
+    if (!checked.success) {
+      const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input for captain.step.\n${details.join("\n")}`);
+    }
+    if (!(await this.inRootChat(caller))) {
+      return error(
+        "captain.step is the captain's tool in the owner's All conversation. A step works in its own workspace only.",
+      );
+    }
+    if (!ownerAsked) {
+      return error(
+        "captain.step sends only what the owner asked for in this conversation: set ownerAsked true when they did.",
+      );
+    }
+    const stray = await this.strays?.("captain.step", checked.data);
+    if (stray !== undefined) return error(stray);
+    const done = await this.execute("captain.step", checked.data, metaFor(caller.agent, why, caller.task));
+    if (done.ok) {
+      this.log(
+        caller.task,
+        caller.agent,
+        "captain.step",
+        summarize("captain.step", checked.data),
+        "allow",
+        "captain",
+        why,
+      );
+    }
+    return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+  }
+
+  /**
    * `tasks.tell` from an agent's tool call. Only the captain in its lane, or in its root chat when the
    * owner asked for the note, gets as far as the handler.
    */
@@ -528,6 +584,8 @@ export class AdminService {
           "From the root chat, tasks.tell sends only a note the owner asked for in this conversation: set ownerAsked true when they did.",
         );
       }
+      const stray = await this.strays?.("tasks.tell", checked.data);
+      if (stray !== undefined) return error(stray);
       const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
       if (done.ok && !NotTold.safeParse(done.output).success) {
         this.log(
@@ -675,6 +733,9 @@ export class AdminService {
     }
     // Reaching a private network address is the owner's choice alone: the captain never sets it.
     if ((checked.data as Record<string, unknown>).allowPrivate === true) return error(PRIVATE_OWNER_ONLY);
+    // One workspace's words never reach another's: a brief, a note or a memory for B names nothing of A.
+    const stray = await this.strays?.(command, checked.data as Record<string, unknown>);
+    if (stray !== undefined) return error(stray);
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const parsed = checked.data as Record<string, unknown>;
@@ -778,7 +839,7 @@ export class AdminService {
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
-    // The captain decides what would wait for the owner, within its limits and its Approvals line, whatever Auto-pilot says.
+    // The captain decides what would wait for the owner, within its limits and its Approvals line, whatever Autonomous says.
     if (auto !== undefined && autonomy !== undefined && !autonomy.halted()) {
       return this.decideAutonomously(caller, auto, command, input, parsed, meta, ask);
     }
@@ -806,7 +867,7 @@ export class AdminService {
     ask: { reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
-    if (autonomy === undefined) return error("Auto-pilot is not available.");
+    if (autonomy === undefined) return error("Autonomous is not available.");
     const verdict = await autonomy.decide(caller, command, parsed, input, {
       confirm: ask.confirm === true,
       reason: ask.reason,
@@ -1555,7 +1616,7 @@ export class AdminService {
     let sent = input;
     if (lane !== undefined) {
       const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-      const refused = lane.refusal(fields);
+      const refused = lane.refusal(command, fields);
       if (refused !== undefined) return { ok: false, error: refused };
       sent = lane.input(command, fields);
     }

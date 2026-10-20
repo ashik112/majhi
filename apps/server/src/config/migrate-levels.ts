@@ -14,6 +14,7 @@ import {
   type RiskKind,
   type SavedRule,
 } from "@majhi/shared";
+import { z } from "zod";
 import { levelOf } from "../captain/levels.ts";
 import { shellRisk } from "../runs/shell-risk.ts";
 
@@ -31,6 +32,9 @@ import { shellRisk } from "../runs/shell-risk.ts";
  * Pure: the file write and the lookup of a task's workspace are the caller's.
  */
 
+/** What a majhi.yaml from before the level held in `autonomy.pick`: the workspaces the captain could work in. */
+const LegacyPickSchema = z.object({ orgs: z.array(z.string()).optional() }).catch({});
+
 export interface LevelMigrationInput {
   autonomy: Pick<AutonomySettings, "orgs" | "pick">;
   policy: Pick<PolicySettings, "rules">;
@@ -45,8 +49,6 @@ export interface LevelMigration {
   rules: AllowRule[];
   /** Whether the saved rules changed: the file's `policy` is left alone when they did not. */
   rulesChanged: boolean;
-  /** The orgs moved off the pick list, which goes. */
-  pick?: { size: AutonomySettings["pick"]["size"] } | undefined;
   summary: string;
 }
 
@@ -67,7 +69,7 @@ function sameEntry(a: AutonomyOrg | undefined, b: AutonomyOrg): boolean {
 
 export function planLevels(input: LevelMigrationInput): LevelMigration | undefined {
   const { autonomy } = input;
-  const listed = new Set(autonomy.pick.orgs ?? []);
+  const listed = new Set(LegacyPickSchema.parse(autonomy.pick ?? {}).orgs ?? []);
   const saved = input.policy.rules as readonly SavedRule[];
   // Only a file that still holds something from before the level is migrated. In one, a workspace with no
   // saved entry was effectively Ask me, so it stays that way; elsewhere an unset workspace is the default.
@@ -110,8 +112,7 @@ export function planLevels(input: LevelMigrationInput): LevelMigration | undefin
   }
   const dropped = saved.length - kept.length;
   const sameRules = !saved.some((r) => !("kind" in r)) && dropped === 0;
-  const pick = autonomy.pick.orgs === undefined ? undefined : { size: autonomy.pick.size };
-  if (moved.length === 0 && sameRules && pick === undefined) return undefined;
+  if (moved.length === 0 && sameRules) return undefined;
   const parts = [
     ...(moved.length === 0
       ? []
@@ -124,7 +125,6 @@ export function planLevels(input: LevelMigrationInput): LevelMigration | undefin
     orgs,
     rules: kept,
     rulesChanged: !sameRules,
-    pick,
-    summary: parts.length === 0 ? "carried the pick list over" : parts.join("; "),
+    summary: parts.join("; "),
   };
 }

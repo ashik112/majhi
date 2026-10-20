@@ -80,15 +80,16 @@ describe("the day cap of autonomous mode", () => {
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await h.majhi.services.autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");
-    const made = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
-      name: "Test task",
-      text: "fix the api",
-      repos: [{ project: "acme-api" }],
-      start: true,
+    // A task the owner made, which the captain takes from the backlog.
+    const id = (
+      (await h.cmd("tasks.create", { text: "fix the api", repos: [{ project: "acme-api" }], start: false }))
+        .body as Task
+    ).id;
+    const taken = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_start", {
+      id,
       reason: "the top task of the backlog",
     });
-    expect(made.isError).toBe(false);
-    const id = (JSON.parse(made.text) as { id: string }).id;
+    expect(taken.isError).toBe(false);
     const task = (): Task | undefined => h.majhi.services.store.tasks.get(id);
 
     await w.until(() => task()?.status === "paused", "the cap to stop the turn");
@@ -100,7 +101,7 @@ describe("the day cap of autonomous mode", () => {
     // The paused card names the cap that stopped it, not a generic budget.
     const items = (await h.cmd("room.items", { task: id, limit: 500 })).body.items as RoomItem[];
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("Waiting for the Auto-pilot daily budget, $");
+    expect(card?.type === "paused" && card.why).toContain("Waiting for the Autonomous daily budget, $");
 
     const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     const used = status.spend.total.used.cost;
@@ -120,7 +121,7 @@ describe("the day cap of autonomous mode", () => {
     // The owner is asked once, with the doubled budget, and the answer lifts the hold for today only.
     const asked = async () => (await h.cmd("captain.asks")).body.budgets as BudgetAsk[];
     expect(await asked()).toMatchObject([
-      { scope: "day", name: "Auto-pilot work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
+      { scope: "day", name: "Autonomous work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
     ]);
     await h.majhi.services.autonomy.refreshHolds();
     expect(await asked()).toHaveLength(1);

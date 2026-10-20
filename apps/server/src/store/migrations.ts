@@ -2081,6 +2081,72 @@ WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
   AND NOT EXISTS (SELECT 1 FROM task_repos WHERE task_repos.task = tasks.id);
 `,
   },
+  {
+    // Captain, step 5: the usage watch on the daily budget of Autonomous changed its name.
+    id: 197,
+    name: "autonomous day watches",
+    sql: `
+UPDATE watches SET def = replace(def, '"autopilotDay"', '"autonomousDay"');
+`,
+  },
+  {
+    // Captain, step 5: the owner's mark "Not for the captain" is an idea the owner keeps (`held-by-owner`): only the
+    // owner starts it, which is what the mark meant. The column goes.
+    id: 196,
+    name: "not for the captain becomes an idea",
+    sql: `
+UPDATE tasks SET idea = 'held-by-owner'
+WHERE no_autonomy = 1 AND idea IS NULL AND status != 'done' AND kind != 'chat';
+ALTER TABLE tasks DROP COLUMN no_autonomy;
+`,
+  },
+  {
+    // Captain, step 5: Autonomous is on until a time, or until the owner turns it off.
+    id: 195,
+    name: "autonomous until",
+    sql: `
+ALTER TABLE autonomy_state ADD COLUMN until TEXT;
+`,
+  },
+  {
+    // Captain, step 5: a morning brief per workspace replaces the owner's agenda brief and the daily summary.
+    // `brief_pushes` is the once-per-day rule for the one combined push to the owner's alert channels.
+    id: 198,
+    name: "workspace briefs",
+    sql: `
+CREATE TABLE workspace_briefs (
+  day TEXT NOT NULL,
+  org TEXT NOT NULL,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  lines TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  quiet INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, org)
+);
+CREATE TABLE brief_pushes (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+DROP TABLE IF EXISTS morning_briefs;
+DROP TABLE IF EXISTS agenda_settings;
+DROP TABLE IF EXISTS autonomy_summaries;
+DROP TABLE IF EXISTS autonomy_day_caps;
+`,
+  },
+  {
+    // Captain, step 5: the weekly client report is made once per workspace and week.
+    id: 199,
+    name: "weekly reports",
+    sql: `
+CREATE TABLE weekly_reports (
+  week TEXT NOT NULL,
+  org TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (week, org)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

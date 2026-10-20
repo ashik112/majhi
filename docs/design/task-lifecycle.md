@@ -39,7 +39,7 @@ Two honest limits on the evidence:
 - The repo is 7 days old (first commit 2026-09-29, 1163 commits, 445 on 2026-10-04). The captain layer is 3 days old (Autonomous merged 2026-10-02, 75dce4cd; chores from 2026-10-03, ffb59c00). Most guards were written with their feature, not after an incident. Only five incidents are documented: 15 identical answers in 4 minutes spent the daily question cap (ad603503), ship cap 5 reached by normal work and a slow test suite ending a run (4207cc99), a 10-minute keep-out after any owner command (replaced in 46c7d480), model-decided permission prompts (9f934cfa), a running turn that overshot a cap (CAP_MARGIN, DECISIONS 431). I use fix-commit share and import graphs as the usage proxy.
 - I cannot read the live database. Real use of Today, Business, Watch and Playbooks can only come from the owner.
 
-### 2.2 Captain and Auto-pilot features
+### 2.2 Captain and Autonomous features
 
 Verdicts: DELETE, MERGE (into the named thing), KEEP (reason).
 
@@ -54,7 +54,7 @@ Verdicts: DELETE, MERGE (into the named thing), KEEP (reason).
 | 7 | Laya wake gate (`autonomy/wake-gate.ts`, 181 lines): an LLM call that decides whether to make an LLM call; one skip in ten taken anyway | Saves captain turns on soft wakes | 8a6b0d5e 10-04. Partly an eval feeder | DELETE. G2: one tick, one lock, so a wake is not double-sent. Keep the pure `factsKey` compare and 20 s debounce in the driver (unchanged facts do not wake) | A few saved turns |
 | 8 | Driver hourly heartbeat (`autonomy/driver.ts:29`) and `HOURLY_MS` (`captain/service.ts:47`) | "Look once an hour" | 75dce4cd; 7c5e6756 already says a bare hourly check no longer wakes | DELETE the driver heartbeat. G2: the tick is the one clock, with one hourly cadence | A look when nothing happened |
 | 9 | Stuck detector (`autonomy/stuck.ts`: 2 h idle, 4 h waiting, 3 failures, 4 repeats) and the `stuck` chore | Dashboard list; chore wakes a lead | cb1b0caa 10-04, display only, no incident. Three notions of stuck exist (this, the chore, idle-watch) | MERGE into `rooms/idle-watch.ts` with one definition: quiet N hours and no hold. DELETE the failures and repeats rules and the repeated-line grouping (text matching). G3: a task that fails or loops has a hold, which is what the dashboard lists. Two policy numbers stay (`quiet.idleHours`, `waitingHours`): quiet time has no structural proof | A separate Stuck list |
-| 10 | Money caps in nine places: weekly org budget, weekly account budget, Auto-pilot day cap, org caps, account floors, CAP_MARGIN mid-turn stop, monthly ceiling, lane budget check before each question, RUN_CAPS tokens. Plus `budget-asks.ts` | Stops spending | Budgets 10-01 (b9c85f24). Autonomy caps 75dce4cd 10-02. CAP_MARGIN after a turn overshot (DECISIONS 431) | MERGE into one budget model (boundary 3): a limit has a scope (org, account, all) and a period (day, week, month), plus a per-account reserve (the floor: what the captain leaves for the owner). One enforcement point: the run checks its budget at each tool call and a breach sets one `budget-limit` hold. DELETE the second system (Auto-pilot day, org, floor), CAP_MARGIN, the lane budget check, and RUN_CAPS tokens as a money cap. Hold kinds `autopilot-cap` and `account-floor` fold into `budget-limit` | Finer-grained but duplicate money limits |
+| 10 | Money caps in nine places: weekly org budget, weekly account budget, Autonomous day cap, org caps, account floors, CAP_MARGIN mid-turn stop, monthly ceiling, lane budget check before each question, RUN_CAPS tokens. Plus `budget-asks.ts` | Stops spending | Budgets 10-01 (b9c85f24). Autonomy caps 75dce4cd 10-02. CAP_MARGIN after a turn overshot (DECISIONS 431) | MERGE into one budget model (boundary 3): a limit has a scope (org, account, all) and a period (day, week, month), plus a per-account reserve (the floor: what the captain leaves for the owner). One enforcement point: the run checks its budget at each tool call and a breach sets one `budget-limit` hold. DELETE the second system (Autonomous day, org, floor), CAP_MARGIN, the lane budget check, and RUN_CAPS tokens as a money cap. Hold kinds `autonomous-cap` and `account-floor` fold into `budget-limit` | Finer-grained but duplicate money limits |
 | 11 | Daily summary twice (`autonomy/summary.ts` and `captain/summary.ts`), `rollup-post.ts` (227 lines, root-chat post every 3 h or batched), `agenda/` morning brief | Status posts | Built in (75dce4cd, 28bb6698, b130e952). No incident | MERGE the two summaries into the one brief. DELETE rollup-post: a fourth status surface, no structure replaces a surface, it is just duplicate (Decisions shows what waits, the brief shows what happened) | A periodic root-chat line |
 | 12 | Own-work approval (`captain/own-work.ts` 636 lines, `own-work-second.ts` 126, authority row `own`) | Captain approves routine permission prompts inside a task worktree; a second Laya opinion for the unknown middle | e1dc18ae and 025882fd 10-04. 9f934cfa 10-04 had just taken permission decisions away from the model | KEEP the rule-based decision (it is how the owner is removed from the loop and the `own` row is a SPEC boundary). DELETE `own-work-second` (a model deciding a permission, which 9f934cfa removed). G4: replace the command-text rules with tool-kind rules (section 3 row 6) | Nothing visible |
 | 13 | Permission deny list (`captain/permission-rules.ts`, 85 lines) | Reject destructive commands | 9f934cfa 10-04 | KEEP (hard limits). Change signal: tool kind and structured input, not command text | n/a |
@@ -65,7 +65,7 @@ Verdicts: DELETE, MERGE (into the named thing), KEEP (reason).
 | 18 | Chores (13, `captain/chores.ts` 919 lines): ship, cards, questions, memory, projects, triage, cleanup, stuck, followups, discover, tidy, health, checklist | Housekeeping and routine decisions, autonomously within authority rows | ffb59c00 (8), 25e43de7 10-04 (5) | KEEP all, run by the one tick. DELETE the `stuck` chore (row 9). MERGE ship, cards, questions into one "what is ready" pass. Caps gone (row 1) | Nothing |
 | 19 | Upkeep: `upkeep-world.ts` (7 thresholds), `DAILY_CHORES` (`rules.ts:113`, now unused outside its definition), `playbooks/builtin/upkeep.ts` repeating the 13 chores with cadence and its own `RUN_TOKENS 60_000` | Same chores registered twice | 25e43de7, bad571e6 | MERGE: the playbook registry is the one list (G2). DELETE `DAILY_CHORES` and the copy of `RUN_TOKENS`. Thresholds stay as playbook settings | Nothing |
 | 20 | `autonomy/service.ts`: 3002 lines, about 112 methods | Holds, caps, pick, queue, resume, dashboard, summary | Grew from 75dce4cd | SHRINKS as 1 to 19 go (estimate under 1,600 lines) | Nothing |
-| 21 | Autonomous switch with `stopping` mode, finish-step, STOPPED_NOW (SPEC 5.18) | One switch; Off pauses what the captain started | 75dce4cd | KEEP (SPEC). It becomes one hold kind, `autopilot-off`, with `now` or `step`. The flags `finishing` and `stoppingNow` become state read by the tick (G2). Mode `paused` (unreachable) goes | n/a |
+| 21 | Autonomous switch with `stopping` mode, finish-step, STOPPED_NOW (SPEC 5.18) | One switch; Off pauses what the captain started | 75dce4cd | KEEP (SPEC). It becomes one hold kind, `autonomous-off`, with `now` or `step`. The flags `finishing` and `stoppingNow` become state read by the tick (G2). Mode `paused` (unreachable) goes | n/a |
 
 ### 2.3 Loops
 
@@ -202,7 +202,7 @@ export const HoldSchema = z.discriminatedUnion("cause", [
   z.object({ cause: z.literal("owner-stop"), at: At }),
   z.object({ cause: z.literal("captain-stop"), at: At, why: z.string().optional() }),   // why: display only
   // the Autonomous switch: `now` paused at once, `step` lets the run finish its step
-  z.object({ cause: z.literal("autopilot-off"), at: At, mode: z.enum(["now", "step"]) }),
+  z.object({ cause: z.literal("autonomous-off"), at: At, mode: z.enum(["now", "step"]) }),
   // one budget model: scope x period, plus the per-account reserve
   z.object({ cause: z.literal("budget-limit"), at: At, scope: z.enum(["task", "org", "account", "all", "reserve"]), period: z.enum(["day", "week", "month"]), until: At.optional(), alertId: z.string().optional() }),
   z.object({ cause: z.literal("account-limit"), at: At, account: AccountIdSchema, until: At.optional() }),
@@ -218,23 +218,23 @@ export type Hold = z.infer<typeof HoldSchema>;
 export type HoldCause = Hold["cause"];
 ```
 
-Twelve kinds, down from fifteen: the three money causes (`autopilot-cap`, `account-floor`, budget `limit`) are one `budget-limit`, and the Auto-pilot switch causes are one `autopilot-off`.
+Twelve kinds, down from fifteen: the three money causes (`autonomous-cap`, `account-floor`, budget `limit`) are one `budget-limit`, and the Autonomous switch causes are one `autonomous-off`.
 
 **Updated after D1 to D10 (2026-10-05), to match the code on `main` at acd08080.** The list stays at twelve kinds. What changed against the first draft above:
 
 - `loop-guard` is the D10 progress counter (`captain/loop-guard.ts`: three captain answers to one task with no progress between them), not the question-loop similarity rule, the stuck chore or the repeated-line rule. Those are deleted, so no hold is raised from message text. The hold carries only a display `why`.
 - `signed-out` is raised only when the lead's hand-off found nobody. A signed-out lead hands the step to a fallback or a teammate first (`runs/manager.ts`, `takeOverFor`, the same `resume.handoff` switch as a limit); the task pauses `signed-out` only when neither works. The same holds for `account-limit`. So both are rarer than the table below suggested, and neither is raised by a chore any more.
-- `budget-limit` is the one money hold (Auto-pilot day and org caps and floors fold into it, as the design said). Its shape gained `scopeId`, the org or account the scope names. The run gate's cap hold stores that org in `autonomy_tasks.held_scope`, and without a field it would be lost on the way into the new model. `alertId` is set when a budget alert fired it; a plain `limit` pause migrated with no known alert gets `alertId = "legacy"`, which keeps it apart from a run-gate cap hold in the old fields.
+- `budget-limit` is the one money hold (Autonomous day and org caps and floors fold into it, as the design said). Its shape gained `scopeId`, the org or account the scope names. The run gate's cap hold stores that org in `autonomy_tasks.held_scope`, and without a field it would be lost on the way into the new model. `alertId` is set when a budget alert fired it; a plain `limit` pause migrated with no known alert gets `alertId = "legacy"`, which keeps it apart from a run-gate cap hold in the old fields.
 - `idle` lists majhi as a lifter (it auto-clears on activity, so someone with a condition has to be allowed to lift it). The first draft listed only O and C.
-- Auto-pilot "leave paused" is not a hold with narrower lifters (lifters are derived from the cause, never stored). Turning Auto-pilot on without resume turns `autopilot-off(now)` into `owner-stop`, so only the owner can lift it. Contradiction 2 is solved by a new cause, not a stored lifter list.
-- `autopilot-off(step)` has an old-field form (`autonomy_tasks.held = owner`, no scope, the task still `running`); `autopilot-off(now)` is `paused` plus `paused_by = autonomy-off` plus `held = owner` at scope `stop-now`.
+- Autonomous "leave paused" is not a hold with narrower lifters (lifters are derived from the cause, never stored). Turning Autonomous on without resume turns `autonomous-off(now)` into `owner-stop`, so only the owner can lift it. Contradiction 2 is solved by a new cause, not a stored lifter list.
+- `autonomous-off(step)` has an old-field form (`autonomy_tasks.held = owner`, no scope, the task still `running`); `autonomous-off(now)` is `paused` plus `paused_by = autonomy-off` plus `held = owner` at scope `stop-now`.
 - Not holds, unchanged: dependency waits, machine busy, slots, tasks-at-once (blockers, section 5).
 
 Built in step B at `packages/shared/src/lifecycle/` (exported as `lifecycle` from `@majhi/shared`): `hold.ts` (the schema and the one table, `HOLD_TABLE`, typed over every cause), `transition.ts` (`transition`, events, effects, refusals), `stored.ts` (old fields to and from the model). Where the build made a choice the design left open, section 4.4 says so.
 
 What the shape fixes:
 
-- `owner-stop` and `captain-stop` are separate kinds. Today the difference is a second column that is null for owner stops and for the Auto-pilot run gate (contradiction 1).
+- `owner-stop` and `captain-stop` are separate kinds. Today the difference is a second column that is null for owner stops and for the Autonomous run gate (contradiction 1).
 - `limit` splits into the two kinds that matter, `budget-limit` and `account-limit`, each carrying what its clearer needs, so after a restart they are distinguishable (contradiction 4).
 - `error` absorbs start failures, turn-limit strikes and "restart with auto resume off".
 - The "resumed by hand" exemptions (`autonomy_tasks.resumed_at`, `budget_alerts.resumed_at`) become one boolean on the task row, `exemptUntilRunEnds`, set when the owner lifts a budget hold. One store instead of two.
@@ -250,8 +250,8 @@ Lifters: O owner, C captain (while Autonomous is On and the workspace's Start ro
 |---|---|---|---|
 | owner-stop | O | never | "You stopped it. Continue when you are ready." |
 | captain-stop | O, C | never | "The captain paused it: {why}." |
-| autopilot-off (now) | O, C | never. Turning Autonomous on resumes it unless the owner ticks "leave paused" | "Paused when Auto-pilot was turned off." |
-| autopilot-off (step) | O, M | the run reaches its next step, or Autonomous is turned on | "Auto-pilot is stopping. It stops at the end of this step." |
+| autonomous-off (now) | O, C | never. Turning Autonomous on resumes it unless the owner ticks "leave paused" | "Paused when Autonomous was turned off." |
+| autonomous-off (step) | O, M | the run reaches its next step, or Autonomous is turned on | "Autonomous is stopping. It stops at the end of this step." |
 | budget-limit | O, M | the limit is raised or the period rolls over (the tick) | "{scope} budget for the {period} is used up. Raise it or wait until {until}." |
 | account-limit | M, O | the account's usage window resets or the account reads available | "{account} hit its usage limit. It resumes by itself." |
 | offline | M, O | the network probe succeeds | "No network. It resumes when you are back online." |
@@ -264,7 +264,7 @@ Lifters: O owner, C captain (while Autonomous is On and the workspace's Start ro
 
 Consequences:
 
-- An owner-only hold cannot be resumed by the captain, a sweep or a run gate. The refusal text is the hold's sentence (contradiction 1). A release of Autonomous without resume leaves `autopilot-off` in place with lifters O only (contradiction 2).
+- An owner-only hold cannot be resumed by the captain, a sweep or a run gate. The refusal text is the hold's sentence (contradiction 1). A release of Autonomous without resume leaves `autonomous-off` in place with lifters O only (contradiction 2).
 - "Waits for an account" (the deleted queue, row 17) is `signed-out` or `account-limit`, cleared by the tick when the account is healthy.
 - Auto-clearing is evaluated by the tick, not by per-reason pollers. The sensors (network probe, sign-in check, usage windows) stay and fill the world reading.
 
@@ -280,7 +280,7 @@ export type LifecycleEvent =
   | { type: "start"; by: Lifter }                          // inbox | ready -> running
   | { type: "sendBack"; by: Lifter }                       // review -> running
   | { type: "ownerStop" } | { type: "captainStop"; why?: string }
-  | { type: "autopilotOff"; mode: "now" | "step" } | { type: "autopilotOn"; resume: boolean }
+  | { type: "autonomousOff"; mode: "now" | "step" } | { type: "autonomousOn"; resume: boolean }
   | { type: "runPaused"; hold: Hold }                      // a run reports; the reason is a typed hold
   | { type: "runResumed" }
   | { type: "holdPlaced"; hold: Hold }                     // majhi-side: budget
@@ -321,9 +321,9 @@ R4 n is the transition number in the transitions audit. Every current writer is 
 | sendBack | review | running | none | runs.start, publishTask | R4 2 from review |
 | ownerStop | running, review | same | set owner-stop | runs.stop, containers stop, processes.stop, terminals.stop, dropPendingShip, card paused, publishTask | R4 5, T:980 |
 | captainStop | running, review | same | set captain-stop | same | R4 5 with `pausedBy` |
-| autopilotOff now | running, review (tasks the captain started) | same | set autopilot-off(now) | as ownerStop | autonomy/service.ts:556-586 |
-| autopilotOff step | running, review | same | set autopilot-off(step) | none until the run reaches its step, then as ownerStop | R4 6 gate, T:2865 |
-| autopilotOn | same | same | clear autopilot-off if `resume` | runs.start if no live run, containers runAgain, card settle | autonomy turn-on |
+| autonomousOff now | running, review (tasks the captain started) | same | set autonomous-off(now) | as ownerStop | autonomy/service.ts:556-586 |
+| autonomousOff step | running, review | same | set autonomous-off(step) | none until the run reaches its step, then as ownerStop | R4 6 gate, T:2865 |
+| autonomousOn | same | same | clear autonomous-off if `resume` | runs.start if no live run, containers runAgain, card settle | autonomy turn-on |
 | runPaused | running, review | same | set the hold. If one exists, keep the one with fewer lifters (O-only beats M-liftable) | dropPendingShip (error only), parkServices, card paused, publishTask, statusChanged | R4 6, T:2865 |
 | runResumed | running, review | same | clear only if M is in `liftersOf(hold)` | containers runAgain, ensureWorktrees, runs.start if no live run, card settle | R4 7, T:2877 (today skips ensureWorktrees and startTask) |
 | holdPlaced | running, review, inbox, ready | same | set hold | as runPaused | budgets/limit-action.ts:25 |
@@ -345,7 +345,7 @@ Choices made when step B built `transition` (the design left them open):
 - `transition(task | undefined, event)`: `create` is the only event for no task. Time comes in on the event (`at`), never from a clock.
 - A held task does not move. `start`, `sendBack`, `agentsIdle` and `processEnded` refuse with the hold's sentence (code `held`). World events (`mrOpened`, `changeAndReview`) are accepted and keep the hold. Only a lift, a stop, `close` or a dependency event changes a hold.
 - `holdCleared` by majhi carries a `ClearReading` and is refused (`condition-not-met`) unless the hold's typed condition holds in it. By the owner or the captain it needs only that they are in `liftersOf`. Whether the captain is currently allowed to act (Autonomous on, Start row) stays an authority gate outside the core.
-- Two holds on one task: the same cause refreshes the data and runs no effects again (a repeated stop is a no-op, G1). Otherwise the hold fewer parties can lift stays. A tie keeps the existing one. Exceptions: `autopilot-off` `now` beats `step`, and `dependency-removed` replaces `dependency-closed`.
+- Two holds on one task: the same cause refreshes the data and runs no effects again (a repeated stop is a no-op, G1). Otherwise the hold fewer parties can lift stays. A tie keeps the existing one. Exceptions: `autonomous-off` `now` beats `step`, and `dependency-removed` replaces `dependency-closed`.
 - The wish to start (`startWhenReady`) is cleared whenever a task leaves inbox or ready.
 - `runLost` is accepted from `running` only (this table); the section 4.6 reconciler text says "running or review". A review task normally has no live run, so `runLost` there would fire for every task. Left as `running` only.
 - Owner lifting a `budget-limit` sets `exemptUntilRunEnds` on the task state and emits `budgets.exempt`. Majhi lifting one does not.
@@ -393,8 +393,8 @@ A run is a process, a task is a lifecycle. Today the run keeps its own `paused`,
 
 | # | Contradiction | Outcome |
 |---|---|---|
-| 1 | Owner pause and autonomy-gate pause are one row | Gone: `owner-stop` vs `autopilot-off`, one lifters table |
-| 2 | Three encodings of autonomy-off | Gone: one kind `autopilot-off`; mode `paused` removed |
+| 1 | Owner pause and autonomy-gate pause are one row | Gone: `owner-stop` vs `autonomous-off`, one lifters table |
+| 2 | Three encodings of autonomy-off | Gone: one kind `autonomous-off`; mode `paused` removed |
 | 3 | `limit` means four things, four clearers, two resumed-by-hand stores | Gone: `budget-limit` and `account-limit`, one `exemptUntilRunEnds` |
 | 4 | Budget vs account limit indistinguishable after restart | Gone: the kind is persisted |
 | 5 | `blocked` on never-run tasks and for idle-watch | Gone: `dependency-*` and `idle` |
@@ -547,15 +547,15 @@ The hold design and the deletions change what SPEC says. Proposed edits, none ma
 | SPEC place | Today | Edit |
 |---|---|---|
 | Section 2, task statuses (line 68) | `inbox → ready → running ⇄ paused → review → mr → done` | `inbox → ready → running → review → mr → done`. A task that is not moving carries a hold |
-| Section 2, line 70 | "`paused` always carries a reason: limit, offline, error, or owner, plus the checkpoint" | "A task with a hold carries its cause (owner-stop, captain-stop, autopilot-off, budget-limit, account-limit, offline, signed-out, error, loop-guard, idle, dependency-closed, dependency-removed) and, for a run, the checkpoint to resume from" |
+| Section 2, line 70 | "`paused` always carries a reason: limit, offline, error, or owner, plus the checkpoint" | "A task with a hold carries its cause (owner-stop, captain-stop, autonomous-off, budget-limit, account-limit, offline, signed-out, error, loop-guard, idle, dependency-closed, dependency-removed) and, for a run, the checkpoint to resume from" |
 | Section 2, line 72 (list groups: Needs you = review, paused, mr) | Groups by status | Needs you = review, mr, and held tasks whose hold lists the owner as a lifter. Held tasks stay in their own lane |
 | Line 384, loop guards ("pause with reason `owner`") | A reason of `owner` for a loop | A `loop-guard` hold |
 | Lines 441 to 442, usage limit and offline | "pause with reason `limit`", "reason `offline`" | The `account-limit` and `offline` holds, auto-cleared by the tick |
 | Line 450, agent status (working, paused, at limit, idle, error) | Agent status | Unchanged: it is run state, not task state. Say so |
 | Line 609, cleanup ("leaves running (review, paused, stopped)") | "paused" as a leaving state | "leaves running or is held" |
-| Lines 644 to 648 (Autonomous: pauses, resumes, "Paused by Captain") | Text about pausing tasks | The same behaviour as the `autopilot-off` and `captain-stop` holds; the sentences come from the hold table |
+| Lines 644 to 648 (Autonomous: pauses, resumes, "Paused by Captain") | Text about pausing tasks | The same behaviour as the `autonomous-off` and `captain-stop` holds; the sentences come from the hold table |
 | Line 674, decision kinds (question, approval, ship, budget, cap, paused, sign-in, secret) | `cap`, `paused` as kinds | `cap` folds into `budget`; `paused` becomes one kind "held" whose text is the hold sentence |
-| Line 841, budgets ("runs pause with reason `limit`") | One reason `limit` | A `budget-limit` hold with scope and period; Auto-pilot day and org caps and floors are the same model |
+| Line 841, budgets ("runs pause with reason `limit`") | One reason `limit` | A `budget-limit` hold with scope and period; Autonomous day and org caps and floors are the same model |
 | Section 5.18, caps and floors; chore caps | Per-chore caps, org caps, floors | Removed (row 1, row 10). The authority rows, push-always-asks and the hard limits stay |
 | Lines 734, 761 to 763 and the 5.19 business, growth, sensors, economics, trackers, agenda sections | Features | Removed or reduced per section 2.4 once the owner approves each |
 
@@ -612,7 +612,7 @@ Largest: `runs/manager.ts` (44 plus 20 on `AgentRun.paused / held`), `tasks/serv
 | D8 | business KB, voice, CRM (owner: delete); deadlines move to Needs you | typecheck | Medium |
 | D9 | G1 first: state keys on ship, answer, tell (new idempotency tests: same key twice is one action). Then delete chore caps (22 numbers), cap-ask flow, per-chore Limits UI, the tell rate limit; one pass bound | new key tests; `captain/{desk,tell-ship}.test.ts` stay green | Medium. The keys land before the caps go, so there is never a window without a guard |
 | D10 | Question loop word-overlap, stuck repeated-line rule, `stuck` chore, Laya wake gate, driver heartbeat, rollup-post, `own-work-second`, echo guard. Add the progress counter (`loop-guard` after N answers with no progress) before removing the similarity rule | `autonomy/driver.test.ts`, `captain/desk.test.ts`, new progress-counter test | Medium |
-| D11 | Money caps from nine places to one model: Auto-pilot day and org caps, floors into the reserve, CAP_MARGIN, budget-asks, lane budget check | `autonomy/{spend,cap}.test.ts` ported to the budget model, `budgets/limit.test.ts` green | Medium |
+| D11 | Money caps from nine places to one model: Autonomous day and org caps, floors into the reserve, CAP_MARGIN, budget-asks, lane budget check | `autonomy/{spend,cap}.test.ts` ported to the budget model, `budgets/limit.test.ts` green | Medium |
 | D12 | Duplicates: `DAILY_CHORES`, `HOURLY_MS`, `dailySummary` copy, `workspaceFull` and `noRoomFor`, `checkWaits` copy, the waits queue | typecheck; `autonomy/waits.test.ts` goes with it | Medium |
 | D13 | Loops merged into the one tick (A1, A5, A7, A8, A21, chatMemory, projectcard, ops looks), one per PR, old loop behind a flag for one release. Needs the lock from step C so it lands after C | `autonomy/service.test.ts`, `captain/*.test.ts` | Medium |
 
@@ -624,7 +624,7 @@ Largest: `runs/manager.ts` (44 plus 20 on `AgentRun.paused / held`), `tasks/serv
 | B | `Hold` schema, `transition()`, `liftersOf`, `autoClears`, `sentenceOf` in `packages/shared/src/lifecycle/`, no callers. First a characterization test for the illegal list (especially `tellAgent` on an `mr` task). Table-driven tests: every event x every status, asserting next state, effects and Refusals; exhaustiveness: every `HoldCause` has lifters, auto-clear and sentence. Also confirm the open structured signals of section 3 | New `lifecycle/transition.test.ts`, `hold.test.ts`; no existing test changes | Trivial |
 | C | `apply()` in `apps/server/src/tasks/lifecycle/` with the per-task lock. Route the 14 `setStatus` sites through it. Dual-write `paused_reason` and `paused_by` from the hold; `paused` stays in the enum and DB. Move raw SQL on `autonomy_tasks` onto drizzle. `setStatus` becomes private | Stay green: `tasks/*.test.ts`, `mrs/flow.test.ts`, `runs/{resume,start-failure,limit,limits,queue,resume-drip,fair-slots,captain-slot}.test.ts`, `budgets/limit.test.ts`, `autonomy/{driver,resume,service,pick,slots}.test.ts`, `captain/{desk,tell-ship,sign-in}.test.ts`, `rooms/idle-watch.test.ts`, `processes/tasks.test.ts`, `store/*.test.ts`. Census: status writes 15 to 1 | Medium: old columns still hold the truth, so revert is a code revert |
 | D | Readers: server then web read `hold`. One text table replaces the 5 web and 3 server maps. Remove `paused` from `TaskStatus`; `tsc` lists every compare. `AgentRun.paused` becomes a getter. SPEC edits (section 8) land with this step | Typecheck. Table test: every `HoldCause` has a sentence. Census near zero | Medium: the enum change touches about 100 files |
-| E1 | DB migration, id 151 or higher in `store/migrations.ts` style (comment above, own transaction, `MigrationConflict` on id reuse), mirrored in `store/schema.ts`. Adds `tasks.hold` TEXT (JSON, zod-parsed on read). Backfill from `paused_reason`, `paused_by`, `autonomy_tasks.held / held_scope / resumed_at`: owner with no `paused_by` and no `held` becomes `owner-stop`; `captain` becomes `captain-stop`; owner with `paused_by = autonomy-off`, or `held = owner` with scope `stop-now`, becomes `autopilot-off(now)`; limit with `held = limit` and scope `day` or an org becomes `budget-limit`(scope org or all, period day); limit otherwise becomes `budget-limit` (the tick reclassifies from the account cache on first run); offline, signed-out, error, loop and blocked map straight (blocked on a never-run task becomes `dependency-closed`; from idle-watch, `idle`). Paused rows return to their lane. Test `store/lifecycle-hold-migration.test.ts` in the style of `paused-by-migration.test.ts` | The migration test, `store/store.test.ts`, no-op rerun | Medium |
+| E1 | DB migration, id 151 or higher in `store/migrations.ts` style (comment above, own transaction, `MigrationConflict` on id reuse), mirrored in `store/schema.ts`. Adds `tasks.hold` TEXT (JSON, zod-parsed on read). Backfill from `paused_reason`, `paused_by`, `autonomy_tasks.held / held_scope / resumed_at`: owner with no `paused_by` and no `held` becomes `owner-stop`; `captain` becomes `captain-stop`; owner with `paused_by = autonomy-off`, or `held = owner` with scope `stop-now`, becomes `autonomous-off(now)`; limit with `held = limit` and scope `day` or an org becomes `budget-limit`(scope org or all, period day); limit otherwise becomes `budget-limit` (the tick reclassifies from the account cache on first run); offline, signed-out, error, loop and blocked map straight (blocked on a never-run task becomes `dependency-closed`; from idle-watch, `idle`). Paused rows return to their lane. Test `store/lifecycle-hold-migration.test.ts` in the style of `paused-by-migration.test.ts` | The migration test, `store/store.test.ts`, no-op rerun | Medium |
 | E2 | A later migration, one release after E1: drop `paused_reason`, `paused_by`, `autonomy_tasks.held / held_scope / resumed_at`, `autonomy_state.holds` and `queue`, the `paused` mode value, and the tables of deleted features (trackers, growth, business, outcomes, agenda, economics) | Migration test | High: dropped data cannot come back. Back up first |
 | F | `WorldSnapshot`, `schedule`, `blockerOf` in shared; `scheduler/world.ts`; the one tick takes over the merged loops (D13 completes). Blockers on cards and the task page. Replaces `stallExplained`, `blockedStart`, `heldStart`, `noRoom` | Table tests: each gate alone, gate order, `schedule` never starts when `blockerOf` says blocked, repeated key is a no-op, never a ready task without a reason | High: loops removed for good; each fold its own PR |
 | G | `PolicySchema` with the 25 numbers; default-equality test (old constant equals default, then delete the constant); Limits page sections | Default-equality test; typecheck | Low |
@@ -648,7 +648,7 @@ How to encode it, so it is not a sentence that drifts:
 
 ## 11. Owner decisions (2026-10-05)
 
-1. SPEC edits in section 8: approved. `paused` is no longer a status; one typed `hold` explains every pause. Auto-pilot day and org caps and floors fold into one budget model (scope, period, reserve).
+1. SPEC edits in section 8: approved. `paused` is no longer a status; one typed `hold` explains every pause. Autonomous day and org caps and floors fold into one budget model (scope, period, reserve).
 2. Today: keep. Business (KB, voice, CRM): delete. Deadlines: deleted too (owner, later the same day).
 3. Trackers (Jira, ClickUp, GitHub Issues): delete. Sensors, growth and economics: delete.
 4. Dependency-closed holds: today's behaviour stays (waits for the owner). Not asked; revisit only if it bites.

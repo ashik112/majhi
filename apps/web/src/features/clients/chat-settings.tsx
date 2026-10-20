@@ -223,6 +223,17 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
           onChange={(next) => change({ incidentUpdates: next === "on" })}
         />
       </Row>
+      <Row label="Gets weekly report">
+        <Segmented<"on" | "off">
+          label="Gets weekly report"
+          value={data.weeklyReport ? "on" : "off"}
+          segments={[
+            { value: "off", label: "Off" },
+            { value: "on", label: "On" },
+          ]}
+          onChange={(next) => change({ weeklyReport: next === "on" })}
+        />
+      </Row>
       <Rules rules={data.rules} busy={save.isPending} onSave={(rules) => change({ rules })} />
 
       <Section>Ask me before sending</Section>

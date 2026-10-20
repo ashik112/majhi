@@ -59,6 +59,7 @@ async function world() {
     h.cmd("memory.add", { text: "Globex invoices close on the 3rd", scope: "org:globex", pinned: false }),
   );
   await must(h.cmd("memory.add", { text: "Acme deploys on Tuesdays", scope: "org:acme", pinned: false }));
+  await must(h.cmd("memory.add", { text: "Invoices go out on the 3rd", scope: "global", pinned: false }));
   await must(h.cmd("authority.set", { org: "acme", level: "routine" }));
   await must(h.cmd("authority.set", { org: "globex", level: "ask" }));
   await must(h.cmd("authority.set", { org: "private", level: "ask" }));
@@ -154,5 +155,12 @@ describe("a captain lane's reads", () => {
     expect(tasks.text).toContain(t.acme.id);
     const memory = await t.call("memory.search", { query: "Tuesdays" });
     expect(memory.text).toContain("Acme deploys on Tuesdays");
+    // Rows with no workspace of their own stay: scoping is by id, never by what a text mentions.
+    const shared = await t.call("memory.search", { query: "Invoices" });
+    expect(shared.text).toContain("Invoices go out on the 3rd");
+    // A log that holds every workspace's rows with no way to tell them apart is not read from a lane.
+    const history = await t.call("history.list", {});
+    expect(history.isError).toBe(true);
+    expect(history.text).toContain("lists the rows of every workspace");
   });
 });

@@ -28,10 +28,10 @@ import type { z } from "zod";
 import { resolveActor } from "../actor.ts";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
-import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
+import { briefHandlers } from "../brief/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { isRootChat } from "../captain/tell.ts";
@@ -322,7 +322,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(new TriggerAlias(services.ops.engine), services),
     ...autonomyHandlers(services.autonomy),
-    ...captainHandlers(services.captain, services.autonomy),
+    ...captainHandlers(services.captain, services.autonomy, services.lanes),
     ...inboxHandlers(services.inbox),
     ...conversationsHandlers(services.conversations),
     ...noticesHandlers(services.notices),
@@ -340,8 +340,8 @@ export function createHandlers({
         await services.tasks.send({ task: chat.id, text, attachments: [], mode: "queue" });
       },
     }),
-    ...agendaHandlers({
-      agenda: services.agenda,
+    ...briefHandlers({
+      brief: services.brief,
       findings: services.findings,
       lanes: services.lanes,
       store: services.store,
@@ -963,6 +963,8 @@ export function createHandlers({
           from: ctx.meta.task,
           byOwner,
           gate: maker.kind === "owner" ? "owner" : maker.kind === "agent" ? "agent" : "captain",
+          // The captain's own task, made without the owner asking, is an idea Autonomous never starts.
+          ...(maker.kind === "captain" ? { ownerAsked: input.ownerAsked === true } : {}),
           provenance:
             chat === undefined || joined
               ? createdBy(ctx, rest.parent !== undefined)

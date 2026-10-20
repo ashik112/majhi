@@ -150,7 +150,7 @@ orgs:
     wiki: { enabled: true }   # per-workspace override
 ```
 
-One function, `wikiEnabled(org)`, read from settings and the workspace config (the same pattern as `resume` and `commits`). It is checked at five places only: command handlers, the MCP tool offer, the TASK.md section, the refresh playbook, the sidebar entry. The refresh runs as an upkeep playbook `upkeep-wiki` (replaces `upkeep-map`), so it gets per-workspace on/off, cadence, run history, Run now and the Auto-pilot gate for free. The UI switch sits in Settings and in workspace settings, using the existing settings panels.
+One function, `wikiEnabled(org)`, read from settings and the workspace config (the same pattern as `resume` and `commits`). It is checked at five places only: command handlers, the MCP tool offer, the TASK.md section, the refresh playbook, the sidebar entry. The refresh runs as an upkeep playbook `upkeep-wiki` (replaces `upkeep-map`), so it gets per-workspace on/off, cadence, run history, Run now and the Autonomous gate for free. The UI switch sits in Settings and in workspace settings, using the existing settings panels.
 
 ## 8. UI (mockup comes next, for approval)
 

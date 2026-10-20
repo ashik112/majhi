@@ -14,7 +14,8 @@ const AT = "2026-10-05T10:00:00.000Z";
 const SAMPLES: { [C in HoldCause]: HoldOf<C> } = {
   "owner-stop": { cause: "owner-stop", at: AT },
   "captain-stop": { cause: "captain-stop", at: AT, why: "it was off track" },
-  "autopilot-off": { cause: "autopilot-off", at: AT, mode: "now" },
+  "autonomous-off": { cause: "autonomous-off", at: AT, mode: "now" },
+  "autonomous-stop": { cause: "autonomous-stop", at: AT, why: "it failed twice" },
   "budget-limit": { cause: "budget-limit", at: AT, scope: "org", scopeId: "acme", period: "day" },
   "account-limit": { cause: "account-limit", at: AT, account: "claude-acme" },
   offline: { cause: "offline", at: AT },
@@ -38,7 +39,7 @@ const READING: ClearReading = {
   online: false,
   accounts: {},
   budgetHasRoom: false,
-  autopilot: "off",
+  autonomous: "off",
   runAtStep: false,
 };
 

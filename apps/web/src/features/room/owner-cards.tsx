@@ -308,6 +308,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   limit: "A spending cap or usage limit was reached. It continues when the limit lifts.",
   preempted: "A more urgent task took its place. It resumes by itself when a running place frees.",
   down: "Every agent of the task is down. It resumes by itself when one can run again.",
+  autonomy: "Autonomous stopped it: it failed twice or spent its budget. Say what to change, then resume it.",
 };
 
 /** The task paused: Resume, and the fix when majhi knows the cause. Settled: what happened. */

@@ -54,6 +54,7 @@ export class NoticesService {
       clientLines: store.notices.clientLines(since, PER_SOURCE),
       taskStatuses: store.notices.taskStatuses(since, PER_SOURCE),
       bugs: store.notices.captainBugs(since, PER_SOURCE),
+      briefs: store.notices.briefs(since, PER_SOURCE),
       incidents: store.notices.incidents(since, PER_SOURCE),
       deploys,
       labels,

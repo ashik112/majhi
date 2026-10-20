@@ -34,7 +34,7 @@ export interface RepliesDeps {
   gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide" | "pending">;
   hub: Pick<ChatHub, "send">;
   rooms: ClientRooms;
-  /** The Tell row of a workspace as it is now: Ask me whenever Auto-pilot is not On. */
+  /** The Tell row of a workspace as it is now: Ask me whenever Autonomous is not On. */
   tell: (org: string) => Promise<AuthorityChoice>;
   /** The Hold list of a workspace, every class filled in. */
   holds: (org: string) => Promise<Holds>;
@@ -65,6 +65,12 @@ export interface ReplyInput {
   thread?: string | undefined;
   /** A report, like an RCA. It always waits. */
   report?: boolean;
+  /**
+   * The workspace's weekly report. `ask` holds it for the owner like any report; `sends` is the Client update switch
+   * on Captain sends: it goes out when the fixed rails (secret, another client, internal ids) find nothing. It is
+   * not an answer to anyone, so a chat the owner holds still gets it.
+   */
+  weekly?: "ask" | "sends";
   /** What the History says it did, like "Sent an update to Acme Support". Absent: "Replied to <name> in <chat>". */
   note?: string | undefined;
   /** The incident it is about. */
@@ -81,6 +87,8 @@ export interface ClientDraftInfo {
   said?: string;
   /** Why it waits, in plain words. */
   hold?: string;
+  /** It is the workspace's weekly report. */
+  weekly?: boolean;
   /** The incident task this reply is an update of: the owner sees it inside that incident's row. */
   incident?: string;
 }
@@ -176,7 +184,7 @@ export class ClientReplies {
     const org = room.org as string;
     // An incident update is the Client update switch's: Ask me holds it for the owner, Captain sends lets it out behind the holds.
     const update = await this.deps.incidentUpdate?.(room.id);
-    if (room.chat.holder !== "captain" && update === undefined) {
+    if (room.chat.holder !== "captain" && update === undefined && input.weekly === undefined) {
       throw new UserError("You hold this chat, so the captain does not write in it.", 409);
     }
     const rails = {
@@ -189,9 +197,13 @@ export class ClientReplies {
       others: await this.others(room),
       firstContact: this.firstContact(room.id, input.to),
       afterGap: this.afterGap(room.id),
-      ...(input.report === true ? { report: true } : {}),
+      ...(input.report === true || input.weekly !== undefined ? { report: true } : {}),
     };
     let verdict = railsFor({ ...rails, text: input.text });
+    // The weekly report on Captain sends: the report hold is lifted, the fixed rails before it still hold.
+    if (input.weekly === "sends" && !verdict.send && verdict.why === "report") {
+      verdict = { send: true, text: verdict.text };
+    }
     // The words a client reads are the text without its markup and with the names of whoever is mentioned: the
     // secret scan and the holds read those too.
     const plain = this.plain(room, input.text);
@@ -214,6 +226,7 @@ export class ClientReplies {
             to: input.to,
             replyTo: input.replyTo,
             thread: input.thread,
+            ...(input.weekly === undefined ? {} : { weekly: true as const }),
             ...(verdict.send ? {} : { hold: verdict.why }),
           }),
       },
@@ -409,6 +422,7 @@ export class ClientReplies {
       app: CHAT_APP_LABEL[room.chat.app],
       ...(client === undefined ? {} : { from: client.sender.name, said: this.plain(room, client.text) }),
       ...(mine?.hold === undefined ? {} : { hold: REPLY_HOLD_LABEL[mine.hold] }),
+      ...(mine?.weekly === true ? { weekly: true } : {}),
       ...(this.deps.incidentOfDraft?.(draft.id) === undefined
         ? {}
         : { incident: this.deps.incidentOfDraft(draft.id) as string }),
@@ -462,6 +476,7 @@ export class ClientReplies {
       to?: string | undefined;
       replyTo?: string | undefined;
       thread?: string | undefined;
+      weekly?: true;
       hold?: ReplyHold;
     },
   ): void {
@@ -474,6 +489,7 @@ export class ClientReplies {
       ...(more.to === undefined ? {} : { to: more.to }),
       ...(more.thread === undefined ? {} : { thread: more.thread }),
       ...(replyTo === undefined ? {} : { replyTo }),
+      ...(more.weekly === true ? { weekly: true as const } : {}),
       draft: draft.id,
       state: this.stateOf(draft),
       ...(more.hold === undefined ? {} : { hold: more.hold }),

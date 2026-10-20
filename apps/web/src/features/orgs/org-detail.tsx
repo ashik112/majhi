@@ -21,6 +21,7 @@ import { cn } from "@/lib/cn";
 import { badgeLetters, plural } from "@/lib/format";
 import { useConfig } from "@/lib/queries";
 import { useNow } from "@/lib/use-now";
+import { CaptainRules } from "./captain-rules";
 import { GitAccounts } from "./git-accounts";
 import { OrgSettings } from "./org-settings";
 
@@ -214,6 +215,8 @@ export function OrgDetail({
       <GitAccounts key={`git-${org.id}`} org={org} />
 
       <OrgSettings key={org.id} org={org} onRenamed={onRenamed} />
+
+      <CaptainRules key={`captain-${org.id}`} org={org} />
     </DetailPane>
   );
 }

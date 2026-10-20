@@ -8,6 +8,7 @@ import { isSettingsPath } from "@/features/settings/settings-frame";
 import { useFeedLost } from "@/lib/feed-status";
 import { MOD_KEY } from "@/lib/format";
 import { useOrgFilter } from "@/lib/org-filter";
+import { AutonomousSwitch } from "./autonomous-switch";
 import { useConsole } from "./data-context";
 import { ConsoleLamp, Kbd, wsStyle } from "./parts";
 
@@ -106,6 +107,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
           <b>{counts.queued}</b>queued
         </span>
       </div>
+      <AutonomousSwitch />
       <button type="button" className="cs-search" onClick={onSearch} aria-label="Search or ask">
         <Search aria-hidden="true" width={14} height={14} />
         Search or ask

@@ -78,6 +78,10 @@ config.orgs.acme = {
 };
 // A run with one running place: a long task of the owner holds it, so a severity 1 incident asks to pause it.
 if (process.env.WALK_CAP === "1") config.limits = { ...(config.limits ?? {}), tasks_running: 1 };
+// The brief hour the walk starts with: late, so no brief is made before the walk has something to say.
+if (process.env.WALK_BRIEF_AT !== undefined) {
+  config.autonomy = { ...(config.autonomy ?? {}), brief_at: process.env.WALK_BRIEF_AT };
+}
 config.projects = { storefront: { org: "acme", path: "~/Work/storefront", base: "main" } };
 writeFileSync(file, stringify(config));
 const secrets = new SecretStore(MAJHI_HOME, SECRETS_KEY_FILE);

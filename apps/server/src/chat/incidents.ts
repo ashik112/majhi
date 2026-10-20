@@ -24,6 +24,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import type { ChatDesk } from "./desk.ts";
+import { failingMinutes } from "./failing.ts";
 import type { ChatHistory } from "./history.ts";
 import type { ClientReplies } from "./replies.ts";
 
@@ -62,7 +63,7 @@ export interface IncidentsDeps {
   write?: ((org: string, key: string, prompt: string) => Promise<string | undefined>) | undefined;
   /** The workspace's Client update switch: who sends what clients are told. */
   clientUpdate: (org: string) => Promise<"ask" | "sends">;
-  /** Why nobody has looked at this workspace's incidents (Auto-pilot off, outside hours), or undefined. */
+  /** Why nobody has looked at this workspace's incidents (Autonomous off, outside hours), or undefined. */
   quiet?: ((org: string) => Promise<string | undefined>) | undefined;
   changed: () => void;
   now?: () => Date;
@@ -716,7 +717,7 @@ export class ClientIncidents {
     const reportedAt = earliest(reported.map((r) => r.at));
     const began = earliest([watch?.openedAt, reportedAt, task.createdAt]) ?? task.createdAt;
     // Time while it was failing: a stretch when the watch was green does not count.
-    const failing = this.failingMinutes(began, resolvedAt, watch?.timeline ?? []);
+    const failing = failingMinutes(began, resolvedAt, watch?.timeline ?? []);
     const minutes = Math.max(1, failing.minutes);
     const span = `It was failing for ${minutes} min${failing.paused ? " in total, with a stretch when it was fine" : ""}, from ${at(began)} to ${at(resolvedAt)}.`;
     const reporters =
@@ -846,27 +847,6 @@ export class ClientIncidents {
     const joined = mine.filter((i) => i.outcome?.task === task.id);
     const pool = joined.length > 0 ? joined : mine.filter((i) => (i.sentAt ?? i.at) >= task.createdAt);
     return earliest(pool.map((i) => i.sentAt ?? i.at));
-  }
-
-  /** Minutes spent failing: a stretch between the watch going green and firing again does not count. */
-  private failingMinutes(
-    began: string,
-    end: string,
-    timeline: readonly { kind: string; at: string }[],
-  ): { minutes: number; paused: boolean } {
-    let total = 0;
-    let from: string | undefined = began;
-    let paused = false;
-    for (const t of timeline.toSorted((a, b) => a.at.localeCompare(b.at))) {
-      if (t.at <= began || t.at >= end) continue;
-      if (t.kind === "resolved" && from !== undefined) {
-        total += Date.parse(t.at) - Date.parse(from);
-        from = undefined;
-        paused = true;
-      } else if (t.kind === "reopened" && from === undefined) from = t.at;
-    }
-    if (from !== undefined) total += Date.parse(end) - Date.parse(from);
-    return { minutes: Math.round(total / 60_000), paused };
   }
 
   /**

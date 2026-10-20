@@ -6,15 +6,12 @@ import type { AutonomyService } from "./service.ts";
 type AutonomyCommand =
   | "autonomy.status"
   | "autonomy.events"
-  | "autonomy.report"
   | "autonomy.start"
-  | "autonomy.pause"
   | "autonomy.stop"
   | "autonomy.configure"
   | "authority.set"
   | "autonomy.guide"
   | "autonomy.forget"
-  | "autonomy.exclude"
   | "autonomy.plan"
   | "autonomy.note"
   | "autonomy.answer";
@@ -23,7 +20,7 @@ type AutonomyCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. Auto-pilot never changes its own switch or limits; the owner does it on ${pageRef("captain")}${ctx.command === "autonomy.configure" ? ` or ${pageRef("limits")}` : ""}.`,
+      `${ctx.command} is the owner's. Autonomous never changes its own switch or limits; the owner does it with the Autonomous switch in the top bar${ctx.command === "autonomy.configure" ? `, in the workspace's settings on ${pageRef("orgs")} or on ${pageRef("limits")}` : ""}.`,
       409,
     );
   }
@@ -43,18 +40,13 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
       return autonomy.status(input.detail);
     },
     "autonomy.events": async (input) => autonomy.events(input),
-    "autonomy.report": async (input) => autonomy.report(input.days),
     "autonomy.start": async (input, ctx) => {
       ownerOnly(ctx);
-      return autonomy.start(input.resumeStopped);
+      return autonomy.start(input.until ?? undefined);
     },
-    "autonomy.pause": async (_input, ctx) => {
+    "autonomy.stop": async (_input, ctx) => {
       ownerOnly(ctx);
-      return autonomy.pause();
-    },
-    "autonomy.stop": async (input, ctx) => {
-      ownerOnly(ctx);
-      return autonomy.stop(input.how);
+      return autonomy.stop();
     },
     "autonomy.configure": async (input, ctx) => {
       ownerOnly(ctx);
@@ -68,10 +60,6 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
     "autonomy.forget": async (input, ctx) => {
       ownerOnly(ctx);
       return autonomy.forget(input.id, ctx);
-    },
-    "autonomy.exclude": async (input, ctx) => {
-      ownerOnly(ctx);
-      return autonomy.exclude(input.task, input.exclude);
     },
     "autonomy.plan": (_input, ctx) => bossOnly(ctx),
     "autonomy.note": (_input, ctx) => bossOnly(ctx),

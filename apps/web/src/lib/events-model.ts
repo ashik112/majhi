@@ -19,13 +19,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding, queryKeys.notices];
     case "tasks":
-      return [
-        queryKeys.tasks,
-        queryKeys.decisions,
-        queryKeys.agenda,
-        queryKeys.conversations,
-        queryKeys.notices,
-      ];
+      return [queryKeys.tasks, queryKeys.decisions, queryKeys.conversations, queryKeys.notices];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":
@@ -43,21 +37,15 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "connections":
       return [queryKeys.connections];
     case "autonomy":
-      return [queryKeys.autonomy, queryKeys.decisions, queryKeys.agenda];
+      return [queryKeys.autonomy, queryKeys.decisions];
     case "captain":
-      return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda, queryKeys.notices];
-    case "agenda":
-      return [queryKeys.agenda];
+      return [queryKeys.captain, queryKeys.decisions, queryKeys.notices];
+    case "briefs":
+      return [queryKeys.notices];
     case "findings":
-      return [queryKeys.findings, queryKeys.decisions, queryKeys.agenda];
+      return [queryKeys.findings, queryKeys.decisions];
     case "playbooks":
-      return [
-        queryKeys.playbooks,
-        queryKeys.findings,
-        queryKeys.decisions,
-        queryKeys.captain,
-        queryKeys.agenda,
-      ];
+      return [queryKeys.playbooks, queryKeys.findings, queryKeys.decisions, queryKeys.captain];
     case "ops":
       return [queryKeys.ops, queryKeys.decisions, queryKeys.findings, queryKeys.notices];
     case "clients":
@@ -113,7 +101,7 @@ export function planEvent(event: ServerEvent): EventPlan {
       tasks.push(...event.tasks);
       if (event.rows !== true) {
         waits.push(...event.tasks);
-        add([queryKeys.agenda, queryKeys.notices]);
+        add([queryKeys.notices]);
       }
     } else add(topicQueryKeys(topic));
   }
@@ -153,7 +141,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "findings",
   "playbooks",
   "ops",
-  "agenda",
+  "briefs",
   "signins",
   "clones",
   "checks",

@@ -7,6 +7,10 @@ export interface CaptainView {
   lanesOf(org: string): string[];
   /** The workspace whose lane this chat is, or undefined for any other task. */
   orgOfLane(chat: string): string | undefined;
+  /** The owner's current Captain chat, the desk: the one conversation. */
+  deskChat(): string | undefined;
+  /** Every lane chat (both jobs) of every workspace, the steps the desk is read with. */
+  allLanes(): { org: string; chat: string }[];
 }
 
 function byAtDesc(a: RoomItem, b: RoomItem): number {
@@ -15,6 +19,7 @@ function byAtDesc(a: RoomItem, b: RoomItem): number {
 
 /**
  * The one read of a room that the owner sees (newest first, by time).
+ * - The desk (the owner's current Captain chat) is the one conversation: its own lines and the untagged lines of every lane of every workspace, merged and each tagged with its workspace.
  * - A captain lane is the workspace thread: the untagged lines of every lane of the workspace, merged. Lines about a task stay out.
  * - A task is its own room plus the lane lines tagged `about` it, only from the lanes of its own workspace.
  * - Anything else (a chat, the root chat) is its own room.
@@ -29,6 +34,23 @@ export function roomWithCaptain(
 ): { items: RoomItem[]; more: boolean } {
   const bounds = olderThan === undefined ? {} : { olderThan };
   if (view === undefined) return store.room.pageAt(task.id, limit, olderThan);
+  if (view.deskChat() === task.id) {
+    const lanes = view.allLanes();
+    const page = store.room.mergedPage(
+      [task.id, ...lanes.map((l) => l.chat)],
+      { untagged: true },
+      limit,
+      bounds,
+    );
+    const orgOf = new Map(lanes.map((l) => [l.chat, l.org]));
+    return {
+      ...page,
+      items: page.items.map((item) => {
+        const org = orgOf.get(item.task);
+        return org === undefined ? item : { ...item, org };
+      }),
+    };
+  }
   const laneOrg = view.orgOfLane(task.id);
   if (laneOrg !== undefined) {
     return store.room.mergedPage(view.lanesOf(laneOrg), { untagged: true }, limit, bounds);
@@ -52,5 +74,6 @@ export function showTargets(
   const org = view?.orgOfLane(task);
   if (view === undefined || org === undefined) return [task];
   if (about !== undefined) return [about];
-  return view.lanesOf(org);
+  const desk = view.deskChat();
+  return desk === undefined ? view.lanesOf(org) : [...view.lanesOf(org), desk];
 }

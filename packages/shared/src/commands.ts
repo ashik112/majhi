@@ -19,13 +19,6 @@ import {
   ToolInfoSchema,
 } from "./accounts.ts";
 import { CallerSchema } from "./actor.ts";
-import {
-  AgendaBriefInputSchema,
-  AgendaConfigureInputSchema,
-  AgendaDismissInputSchema,
-  AgendaTodayInputSchema,
-  AgendaTodaySchema,
-} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -57,19 +50,16 @@ import {
   AutonomyAnswerResultSchema,
   AutonomyEventSchema,
   AutonomyEventsInputSchema,
-  AutonomyExcludeInputSchema,
   AutonomyGuideInputSchema,
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
   AutonomyPlanInputSchema,
-  AutonomyReportInputSchema,
-  AutonomyReportSchema,
   AutonomyStartInputSchema,
   AutonomyStatusInputSchema,
   AutonomyStatusSchema,
-  AutonomyStopInputSchema,
 } from "./autonomy.ts";
 import { BACKUP_PASSPHRASE_MAX, BackupListSchema, BackupVerifySchema } from "./backup.ts";
+import { BriefListInputSchema, BriefSchema } from "./brief.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
   BudgetAnswerInputSchema,
@@ -80,6 +70,8 @@ import {
   CaptainRunChoreInputSchema,
   CaptainRunChoreResultSchema,
   CaptainStatusSchema,
+  CaptainStepInputSchema,
+  CaptainStepResultSchema,
   CaptainUndoInputSchema,
   CaptainUndoResultSchema,
   SlotCapacitySchema,
@@ -1379,34 +1371,13 @@ export const commands = {
     input: HandoffRerunInputSchema,
     output: HandoffStateSchema,
   },
-  // The agenda and the morning brief (5.18) -----------------------------------
-  "agenda.today": {
+  // The morning brief (5.18) -------------------------------------------------
+  "brief.list": {
     risk: "read",
     summary:
-      "The owner's day in one call: today's brief, the ordered agenda (decisions, incidents and high findings, budget holds, playbook drafts) cut at the owner's review budget into today and later, what is running, and goals. Computed in code. The owner and the captain; a captain lane reads its own workspace",
-    input: AgendaTodayInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.configure": {
-    risk: "change",
-    summary:
-      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner, or the captain through the owner's approval",
-    input: AgendaConfigureInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.brief": {
-    risk: "change",
-    summary:
-      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner, or the captain through the owner's approval",
-    input: AgendaBriefInputSchema,
-    output: AgendaTodaySchema,
-  },
-  "agenda.dismissBrief": {
-    risk: "change",
-    summary:
-      "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
-    input: AgendaDismissInputSchema,
-    output: z.object({ day: z.string() }),
+      "The morning briefs of the last days, newest first, one per workspace and day: the short lines the owner read, and the facts behind them. Quiet days are left out. The owner and the captain; a captain lane reads its own workspace",
+    input: BriefListInputSchema,
+    output: z.object({ briefs: z.array(BriefSchema) }),
   },
   // The project wiki (docs/design/wiki.md) ---------------------------------------------
   "wiki.get": {
@@ -1713,7 +1684,7 @@ export const commands = {
   "incident.askCaptain": {
     risk: "change",
     summary:
-      "The owner asks the captain of an incident's workspace to look at it now, even when nobody did (Auto-pilot off, outside working hours). It is the owner's message in the captain's lane. Owner only",
+      "The owner asks the captain of an incident's workspace to look at it now, even when nobody did (Autonomous off, outside working hours). It is the owner's message in the captain's lane. Owner only",
     input: IncidentTaskInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
@@ -2354,8 +2325,13 @@ export const commands = {
        * first task instead of making another, so a double press or a retry cannot duplicate it.
        */
       requestId: z.string().min(8).max(80).optional(),
-      /** The owner marks the new task Not for the captain: the captain never starts, messages, ships or changes it. */
-      noAutonomy: z.boolean().optional(),
+      /** The owner keeps the new task from the captain: it is filed as an idea, and only the owner starts it. */
+      heldByOwner: z.boolean().optional(),
+      /**
+       * For the captain's call: true only when the owner asked for this task in the conversation. Without it the task is
+       * the captain's own idea, and Autonomous never starts those.
+       */
+      ownerAsked: z.boolean().optional(),
     }),
     output: TaskSchema,
   },
@@ -4191,7 +4167,7 @@ export const commands = {
   "autonomy.status": {
     risk: "read",
     summary:
-      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner, the settings and the newest daily summary. Without detail the task list, backlog and cards are empty and only the counts, lanes, spend and settings come back",
+      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner and the settings. Without detail the task list, backlog and cards are empty and only the counts, lanes, spend and settings come back",
     input: AutonomyStatusInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -4202,32 +4178,18 @@ export const commands = {
     input: AutonomyEventsInputSchema,
     output: z.object({ events: z.array(AutonomyEventSchema) }),
   },
-  "autonomy.report": {
-    risk: "read",
-    summary:
-      "Charts for the Auto-pilot dashboard: today's Auto-pilot spend by hour, and the tasks it finished (reached review, an MR or done) per day and workspace over the last days (default 14); the Stuck list (tasks with no progress for hours, repeated failures or loops, cards waiting longest); and the machine's load",
-    input: AutonomyReportInputSchema,
-    output: AutonomyReportSchema,
-  },
   "autonomy.start": {
     risk: "change",
     summary:
-      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
+      "Turn Autonomous on, until an instant (until, ISO) or until the owner turns it off (until null). The tasks it paused when it was last turned off resume. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
     input: AutonomyStartInputSchema,
-    output: AutonomyStatusSchema,
-  },
-  "autonomy.pause": {
-    risk: "change",
-    summary:
-      "Kept for older callers: the same as autonomy.stop with how=now. Autonomous is On or Off; it has no pause. Owner only",
-    input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.stop": {
     risk: "change",
     summary:
-      "Turn Autonomous off. now: pause the tasks it started at once. graceful: current steps finish, nothing new starts, then they pause. Either way turning it on again can resume them. Owner only",
-    input: AutonomyStopInputSchema,
+      "Turn Autonomous off: current steps finish, nothing new starts, then the tasks it started pause. Turning it on again resumes them. Owner only",
+    input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.configure": {
@@ -4257,13 +4219,6 @@ export const commands = {
     input: z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) }),
     output: AutonomyStatusSchema,
   },
-  "autonomy.exclude": {
-    risk: "change",
-    summary:
-      "Mark a task Not for autonomous mode (exclude true), so the captain in autonomous mode leaves it alone, or clear the mark. Owner only",
-    input: AutonomyExcludeInputSchema,
-    output: AutonomyStatusSchema,
-  },
   // The captain per workspace (5.18) --------------------------------------------
   "captain.status": {
     risk: "read",
@@ -4271,6 +4226,13 @@ export const commands = {
       "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also the Autonomous switch (autonomy: on or off)",
     input: Empty,
     output: CaptainStatusSchema,
+  },
+  "captain.step": {
+    risk: "change",
+    summary:
+      "In the owner's All conversation only: ask the captain's step in one workspace to do or answer something. The step runs there with that workspace's access only (its version control, SSH, connections, wiki and account) and its answer shows in this conversation. Write ask from the owner's words and that workspace's own facts: a text that names another workspace is refused",
+    input: CaptainStepInputSchema,
+    output: CaptainStepResultSchema,
   },
   "captain.log": {
     risk: "read",
@@ -4282,14 +4244,14 @@ export const commands = {
   "captain.stop": {
     risk: "change",
     summary:
-      "Same as autonomy.stop with how=now: turns Autonomous off and pauses the tasks it started. The captain is never stopped; it still answers when spoken to. Kept for older callers. Owner only",
+      "Pause all: nothing the captain does runs and the tasks it drives pause at a checkpoint, until captain.resume. The captain is never stopped from answering. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },
   "captain.resume": {
     risk: "change",
     summary:
-      "Same as autonomy.start with resumeStopped: turns Autonomous on and resumes the tasks it paused. Kept for older callers. Owner only",
+      "Lift Pause all: the captain works as the level and Autonomous say, and the tasks it paused continue. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },
@@ -4355,7 +4317,7 @@ export const commands = {
   "autonomy.note": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the captain: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the daily summary",
+      "Autonomous mode only, for the captain: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the morning brief",
     input: AutonomyNoteInputSchema,
     output: z.object({ seq: z.number().int().positive() }),
   },

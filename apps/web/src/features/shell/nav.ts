@@ -6,7 +6,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   board:
     "console tasks home work needs you inbox decisions questions approvals answer chats conversations talk",
   chats: "conversations talk",
-  captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
+  captain: "boss chief of staff autonomous away log findings results upkeep",
   playbooks: "standing work packs upkeep goals outbound drafts gate cadence schedule timers uptime incidents",
   watch:
     "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",

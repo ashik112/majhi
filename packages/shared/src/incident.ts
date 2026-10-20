@@ -275,7 +275,7 @@ export const IncidentViewSchema = z.object({
   watch: z.object({ id: z.number().int().positive(), title: z.string(), firing: z.boolean() }).optional(),
   /** The watch went green with nothing shipped: the incident stays open for the owner to close. */
   recovered: z.object({ at: z.string(), closed: z.boolean() }).optional(),
-  /** Why nobody has looked at it, when that is so: "Auto-pilot is off", "outside working hours until 09:00". */
+  /** Why nobody has looked at it, when that is so: "Autonomous is off", "outside working hours until 09:00". */
   quiet: z.string().optional(),
   rooms: z.array(IncidentRoomViewSchema),
   report: z

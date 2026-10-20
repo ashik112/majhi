@@ -847,7 +847,7 @@ function percentReading(label: string, use: LimitUse): Reading {
   };
 }
 
-/** A limit as a percent: an account's windows, a budget, the Auto-pilot day or the monthly ceiling. */
+/** A limit as a percent: an account's windows, a budget, the Autonomous day or the monthly ceiling. */
 async function limitUsage(
   spec: Extract<WatchCheck, { kind: "usage" }>,
   org: string,
@@ -884,10 +884,10 @@ async function limitUsage(
         use,
       );
     }
-    case "autopilotDay": {
-      const use = await limits.autopilotDay();
-      if (use === undefined) throw new Unavailable("the Auto-pilot daily budget has no cap");
-      return percentReading("Auto-pilot daily budget", use);
+    case "autonomousDay": {
+      const use = await limits.autonomousDay();
+      if (use === undefined) throw new Unavailable("the Autonomous daily budget has no cap");
+      return percentReading("Autonomous daily budget", use);
     }
     case "monthlyCeiling": {
       const use = await limits.monthly();

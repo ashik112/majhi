@@ -2,7 +2,7 @@ import { type CommandName, commands, PRIVATE } from "@majhi/shared";
 import type { z } from "zod";
 
 /**
- * What a captain lane may read (SPEC 5.18): one workspace's rows only. Generic on purpose, so a new
+ * What a captain lane may read (SPEC 5.18): one workspace's rows only, decided by typed ids and never by free text. Generic on purpose, so a new
  * command is covered without anyone listing it here:
  * - a filter for another workspace in a read's input is refused;
  * - an `org` filter the command takes (at the top or one level down, like usage's `filters.org`) is
@@ -24,11 +24,7 @@ export interface ScopeWorld {
   account(id: string): string | undefined;
   /** An agent's workspace; undefined for a root agent or no such agent. */
   agent(id: string): string | undefined;
-  /** Each client workspace's id and name, to spot one named in free text. Private is the owner's own. */
-  names: ReadonlyMap<string, string>;
 }
-
-const TASK_ID = /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/;
 
 function str(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
@@ -47,9 +43,11 @@ function scopeWorkspace(scope: string, world: ScopeWorld): string | undefined {
  * `account:claude-acme` or `project:api` is looked up by what follows the prefix.
  */
 function nameWorkspace(name: string, world: ScopeWorld): string | undefined {
-  if (TASK_ID.test(name)) return world.task(name);
   const direct =
-    world.account(name) ?? world.project(name) ?? (world.orgs.has(name) ? name : world.agent(name));
+    world.task(name) ??
+    world.account(name) ??
+    world.project(name) ??
+    (world.orgs.has(name) ? name : world.agent(name));
   if (direct !== undefined) return direct;
   const colon = name.lastIndexOf(":");
   return colon > 0 && colon < name.length - 1 ? nameWorkspace(name.slice(colon + 1), world) : undefined;
@@ -68,35 +66,6 @@ export function rowWorkspace(row: Record<string, unknown>, world: ScopeWorld, de
   return undefined;
 }
 
-/** The workspace another client workspace's id or name in free text points at, if any but the lane's. */
-function mentions(text: string, lane: string, world: ScopeWorld): string | undefined {
-  // A task, project, account or agent of another workspace named in the text.
-  for (const token of text.match(/[A-Za-z0-9][A-Za-z0-9_.:/-]*[A-Za-z0-9]/g) ?? []) {
-    const of = nameWorkspace(token, world);
-    if (of !== undefined && of !== lane) return of;
-  }
-  for (const [org, name] of world.names) {
-    if (org === lane) continue;
-    for (const word of new Set([org, name])) {
-      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      if (new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`, "i").test(text)) return org;
-    }
-  }
-  return undefined;
-}
-
-/** A row with no workspace of its own that names another one in its text, like a history line. */
-function textWorkspace(value: unknown, lane: string, world: ScopeWorld, depth = 0): string | undefined {
-  if (typeof value === "string") return mentions(value, lane, world);
-  if (typeof value !== "object" || value === null || depth >= 4) return undefined;
-  // Nested text counts too: a decision's request holds the text it was asked about a level or two down.
-  for (const v of Object.values(value)) {
-    const of = textWorkspace(v, lane, world, depth + 1);
-    if (of !== undefined) return of;
-  }
-  return undefined;
-}
-
 function ownWorkspace(row: Record<string, unknown>, world: ScopeWorld): string | undefined {
   const org = str(row.org);
   if (org !== undefined) return org;
@@ -111,7 +80,7 @@ function ownWorkspace(row: Record<string, unknown>, world: ScopeWorld): string |
     if (agentScope !== undefined) return scopeWorkspace(agentScope, world);
   }
   const task = str(row.task);
-  if (task !== undefined && TASK_ID.test(task)) {
+  if (task !== undefined) {
     const of = world.task(task);
     if (of !== undefined) return of;
   }
@@ -134,8 +103,30 @@ function ownWorkspace(row: Record<string, unknown>, world: ScopeWorld): string |
   return undefined;
 }
 
+/** The registries as a `ScopeWorld`: where a task, project, account or agent belongs. */
+export function scopeWorldOf(
+  sections: {
+    orgs: Readonly<Record<string, unknown>>;
+    projects: Readonly<Record<string, { org: string }>>;
+    accounts: Readonly<Record<string, { org: string }>>;
+  },
+  agents: ReadonlyMap<string, string>,
+  taskOrg: (id: string) => string | undefined | null,
+): ScopeWorld {
+  return {
+    orgs: new Set([PRIVATE, ...Object.keys(sections.orgs).filter((id) => id !== PRIVATE)]),
+    task: (id) => {
+      const org = taskOrg(id);
+      return org === undefined ? undefined : (org ?? PRIVATE);
+    },
+    project: (id) => sections.projects[id]?.org,
+    account: (id) => sections.accounts[id]?.org,
+    agent: (id) => agents.get(id),
+  };
+}
+
 /** The workspaces a read's input asks about: its own fields, and the lists of names it carries. */
-function inputWorkspaces(input: Record<string, unknown>, world: ScopeWorld): string[] {
+export function inputWorkspaces(input: Record<string, unknown>, world: ScopeWorld): string[] {
   const out: string[] = [];
   const add = (w: string | undefined) => {
     if (w !== undefined) out.push(w);
@@ -154,13 +145,27 @@ function inputWorkspaces(input: Record<string, unknown>, world: ScopeWorld): str
   return out;
 }
 
-/** Why a lane may not make this read: it asks about another workspace. */
+/**
+ * Reads whose rows carry no workspace of their own (the config history, the decisions log with the
+ * requests as sent). A lane cannot tell whose a row is, so it does not read them; the owner's All
+ * conversation does.
+ */
+export const UNSCOPED_READS: ReadonlySet<CommandName> = new Set<CommandName>([
+  "history.list",
+  "decisions.recent",
+]);
+
+/** Why a lane may not make this read: it asks about another workspace, or reads rows of every workspace. */
 export function readRefusal(
   lane: string,
+  command: CommandName,
   input: Record<string, unknown>,
   world: ScopeWorld,
   name: (org: string) => string,
 ): string | undefined {
+  if (UNSCOPED_READS.has(command)) {
+    return `Refused: ${command} lists the rows of every workspace and cannot be narrowed to ${name(lane)}. Ask the owner in the All conversation.`;
+  }
   const other = inputWorkspaces(input, world).find((w) => w !== lane);
   if (other === undefined) return undefined;
   return `Refused: this lane works in ${name(lane)} only and cannot read ${name(other)}. Each workspace has its own lane.`;
@@ -237,29 +242,21 @@ export function narrow(
   return { value: prune(value, lane, world) };
 }
 
-/**
- * `owned`: inside a row of the lane's own workspace, like a room item of its own task. Text there is
- * the lane's own (an agent may name any word, "majhi" or another client's project), so only rows
- * that belong to another workspace go, not rows that merely mention one.
- */
-function prune(value: unknown, lane: string, world: ScopeWorld, owned = false): unknown {
+/** Takes out every row, name and record key that the registries place in another workspace. Typed ids only, never free text. */
+function prune(value: unknown, lane: string, world: ScopeWorld): unknown {
   if (Array.isArray(value)) {
     return value.flatMap((item) => {
       if (typeof item === "object" && item !== null && !Array.isArray(item)) {
         const own = rowWorkspace(item as Record<string, unknown>, world);
-        const of = own ?? (owned ? undefined : textWorkspace(item, lane, world));
-        if (of !== undefined && of !== lane) return [];
-        return [prune(item, lane, world, owned || own === lane)];
+        if (own !== undefined && own !== lane) return [];
+        return [prune(item, lane, world)];
       }
       // A list of names, like the agents or workspaces a filter offers.
       if (typeof item === "string") {
-        const of =
-          scopeWorkspace(item, world) ??
-          nameWorkspace(item, world) ??
-          (owned ? undefined : mentions(item, lane, world));
+        const of = scopeWorkspace(item, world) ?? nameWorkspace(item, world);
         if (of !== undefined && of !== lane) return [];
       }
-      return [prune(item, lane, world, owned)];
+      return [prune(item, lane, world)];
     });
   }
   if (typeof value === "object" && value !== null) {
@@ -272,7 +269,7 @@ function prune(value: unknown, lane: string, world: ScopeWorld, owned = false): 
         const of = nameWorkspace(v, world);
         if (of !== undefined && of !== lane) continue;
       }
-      out[key] = prune(v, lane, world, owned);
+      out[key] = prune(v, lane, world);
     }
     return out;
   }

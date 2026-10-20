@@ -54,6 +54,18 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
 .iconbtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line-control);background:var(--raised);display:grid;place-items:center;color:var(--fg-muted);flex:none}
 .iconbtn:hover{color:var(--fg);border-color:var(--line-hover);background:var(--selected)}
 .kbd{font:400 10px/16px var(--mono);color:var(--fg-faint);border:1px solid var(--line-strong);border-radius:4px;padding:0 4px;white-space:nowrap}
+.auto{position:relative;flex:none}
+.autobtn{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:8px;border:1px solid var(--line-control);background:var(--raised);color:var(--fg);text-align:left}
+.autobtn:hover{border-color:var(--line-hover);background:var(--selected)}
+.autobtn .t{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:12px}
+.autobtn .t b{font:500 12px var(--sans)}
+.autobtn .t small{font:400 10.5px var(--sans);color:var(--fg-faint);white-space:nowrap}
+.autopop{position:absolute;right:0;top:36px;z-index:20;width:250px;padding:6px;border-radius:12px;background:var(--glass-strong);border:1px solid var(--line-control);box-shadow:var(--pop);display:none;flex-direction:column;gap:1px}
+.autopop.on{display:flex}
+.autopop .lbl{font-size:11px;color:var(--fg-faint);padding:6px 8px 3px}
+.autopop button{height:30px;border-radius:6px;padding:0 8px;text-align:left;font-size:13px;color:var(--fg)}
+.autopop button:hover{background:var(--raised)}
+.autopop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 .search{height:30px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:8px;border:1px solid var(--line-control);background:var(--field);color:var(--fg-faint);width:200px;flex:none}
 .scen{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--accent-text);border:1px solid var(--accent-line);border-radius:8px;padding:2px 3px 2px 8px;flex:none}
 .scen select{font:400 11px var(--sans);color:var(--fg);background:var(--field);border:1px solid var(--line-control);border-radius:6px;height:22px;padding:0 4px}
@@ -307,6 +319,7 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
   .chatpane{position:fixed;right:10px;top:62px;bottom:10px;width:min(460px,46vw);z-index:5;background:var(--glass-strong);box-shadow:var(--pop);transform:translateX(calc(100% + 20px));transition:transform .2s cubic-bezier(.2,.8,.2,1)}
   .chatpane.open{transform:none}
   .search{width:132px} .search .kbd,.tele .q{display:none}
+  .autobtn .t small{display:none}
 }
 </style>
 </head>
@@ -317,6 +330,8 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
     <div class="seg" role="group" aria-label="Workspace" id="wsf"></div>
     <div class="conn" id="conn"></div>
     <div class="tele" id="tele"></div>
+    <div class="auto"><button class="autobtn" id="autoBtn" aria-haspopup="menu" aria-expanded="false"><span class="lamp l-idle" id="autoLamp" aria-hidden="true"></span><span class="t"><b id="autoT">Autonomous</b><small id="autoS"></small></span></button>
+      <div class="autopop" id="autoPop" role="menu" aria-label="Autonomous"></div></div>
     <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or ask<span class="kbd" style="margin-left:auto">⌘K</span></div>
     <div class="appear"><button class="iconbtn" id="appearBtn" aria-label="Appearance" aria-expanded="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
       <div class="apop" id="apop" role="dialog" aria-label="Appearance"><div class="lbl">Theme</div><div class="swatch" id="swatch"></div><div class="lbl">Mode</div><div class="seg" id="mode"><button data-mode="light">Light</button><button data-mode="dark">Dark</button><button data-mode="system">System</button></div><div class="lbl">Density</div><div class="seg" id="dens"><button data-dens="compact">Compact</button><button data-dens="comfortable">Comfortable</button><button data-dens="spacious">Spacious</button></div></div></div>
@@ -370,6 +385,8 @@ const LIVE_NEEDS=[
  {g:"rev",ws:"ACM",p:"storefront",t:"Auto-deliver refusals",gist:"PR #324, checks passing",age:1*h,acts:["Merge","Open PR"]},
  {g:"rev",ws:"PRV",p:"majhi",t:"jq guard",gist:"Fixed on main, adds one test",age:53*m,acts:["Merge","See diff"]},
  {g:"rev",ws:"PRV",p:"majhi",t:"Scanner false positive",gist:"Already fixed on main",age:45*m,acts:["Close","See diff"]},
+ {g:"dec",ws:"ACM",t:"Weekly report for Initrode",gist:"Held for your review before it goes out",age:3*h,q:"Shipped 6 tasks, 18 hours of agent work, 1 incident, uptime 99.92%. Cost is left out. It goes to the Initrode client chat when you send it.",acts:["Send","Edit","Open"]},
+ {g:"cap",ws:"ACM",t:"Morning brief",gist:"Shipped 3, 1 needs you, spent $4.20",age:3*h+30*m,q:"Overnight Autonomous took 2 tasks and finished 3. Spent $4.20 of $15.00.",acts:["Read it"]},
  {g:"cap",ws:"ACM",p:"orders-web",t:"Client told: slowness explained",gist:"The captain sent the Initrode update",age:65*m,q:"Sent to the Initrode client chat at 10:25.",acts:["Read it"]},
 ];
 const LIVE_WORK=[
@@ -409,7 +426,7 @@ function scenario(name){
   }
   if(name==="quiet"){needs=[];work=work.filter(t=>t.s==="w").slice(0,2);later={queued:0,ideas:3,done:[["PRV","majhi","Performance costs",3*h]]};}
   if(name==="offline")offline=true;
-  return {ws,needs,work,later,offline};
+  return {ws,needs,work,later,offline,auto:{on:name!=="quiet",working:2,spend:"$3.10 of $15",until:"8:00"}};
 }
 
 const $=s=>document.querySelector(s);
@@ -426,6 +443,7 @@ const chev=`<svg class="chev" width="10" height="10" viewBox="0 0 10 10" aria-hi
 
 function render(){
   document.body.classList.toggle("offline",S.offline);
+  autoRender();
   S.ws.forEach((w,i)=>wsHue[w.k]=i%6);
   const vis=x=>wsFilter==="*"||x.ws===wsFilter||x.ws==="*";
   const N=S.needs.filter(vis),W=S.work.filter(vis);
@@ -551,6 +569,16 @@ document.addEventListener("keydown",e=>{
   else if(k==="Escape"){$("#pChat").classList.remove("open");$("#composer").classList.remove("f");}
   else if(k==="["&&pane===1){const t=flat[1][sel[1]];if(t){const key="w:"+t.ws;closed.has(key)?closed.delete(key):closed.add(key);render();}}
 });
+function autoRender(){
+  const on=S.auto&&S.auto.on;
+  $("#autoLamp").className="lamp l-"+(on?"working":"idle");
+  $("#autoT").textContent=on?"Autonomous · On":"Autonomous · Off";
+  $("#autoS").textContent=on?`${S.auto.working} working · ${S.auto.spend} today · until ${S.auto.until}`:"Works only when asked";
+  $("#autoPop").innerHTML=(on?`<div class="lbl">Ends</div><button data-auto="manual">When I turn it off</button><button data-auto="8">At 8:00</button><button data-auto="2h">In 2 hours</button><hr><button data-auto="off">Turn off</button>`:`<div class="lbl">Turn on</div><button data-auto="manual">Until I turn it off</button><button data-auto="8">Until 8:00</button><button data-auto="tonight">Until tonight</button><button data-auto="2h">For 2 hours</button>`)+`<hr><button data-auto="pause">Pause all</button>`;
+}
+$("#autoBtn").addEventListener("click",e=>{e.stopPropagation();const o=$("#autoPop").classList.toggle("on");$("#autoBtn").setAttribute("aria-expanded",o)});
+$("#autoPop").addEventListener("click",e=>{e.stopPropagation();const b=e.target.closest("[data-auto]");if(!b)return;S.auto={on:b.dataset.auto!=="off"&&b.dataset.auto!=="pause",working:2,spend:"$3.10 of $15",until:b.dataset.auto==="2h"?"13:30":b.dataset.auto==="tonight"?"23:00":b.dataset.auto==="manual"?"I turn it off":"8:00"};$("#autoPop").classList.remove("on");autoRender();});
+document.addEventListener("click",()=>$("#autoPop").classList.remove("on"));
 $("#scen").addEventListener("change",e=>{S=scenario(e.target.value);wsFilter="*";sel=[0,0];showAll.clear();removed=[];render();});
 let th=new URLSearchParams(location.search).get("t");if(th){document.documentElement.dataset.theme=th;}
 const THEMES={"focus-graphite":["Graphite","#1c1c1e","#fbfbfb"],"focus-warm":["Warm","#201c18","#faf6ef"],"focus":["Focus","#181c23","#fafbfc"],"mission":["Mission","#0d131d","#0d131d"]};

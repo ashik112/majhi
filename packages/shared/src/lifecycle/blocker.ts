@@ -52,8 +52,8 @@ export const BlockerSchema = z.discriminatedUnion("gate", [
     gate: z.literal("untriaged"),
     missing: z.array(z.enum(["priority", "repo"])).min(1),
   }),
-  /** Nothing holds it back and nobody has started it. `autopilot`: whether the captain is on and may pick it up. */
-  z.object({ gate: z.literal("nobody"), autopilot: z.enum(["on", "off"]) }),
+  /** Nothing holds it back and nobody has started it. `autonomous`: whether the captain is on and may pick it up. */
+  z.object({ gate: z.literal("nobody"), autonomous: z.enum(["on", "off"]) }),
 ]);
 export type Blocker = z.infer<typeof BlockerSchema>;
 export type BlockerGate = Blocker["gate"];
@@ -93,7 +93,7 @@ interface Room {
 
 /** What the world reads like now, as the start checks read it. The server fills it; nothing is stored. */
 export interface BlockerWorld {
-  autopilot: "on" | "off";
+  autonomous: "on" | "off";
   /** Why the machine is too busy to start more, or undefined. */
   machine: "memory" | "load" | undefined;
   slots: { agents: Room; accounts: ReadonlyMap<string, Room> };
@@ -146,5 +146,5 @@ export function blockerOf(task: BlockerTask, world: BlockerWorld): Blocker | und
         task.accounts.includes(b.scopeId)),
   );
   if (budget !== undefined) return budget;
-  return { gate: "nobody", autopilot: world.autopilot };
+  return { gate: "nobody", autonomous: world.autonomous };
 }

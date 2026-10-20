@@ -49,13 +49,11 @@ function canon(value: unknown): string {
 
 const FIELD_WORD: Record<string, string> = {
   cap: "Daily budget",
-  hours: "Work hours",
   freeze: "Freeze",
   tz: "Time zone",
   branches: "Branches",
   providers: "Providers",
   account: "Account",
-  tasksAtOnce: "Tasks at once",
 };
 
 function show(value: unknown): string {
@@ -103,7 +101,7 @@ async function planConfigure(world: ProposalWorld, input: unknown, lane: string)
   try {
     next = mergePatch(current, patch);
   } catch {
-    return { kind: "refuse", error: "That change is not valid for Auto-pilot's settings." };
+    return { kind: "refuse", error: "That change is not valid for Autonomous's settings." };
   }
   const { lines, other } = orgChanges(current, next, lane);
   const gone = patch.orgs?.[lane] === null && lines.length === 0 && current.orgs[lane] !== undefined;
@@ -129,16 +127,14 @@ async function configureBasis(world: ProposalWorld, lane: string): Promise<strin
 function planStart(world: ProposalWorld, input: unknown): Planned {
   const parsed = AutonomyStartInputSchema.safeParse(input);
   if (!parsed.success) return { kind: "refuse", error: "Invalid input for autonomy.start." };
-  if (world.mode() === "on" && !parsed.data.resumeStopped) {
-    return { kind: "refuse", error: "Auto-pilot is already on." };
-  }
+  if (world.mode() === "on") return { kind: "refuse", error: "Autonomous is already on." };
   return {
     kind: "propose",
-    summary: "Turn Auto-pilot on",
+    summary: "Turn Autonomous on",
     basis: startBasis(world),
     changes: [
-      `Auto-pilot: ${world.mode() === "on" ? "On" : "Off"} → On`,
-      ...(parsed.data.resumeStopped ? ["Resume the tasks it paused"] : []),
+      `Autonomous: Off → On${parsed.data.until === null ? ", until you turn it off" : `, until ${parsed.data.until}`}`,
+      "Resume the tasks it paused",
     ],
   };
 }

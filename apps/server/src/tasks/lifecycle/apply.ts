@@ -1,4 +1,5 @@
 import { lifecycle, type PausedReason } from "@majhi/shared";
+import { TASK_BUDGET } from "../../autonomy/repo.ts";
 import type { LifecycleRows, LoadedRow } from "./rows.ts";
 import { DURABLE, type EffectContext, type EffectKind, type OutboxItem } from "./types.ts";
 
@@ -235,6 +236,10 @@ export function holdFromRunReason(
   why?: string,
 ): Hold {
   const gate = row.gate;
+  // Autonomous stopped its own task at the budget of its size: the owner's to resume, said as what it is.
+  if (reason === "owner" && gate?.held === "owner" && gate.scope === TASK_BUDGET) {
+    return { cause: "autonomous-stop", at, why: why ?? "It spent its budget." };
+  }
   return lifecycle.fromStored(
     {
       status: "paused",
@@ -268,7 +273,7 @@ export function assertedReading(hold: Hold, now: string): lifecycle.ClearReading
     online: true,
     accounts: "account" in hold ? { [hold.account]: { signedIn: true } } : {},
     budgetHasRoom: true,
-    autopilot: "on",
+    autonomous: "on",
     runAtStep: true,
     slotFree: true,
     anyAccountUp: true,

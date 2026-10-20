@@ -22,7 +22,7 @@ import type { IncidentFacts } from "./facts.ts";
 /**
  * The one incident engine. An incident, whether a client said it, a watch fired or a deploy failed, is one ordinary
  * task of type `incident` in its workspace, on the project the evidence points to. It starts its read-only
- * investigation at once, whatever Auto-pilot and the Start row say (they gate fixing, pushing and telling clients, not
+ * investigation at once, whatever Autonomous and the Start row say (they gate fixing, pushing and telling clients, not
  * looking), and what happens to it afterwards (client updates, the resolution, the report) reads the same recorded
  * facts. A second report or a firing again joins the incident that is open; it never makes a second one.
  */
@@ -411,7 +411,7 @@ export class IncidentEngine {
     );
     await this.adopt(task.id, source);
     this.deps.opened?.(task);
-    // The investigation reads only: it never waits for Auto-pilot or the Start row.
+    // The investigation reads only: it never waits for Autonomous or the Start row.
     const started = await this.tryStart(task.id, urgent);
     this.deps.changed();
     return { task: task.id, joined: false, started, projectUnknown: project === undefined };

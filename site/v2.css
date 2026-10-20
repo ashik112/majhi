@@ -250,7 +250,7 @@
 .v2 .handoff{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgb(10 118 148/.08);border:1px solid rgb(10 118 148/.3);font-size:12.5px;color:var(--fg)}
 .v2 .handoff svg{flex:none}
 
-/* ---------- 5. auto-pilot ---------- */
+/* ---------- 5. autonomous ---------- */
 .v2 .s5{--bg:var(--p-pink);--hc:var(--cobalt);overflow:hidden}
 .v2 .s5 .sun{width:clamp(130px,16vw,230px);right:2%;top:20px;animation:sway 9s ease-in-out infinite alternate;opacity:.95}
 .v2 .night{padding:16px;background-color:#e1e8f3}

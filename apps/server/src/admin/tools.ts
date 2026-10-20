@@ -1,8 +1,10 @@
 import {
   AGENT_BLOCKED_COMMANDS,
   CAPTAIN_PROPOSALS,
+  type CaptainPlace,
   type CommandName,
   commands,
+  placeCommands,
   type RiskClass,
 } from "@majhi/shared";
 import { z } from "zod";
@@ -66,9 +68,44 @@ const PROPOSE_NOTE: Partial<Record<CommandName, string>> = {
     " A change you may not make alone (a staging tier, removing a production environment) does not run: it is proposed to the owner, who applies it with one click.",
 };
 
+/**
+ * Keywords that only check a value. The model does not need them to write a call, and majhi checks the input
+ * against the real schema anyway, so they are left out of the tool list: they were a third of its size.
+ */
+const CHECK_ONLY = new Set([
+  "pattern",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minItems",
+  "maxItems",
+  "additionalProperties",
+  "format",
+]);
+
+function slim(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(slim);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      // A property can be called `pattern`: only a schema's keywords are dropped, never a property name.
+      .filter(([key]) => !CHECK_ONLY.has(key))
+      .map(([key, v]) => [key, key === "properties" ? slimProperties(v) : slim(v)]),
+  );
+}
+
+function slimProperties(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, slim(schema)]));
+}
+
 function commandSchema(command: CommandName): AdminTool["inputSchema"] {
-  const schema = z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" });
+  const schema = slim(z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" }));
   const { $schema: _dropped, ...rest } = schema as Record<string, unknown>;
+  const reads = commands[command].risk === "read";
   const hidden = new Set(OWNER_ONLY_INPUTS[command] ?? []);
   const properties = Object.fromEntries(
     Object.entries((rest.properties ?? {}) as Record<string, unknown>).filter(([k]) => !hidden.has(k)),
@@ -80,16 +117,22 @@ function commandSchema(command: CommandName): AdminTool["inputSchema"] {
     ...rest,
     type: "object",
     // A command's own `reason` keeps its description; the extras fill in only what it lacks.
-    properties: { ...EXTRA_PROPERTIES, ...properties },
+    // A read changes nothing, so it needs no reason and no word that the owner asked.
+    properties: reads ? properties : { ...EXTRA_PROPERTIES, ...properties },
     // A command can already require `reason`: a repeated name makes the schema invalid and the client drops the tool.
-    required: [...new Set([...required, "ownerAsked", "reason"])],
+    required: reads ? required : [...new Set([...required, "ownerAsked", "reason"])],
   };
 }
 
-/** One tool per command that makes sense for an agent, plus `majhi_request_secret`. */
-export function adminTools(): AdminTool[] {
+/**
+ * One tool per command that makes sense for an agent, plus `majhi_request_secret`. With a place, only the
+ * commands of that place and the core (`CAPTAIN_PLACES`): the captain is offered what its turn needs.
+ */
+export function adminTools(place?: CaptainPlace): AdminTool[] {
+  const offered = place === undefined ? undefined : placeCommands(place);
   const tools: AdminTool[] = (Object.keys(commands) as CommandName[])
     .filter((name) => !NOT_TOOLS.has(name) || CAPTAIN_PROPOSALS.has(name))
+    .filter((name) => offered === undefined || offered.has(name))
     .map((command) => {
       const def = commands[command];
       return {

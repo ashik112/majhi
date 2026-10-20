@@ -44,7 +44,7 @@ export function choresNow(
   authority: Authority,
   world: { mode: AutonomyMode; stopped?: boolean | undefined },
 ): readonly CaptainChore[] {
-  const switches = { autopilot: world.mode, stopped: world.stopped === true };
+  const switches = { autonomous: world.mode, stopped: world.stopped === true };
   return choresOf(authority).filter((chore) => choreSwitchWhy(switches, chore) === undefined);
 }
 

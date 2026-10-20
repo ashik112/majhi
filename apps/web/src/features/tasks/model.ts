@@ -26,7 +26,8 @@ const PAUSE_WORDS: Record<string, string> = {
 /** Who paused it, when it was not the owner by hand. */
 export const PAUSED_BY_WORDS: Record<PausedBy, string> = {
   captain: "by Captain",
-  "autonomy-off": "Auto-pilot turned off",
+  "autonomy-off": "Autonomous turned off",
+  "autonomy-stop": "Autonomous stopped it",
 };
 
 /** A task's status in words, and its lamp. Waiting on the owner (your turn, your review) is the red lamp. */

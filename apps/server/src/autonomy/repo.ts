@@ -6,8 +6,6 @@ import {
   AutonomyHoldSchema,
   type AutonomyMode,
   AutonomyModeSchema,
-  type AutonomySummary,
-  AutonomySummarySchema,
   type Budget,
   type BudgetAsk,
   BudgetAskSchema,
@@ -18,13 +16,14 @@ import {
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import type { SpendTurn } from "./report.ts";
 import type { OrgSpendRow } from "./spend.ts";
 
 /** The one row of autonomous mode's state (migration 112). */
 export interface AutonomyState {
   mode: AutonomyMode;
   since?: string;
+  /** While on: when majhi turns it off by itself. Absent: until the owner does. */
+  until?: string;
   by?: "owner" | "majhi";
   why?: string;
   /** The captain's autonomy chat. */
@@ -40,6 +39,8 @@ export type HeldReason = "owner" | "limit";
 
 /** The hold scope that marks a task Stop now paused, so turning on again can resume it. */
 export const STOPPED_NOW = "stop-now";
+/** The hold scope of a task that spent the budget of its size: Autonomous stopped it, and only the owner resumes it. */
+export const TASK_BUDGET = "task-budget";
 
 export interface AutonomyTaskRow {
   task: string;
@@ -81,6 +82,7 @@ type NewEvent = Omit<AutonomyEvent, "seq" | "at"> & { at: string };
 interface StateDbRow {
   mode: string;
   since: string | null;
+  until: string | null;
   changed_by: string | null;
   why: string | null;
   chat: string | null;
@@ -108,24 +110,6 @@ interface EventDbRow {
 }
 
 /** A JSON column read with a schema; anything that does not parse reads as `fallback`. */
-/** The caps of one day, as `autonomy_day_caps` keeps them: the day cap and each workspace's own. */
-export const DayCapsSchema = z.object({
-  day: BudgetSchema.optional(),
-  orgs: z.record(z.string(), BudgetSchema),
-});
-export type DayCaps = z.infer<typeof DayCapsSchema>;
-
-/** Which caps differ: `day` for the day cap, else the org id. */
-function capsMoved(before: DayCaps, after: DayCaps): string[] {
-  const same = (a: Budget | undefined, b: Budget | undefined) =>
-    a?.cost === b?.cost && a?.tokens === b?.tokens;
-  const moved = same(before.day, after.day) ? [] : ["day"];
-  for (const org of new Set([...Object.keys(before.orgs), ...Object.keys(after.orgs)])) {
-    if (!same(before.orgs[org], after.orgs[org])) moved.push(org);
-  }
-  return moved;
-}
-
 function parsed<T>(json: string | null, schema: z.ZodType<T>, fallback: T): T {
   if (json === null) return fallback;
   try {
@@ -149,12 +133,11 @@ function present<K extends string, V>(key: K, value: V | null): { [P in K]?: V }
 }
 
 /**
- * The mode as stored. `paused` is gone from the owner's switch (On or Off): a database that still
- * holds it reads as On, so the tasks it held restart when the owner next turns it on or off.
+ * The mode as stored. `paused` was a state of its own once: a database that still holds it reads as On, so the
+ * tasks it held restart when the owner next turns it on or off.
  */
 export function modeOf(stored: string): AutonomyMode {
-  const mode = AutonomyModeSchema.catch("off").parse(stored);
-  return mode === "paused" ? "on" : mode;
+  return stored === "paused" ? "on" : AutonomyModeSchema.catch("off").parse(stored);
 }
 
 /** The autonomy tables in `majhi.db`: state, tasks, the feed and the daily summaries. */
@@ -169,6 +152,7 @@ export class AutonomyRepo {
     return {
       mode: modeOf(row.mode),
       ...present("since", row.since),
+      ...present("until", row.until),
       ...present("by", by),
       ...present("why", row.why),
       ...present("chat", row.chat),
@@ -179,10 +163,23 @@ export class AutonomyRepo {
     };
   }
 
-  setMode(mode: AutonomyMode, at: string, by: "owner" | "majhi", why: string | undefined): void {
+  setMode(
+    mode: AutonomyMode,
+    at: string,
+    by: "owner" | "majhi",
+    why: string | undefined,
+    until?: string,
+  ): void {
     this.db
-      .prepare("UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ? WHERE id = 1")
-      .run(mode, at, by, why ?? null);
+      .prepare(
+        "UPDATE autonomy_state SET mode = ?, since = ?, changed_by = ?, why = ?, until = ? WHERE id = 1",
+      )
+      .run(mode, at, by, why ?? null, mode === "on" ? (until ?? null) : null);
+  }
+
+  /** Changes only the end time of a switch that is on. */
+  setUntil(until: string | undefined): void {
+    this.db.prepare("UPDATE autonomy_state SET until = ? WHERE id = 1 AND mode = 'on'").run(until ?? null);
   }
 
   setChat(chat: string): void {
@@ -325,82 +322,12 @@ export class AutonomyRepo {
     ).flatMap(eventOf);
   }
 
-  /** True when the mode changed from `from` (inclusive) to `to` (exclusive). */
-  modeChangedBetween(from: string, to: string): boolean {
-    return (
-      this.db
-        .prepare("SELECT 1 FROM autonomy_events WHERE kind = 'mode' AND at >= ? AND at < ? LIMIT 1")
-        .get(from, to) !== undefined
-    );
-  }
-
   /** When each inbox or ready task was made, for the backlog's order by age. */
   backlogAges(): Map<string, string> {
     const rows = this.db
       .prepare("SELECT id, created_at FROM tasks WHERE status IN ('inbox', 'ready')")
       .all() as { id: string; created_at: string }[];
     return new Map(rows.map((r) => [r.id, r.created_at]));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Daily summaries
-
-  /** Stores the day's summary once. False when the day has one already. */
-  addSummary(summary: AutonomySummary): boolean {
-    return (
-      this.db
-        .prepare("INSERT OR IGNORE INTO autonomy_summaries (day, at, summary) VALUES (?, ?, ?)")
-        .run(summary.day, summary.at, JSON.stringify(summary)).changes > 0
-    );
-  }
-
-  hasSummary(day: string): boolean {
-    return this.db.prepare("SELECT 1 FROM autonomy_summaries WHERE day = ?").get(day) !== undefined;
-  }
-
-  latestSummary(): AutonomySummary | undefined {
-    const row = this.db.prepare("SELECT summary FROM autonomy_summaries ORDER BY day DESC LIMIT 1").get() as
-      | { summary: string }
-      | undefined;
-    return row === undefined
-      ? undefined
-      : parsed<AutonomySummary | undefined>(row.summary, AutonomySummarySchema, undefined);
-  }
-
-  /**
-   * Notes the caps in force on `day` (the owner's local day). The first note of a day stores them;
-   * a later one that differs keeps the new caps and remembers which ones moved, so the day's summary
-   * compares against the cap that applied, or says it changed.
-   */
-  noteCaps(day: string, caps: DayCaps): void {
-    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
-      | { caps: string; changed: string }
-      | undefined;
-    if (row === undefined) {
-      this.db
-        .prepare("INSERT OR IGNORE INTO autonomy_day_caps (day, caps, changed) VALUES (?, ?, '[]')")
-        .run(day, JSON.stringify(caps));
-      return;
-    }
-    const before = parsed(row.caps, DayCapsSchema, { orgs: {} });
-    const moved = capsMoved(before, caps);
-    if (moved.length === 0) return;
-    const changed = new Set([...parsed(row.changed, z.array(z.string()), []), ...moved]);
-    this.db
-      .prepare("UPDATE autonomy_day_caps SET caps = ?, changed = ? WHERE day = ?")
-      .run(JSON.stringify(caps), JSON.stringify([...changed].sort()), day);
-  }
-
-  /** The caps last seen on `day` and which moved during it. Undefined for a day nothing noted. */
-  dayCaps(day: string): { caps: DayCaps; changed: string[] } | undefined {
-    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
-      | { caps: string; changed: string }
-      | undefined;
-    if (row === undefined) return undefined;
-    return {
-      caps: parsed(row.caps, DayCapsSchema, { orgs: {} }),
-      changed: parsed(row.changed, z.array(z.string()), []),
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -497,28 +424,44 @@ export class AutonomyRepo {
       .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
   }
 
-  /** The same turns as `spendRows`, with their workspace, for the per-day chart. */
-  spendTurnsByOrg(start: string, end: string, chats: readonly string[]): (SpendTurn & { org: string })[] {
-    const marks = chats.map(() => "?").join(", ");
-    return this.db
+  /** How many tasks Autonomous took on in a span (`to` excluded), by workspace. */
+  tookBetween(from: string, to: string): Map<string, number> {
+    const rows = this.db
       .prepare(
-        `SELECT t.at AS at, t.cost_usd AS cost, 0 AS tokens, COALESCE(t.org, ?) AS org
-         FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})`,
+        `SELECT COALESCE(t.org, ?) AS org, COUNT(*) AS n
+           FROM autonomy_tasks a JOIN tasks t ON t.id = a.task
+          WHERE a.since >= ? AND a.since < ?
+          GROUP BY COALESCE(t.org, ?)`,
       )
-      .all(PRIVATE, start, end, ...chats) as (SpendTurn & { org: string })[];
+      .all(PRIVATE, from, to, PRIVATE) as { org: string; n: number }[];
+    return new Map(rows.map((r) => [r.org, r.n]));
   }
 
-  /** The same turns as `spendRows`, one row each, for the hourly chart. */
-  spendTurns(start: string, end: string, chats: readonly string[]): SpendTurn[] {
-    const marks = chats.map(() => "?").join(", ");
-    return this.db
+  /**
+   * What a task Autonomous works on has cost, in dollars, since it took it on or the owner last resumed it by
+   * hand (a resume is a new allowance). 0 for a task Autonomous did not take.
+   */
+  taskCost(task: string): number {
+    const row = this.db
       .prepare(
-        `SELECT t.at AS at, t.cost_usd AS cost, (t.input_tokens + t.output_tokens + t.cache_write_tokens) AS tokens
-         FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})`,
+        `SELECT COALESCE(SUM(t.cost_usd), 0) AS cost
+         FROM turns t JOIN autonomy_tasks a ON a.task = t.task
+         WHERE t.task = ? AND t.at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
       )
-      .all(start, end, ...chats) as SpendTurn[];
+      .get(task) as { cost: number } | undefined;
+    return row?.cost ?? 0;
+  }
+
+  /** How many runs of a task Autonomous works on ended in an error since it took it on or the owner last resumed it. */
+  failedRuns(task: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n
+         FROM runs r JOIN autonomy_tasks a ON a.task = r.task
+         WHERE r.task = ? AND r.stop_reason IN ('error', 'exit') AND r.started_at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
+      )
+      .get(task) as { n: number } | undefined;
+    return row?.n ?? 0;
   }
 }
 

@@ -161,6 +161,41 @@
   padding: 0 4px;
   white-space: nowrap;
 }
+.cs-auto {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-line-control);
+  background: var(--c-raised);
+  color: var(--c-fg);
+  text-align: left;
+  flex: none;
+  cursor: pointer;
+}
+.cs-auto:hover,
+.cs-auto[aria-expanded="true"] {
+  border-color: var(--c-line-hover);
+  background: var(--c-selected);
+}
+.cs-auto .cs-t {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 12px;
+}
+.cs-auto b {
+  font: 500 12px var(--font-sans);
+  white-space: nowrap;
+}
+.cs-auto small {
+  font: 400 10.5px var(--font-sans);
+  color: var(--c-fg-faint);
+  white-space: nowrap;
+}
 .cs-search {
   height: 30px;
   display: flex;
@@ -1212,6 +1247,9 @@
   .cs-pane[data-pane="chat"][data-open="true"] {
     transform: none;
     visibility: visible;
+  }
+  .cs-auto small {
+    display: none;
   }
   .cs-search {
     width: 132px;

@@ -108,7 +108,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       "Keep a durable, non-obvious fact. Drop a one-off symptom, generic advice or what the docs already say. Merge a copy into the fact it repeats. Leave a contradiction for the owner.",
     outputs: ["log"],
     cost: { tier: "laya", tokens: PASS_BOUND.tokens },
-    turnOn: "Reviews waiting memories once a day. It also runs while Auto-pilot is off.",
+    turnOn: "Reviews waiting memories once a day. It also runs while Autonomous is off.",
     outcomes: [
       { id: "mem-keep", text: "A good lesson: keep it" },
       { id: "mem-drop", text: "A duplicate or a wrong one: drop it" },
@@ -163,7 +163,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       "Remove what a done task left behind once it is merged or kept elsewhere. Never remove uncommitted work.",
     outputs: ["log"],
     cost: { tier: "rules", tokens: PASS_BOUND.tokens },
-    turnOn: "Cleans up done tasks once a day. It also runs while Auto-pilot is off.",
+    turnOn: "Cleans up done tasks once a day. It also runs while Autonomous is off.",
     outcomes: [
       { id: "cleanup-caches", text: "A done task's rebuildable caches: remove them" },
       { id: "cleanup-worktrees", text: "A merged done task's worktree, after the set days: remove it" },
@@ -309,7 +309,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "small", tokens: PASS_BOUND.tokens },
     turnOn:
-      "Updates the wiki once a day when work was merged, while Auto-pilot is on and the workspace has the wiki on. It costs nothing on a day nothing changed.",
+      "Updates the wiki once a day when work was merged, while Autonomous is on and the workspace has the wiki on. It costs nothing on a day nothing changed.",
     outcomes: [{ id: "wiki-update", text: "The code moved past the wiki: update the pages that changed" }],
     runner: { kind: "chore", chore: "wiki" },
   }),

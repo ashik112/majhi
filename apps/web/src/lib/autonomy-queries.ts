@@ -1,11 +1,4 @@
-import type {
-  AutonomyEvent,
-  AutonomyReport,
-  AutonomyStatus,
-  CommandInput,
-  CommandOutput,
-  SlotCapacity,
-} from "@majhi/shared";
+import type { AutonomyEvent, AutonomyStatus, CommandInput, CommandOutput, SlotCapacity } from "@majhi/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -29,17 +22,6 @@ export function useAutonomyStatus(detail = false) {
     queryFn: () => cmd("autonomy.status", { detail }),
     retry: (count, error) => !autonomyMissing(error) && count < 2,
     refetchInterval: (query) => (query.state.data && query.state.data.mode !== "off" ? 30_000 : false),
-    refetchIntervalInBackground: false,
-  });
-}
-
-/** `autonomy.report`: the dashboard's charts. Read every minute while the page shows, since turns emit no event. */
-export function useAutonomyReport(days = 14) {
-  return useQuery<AutonomyReport, ApiRequestError>({
-    queryKey: [...queryKeys.autonomy, "report", days],
-    queryFn: () => cmd("autonomy.report", { days }),
-    retry: (count, error) => !autonomyMissing(error) && count < 2,
-    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 }
@@ -79,13 +61,7 @@ export function useAutonomyEvents(decisions: boolean) {
   });
 }
 
-type StatusCommand =
-  | "autonomy.start"
-  | "autonomy.pause"
-  | "autonomy.stop"
-  | "autonomy.configure"
-  | "autonomy.forget"
-  | "autonomy.exclude";
+type StatusCommand = "autonomy.start" | "autonomy.stop" | "autonomy.configure" | "autonomy.forget";
 
 /**
  * A command that answers with the new status: it goes into the cache at once, and the feed refetches.
@@ -98,11 +74,7 @@ export function useAutonomyCommand<N extends StatusCommand>(name: N) {
     onSuccess: (status) => {
       client.setQueryData(statusKey, status);
       client.setQueryData(detailKey, status);
-      return Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.autonomy }),
-        // A task's mark Not for autonomous mode shows on its card and in its header.
-        ...(name === "autonomy.exclude" ? [client.invalidateQueries({ queryKey: queryKeys.tasks })] : []),
-      ]);
+      return client.invalidateQueries({ queryKey: queryKeys.autonomy });
     },
   });
 }
