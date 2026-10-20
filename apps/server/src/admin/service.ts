@@ -209,7 +209,7 @@ export interface AutonomyGate {
 
 /** One lane's reads: refused when they ask about another workspace, narrowed to its own rows. */
 export interface LaneReads {
-  refusal(input: Record<string, unknown>): string | undefined;
+  refusal(command: CommandName, input: Record<string, unknown>): string | undefined;
   input(command: CommandName, input: Record<string, unknown>): Record<string, unknown>;
   output(value: unknown): { value: unknown; refused?: string };
 }
@@ -1555,7 +1555,7 @@ export class AdminService {
     let sent = input;
     if (lane !== undefined) {
       const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-      const refused = lane.refusal(fields);
+      const refused = lane.refusal(command, fields);
       if (refused !== undefined) return { ok: false, error: refused };
       sent = lane.input(command, fields);
     }

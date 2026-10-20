@@ -1544,11 +1544,10 @@ export class AutonomyService {
       project: (id) => sections.projects[id]?.org,
       account: (id) => sections.accounts[id]?.org,
       agent: (id) => agents.get(id),
-      names: new Map(Object.entries(sections.orgs).map(([id, o]) => [id, o.name])),
     };
     const name = (org: string) => (org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org));
     return {
-      refusal: (input) => readRefusal(lane, input, world, name),
+      refusal: (command, input) => readRefusal(lane, command, input, world, name),
       input: (command, input) => forceOrg(command, input, lane),
       output: (value) => narrow(value, lane, world, name),
     };
