@@ -233,7 +233,7 @@ export function jsonLd(root: HtmlNode): string[] {
 
 /** A price in a string: "$1,799.00", "1.799,00 €", "USD 49". Undefined when there is no number. */
 export function parsePrice(text: string): { value: number; symbol: string } | undefined {
-  const m = /([$€£¥₹]|USD|EUR|GBP|BDT|INR|Tk\.?)?\s*(\d[\d.,\s]*\d|\d)/i.exec(text);
+  const m = /([$\u20AC\u00A3\u00A5\u20B9]|USD|EUR|GBP|BDT|INR|Tk\.?)?\s*(\d[\d.,\s]*\d|\d)/i.exec(text);
   if (m === null) return undefined;
   const symbol = (m[1] ?? "").replace(/^Tk\.?$/i, "Tk ");
   let digits = (m[2] ?? "").replace(/\s/g, "");
