@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { DetailSection } from "@/components/ui/list-detail";
@@ -172,7 +172,9 @@ export function WikiSection() {
                     <Button
                       size="sm"
                       disabled={turnOn.isPending}
-                      onClick={() => turnOn.mutate({ input: { until: null }, reason: "Owner turned Autonomous on" })}
+                      onClick={() =>
+                        turnOn.mutate({ input: { until: null }, reason: "Owner turned Autonomous on" })
+                      }
                     >
                       Turn Autonomous on
                     </Button>

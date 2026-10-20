@@ -1,4 +1,4 @@
-import { pageRef, type TaskId } from "@majhi/shared";
+import type { TaskId } from "@majhi/shared";
 import type { AutonomyService } from "../autonomy/service.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";

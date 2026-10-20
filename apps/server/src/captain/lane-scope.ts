@@ -45,7 +45,9 @@ function scopeWorkspace(scope: string, world: ScopeWorld): string | undefined {
 function nameWorkspace(name: string, world: ScopeWorld): string | undefined {
   const direct =
     world.task(name) ??
-    world.account(name) ?? world.project(name) ?? (world.orgs.has(name) ? name : world.agent(name));
+    world.account(name) ??
+    world.project(name) ??
+    (world.orgs.has(name) ? name : world.agent(name));
   if (direct !== undefined) return direct;
   const colon = name.lastIndexOf(":");
   return colon > 0 && colon < name.length - 1 ? nameWorkspace(name.slice(colon + 1), world) : undefined;

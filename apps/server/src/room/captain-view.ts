@@ -36,7 +36,12 @@ export function roomWithCaptain(
   if (view === undefined) return store.room.pageAt(task.id, limit, olderThan);
   if (view.deskChat() === task.id) {
     const lanes = view.allLanes();
-    const page = store.room.mergedPage([task.id, ...lanes.map((l) => l.chat)], { untagged: true }, limit, bounds);
+    const page = store.room.mergedPage(
+      [task.id, ...lanes.map((l) => l.chat)],
+      { untagged: true },
+      limit,
+      bounds,
+    );
     const orgOf = new Map(lanes.map((l) => [l.chat, l.org]));
     return {
       ...page,

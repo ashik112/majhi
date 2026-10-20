@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns, type RuntimeOptions } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
-  CLIENT_CHAT_BRIEF,
   type CaptainPlace,
+  CLIENT_CHAT_BRIEF,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
   durationMs,
@@ -58,17 +58,17 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { CannotRunDecisions } from "./captain/cannot-run.ts";
+import { TurnContext } from "./captain/context.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
-import { CannotRunDecisions } from "./captain/cannot-run.ts";
-import { TurnContext } from "./captain/context.ts";
-import { StepGuard } from "./captain/step.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
+import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { ClientChat } from "./chat/service.ts";

@@ -103,9 +103,7 @@ function slimProperties(value: unknown): unknown {
 }
 
 function commandSchema(command: CommandName): AdminTool["inputSchema"] {
-  const schema = slim(
-    z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" }),
-  );
+  const schema = slim(z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" }));
   const { $schema: _dropped, ...rest } = schema as Record<string, unknown>;
   const reads = commands[command].risk === "read";
   const hidden = new Set(OWNER_ONLY_INPUTS[command] ?? []);

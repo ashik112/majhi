@@ -19,7 +19,12 @@ async function on() {
   const call = (tool: string, args: Record<string, unknown>) =>
     h.majhi.services.admin.call({ task: chat, agent: "boss" }, tool, { reason: "it is next", ...args });
   const ownerTask = async (text: string, extra: Record<string, unknown> = {}): Promise<Task> => {
-    const made = await h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: false, ...extra });
+    const made = await h.cmd("tasks.create", {
+      text,
+      repos: [{ project: "acme-api" }],
+      start: false,
+      ...extra,
+    });
     expect(made.status).toBe(200);
     return made.body as Task;
   };

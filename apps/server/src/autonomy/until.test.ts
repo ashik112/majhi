@@ -37,7 +37,11 @@ describe("Autonomous with an end time", () => {
     const made: string[] = [];
     for (const text of ["Fix the api", "Fix the web app"]) {
       // Tasks the owner made, which the captain takes from the backlog.
-      const id = ((await h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: false })).body as { id: string }).id;
+      const id = (
+        (await h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: false })).body as {
+          id: string;
+        }
+      ).id;
       const res = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_start", {
         id,
         reason: "next in the backlog",
@@ -48,7 +52,8 @@ describe("Autonomous with an end time", () => {
     const task = (id: string) => h.majhi.services.store.tasks.get(id);
     await w.until(() => made.every((id) => task(id)?.status === "running"), "both tasks to run");
     // Each has more to do after its turn.
-    for (const id of made) h.majhi.services.runs.notify(id, task(id)?.team[0] ?? "", "and then the next part");
+    for (const id of made)
+      h.majhi.services.runs.notify(id, task(id)?.team[0] ?? "", "and then the next part");
 
     // A minute before 08:00 it is on; a minute after, it is turning off while the turns finish.
     now = new Date("2026-10-21T07:59:00.000Z");

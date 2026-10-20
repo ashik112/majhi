@@ -61,8 +61,8 @@ import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
-import { type Overnight, overnightOf } from "../brief/overnight.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { type Overnight, overnightOf } from "../brief/overnight.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, scopeWorldOf } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
@@ -86,7 +86,7 @@ import { ancestorsOf } from "../tasks/planner.ts";
 import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
-import { addDays, dayStart, localDay, validZone, zoneOr } from "../usage/ranges.ts";
+import { localDay, validZone, zoneOr } from "../usage/ranges.ts";
 import { setAuthority } from "./authority-set.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
@@ -589,7 +589,8 @@ export class AutonomyService {
         this.repo.setUntil(until);
         this.event({
           kind: "mode",
-          text: until === undefined ? "Autonomous runs until you turn it off" : `Autonomous runs until ${until}`,
+          text:
+            until === undefined ? "Autonomous runs until you turn it off" : `Autonomous runs until ${until}`,
           by: actorOfName("owner"),
         });
         this.deps.events.emit(["autonomy"]);
@@ -601,9 +602,17 @@ export class AutonomyService {
       this.repo.setHolds([]);
       this.holds = [];
     }
-    this.setMode("on", "owner", "Turned on", "Autonomous is on. The captain picks the work from here.", undefined, until);
+    this.setMode(
+      "on",
+      "owner",
+      "Turned on",
+      "Autonomous is on. The captain picks the work from here.",
+      undefined,
+      until,
+    );
     for (const row of this.repo.tasks()) {
-      if (row.held === "owner" && row.heldScope !== HALTED) await this.resumeTask(row.task, "Autonomous turned on");
+      if (row.held === "owner" && row.heldScope !== HALTED)
+        await this.resumeTask(row.task, "Autonomous turned on");
     }
     await this.refreshHolds();
     if (mode !== "off") await this.liftCaps();
@@ -798,7 +807,8 @@ export class AutonomyService {
   private async stopIfFailedTwice(task: string): Promise<void> {
     const row = this.repo.task(task);
     const found = this.deps.store.tasks.get(task);
-    if (row === undefined || found === undefined || found.status === "paused" || found.status === "done") return;
+    if (row === undefined || found === undefined || found.status === "paused" || found.status === "done")
+      return;
     if (this.repo.failedRuns(task) < 2) return;
     const why = "It failed twice.";
     await this.deps.tasks.stop(task, "owner", why, STOP_BY);
@@ -1464,7 +1474,7 @@ export class AutonomyService {
     );
     this.deps.events.emit(["autonomy", "captain"]);
     if (answer === "raise") {
-        // Looks at the spend again with the raise: the hold lifts and what it held starts.
+      // Looks at the spend again with the raise: the hold lifts and what it held starts.
       await this.refreshHolds();
     }
     return this.budgetAsks();
@@ -1740,8 +1750,6 @@ export class AutonomyService {
     return { accounts, ...(hold === undefined ? {} : { budgetHold: this.waitLine(hold) }) };
   }
 
-
-
   /** While Autonomous is turning off, calls that start work are refused. */
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
@@ -1804,7 +1812,8 @@ export class AutonomyService {
     const atOnce = await this.captainFull(str(input.id));
     // The owner's tasks come first: the captain takes a free running place, never a place in the line.
     const id = str(input.id);
-    const running = command === "tasks.start" && id !== undefined ? await this.deps.tasks.noRoom(id) : undefined;
+    const running =
+      command === "tasks.start" && id !== undefined ? await this.deps.tasks.noRoom(id) : undefined;
     const full =
       busy !== undefined
         ? `${upperFirst(busy)}.`
@@ -1813,10 +1822,10 @@ export class AutonomyService {
           : running !== undefined
             ? running
             : candidates.length === 0
-            ? noRoomLine(capacity, named)
-            : lines.every((l) => l !== undefined)
-              ? lines[0]
-              : undefined;
+              ? noRoomLine(capacity, named)
+              : lines.every((l) => l !== undefined)
+                ? lines[0]
+                : undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
@@ -2320,7 +2329,8 @@ export class AutonomyService {
   backlog(org?: string): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
     const listed = this.deps.store.tasks.list(false).filter((t) => {
-      if (t.chat === true || t.idea !== undefined || (t.status !== "inbox" && t.status !== "ready")) return false;
+      if (t.chat === true || t.idea !== undefined || (t.status !== "inbox" && t.status !== "ready"))
+        return false;
       return org === undefined || (t.org ?? PRIVATE) === org;
     });
     const full = new Map(this.deps.store.tasks.getMany(listed.map((t) => t.id)).map((t) => [t.id, t]));
@@ -2373,10 +2383,7 @@ export class AutonomyService {
         fillMs,
       );
     }
-    const [settings, sections] = await Promise.all([
-      this.deps.config.settings(),
-      this.deps.config.sections(),
-    ]);
+    const sections = await this.deps.config.sections();
     const rows = await this.rated(org);
     return {
       backlog: rows.flatMap(({ item, size, leftOut }) => {

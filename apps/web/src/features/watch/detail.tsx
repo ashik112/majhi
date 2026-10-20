@@ -9,7 +9,6 @@ import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { useToast } from "@/components/ui/toast";
 import { useBoss } from "@/features/boss/boss-context";
-import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -110,7 +109,6 @@ export function IncidentDetail({
   const toast = useToast();
   const navigate = useNavigate();
   const boss = useBoss();
-  const mode = useAutonomyStatus().data?.mode;
   const lane = useCaptainStatus().data?.orgs.find((o) => o.org === incident.org)?.lane;
   const open = incident.status === "open";
   const looked = incident.timeline.filter((t) => t.kind === "action");

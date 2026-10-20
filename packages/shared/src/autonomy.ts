@@ -285,7 +285,6 @@ export const AutonomyEventsInputSchema = z.object({
   task: TaskIdSchema.optional(),
 });
 
-
 /** `autonomy.plan`: the captain replaces its queue. */
 export const AutonomyPlanInputSchema = z.object({ items: z.array(QueueItemSchema).max(20) });
 

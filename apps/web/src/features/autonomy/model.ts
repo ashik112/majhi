@@ -7,10 +7,8 @@ import type {
   Budget,
   CapUse,
   TaskPriority,
-  TaskSize,
 } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
-import { readStored, writeStored } from "@/features/memory/storage";
 import { parseDollars, parseTokens } from "@/features/usage/budget-model";
 import { formatMoney, formatTokens } from "@/lib/format";
 

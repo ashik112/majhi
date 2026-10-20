@@ -65,11 +65,25 @@ describe("the task gate", () => {
       () => {
         for (const start of [true, false]) {
           expect(
-            admit({ origin: "captain", org: "acme", wantsStart: start, counts: counts(0, 0), limits, ownerAsked: false }),
+            admit({
+              origin: "captain",
+              org: "acme",
+              wantsStart: start,
+              counts: counts(0, 0),
+              limits,
+              ownerAsked: false,
+            }),
           ).toEqual({ kind: "idea", reason: "captain-made" });
         }
         expect(
-          admit({ origin: "captain", org: "acme", wantsStart: true, counts: counts(0, 0), limits, ownerAsked: true }),
+          admit({
+            origin: "captain",
+            org: "acme",
+            wantsStart: true,
+            counts: counts(0, 0),
+            limits,
+            ownerAsked: true,
+          }),
         ).toEqual({ kind: "start" });
       },
     ],

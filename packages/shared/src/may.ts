@@ -87,10 +87,7 @@ export function may(
 }
 
 /** Why the workspace rests now (a freeze date), or undefined. */
-export function restOf(
-  policy: Pick<CaptainPolicy, "freeze" | "tz">,
-  now: Date,
-): string | undefined {
+export function restOf(policy: Pick<CaptainPolicy, "freeze" | "tz">, now: Date): string | undefined {
   const day = dayIn(now, policy.tz);
   const frozen = (policy.freeze ?? []).find((f) => f.from <= day && day <= f.to);
   if (frozen !== undefined) {

@@ -37,7 +37,6 @@ export function sizeOfLevel(level: Difficulty): TaskSize {
   return level === "trivial" ? "small" : level;
 }
 
-
 /** The line for a rating: counted, a guess, or none. */
 export function sizeFromRating(rating: TaskRating | undefined): SizeOf {
   if (rating === undefined) return { note: "No decision provider could rate it" };
@@ -170,8 +169,4 @@ function inputOf(task: Task): SizeInput {
     kind: task.kind,
     repos: task.repos.map((r) => r.project),
   };
-}
-
-function lowerFirst(text: string): string {
-  return text === "" ? text : text[0]?.toLowerCase() + text.slice(1);
 }

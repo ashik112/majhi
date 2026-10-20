@@ -43,7 +43,8 @@ function clip(lines: readonly string[], max: number): string[] {
 /** The facts as the block a turn starts with. One renderer, so a step and the desk read the same shape. */
 export function renderTurnFacts(facts: TurnFacts, now: Date): string {
   const lines = ["## Before this turn"];
-  const where = facts.org === undefined ? "Authority levels the owner set" : "Authority level the owner set here";
+  const where =
+    facts.org === undefined ? "Authority levels the owner set" : "Authority level the owner set here";
   lines.push(`${where}: ${facts.levels.map((l) => `${l.name} ${LEVEL_LABEL[l.level]}`).join(", ")}.`);
   lines.push(
     facts.autonomous.mode === "on"
@@ -93,7 +94,8 @@ export class TurnContext {
     const settings = (await this.deps.config.settings()).autonomy;
     const nameOf = (id: string) => (id === PRIVATE ? "Private" : (sections.orgs[id]?.name ?? id));
     const levelOf = (id: string): AuthorityLevel => levelOfOrg(settings.orgs[id], id === PRIVATE);
-    const own = (i: AutonomyInstruction): boolean => lane === undefined || i.org === undefined || i.org === lane;
+    const own = (i: AutonomyInstruction): boolean =>
+      lane === undefined || i.org === undefined || i.org === lane;
     const ids = lane === undefined ? [PRIVATE, ...Object.keys(sections.orgs)] : [lane];
     const wiki = lane === undefined ? undefined : await this.deps.wiki(lane, WIKI_SUMMARY_CHARS);
     return renderTurnFacts(

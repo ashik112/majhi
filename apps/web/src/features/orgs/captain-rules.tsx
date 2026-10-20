@@ -55,9 +55,17 @@ export function CaptainRules({ org }: { org: OrgView }) {
 function IncidentSwitches({ org, mine }: { org: OrgView; mine: CaptainOrg }) {
   const toast = useToast();
   const client = useQueryClient();
-  const set = useMutation<unknown, ApiRequestError, { fix?: "ask" | "ships"; clientUpdate?: "ask" | "sends" }>({
+  const set = useMutation<
+    unknown,
+    ApiRequestError,
+    { fix?: "ask" | "ships"; clientUpdate?: "ask" | "sends" }
+  >({
     mutationFn: (change) =>
-      cmd("authority.set", { org: org.id, ...change }, { reason: `Owner changed the incident switches of ${org.name}` }),
+      cmd(
+        "authority.set",
+        { org: org.id, ...change },
+        { reason: `Owner changed the incident switches of ${org.name}` },
+      ),
     onSuccess: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.settings }),
@@ -119,7 +127,10 @@ function ReportCost({ org, on }: { org: OrgView; on: boolean }) {
               input: { orgs: { [org.id]: { reportCost: next === "on" } } },
               reason: `Owner changed the weekly report cost line of ${org.name}`,
             },
-            { onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }) },
+            {
+              onError: (error) =>
+                toast("Could not change it", { detail: describeError(error), tone: "error" }),
+            },
           )
         }
         className="self-start"
@@ -160,7 +171,8 @@ function Rules({ org, accounts }: { org: CaptainOrg; accounts: readonly AccountV
           setDraft(undefined);
           toast(`Saved ${org.name}'s rules`);
         },
-        onError: (error) => toast("Could not save the rules", { detail: describeError(error), tone: "error" }),
+        onError: (error) =>
+          toast("Could not save the rules", { detail: describeError(error), tone: "error" }),
       },
     );
   };
@@ -192,7 +204,10 @@ function Rules({ org, accounts }: { org: CaptainOrg; accounts: readonly AccountV
             </Select>
           )}
         </Field>
-        <Field label="Daily budget" hint="Dollars a day for the captain's work here. Empty: it shares the Autonomous budget.">
+        <Field
+          label="Daily budget"
+          hint="Dollars a day for the captain's work here. Empty: it shares the Autonomous budget."
+        >
           {(props) => (
             <Input
               {...props}
@@ -352,7 +367,8 @@ function HoldList({ org }: { org: CaptainOrg }) {
                   reason: `Owner changed what is held for them in ${org.name}`,
                 },
                 {
-                  onError: (error) => toast("Could not save it", { detail: describeError(error), tone: "error" }),
+                  onError: (error) =>
+                    toast("Could not save it", { detail: describeError(error), tone: "error" }),
                 },
               )
             }
@@ -362,4 +378,3 @@ function HoldList({ org }: { org: CaptainOrg }) {
     </div>
   );
 }
-

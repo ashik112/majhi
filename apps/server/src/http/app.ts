@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { type ApiError, COMMAND_META_HEADER, type CaptainPlace, type Health } from "@majhi/shared";
+import { type ApiError, type CaptainPlace, COMMAND_META_HEADER, type Health } from "@majhi/shared";
 import { Hono } from "hono";
 import { mcpRoutes } from "../admin/mcp.ts";
 import type { AdminService } from "../admin/service.ts";

@@ -90,7 +90,8 @@ const PAUSED_BY_TEXT: Record<PausedBy, string> = {
   captain: "Paused by Captain. Resume when you are ready.",
   "autonomy-off":
     "Paused when Autonomous was turned off. Resume it, or turn Autonomous on to resume it with the others.",
-  "autonomy-stop": "Autonomous stopped it: it failed twice or spent its budget. Say what to change, then resume it.",
+  "autonomy-stop":
+    "Autonomous stopped it: it failed twice or spent its budget. Say what to change, then resume it.",
 };
 
 /** The card under "In this room": one sentence and the one main action for the task's status. */

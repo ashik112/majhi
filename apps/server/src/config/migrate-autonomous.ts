@@ -1,5 +1,4 @@
-import { copyFile, readFile, realpath } from "node:fs/promises";
-import { access } from "node:fs/promises";
+import { access, copyFile, readFile, realpath } from "node:fs/promises";
 import { isMap, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 import { editConfig } from "./write.ts";

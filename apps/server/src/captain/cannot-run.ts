@@ -34,7 +34,10 @@ export class CannotRunDecisions {
             ? [{ id: "captain", label: "Use the captain's account", primary: true as const }]
             : [],
         at,
-        link: why === "provider-not-allowed" ? { kind: "setup", section: "captain" } : { kind: "add-account", org },
+        link:
+          why === "provider-not-allowed"
+            ? { kind: "setup", section: "captain" }
+            : { kind: "add-account", org },
       };
     });
   }

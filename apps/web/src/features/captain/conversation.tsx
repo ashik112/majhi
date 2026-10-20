@@ -16,8 +16,8 @@ import { useCaptainStatus, useStartFresh } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
-import { useChats } from "@/lib/task-queries";
 import { useOrgFilter } from "@/lib/org-filter";
+import { useChats } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 
 /**

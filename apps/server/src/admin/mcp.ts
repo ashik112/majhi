@@ -1,7 +1,7 @@
+import { CAPTAIN_PLACES, type CaptainPlace } from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { CAPTAIN_PLACES, type CaptainPlace } from "@majhi/shared";
 import { Hono } from "hono";
 import { isLoopbackOrigin } from "../http/origin.ts";
 import type { AdminService } from "./service.ts";

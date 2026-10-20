@@ -233,7 +233,9 @@ export class AdminService {
   private readonly ownerCards = new Set<string>();
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
   private autonomy: AutonomyGate | undefined;
-  private strays: ((command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>) | undefined;
+  private strays:
+    | ((command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>)
+    | undefined;
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
   private proposals: ProposalWorld | undefined;
@@ -257,7 +259,9 @@ export class AdminService {
   }
 
   /** The guard that keeps one workspace's words out of a call for another (`StepGuard`). */
-  useStrays(guard: (command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>): void {
+  useStrays(
+    guard: (command: CommandName, input: Record<string, unknown>) => Promise<string | undefined>,
+  ): void {
     this.strays = guard;
   }
 
@@ -530,16 +534,28 @@ export class AdminService {
       return error(`Invalid input for captain.step.\n${details.join("\n")}`);
     }
     if (!(await this.inRootChat(caller))) {
-      return error("captain.step is the captain's tool in the owner's All conversation. A step works in its own workspace only.");
+      return error(
+        "captain.step is the captain's tool in the owner's All conversation. A step works in its own workspace only.",
+      );
     }
     if (!ownerAsked) {
-      return error("captain.step sends only what the owner asked for in this conversation: set ownerAsked true when they did.");
+      return error(
+        "captain.step sends only what the owner asked for in this conversation: set ownerAsked true when they did.",
+      );
     }
     const stray = await this.strays?.("captain.step", checked.data);
     if (stray !== undefined) return error(stray);
     const done = await this.execute("captain.step", checked.data, metaFor(caller.agent, why, caller.task));
     if (done.ok) {
-      this.log(caller.task, caller.agent, "captain.step", summarize("captain.step", checked.data), "allow", "captain", why);
+      this.log(
+        caller.task,
+        caller.agent,
+        "captain.step",
+        summarize("captain.step", checked.data),
+        "allow",
+        "captain",
+        why,
+      );
     }
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }

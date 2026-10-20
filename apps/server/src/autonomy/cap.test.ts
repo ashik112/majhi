@@ -81,8 +81,10 @@ describe("the day cap of autonomous mode", () => {
     const chat = await h.majhi.services.autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");
     // A task the owner made, which the captain takes from the backlog.
-    const id = ((await h.cmd("tasks.create", { text: "fix the api", repos: [{ project: "acme-api" }], start: false }))
-      .body as Task).id;
+    const id = (
+      (await h.cmd("tasks.create", { text: "fix the api", repos: [{ project: "acme-api" }], start: false }))
+        .body as Task
+    ).id;
     const taken = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_start", {
       id,
       reason: "the top task of the backlog",

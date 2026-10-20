@@ -21,7 +21,9 @@ describe("the captain's steps from the All conversation", () => {
       if (res.status !== 200) throw new Error(JSON.stringify(res.body));
     };
     await must(h.cmd("orgs.create", { id: "globex", name: "Globex", key: "GLX" }));
-    await must(h.cmd("accounts.create", { id: "claude-globex", tool: "claude", org: "globex", auth: "login" }));
+    await must(
+      h.cmd("accounts.create", { id: "claude-globex", tool: "claude", org: "globex", auth: "login" }),
+    );
     await w.addRepo("web");
     await must(h.cmd("projects.register", { id: "globex-web", org: "globex", path: "~/Work/web" }));
     // Globex names its own account for the captain; Acme runs on the captain's.

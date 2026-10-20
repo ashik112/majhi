@@ -114,7 +114,10 @@ export function DeploySection({ project }: { project: ProjectView }) {
               ? `No environments yet. The repo has ${found.join(", ")}.`
               : "No environments yet."}
           </p>
-          <Button size="sm" onClick={() => boss.show({ org: project.org, draft: setupDeploysAsk(project.id) })}>
+          <Button
+            size="sm"
+            onClick={() => boss.show({ org: project.org, draft: setupDeploysAsk(project.id) })}
+          >
             <MessageSquare aria-hidden="true" />
             Set up deploys
           </Button>

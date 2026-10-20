@@ -14,9 +14,13 @@ export function statusLine(status: AutonomyStatus, now: Date): string {
   if (status.mode === "off") return "Works only when asked";
   const total = status.spend.total;
   const cap = total.cap?.cost;
-  const spent = cap === undefined ? formatMoney(total.used.cost) : `${formatMoney(total.used.cost)} of ${formatMoney(cap)}`;
+  const spent =
+    cap === undefined
+      ? formatMoney(total.used.cost)
+      : `${formatMoney(total.used.cost)} of ${formatMoney(cap)}`;
   const working = `${status.running.length} working`;
-  const until = status.until === undefined ? "until you turn it off" : `until ${clockWord(new Date(status.until), now)}`;
+  const until =
+    status.until === undefined ? "until you turn it off" : `until ${clockWord(new Date(status.until), now)}`;
   return `${working} · ${spent} today · ${until}`;
 }
 
@@ -76,7 +80,10 @@ export function AutonomousSwitch() {
               label: "Turn off",
               disabled: busy,
               onSelect: () =>
-                stop.mutate({ input: {}, reason: "Owner turned Autonomous off" }, failed("Could not turn Autonomous off")),
+                stop.mutate(
+                  { input: {}, reason: "Owner turned Autonomous off" },
+                  failed("Could not turn Autonomous off"),
+                ),
             },
           ]
         : [{ group: "Now", label: "Turning off", disabled: true, onSelect: () => undefined }]),
@@ -90,7 +97,13 @@ export function AutonomousSwitch() {
           : halt.mutate({ input: {}, reason: "Owner pressed Pause all" }, failed("Could not pause")),
     },
   ];
-  const word = paused ? "Paused" : status.mode === "on" ? "On" : status.mode === "stopping" ? "Turning off" : "Off";
+  const word = paused
+    ? "Paused"
+    : status.mode === "on"
+      ? "On"
+      : status.mode === "stopping"
+        ? "Turning off"
+        : "Off";
   return (
     <Menu
       label="Autonomous"

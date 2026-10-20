@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   type Actor,
-  type Caller,
   type CardOutcome,
   type CardState,
   type PausedReason,

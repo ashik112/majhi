@@ -38,7 +38,9 @@ export interface LaneDeps {
   halted?: (() => boolean) | undefined;
   /** What an account can do now: its sign-in or limit state and when a limit resets. Absent: every account is fine. */
   accountState?:
-    | ((account: string) => Promise<{ status?: AccountStatus | undefined; until?: string | undefined } | undefined>)
+    | ((
+        account: string,
+      ) => Promise<{ status?: AccountStatus | undefined; until?: string | undefined } | undefined>)
     | undefined;
   /** The lane's coming turn is about this task: its lines are tagged with it (the room does it when the lane is idle). */
   about?: ((chat: string, task: string) => void) | undefined;
@@ -163,7 +165,8 @@ export class Lanes {
     const main = rules?.account ?? own;
     const fit = (id: string): Extract<LaneAccount, { problem: string }> | undefined => {
       const account = sections.accounts[id];
-      if (account === undefined) return { problem: `the account ${id} is not in majhi.yaml`, why: "no-account" };
+      if (account === undefined)
+        return { problem: `the account ${id} is not in majhi.yaml`, why: "no-account" };
       // The workspace's own account must be the workspace's; the captain's account is the owner's, or the workspace's.
       const allowed =
         id === rules?.account ? account.org === org : account.org === PRIVATE || account.org === org;

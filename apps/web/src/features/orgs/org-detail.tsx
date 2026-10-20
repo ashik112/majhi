@@ -21,8 +21,8 @@ import { cn } from "@/lib/cn";
 import { badgeLetters, plural } from "@/lib/format";
 import { useConfig } from "@/lib/queries";
 import { useNow } from "@/lib/use-now";
-import { GitAccounts } from "./git-accounts";
 import { CaptainRules } from "./captain-rules";
+import { GitAccounts } from "./git-accounts";
 import { OrgSettings } from "./org-settings";
 
 const ROW = "flex min-h-9 min-w-0 items-center gap-3 border-t border-line py-1.5 first:border-t-0";
