@@ -252,12 +252,19 @@ RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprot
 # AppArmor refuses again, so no Codex command runs in a runner until the sandbox is off (openai/codex#15678). majhi
 # starts Codex in full access here (packages/acp/src/tools/codex.ts) and the container is the sandbox. What the sandbox
 # would have asked, majhi asks through this managed PreToolUse hook (docker/codex/): `requirements.toml` pins it, so
-# nothing in the agent's own CODEX_HOME turns it off. Root's files, mode 0644 and 0755: the agent runs as the owner's
-# uid with no capabilities (docker/majhi-netguard), so it cannot write them. The last step runs the script without
-# a session: Codex lets a call run when its hook cannot start, so a hook that is broken must stop the build.
-COPY --chmod=0644 docker/codex/requirements.toml /etc/codex/requirements.toml
-COPY --chmod=0755 docker/codex/hook.mjs /etc/codex/hooks/majhi-pretool.mjs
-RUN echo '{}' | /usr/local/bin/node /etc/codex/hooks/majhi-pretool.mjs | grep -q '"permissionDecision":"deny"'
+# nothing in the agent's own CODEX_HOME turns it off. The folders and files are root's and nobody else can write
+# them: the agent runs as the owner's uid with no capabilities (docker/majhi-netguard). The modes are set by hand,
+# because `COPY --chmod` would give the folders the file's mode too, and a folder Codex cannot enter means no hook,
+# which Codex does not report. The last step runs the script as an unprivileged user, with no session: Codex lets a
+# call run when its hook cannot start, so a hook that cannot run must stop the build.
+COPY docker/codex/requirements.toml /etc/codex/requirements.toml
+COPY docker/codex/hook.mjs /etc/codex/hooks/majhi-pretool.mjs
+RUN chown -R root:root /etc/codex \
+  && chmod 0755 /etc/codex /etc/codex/hooks /etc/codex/hooks/majhi-pretool.mjs \
+  && chmod 0644 /etc/codex/requirements.toml \
+  && echo '{}' | setpriv --reuid 65534 --regid 65534 --clear-groups /usr/local/bin/node /etc/codex/hooks/majhi-pretool.mjs \
+     | grep -q '"permissionDecision":"deny"' \
+  && setpriv --reuid 65534 --regid 65534 --clear-groups grep -q 'allow_managed_hooks_only = true' /etc/codex/requirements.toml
 # One apt layer, no recommends, lists removed.
 #  - python3, make, g++, curl: native modules and scripts of the projects agents work on. A non-root run cannot
 #    apt install, so these stay baked in.
