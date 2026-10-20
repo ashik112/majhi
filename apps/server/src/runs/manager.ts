@@ -21,7 +21,7 @@ import type {
   SlotCapacity,
   Task,
 } from "@majhi/shared";
-import { durationMs, isAutonomyChat } from "@majhi/shared";
+import { type CodexHookPayload, type CodexHookVerdict, durationMs, isAutonomyChat } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
 import { limitFor } from "../accounts/status.ts";
@@ -39,7 +39,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import { noticeText, sameRun, splitCurrent } from "../processes/notices.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
-import type { RoomAccess } from "../rooms/access.ts";
+import type { RoomAccess, ToolCaller } from "../rooms/access.ts";
 import { handoffPrompt } from "../rooms/handoff.ts";
 import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -50,6 +50,7 @@ import { sectionOf } from "../tasks/brief.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
 import { diffStat, headsOf } from "./checkpoint.ts";
+import { CodexHookGate } from "./codex-hook.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
@@ -284,6 +285,7 @@ export class RunManager {
   private readonly slots: Slots;
   private readonly live: RunLive;
   private readonly permissions: PermissionFlow;
+  private readonly codexHook: CodexHookGate;
   private readonly compaction: Compaction;
   /** One lock per worktree: two agents never edit one worktree at the same time (5.3). */
   readonly locks = new WorktreeLocks();
@@ -300,6 +302,10 @@ export class RunManager {
     this.now = deps.now ?? (() => new Date());
     this.live = new RunLive(deps.room, deps.onTasksChanged);
     this.permissions = new PermissionFlow(deps, this.live, this.now);
+    this.codexHook = new CodexHookGate({
+      run: (task, agent) => this.runs.get(this.key(task, agent)),
+      ask: (run, ask, signal) => this.permissions.ask(run, ask, signal),
+    });
     this.compaction = new Compaction(deps, this.live, {
       endSession: (run, reason, keepSlot) => this.endSession(run, reason, keepSlot),
       pause: (run, reason, text) => this.pause(run, reason, text),
@@ -964,6 +970,15 @@ export class RunManager {
     const run = this.runs.get(this.key(task, agent));
     if (run?.session === undefined) return undefined;
     return this.permissions.askWrite(run, ask, writes, new AbortController().signal);
+  }
+
+  /** What Codex's PreToolUse hook is told about one tool call of a session: the same decision as an ACP permission request. */
+  askCodexHook(
+    caller: ToolCaller,
+    payload: CodexHookPayload,
+    signal?: AbortSignal,
+  ): Promise<CodexHookVerdict | undefined> {
+    return this.codexHook.decide(caller, payload, signal);
   }
 
   /** The concurrency limits changed: starts that wait may fit now. */
@@ -2211,6 +2226,7 @@ export class RunManager {
       run.adminToken = opened.adminToken;
       run.decideToken = opened.decideToken;
       run.roomTokens = opened.roomTokens;
+      run.tools = opened.tools;
       run.connections = opened.connections;
       run.skills = opened.skills === undefined ? undefined : { ...opened.skills, due: true };
       this.rememberSecrets(run.task, opened.connections?.secrets ?? []);
@@ -2549,6 +2565,7 @@ export class RunManager {
     run.decideToken = undefined;
     if (run.roomTokens !== undefined) this.deps.rooms?.revoke(run.roomTokens);
     run.roomTokens = undefined;
+    this.codexHook.forget(run.task, run.agent);
     if (run.connections !== undefined) void removeRunFiles(run.connections.dir).catch(() => undefined);
     run.connections = undefined;
     if (run.skills !== undefined) void removeRunFiles(run.skills.dir).catch(() => undefined);

@@ -2,6 +2,9 @@ import {
   type AgentFrontmatter,
   type AskOption,
   AskOptionSchema,
+  type CodexHookPayload,
+  CodexHookPayloadSchema,
+  type CodexHookVerdict,
   type CommandName,
   canWorkIn,
   commands,
@@ -47,6 +50,7 @@ import { reachFromChat } from "../tasks/chat-link.ts";
 import type { Crew } from "../tasks/crew-run.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  CODEX_HOOK_PATH,
   CONNECTIONS_PATH,
   CONNECTIONS_SERVER_NAME,
   CONTAINERS_PATH,
@@ -368,6 +372,17 @@ export interface RoomMcpDeps {
   codeGraph?: CodeGraphTools | undefined;
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
   connections?: ConnectionsMcpDeps;
+  /**
+   * Codex's PreToolUse hook (docker/codex/): the answer for one tool call of the token's own session, or undefined
+   * when the hook went away first. Absent: there is no `/mcp/codex-hook`.
+   */
+  codexHook?: {
+    decide(
+      caller: ToolCaller,
+      payload: CodexHookPayload,
+      signal: AbortSignal,
+    ): Promise<CodexHookVerdict | undefined>;
+  };
 }
 
 /**
@@ -407,6 +422,23 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       (caller) => processesServer(caller, deps.processes, deps.handoff),
     ),
   );
+  const codexHook = deps.codexHook;
+  if (codexHook !== undefined) {
+    app.post(CODEX_HOOK_PATH, async (c) => {
+      const origin = c.req.header("origin");
+      if (origin !== undefined && !isLoopbackOrigin(origin)) {
+        return c.json({ error: "The Codex hook is not for web pages" }, 403);
+      }
+      const token = bearerOf(c.req.header("authorization"));
+      const caller = token === undefined ? undefined : deps.access.codexHook.lookup(token);
+      if (caller === undefined) return c.json({ error: "A valid bearer token is required" }, 401);
+      const body = CodexHookPayloadSchema.safeParse(await c.req.json().catch(() => undefined));
+      if (!body.success) return c.json({ error: formatIssues(body.error).join("; ") }, 400);
+      const verdict = await codexHook.decide(caller, body.data, c.req.raw.signal);
+      // The hook went away while it waited: nobody reads this.
+      return c.json(verdict ?? { decision: "deny", reason: "The hook went away." });
+    });
+  }
   const containers = deps.containers;
   if (containers !== undefined) {
     app.post(DOCKER_PATH, async (c) => {

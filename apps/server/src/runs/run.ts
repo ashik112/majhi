@@ -99,6 +99,8 @@ export class AgentRun {
   decideToken: string | undefined;
   /** majhi-room and majhi-tasks tokens of this session, revoked when it ends. */
   roomTokens: { server: ToolServer; token: string }[] | undefined;
+  /** The MCP servers this session was given, by name. */
+  tools: readonly string[] = [];
   /** What this session holds of its connections (5.14). Its folder of files goes when the session ends. */
   connections: RunConnections | undefined;
   /** The session's folder of skill copies (removed when it ends), and the note still due in a prompt. */
