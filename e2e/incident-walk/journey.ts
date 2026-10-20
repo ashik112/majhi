@@ -115,14 +115,23 @@ async function releaseDrafts(): Promise<number> {
 let shownHeld = false;
 
 /** Clicks a button of a row of Needs you, as the owner does: select the row, press the button. */
-async function clickInRow(w: World, rowText: string, button: string): Promise<void> {
+async function clickInRow(w: World, rowText: string, button: string, answers = true): Promise<void> {
   await w.page.goto(`http://127.0.0.1:${PORT}/`);
   const row = w.page.locator('[data-pane="needs"] [role="option"]', { hasText: rowText }).first();
   await row.waitFor({ timeout: 30_000 });
   await row.click();
   const target = row.getByRole("button").filter({ hasText: button }).first();
   await target.waitFor({ timeout: 15_000 });
+  // A button that answers a decision sends it after its five second Undo time: the answer must come back 200.
+  const sent = answers
+    ? w.page.waitForResponse((r) => r.url().includes("decisions.answer"), { timeout: 150_000 })
+    : undefined;
   await target.click();
+  if (sent !== undefined) {
+    const res = await sent;
+    if (res.status() !== 200)
+      throw new Error(`${button}: the answer failed with ${res.status()}: ${await res.text()}`);
+  }
 }
 
 /** The first held update is photographed in Needs you, then every held update is sent. */
@@ -337,7 +346,7 @@ async function leadFixes(w: World, id: string): Promise<string> {
   return `lead committed the fix in ${tree}; cause recorded; the client got a reply after the status change`;
 }
 
-const GL_RUNS = [{ kind: "gitlab-pipeline", remote: "origin", ref: "base" }];
+const GL_RUNS = [{ kind: "gitlab-pipeline", remote: "gitlab", ref: "base" }];
 const git = (...args: string[]) => execFileSync("git", args, { cwd: REPO }).toString().trim();
 
 /** The deploys of a task, oldest first. */
@@ -403,8 +412,12 @@ async function ship(w: World, id: string): Promise<string> {
   const sha = await until(
     "main to move",
     async () => (git("rev-parse", "main") !== before ? git("rev-parse", "main") : false),
-    240_000,
-  );
+    FIX === "ships" ? 150_000 : 240_000,
+  ).catch(async (err) => {
+    const log = await cmd("captain.log", { org: "acme", limit: 12 }).catch((e: unknown) => String(e));
+    const task = await cmd("tasks.get", { id }).catch(() => undefined);
+    throw new Error(`${String(err)}; task ${task?.status}; log ${JSON.stringify(log).slice(0, 2500)}`);
+  });
   // The fake GitLab has no git over http: its main branch is moved to the merged commit, which is what a push does.
   w.hosts.branches.set("gitlab:acme/storefront:main", sha);
   const live = await planLive(id);
@@ -521,7 +534,7 @@ async function rcaSent(w: World, id: string): Promise<string> {
   await needsShots(w, "06-review-report");
   const row = (await cmd("decisions.list", {})).decisions.find((d: any) => d.id === `iask:report:${id}`);
   if (row === undefined) throw new Error("no Review report row in Needs you");
-  await clickInRow(w, "Database usage over 90", "Review report");
+  await clickInRow(w, "Database usage over 90", "Review report", false);
   await w.page.waitForURL((u) => u.pathname.startsWith(`/t/${id}`), { timeout: 15_000 });
   const sentBefore = w.slack.sent.length;
   const out = await cmd("incident.sendReport", { task: id, room });
@@ -545,7 +558,7 @@ async function failedDeploy(w: World): Promise<string> {
     "-m",
     "chore: a change that breaks the deploy",
   );
-  w.hosts.branches.set("gitlab:acme/storefront:main", git("rev-parse", "main"));
+  git("push", "--quiet", "origin", "main");
   w.hosts.outcome.gitlab = "failed";
   const before = (await incidentTasks()).length;
   const out = await cmd("projects.deploy", { project: "storefront", env: "production", runs: GL_RUNS });
@@ -581,8 +594,7 @@ async function failedDeploy(w: World): Promise<string> {
       "the rollback to finish",
       async () => {
         const v2 = await cmd("projects.deployView", { project: "storefront" });
-        const rec2 = v2.history.find((h: any) => h.id === out.record.id);
-        return rec2?.rollback?.ok === true;
+        return v2.history.find((h: any) => h.id === out.record.id)?.rollback?.ok === true;
       },
       60_000,
     );
@@ -647,6 +659,16 @@ async function highIncident(w: World): Promise<string> {
     120_000,
   );
   await needsShots(w, "01-high-incident");
+  // Acknowledge, once, through the row: the incident is acknowledged and stops alerting.
+  await clickInRow(w, "storefront", "Acknowledge");
+  await until(
+    "the incident to be acknowledged",
+    async () =>
+      (await cmd("ops.overview", {})).incidents.some(
+        (i: any) => i.title === "Checkout is down" && i.ackedAt !== undefined,
+      ),
+    30_000,
+  );
   return `one row for the incident: "${row.title}", ${row.repeats.count} alerts, options ${JSON.stringify(row.options.map((o: any) => o.label))}`;
 }
 

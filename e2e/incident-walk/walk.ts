@@ -6,7 +6,7 @@
  *
  *   node --import tsx e2e/incident-walk/walk.ts [stage ...]
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdirSync, openSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
@@ -83,6 +83,21 @@ export async function boot(): Promise<World> {
   slack.addUser({ id: "U0SARA", name: "sara", real_name: "Sara Client" });
   slack.addChannel({ id: "C0CLIENT", name: "acme-client" });
   const hosts = await startFakeHosts({ port: GITLAB_PORT });
+  // The fake GitLab answers "what is main" from the project's local bare remote, which is what a push updates.
+  const bare = join(HOST_HOME, "remotes", "storefront.git");
+  const known = hosts.branches.get.bind(hosts.branches);
+  hosts.branches.get = (key: string) => {
+    if (key !== "gitlab:acme/storefront:main") return known(key);
+    try {
+      return execFileSync("git", ["--git-dir", bare, "rev-parse", "main"], {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim();
+    } catch {
+      return known(key);
+    }
+  };
   const db = { usage: 42 };
   const dbServer = createServer((_req, res) => {
     res.writeHead(200, { "content-type": "application/json" });

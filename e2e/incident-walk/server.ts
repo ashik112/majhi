@@ -41,7 +41,13 @@ git(repo, "init", "--quiet", "--initial-branch", "main");
 writeFileSync(join(repo, "orders.txt"), "slow query: select * from orders\n");
 git(repo, "add", ".");
 git(repo, "commit", "--quiet", "--message", "init");
-git(repo, "remote", "add", "origin", `http://${GITLAB}/acme/storefront.git`);
+// `origin` is a local bare repository, so a push really happens; `gitlab` is the fake host the deploys run on.
+const bare = join(HOST_HOME, "remotes", "storefront.git");
+mkdirSync(bare, { recursive: true });
+git(bare, "init", "--bare", "--quiet", "--initial-branch", "main");
+git(repo, "remote", "add", "origin", bare);
+git(repo, "push", "--quiet", "origin", "main");
+git(repo, "remote", "add", "gitlab", `http://${GITLAB}/acme/storefront.git`);
 mkdirSync(MAJHI_HOME, { recursive: true });
 mkdirSync(dirname(SECRETS_KEY_FILE), { recursive: true });
 writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
