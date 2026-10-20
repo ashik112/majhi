@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { isCaptainLane, OWNER_HANDLE, parseMentions, type RoomItem, type TaskId } from "@majhi/shared";
+import {
+  type AskOption,
+  isCaptainLane,
+  OWNER_HANDLE,
+  parseMentions,
+  type RoomItem,
+  type TaskId,
+  taskNameOf,
+} from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -103,7 +111,7 @@ export class RoomCoordinator {
     questions: Array<{
       id: string;
       question: string;
-      options: Array<{ id: string; label: string }>;
+      options: AskOption[];
       default?: string | undefined;
       freeText: boolean;
     }>,
@@ -111,6 +119,15 @@ export class RoomCoordinator {
     const task = this.deps.tasks.get(taskId);
     if (!task.team.includes(agent)) {
       throw new UserError(`Agent @${agent} is not on this task.`, 409);
+    }
+    // An option that starts a task names one of this workspace that is not done yet.
+    for (const option of questions.flatMap((q) => q.options)) {
+      if (option.start === undefined) continue;
+      const target = this.deps.store.tasks.get(option.start);
+      if (target === undefined || target.org !== task.org) {
+        throw new UserError(`${option.start} is not a task of this workspace.`, 409);
+      }
+      if (target.status === "done") throw new UserError(`${taskNameOf(target)} is already done.`, 409);
     }
     this.askedInTurn.add(`${task.id}\u0000${agent}`);
     const itemId = `ask:${randomUUID()}`;

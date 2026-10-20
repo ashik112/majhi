@@ -138,6 +138,17 @@ export type ProjectView = z.infer<typeof ProjectViewSchema>;
 
 export { type TaskId, TaskIdSchema } from "./ids.ts";
 
+/**
+ * One preset answer of an agent's ask card. `start`: a task of the same workspace that starts, as the owner's
+ * start, when the owner picks this option. Agents cannot start the tasks they file; the owner's pick can.
+ */
+export const AskOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  start: TaskIdSchema.optional(),
+});
+export type AskOption = z.infer<typeof AskOptionSchema>;
+
 /** Prefix for tasks without an org. */
 export const LOCAL_TASK_PREFIX = "LOCAL";
 
@@ -1018,7 +1029,7 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
         z.object({
           id: z.string(),
           question: z.string(),
-          options: z.array(z.object({ id: z.string(), label: z.string() })),
+          options: z.array(AskOptionSchema),
           default: z.string().optional(),
           freeText: z.boolean(),
         }),

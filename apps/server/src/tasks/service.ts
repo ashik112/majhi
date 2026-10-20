@@ -3248,13 +3248,28 @@ export class TaskService {
       answers: validated,
       ...(captain === undefined ? {} : { by: "captain" as const }),
     });
+    // An option that starts a task is the owner's start: the agent that asked cannot start a task it filed.
+    // The captain's pick starts nothing; ideas wait for the owner.
+    const started: string[] = [];
+    if (captain === undefined) {
+      const picked = questions.flatMap((q) => q.options.filter((o) => o.id === validated[q.id]));
+      for (const id of new Set(picked.flatMap((o) => (o.start === undefined ? [] : [o.start])))) {
+        try {
+          const run = await this.start(id, "owner");
+          started.push(`${taskNameOf(run)} ${run.status === "running" ? "started" : "is in line to start"}`);
+        } catch (err) {
+          started.push(`${id} did not start: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+    const said = started.length === 0 ? message : `${message}\n${started.join("\n")}.`;
     // The captain's answer is no owner message: the card says who answered.
     if (captain !== undefined)
-      await this.tellAgent({ task, agent, text: message, settled: "The captain answered", by: captain });
+      await this.tellAgent({ task, agent, text: said, settled: "The captain answered", by: captain });
     else
       await this.send({
         task,
-        text: message,
+        text: said,
         attachments: [],
         mode: "queue",
         agent,
