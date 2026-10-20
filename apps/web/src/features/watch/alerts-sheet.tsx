@@ -15,7 +15,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { describeError } from "@/lib/errors";
-import { formatAgo } from "@/lib/format";
+import { formatAgo, plural } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import {
   usePhoneForget,
@@ -411,7 +411,7 @@ function Timing({ settings }: { settings: OpsSettings }) {
             >
               {options(settings.escalateMin).map((m) => (
                 <option key={m} value={m}>
-                  {m} minutes
+                  {plural(m, "minute")}
                 </option>
               ))}
             </Select>
@@ -427,7 +427,7 @@ function Timing({ settings }: { settings: OpsSettings }) {
             >
               {options(settings.resolveMin).map((m) => (
                 <option key={m} value={m}>
-                  {m} minutes
+                  {plural(m, "minute")}
                 </option>
               ))}
             </Select>

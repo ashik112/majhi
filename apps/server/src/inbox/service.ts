@@ -19,6 +19,7 @@ import {
   type RoomItem,
   type ShipOptions,
   splitReady,
+  taskNameOf,
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
@@ -307,7 +308,7 @@ export class InboxService {
           ? who.org === undefined
             ? "Captain is paused"
             : `Captain in ${names[who.org] ?? who.org} is paused`
-          : `${who.id} is paused`;
+          : `${taskNameOf({ title: who.title })} is paused`;
       waits.set(account, [...(waits.get(account) ?? []), name]);
     }
     const unpaid = new Set(

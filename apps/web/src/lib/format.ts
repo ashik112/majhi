@@ -1,7 +1,4 @@
-/** "1 repo", "3 repos". */
-export function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
+export { plural } from "@majhi/shared";
 
 /** "184 ms", "1.2 s", "14 s". */
 export function formatDuration(ms: number): string {

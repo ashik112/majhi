@@ -23,6 +23,7 @@ import {
   PRIVATE,
   type ServiceEntry,
   type TaskId,
+  taskLabel,
   textValue,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
@@ -1448,6 +1449,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     contactName: (id) => store.client.contact(id)?.name,
     decisions: () => inbox.list(),
     update: () => readUpdateStatus(env.majhiHome),
+    taskLabel: async (id) => {
+      const found = store.tasks.get(id);
+      if (found === undefined) return undefined;
+      const name = found.org === undefined ? undefined : (await config.sections()).orgs[found.org]?.name;
+      return taskLabel(found, name);
+    },
   });
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();

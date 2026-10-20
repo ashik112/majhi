@@ -4,7 +4,11 @@ import type { RoomItem } from "@majhi/shared";
  * What the dock shows: the items that wait for the owner. An open question comes first and hides
  * "Ready to ship", so two primary buttons never compete and the answer is asked for first.
  */
-export function dockItems(items: readonly RoomItem[], status: string | undefined): RoomItem[] {
+export function dockItems(
+  items: readonly RoomItem[],
+  status: string | undefined,
+  incident = false,
+): RoomItem[] {
   // A card that draws nothing for the task's state (a pause on a task that is not paused, a reply
   // row on a task in review or done) must not leave an empty box in the dock. A question with no
   // words still draws: its row says who asked.
@@ -14,7 +18,8 @@ export function dockItems(items: readonly RoomItem[], status: string | undefined
       : i.type === "owner-question"
         ? status === undefined || (status !== "done" && (i.choices.length > 0 || status !== "review"))
         : true;
-  const waiting = items.filter((i) => waitsForOwner(i) && draws(i));
+  // An incident ships from its row in Needs you: the task page shows no second "Ready to ship".
+  const waiting = items.filter((i) => waitsForOwner(i) && draws(i) && !(incident && i.type === "review"));
   const asked = waiting.some(
     (i) => ANSWERS.has(i.type) || (i.type === "owner-question" && i.choices.length > 0),
   );

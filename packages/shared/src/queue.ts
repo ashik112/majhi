@@ -61,13 +61,15 @@ export type MergeKey =
   | { kind: "incident"; task: string };
 
 export function mergeKeyOf(
-  decision: Pick<OwnerDecision, "kind" | "task" | "incident">,
+  decision: Pick<OwnerDecision, "id" | "kind" | "task" | "incident">,
   waitingOn: (task: string) => readonly string[],
 ): MergeKey | undefined {
   if (decision.incident === true && decision.task !== undefined) {
     return { kind: "incident", task: decision.task };
   }
-  if (decision.kind === "sign-in") return { kind: "signin" };
+  // Only an account that is signed out merges with the others; a failing connection names what is wrong with it.
+  if (decision.kind === "sign-in" && parseDecisionId(decision.id)?.kind === "signin")
+    return { kind: "signin" };
   if (decision.kind === "paused" && decision.task !== undefined) {
     const tasks = waitingOn(decision.task);
     if (tasks.length > 0) return { kind: "blocker", tasks: tasks.toSorted() };

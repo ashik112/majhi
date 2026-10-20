@@ -95,6 +95,31 @@ export const FAILURE_LINE: Record<FailureReason, string> = {
   unexpected: "The service answered something majhi does not understand",
 };
 
+/** What is wrong, as the end of a title that starts with the connection's name: "Telegram bot cannot see group messages". */
+export const FAILURE_TITLE: Record<FailureReason, string> = {
+  rejected: "sign-in was rejected",
+  forbidden: "refuses this account",
+  "insufficient-scope": "needs more access",
+  "not-found": "address does not answer",
+  "rate-limited": "is limiting majhi",
+  "service-down": "is having problems",
+  unreachable: "cannot be reached",
+  timeout: "did not answer in time",
+  "blocked-host": "address is refused",
+  "no-credential": "has no sign-in",
+  expired: "sign-in ended",
+  "tool-missing": "tool is not installed",
+  "not-signed-in": "tool is not signed in",
+  "helper-offline": "helper is not running",
+  "setup-needed": "needs a setting turned on",
+  "app-in-testing": "app is still in Testing",
+  "mcp-error": "answered with an error",
+  "privacy-on": "bot cannot see group messages",
+  "webhook-set": "bot has a webhook, so majhi cannot read it",
+  "not-in-channel": "bot is not in a linked chat",
+  unexpected: "answered something majhi does not understand",
+};
+
 /** The exact next step for each reason, when the check knows nothing more precise. */
 export const FAILURE_FIX: Record<FailureReason, string> = {
   rejected: "Reconnect it: sign in again, or paste a new token.",

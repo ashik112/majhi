@@ -6,6 +6,7 @@ import {
   incidentAskDecisionId,
   type OpsIncident,
   type OwnerDecision,
+  plural,
   type RoomItem,
   type StoredOrigin,
   type Task,
@@ -402,7 +403,9 @@ export class IncidentEngine {
     // How the owner will know it is finished: the fix is live and the checks stayed green for the soak.
     this.deps.store.tasks.setStatusLines(
       task.id,
-      { doneWhen: `Fix live and checks green for ${await this.deps.facts.soakMin(source.org)} minutes` },
+      {
+        doneWhen: `Fix live and checks green for ${plural(await this.deps.facts.soakMin(source.org), "minute")}`,
+      },
       this.at(),
     );
     await this.adopt(task.id, source);
@@ -580,8 +583,8 @@ export class IncidentEngine {
         out.push({
           ...base,
           id: incidentAskDecisionId("start", task.id),
-          title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
-          sentence: `Every running place holds work you started, so ${task.id} waits. Pause ${victim} and start it now, or let it wait.${failure}`,
+          title: oneLine(`Start incident: ${task.title}`, 280),
+          sentence: `Every running place holds work you started, so it waits. Pause ${victim} and start it now, or let it wait.${failure}`,
           options: [
             { id: "pause", label: `Pause ${victim} and start`, primary: true },
             { id: "wait", label: "Let it wait" },
@@ -594,8 +597,8 @@ export class IncidentEngine {
         out.push({
           ...base,
           id: incidentAskDecisionId("start", task.id),
-          title: oneLine(`Start incident ${task.id}: ${task.title}`, 280),
-          sentence: `Majhi could not start ${task.id} by itself. Start it when you can.${failure}`,
+          title: oneLine(`Start incident: ${task.title}`, 280),
+          sentence: `Majhi could not start it by itself. Start it when you can.${failure}`,
           options: [{ id: "start", label: "Start", primary: true }],
           at: task.createdAt,
         });
@@ -611,7 +614,7 @@ export class IncidentEngine {
             `${capital(failed.env)} deploy failed${failed.reason === undefined ? "" : `: ${oneLine(failed.reason, 160)}`}`,
             280,
           ),
-          sentence: `${this.deployLine(failed)} ${task.id} is on it.`,
+          sentence: `${this.deployLine(failed)} The incident is being looked at.`,
           options: canRollBack
             ? [
                 { id: "rollback", label: "Roll back", primary: true },
