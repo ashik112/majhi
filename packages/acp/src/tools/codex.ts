@@ -194,6 +194,11 @@ export const codex: ToolDef = {
   turnUsage: "turn",
   // Without this the adapter answers authRequired instead of using the key.
   apiKeyEnv: { DEFAULT_AUTH_REQUEST: JSON.stringify({ methodId: "api-key" }) },
+  // Codex wraps every command in bubblewrap, which needs user namespaces: Docker's default seccomp profile and
+  // Ubuntu's AppArmor refuse them, so no command runs in its default `agent` mode (openai/codex#15678). OpenAI's
+  // advice for a container is full access, the container being the sandbox. What the sandbox would have asked is
+  // asked by a managed PreToolUse hook instead (docker/codex/). codex-acp 2.0.0 applies this to new and loaded sessions.
+  containerEnv: { INITIAL_AGENT_MODE: "agent-full-access" },
   readUsage: readCodexUsage,
   parseAuthStatus(exitCode) {
     return { signedIn: exitCode === 0 };

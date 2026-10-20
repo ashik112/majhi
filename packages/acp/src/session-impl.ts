@@ -94,6 +94,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   const env = withToolsPath({
     ...start.env,
     ...capEnv,
+    ...(options.spawner === undefined ? undefined : tool.containerEnv),
     ...buildEnv(account, options.base, start.git),
     ...mcp?.env,
   });
