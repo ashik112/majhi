@@ -60,7 +60,7 @@ import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
-import { PayDecisions } from "./captain/pay-decisions.ts";
+import { CannotRunDecisions } from "./captain/cannot-run.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
@@ -1798,12 +1798,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerIncident: async (id, option) => {
         await opsEngine?.answerFix(id, option);
       },
-      answerCaptainPay: async (org, account) => {
+      answerCaptainCannotRun: async (org) => {
+        // The one fix a decision offers: the workspace goes back to the captain's own account.
         await autonomy.configure(
-          { orgs: { [org]: { account } } },
+          { orgs: { [org]: { account: null } } },
           {
             command: "autonomy.configure",
-            meta: { actor: { kind: "owner" }, reason: "Owner picked the account that pays" },
+            meta: { actor: { kind: "owner" }, reason: "Owner let the captain use its own account" },
           },
         );
         clientChat?.desk.retry();
@@ -1855,7 +1856,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(incidentEngine?.decisions(() => undefined) ?? []),
       ...(clientChat?.incidents.decisions() ?? []),
       ...(clientChat?.waits.decisions() ?? []),
-      ...(await payDecisions.decisions()),
+      ...(await cannotRunDecisions.decisions()),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
       ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
       ...failingMrDecisions(
@@ -1895,6 +1896,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
     // Bound below: autonomous mode measures the spend.
     rest: (org, account, job) => autonomy.laneRest(org, account, job),
+    accountState: async (account) => {
+      const view = (await accounts.list()).find((v) => v.id === account);
+      return view === undefined ? undefined : { status: view.status, until: view.limit?.until };
+    },
     halted: () => captainRepo.isStopped(),
     about: (chat, task) => {
       if (runs.working(chat).length === 0) room.setSubject(chat, task as TaskId);
@@ -1946,7 +1951,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     lanesOf: (org) => lanes.chatsOf(org),
     orgOfLane: (chat) => lanes.orgOf(chat),
   });
-  const payDecisions = new PayDecisions(lanes, () => options.runClock?.() ?? new Date());
+  const cannotRunDecisions = new CannotRunDecisions(lanes, () => options.runClock?.() ?? new Date());
   const machineDocker = dockerCli(env.runner.cliEnv);
   const memoryWatch = new MemoryWatch();
   /** A run container that sits at its memory limit is noted once on its task, so the captain or owner sees it. */

@@ -317,9 +317,9 @@ export function deployWaitDecisionId(task: string, project: string, env: string)
 export function chatWaitDecisionId(room: string, ref: string): string {
   return `cwait:${room}:${ref}`;
 }
-/** A workspace whose captain lane has no account it may use: the owner picks the one that pays. */
-export function captainPayDecisionId(org: string): string {
-  return `cpay:${org}`;
+/** A workspace whose captain cannot run (its account is missing, not allowed, at its limit): one row, with the fix. */
+export function captainCannotRunId(org: string): string {
+  return `ccant:${org}`;
 }
 /** A post task whose draft waits for the owner to approve it to go out. */
 export function publishDecisionId(task: string): string {
@@ -342,7 +342,7 @@ export type ParsedDecisionId =
   | { kind: "mrci"; task: string }
   | { kind: "dwait"; task: string; project: string; env: string }
   | { kind: "cwait"; room: string; ref: string }
-  | { kind: "cpay"; org: string }
+  | { kind: "ccant"; org: string }
   | { kind: "publish"; task: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
@@ -380,7 +380,7 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   }
   if (head === "publish" && rest.length === 1 && rest[0] !== "")
     return { kind: "publish", task: rest[0] as string };
-  if (head === "cpay" && rest.length >= 1 && rest[0] !== "") return { kind: "cpay", org: rest.join(":") };
+  if (head === "ccant" && rest.length >= 1 && rest[0] !== "") return { kind: "ccant", org: rest.join(":") };
   if (head === "iask" && rest.length === 2 && rest[1] !== "") {
     const what = INCIDENT_ASKS.find((a) => a === rest[0]);
     if (what !== undefined) return { kind: "iask", what, ref: rest[1] as string };

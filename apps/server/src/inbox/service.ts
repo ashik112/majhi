@@ -3,7 +3,7 @@ import {
   batchPick,
   boardCounts,
   type CardAction,
-  captainPayDecisionId,
+  captainCannotRunId,
   type DecisionAnswerInput,
   type DecisionBatchInput,
   type DecisionBatchResult,
@@ -54,7 +54,7 @@ export interface DecisionActions {
   /** An incident task asks something of the owner: start it, which project, close it, a failed deploy. */
   answerIncidentAsk?(what: string, ref: string, option: string): Promise<unknown>;
   /** Something in a client chat waits for the owner: a claim, a who-is, a message left for a person. */
-  answerCaptainPay?(org: string, account: string): Promise<unknown>;
+  answerCaptainCannotRun?(org: string): Promise<unknown>;
   answerChatWait?(room: string, ref: string, option: string): Promise<unknown>;
   /** The owner approved a post to publish. */
   approvePost?(task: string): Promise<unknown> | unknown;
@@ -312,7 +312,7 @@ export class InboxService {
       waits.set(account, [...(waits.get(account) ?? []), name]);
     }
     const unpaid = new Set(
-      extras.flatMap((d) => (d.org !== undefined && d.id === captainPayDecisionId(d.org) ? [d.org] : [])),
+      extras.flatMap((d) => (d.org !== undefined && d.id === captainCannotRunId(d.org) ? [d.org] : [])),
     );
     const all = buildDecisions({
       items,
@@ -508,7 +508,7 @@ export class InboxService {
     else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
     else if (parsed.kind === "publish") await actions.approvePost?.(parsed.task);
-    else if (parsed.kind === "cpay") await actions.answerCaptainPay?.(parsed.org, input.option);
+    else if (parsed.kind === "ccant") await actions.answerCaptainCannotRun?.(parsed.org);
     else if (parsed.kind === "cwait") await actions.answerChatWait?.(parsed.room, parsed.ref, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");

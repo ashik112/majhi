@@ -62,7 +62,7 @@ export interface DecisionSources {
   }[];
   /** Paused cards that wait on a signed-out account: the account's sign-in decision carries them. */
   foldedPauses?: ReadonlySet<string>;
-  /** Workspaces whose captain has no account to run on: their one "Captain blocked" decision carries a lane's pause. */
+  /** Workspaces whose captain cannot run: their one "Captain cannot run" decision carries a lane's pause. */
   unpaidOrgs?: ReadonlySet<string>;
   recommendations: ReadonlyMap<string, Recommendation>;
   /**

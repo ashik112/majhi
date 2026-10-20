@@ -33,6 +33,20 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   wiki: "Project wiki",
 };
 
+/**
+ * Why the captain cannot run a step in a workspace (docs/briefs/captain.md): typed, so Needs you names the
+ * fix and nothing reads the words. `signed-out` is told by the account's own sign-in decision.
+ */
+export const CannotRunReasonSchema = z.enum([
+  "no-captain",
+  "no-account",
+  "provider-not-allowed",
+  "account-of-another-workspace",
+  "signed-out",
+  "at-limit",
+]);
+export type CannotRunReason = z.infer<typeof CannotRunReasonSchema>;
+
 /** Who caused an event. The captain's own events never start an upkeep run. */
 export const CaptainCauseSchema = z.enum(["owner", "agent", "captain", "majhi"]);
 export type CaptainCause = z.infer<typeof CaptainCauseSchema>;

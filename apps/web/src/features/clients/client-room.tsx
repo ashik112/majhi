@@ -3,7 +3,7 @@ import {
   type ChatFile,
   type ClientOutcome,
   type ClientRow,
-  captainPayDecisionId,
+  captainCannotRunId,
   mentionName,
   PAGE_PATH,
   PRIVATE,
@@ -398,13 +398,13 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
   }
 }
 
-/** The same card Needs you shows ("Captain blocked: no account"), here under the waiting message with its Pick buttons. */
-function NoAccountLine({ org }: { org: string }) {
-  const decision = useDecisions().data?.decisions.find((d) => d.id === captainPayDecisionId(org));
+/** The same card Needs you shows ("Captain cannot run"), here under the waiting message with its Pick buttons. */
+function CannotRunLine({ org }: { org: string }) {
+  const decision = useDecisions().data?.decisions.find((d) => d.id === captainCannotRunId(org));
   const { send, busy } = useSendDecision();
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-fg-faint">
-      <span>Captain blocked: no account</span>
+      <span>Captain cannot run</span>
       {decision?.options.map((o) => (
         <Button
           key={o.id}
@@ -478,7 +478,7 @@ function WaitingLine({ org }: { org: string }) {
       </span>
     );
   }
-  if (blocker?.kind === "account") return <NoAccountLine org={org} />;
+  if (blocker?.kind === "account") return <CannotRunLine org={org} />;
   return <span className="text-xs text-fg-faint">Working on it</span>;
 }
 
@@ -496,8 +496,8 @@ function OutcomeLine({
   const text = outcomeText(outcome, reply);
   const task = outcome.task;
   if (outcome.decision !== undefined && reply === undefined) {
-    // The captain has no account to run on: the same card as Needs you, with its buttons, right here.
-    if (parseDecisionId(outcome.decision)?.kind === "cpay") return <NoAccountLine org={org} />;
+    // The captain cannot run: the same card as Needs you, with its buttons, right here.
+    if (parseDecisionId(outcome.decision)?.kind === "ccant") return <CannotRunLine org={org} />;
     return (
       <Link
         to="/decisions"

@@ -1,6 +1,8 @@
 import {
+  type AccountStatus,
   CAPTAIN_LANE_BRIEF,
-  captainPayDecisionId,
+  type CannotRunReason,
+  captainCannotRunId,
   type Job,
   ON_CALL_SUFFIX,
   PRIVATE,
@@ -16,12 +18,11 @@ import type { CaptainRepo } from "./repo.ts";
 import { providerAllowed } from "./rules.ts";
 
 /**
- * The captain's lanes (SPEC 5.18): one chat of the one captain per workspace, so one client's code
- * and details are never in its context while it decides for another. A lane's task has the
- * workspace's org, so its runs get that workspace's credentials and nothing else. A client workspace's lane
- * runs on that workspace's own account (the same tool as the captain's), or on the account "More rules" names.
- * The owner's Private account pays for a client workspace only when the owner named it there; an account of
- * another workspace is never used.
+ * The captain's lanes (SPEC 5.18): the steps of the one captain, one chat per workspace, so one client's code
+ * and details are never in a step for another. A lane's task has the workspace's org, so its runs get that
+ * workspace's credentials and nothing else. Every lane runs on the captain's one account, or on the workspace's
+ * own account when the owner named it ("Captain uses this workspace's account"); an account of another
+ * workspace is never used.
  */
 
 export interface LaneDeps {
@@ -35,15 +36,31 @@ export interface LaneDeps {
   rest?: ((org: string, account: string, job?: Job) => Promise<string | undefined>) | undefined;
   /** Stop everything is on: nothing is told to a lane. */
   halted?: (() => boolean) | undefined;
+  /** What an account can do now: its sign-in or limit state and when a limit resets. Absent: every account is fine. */
+  accountState?:
+    | ((account: string) => Promise<{ status?: AccountStatus | undefined; until?: string | undefined } | undefined>)
+    | undefined;
   /** The lane's coming turn is about this task: its lines are tagged with it (the room does it when the lane is idle). */
   about?: ((chat: string, task: string) => void) | undefined;
 }
 
-/** `own`: the captain's own account runs the lane, so no account is swapped in. */
+/**
+ * The account a lane's turn runs on. `own`: the captain's own account (no account is swapped in). `fallback`:
+ * the captain's own is at its limit or signed out and the fallback agent's account runs the turn.
+ * Otherwise `why` says in a typed reason that no account may run it.
+ */
 export type LaneAccount =
-  | { account: string; own: boolean }
-  /** `noAccount`: the workspace has no account of its own and the owner has named none: Needs you asks which pays. */
-  | { problem: string; noAccount?: true };
+  | { account: string; own: boolean; fallback?: true }
+  | { problem: string; why: CannotRunReason; until?: string | undefined };
+
+/** A workspace whose captain cannot run, for the one Needs you row. */
+export interface CannotRunRow {
+  org: string;
+  name: string;
+  why: CannotRunReason;
+  problem: string;
+  until?: string | undefined;
+}
 
 export class Lanes {
   constructor(private readonly deps: LaneDeps) {}
@@ -126,42 +143,81 @@ export class Lanes {
     return this.deps.store.tasks.get(made.id) ?? made;
   }
 
-  /** The account the workspace's lane runs on, or why no account may. */
+  /**
+   * The account the workspace's lane runs on, or why none may (docs/briefs/captain.md). One account runs the captain
+   * everywhere: the captain agent's own. A workspace may name its own ("Captain uses this workspace's account"), which
+   * must belong to it. At the main account's limit, or signed out, the captain agent's fallback agent's account
+   * takes over when it may run here too.
+   */
   async account(org: string): Promise<LaneAccount> {
     const sections = await this.deps.config.sections();
     const rules = (await this.deps.config.settings()).autonomy.orgs[org];
     const name = (id: string) => (id === PRIVATE ? "Private" : (sections.orgs[id]?.name ?? id));
     const boss = await this.boss();
-    if (boss === undefined) return { problem: "there is no captain" };
+    if (boss === undefined) return { problem: "there is no captain", why: "no-captain" };
     const stored = await this.deps.agents.get(boss);
-    if (stored === undefined || !stored.ok)
-      return { problem: "the captain's agent file is missing or invalid" };
+    if (stored === undefined || !stored.ok) {
+      return { problem: "the captain's agent file is missing or invalid", why: "no-captain" };
+    }
     const own = stored.agent.frontmatter.account;
-    const ownAccount = sections.accounts[own];
-    // A client workspace is paid by its own account. The owner's Private account pays only when the owner picked it
-    // for that workspace under More rules: the captain never reaches for it by itself.
-    const fallback =
-      rules?.account === undefined && org !== PRIVATE && ownAccount !== undefined && ownAccount.org !== org
-        ? Object.entries(sections.accounts)
-            .filter(([, a]) => a.org === org && a.tool === ownAccount.tool)
-            .map(([accountId]) => accountId)
-            .toSorted()[0]
-        : undefined;
-    const id = rules?.account ?? fallback ?? own;
-    const account = sections.accounts[id];
-    if (account === undefined) return { problem: `the account ${id} is not in majhi.yaml` };
-    if (account.org !== org && (account.org !== PRIVATE || rules?.account === undefined)) {
-      if (account.org === PRIVATE) {
-        return { problem: `${name(org)} has no account for the captain`, noAccount: true };
+    const main = rules?.account ?? own;
+    const fit = (id: string): Extract<LaneAccount, { problem: string }> | undefined => {
+      const account = sections.accounts[id];
+      if (account === undefined) return { problem: `the account ${id} is not in majhi.yaml`, why: "no-account" };
+      // The workspace's own account must be the workspace's; the captain's account is the owner's, or the workspace's.
+      const allowed =
+        id === rules?.account ? account.org === org : account.org === PRIVATE || account.org === org;
+      if (!allowed) {
+        return {
+          problem: `${id} belongs to ${name(account.org)}, so it cannot run the captain in ${name(org)}`,
+          why: "account-of-another-workspace",
+        };
       }
+      if (!providerAllowed(rules, account.tool)) {
+        return {
+          problem: `${account.tool} is not an allowed AI provider in ${name(org)}`,
+          why: "provider-not-allowed",
+        };
+      }
+      return undefined;
+    };
+    const unfit = fit(main);
+    if (unfit !== undefined) return unfit;
+    const held = await this.held(main);
+    if (held === undefined) return { account: main, own: main === own };
+    // The main account cannot run: the captain agent's fallback, when it may run here and is free.
+    const fallbackAgent = stored.agent.frontmatter.fallback;
+    const second = fallbackAgent === undefined ? undefined : await this.deps.agents.get(fallbackAgent);
+    const spare = second?.ok === true ? second.agent.frontmatter.account : undefined;
+    if (
+      spare !== undefined &&
+      spare !== main &&
+      fit(spare) === undefined &&
+      (await this.held(spare)) === undefined
+    ) {
+      return { account: spare, own: spare === own, fallback: true };
+    }
+    return {
+      problem: `${main} ${held.why}`,
+      why: held.reason,
+      ...(held.until === undefined ? {} : { until: held.until }),
+    };
+  }
+
+  /** Why an account cannot run now: signed out, or at its limit with when it resets. Undefined when it can. */
+  private async held(
+    account: string,
+  ): Promise<{ reason: "signed-out" | "at-limit"; why: string; until?: string | undefined } | undefined> {
+    const state = await this.deps.accountState?.(account);
+    if (state?.status === "needs-login") return { reason: "signed-out", why: "is signed out" };
+    if (state?.status === "at-limit") {
       return {
-        problem: `${id} belongs to ${name(account.org)}, so it cannot pay for ${name(org)}. Pick an account of ${name(org)} in Captain, Permissions, ${name(org)}, Hours, freezes and more`,
+        reason: "at-limit",
+        why: "is at its limit",
+        ...(state.until === undefined ? {} : { until: state.until }),
       };
     }
-    if (!providerAllowed(rules, account.tool)) {
-      return { problem: `${account.tool} is not an allowed AI provider in ${name(org)}` };
-    }
-    return { account: id, own: id === own };
+    return undefined;
   }
 
   /**
@@ -201,7 +257,8 @@ export class Lanes {
       return {
         sent: false,
         why: picked.problem,
-        ...(picked.noAccount === true ? { decision: captainPayDecisionId(org) } : {}),
+        // A signed-out account is told by that account's own sign-in decision.
+        ...(picked.why === "signed-out" ? {} : { decision: captainCannotRunId(org) }),
       };
     }
     const rest = await this.deps.rest?.(org, picked.account, job);
@@ -219,26 +276,28 @@ export class Lanes {
   }
 
   /**
-   * Workspaces whose captain has work (a lane or a client chat it holds) and no account it may use, with the
-   * Private accounts the owner could allow to pay. Derived from `account` on each call: nothing is stored.
+   * Workspaces whose captain has work (a lane or a client chat it holds) and cannot run, with the typed reason.
+   * A signed-out account is told by that account's own sign-in decision, so it is not listed here. Derived from
+   * `account` on each call: nothing is stored.
    */
-  async unpaid(): Promise<{ org: string; name: string; choices: string[] }[]> {
+  async cannotRun(): Promise<CannotRunRow[]> {
     const orgs = new Set(this.all().map((l) => l.org));
     for (const room of this.deps.store.client.rooms()) {
       if (room.org !== undefined && room.chat.holder === "captain" && room.chat.archived !== true)
         orgs.add(room.org);
     }
     const sections = await this.deps.config.sections();
-    const autonomy = (await this.deps.config.settings()).autonomy;
-    const out: { org: string; name: string; choices: string[] }[] = [];
+    const out: CannotRunRow[] = [];
     for (const org of [...orgs].toSorted()) {
-      const picked = org === PRIVATE ? undefined : await this.account(org);
-      if (picked === undefined || !("problem" in picked) || picked.noAccount !== true) continue;
-      const choices = Object.entries(sections.accounts)
-        .filter(([, a]) => a.org === PRIVATE && providerAllowed(autonomy.orgs[org], a.tool))
-        .map(([id]) => id)
-        .toSorted();
-      out.push({ org, name: sections.orgs[org]?.name ?? org, choices });
+      const picked = await this.account(org);
+      if (!("problem" in picked) || picked.why === "signed-out") continue;
+      out.push({
+        org,
+        name: org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org),
+        why: picked.why,
+        problem: picked.problem,
+        ...(picked.until === undefined ? {} : { until: picked.until }),
+      });
     }
     return out;
   }
