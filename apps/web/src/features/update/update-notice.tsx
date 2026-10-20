@@ -12,6 +12,41 @@ import { useAfterFirstPaint } from "@/lib/use-after-paint";
 import { changeSummary, updateNotice, workingText } from "./model";
 import { beginUpdateSession, useUpdateSession } from "./session";
 
+const LATER_KEY = "majhi.update.later";
+const LATER_MS = 24 * 60 * 60_000;
+
+/** The commit the owner put off with Later, and until when. Storage may be missing or blocked. */
+function readLater(): { commit: string; until: number } | undefined {
+  try {
+    const raw = window.localStorage.getItem(LATER_KEY);
+    if (raw === null) return undefined;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) return undefined;
+    const { commit, until } = value as { commit?: unknown; until?: unknown };
+    return typeof commit === "string" && typeof until === "number" ? { commit, until } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Later hides the row for a day, or until newer code than the one put off is on disk. */
+function useLater(onDisk: string | undefined): [hidden: boolean, later: () => void] {
+  const [later, setLater] = useState(readLater);
+  const hidden =
+    later !== undefined && onDisk !== undefined && later.commit === onDisk && Date.now() < later.until;
+  const putOff = useCallback(() => {
+    if (onDisk === undefined) return;
+    const next = { commit: onDisk, until: Date.now() + LATER_MS };
+    try {
+      window.localStorage.setItem(LATER_KEY, JSON.stringify(next));
+    } catch {
+      // Without storage, Later lasts until the page reloads.
+    }
+    setLater(next);
+  }, [onDisk]);
+  return [hidden, putOff];
+}
+
 /**
  * "Update ready", one row above the agents' lamps so it never pushes the navigation out of view. The
  * button rebuilds majhi; the arrow opens a panel above the row with the list of changes and any notes.
@@ -25,6 +60,7 @@ export function UpdateNotice() {
   const [open, setOpen] = useState(false);
   const [manual, setManual] = useState<string>();
   const notice = updateNotice(version.data);
+  const [putOff, later] = useLater(version.data?.onDisk);
   const began = version.data?.update;
   const row = useRef<HTMLDivElement>(null);
   const closePanel = useCallback(() => setOpen(false), []);
@@ -48,7 +84,13 @@ export function UpdateNotice() {
     }
   }, [began, scheduledAt]);
 
-  if (notice.kind === "none" || session !== undefined) return null;
+  // An update already asked for (waiting for the agents) stays in view.
+  if (
+    notice.kind === "none" ||
+    session !== undefined ||
+    (putOff && scheduledAt === undefined && !notice.waiting)
+  )
+    return null;
 
   async function update(when: "now" | "idle") {
     const startedAt = new Date().toISOString();
@@ -93,6 +135,16 @@ export function UpdateNotice() {
         {!manualOnly && !direct && (
           <Button size="sm" onClick={() => setOpen(true)}>
             {waiting ? "Waiting" : "Update"}
+          </Button>
+        )}
+        {!waiting && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Hide for a day, or until newer code arrives"
+            onClick={later}
+          >
+            Later
           </Button>
         )}
       </div>
