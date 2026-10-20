@@ -200,6 +200,31 @@ open_browser() {
   esac
 }
 
+# The secrets key keeps a copy in the keyring through secret-tool (scripts/check.sh, keyring_problem).
+# Linux distros often leave it out, so the installer adds it with the distro's package manager. sudo asks
+# for the password on the terminal; when it cannot, majhi still runs and check.sh says what is missing.
+add_secret_tool() {
+  command -v secret-tool >/dev/null 2>&1 && return 0
+  root=
+  if [ "$(id -u)" != 0 ]; then
+    command -v sudo >/dev/null 2>&1 || return 0
+    root=sudo
+  fi
+  say "Installing secret-tool, so the secrets key has a copy in your keyring. sudo may ask for your password"
+  if command -v apt-get >/dev/null 2>&1; then
+    # A fresh apt has no package lists yet.
+    $root apt-get update -qq </dev/null >/dev/null 2>&1 && $root apt-get install -y libsecret-tools </dev/null >/dev/null 2>&1
+  elif command -v dnf >/dev/null 2>&1; then
+    $root dnf install -y libsecret </dev/null >/dev/null 2>&1
+  elif command -v pacman >/dev/null 2>&1; then
+    $root pacman -S --noconfirm --needed libsecret </dev/null >/dev/null 2>&1
+  elif command -v zypper >/dev/null 2>&1; then
+    $root zypper --non-interactive install libsecret-tools </dev/null >/dev/null 2>&1
+  else
+    false
+  fi || say "Could not install secret-tool. majhi still runs; the warning below says what to do"
+}
+
 main() {
   os=$(detect_os)
   arch=$(detect_arch)
@@ -211,6 +236,7 @@ main() {
   fetch_package
   record_release "$version"
   if [ "${MAJHI_INSTALL_ONLY:-0}" != 1 ]; then
+    case $os in linux | wsl) add_secret_tool ;; esac
     if ! (unset MAJHI_VERSION; sh "$APP_DIR/scripts/up.sh"); then
       if [ -d "$APP_DIR.previous" ]; then
         rm -rf "$APP_DIR"
