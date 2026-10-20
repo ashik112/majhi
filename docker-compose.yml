@@ -5,6 +5,13 @@ name: majhi
 # ghcr.io/ashik112 (MAJHI_REGISTRY), and only the owner's passwd entry is built here. Without it,
 # everything is built from this checkout. Either way `docker compose build` makes the `majhi-*:dev`
 # images below, and those are what runs.
+# Every image's base, passed to every build: the release Dockerfile names all four in its FROM lines, and
+# `docker compose build` refuses a blank one even in a stage the target does not use.
+x-release-from: &release-from
+  SERVER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-server:${MAJHI_VERSION}}
+  RUNNER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-runner:${MAJHI_VERSION}}
+  BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-browser:${MAJHI_VERSION}}
+  TEST_BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-testbrowser:${MAJHI_VERSION}}
 services:
   server:
     build:
@@ -20,7 +27,7 @@ services:
         # `make up` and the host helper pass `git rev-parse HEAD`. It is baked into the image. A release
         # image has its own, from the release workflow.
         MAJHI_COMMIT: ${MAJHI_COMMIT:-dev}
-        SERVER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-server:${MAJHI_VERSION}}
+        <<: *release-from
     image: majhi-server:dev
     init: true
     restart: unless-stopped
@@ -76,7 +83,7 @@ services:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_HOME: ${HOME}
-        RUNNER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-runner:${MAJHI_VERSION}}
+        <<: *release-from
     image: majhi-runner:dev
     profiles: [runner]
 
@@ -89,7 +96,7 @@ services:
       labels:
         majhi.owned: build
       args:
-        BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-browser:${MAJHI_VERSION}}
+        <<: *release-from
     image: majhi-browser:dev
     profiles: [runner]
 
@@ -102,7 +109,7 @@ services:
       labels:
         majhi.owned: build
       args:
-        TEST_BROWSER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-testbrowser:${MAJHI_VERSION}}
+        <<: *release-from
     image: majhi-testbrowser:dev
     profiles: [runner]
 
