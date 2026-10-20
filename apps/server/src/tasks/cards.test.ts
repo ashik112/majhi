@@ -80,6 +80,7 @@ describe("an ask card", () => {
       gate: "agent",
       agent: "acme-builder",
       attachments: [],
+      start: false,
     });
     expect(tasks.get(idea.id).idea).toBeDefined();
     const ask = () =>
