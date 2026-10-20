@@ -43,6 +43,8 @@ export const NoticeSchema = z.object({
   /** The task title, or the speaker and words. One line. */
   detail: z.string().max(300).optional(),
   /** It waits for the owner: a decision. Such a row carries `answer` when one click can answer it. */
+  /** Who did it, for what the captain did by itself: a deploy it started that went live. */
+  by: z.enum(["owner", "captain"]).optional(),
   needsYou: z.boolean(),
   read: z.boolean(),
   link: NoticeLinkSchema,

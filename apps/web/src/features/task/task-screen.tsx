@@ -137,7 +137,7 @@ function TaskView({ taskId }: { taskId: string }) {
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
 
   // A review or pause card in the dock holds the primary button; the header keeps a quiet one.
-  const cardAsks = dockItems(room.state.items, data.status).some(
+  const cardAsks = dockItems(room.state.items, data.status, data.typing?.type === "incident").some(
     (i) => i.type === "review" || i.type === "paused",
   );
 

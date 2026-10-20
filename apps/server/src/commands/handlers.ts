@@ -373,6 +373,7 @@ export function createHandlers({
       watch: services.ops.watch,
       engine: services.ops.engine,
       phone: services.ops.phone,
+      telegram: services.ops.telegram,
       playbooks: services.playbooks,
       repo: services.ops.repo,
       findings: services.findings,
@@ -804,8 +805,15 @@ export function createHandlers({
       return services.deploy.view(input.project);
     },
     "projects.planDeploy": async (input, ctx) => {
-      await agentReaches(ctx.meta, services.tasks.get(input.task)?.org ?? PRIVATE);
-      return services.deploy.service.plan(input, ctx.meta.actor.kind === "agent" ? "captain" : "owner");
+      const org = services.tasks.get(input.task)?.org ?? PRIVATE;
+      await agentReaches(ctx.meta, org);
+      const planned = await services.deploy.service.plan(
+        input,
+        ctx.meta.actor.kind === "agent" ? "captain" : "owner",
+      );
+      // The ship chore asked for this plan and waits for it: it looks again now, not at the next hourly check.
+      services.captain.planWritten(org);
+      return planned;
     },
     // A deploy leaves the machine: the owner's click, or the captain by a rule the owner wrote (never through here).
     "projects.deploy": async (input, ctx) => {

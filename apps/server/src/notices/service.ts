@@ -25,6 +25,8 @@ export class NoticesService {
       /** What waits for the owner now. */
       decisions: () => Promise<OwnerDecision[]>;
       update: () => Promise<UpdateStatus | undefined>;
+      /** `project · Name` of a task, or undefined when it is gone. */
+      taskLabel: (task: string) => Promise<string | undefined>;
       /** A contact's name, for a mention a message carries no name for. */
       contactName?: (contact: string) => string | undefined;
       now?: () => Date;
@@ -41,13 +43,20 @@ export class NoticesService {
       this.now().toISOString(),
     );
     const decisions = waiting.map((d) => ({ ...d, at: first.get(d.id) ?? d.at }));
+    const deploys = store.deploys.endedSince(since, PER_SOURCE);
+    const labels = new Map<string, string>();
+    for (const task of new Set(deploys.flatMap((d) => (d.task === undefined ? [] : [d.task])))) {
+      const label = await this.deps.taskLabel(task);
+      if (label !== undefined) labels.set(task, label);
+    }
     return buildFeed({
       decisions,
       clientLines: store.notices.clientLines(since, PER_SOURCE),
       taskStatuses: store.notices.taskStatuses(since, PER_SOURCE),
       bugs: store.notices.captainBugs(since, PER_SOURCE),
       incidents: store.notices.incidents(since, PER_SOURCE),
-      deploys: store.deploys.endedSince(since, PER_SOURCE),
+      deploys,
+      labels,
       update,
       contactName: this.deps.contactName,
       marks: store.notices.marks(),

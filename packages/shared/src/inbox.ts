@@ -56,7 +56,13 @@ export type DecisionSuggestion = z.infer<typeof DecisionSuggestionSchema>;
 
 /** Where "Open" goes. */
 export const DecisionLinkSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("task"), id: TaskIdSchema, item: z.string().optional() }),
+  z.object({
+    kind: z.literal("task"),
+    id: TaskIdSchema,
+    item: z.string().optional(),
+    /** What the open button says, when "Open task" is not it ("Review report"). */
+    label: z.string().max(40).optional(),
+  }),
   z.object({ kind: z.literal("chat"), id: TaskIdSchema }),
   z.object({
     kind: z.literal("captain"),
@@ -104,6 +110,10 @@ export const OwnerDecisionSchema = z.object({
   /** When it arrived (ISO). */
   at: z.string(),
   link: DecisionLinkSchema,
+  /** The decision belongs to an incident task: the queue shows every decision of one incident as one row. */
+  incident: z.literal(true).optional(),
+  /** How often the incident fired or was reported again: `count` alerts since `since`, the last at `last`. */
+  repeats: z.object({ count: z.number().int().positive(), since: z.string(), last: z.string() }).optional(),
 });
 export type OwnerDecision = z.infer<typeof OwnerDecisionSchema>;
 
@@ -286,7 +296,7 @@ export function signInDecisionId(account: string): string {
   return `signin:${account}`;
 }
 /** What an incident task asks of the owner: start it, say which project, close it after it recovered, see a failed deploy. */
-export const INCIDENT_ASKS = ["start", "recovered", "deploy"] as const;
+export const INCIDENT_ASKS = ["start", "recovered", "deploy", "report"] as const;
 export type IncidentAsk = (typeof INCIDENT_ASKS)[number];
 /** `ref` is a task id, or a deploy id for `deploy`. */
 export function incidentAskDecisionId(what: IncidentAsk, ref: string): string {

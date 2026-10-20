@@ -99,6 +99,31 @@ export function usePhoneForget() {
   });
 }
 
+export function useTelegramSetup() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"ops.telegramSetup">, ApiRequestError, CommandInput<"ops.telegramSetup">>({
+    mutationFn: (input) =>
+      cmd("ops.telegramSetup", input, { reason: "Owner paired Telegram for incident pings" }),
+    onSuccess: done,
+  });
+}
+
+export function useTelegramTest() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"ops.telegramTest">, ApiRequestError, void>({
+    mutationFn: () => cmd("ops.telegramTest", {}, { reason: "Owner sent a test ping to Telegram" }),
+    onSuccess: done,
+  });
+}
+
+export function useTelegramForget() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"ops.telegramForget">, ApiRequestError, void>({
+    mutationFn: () => cmd("ops.telegramForget", {}, { reason: "Owner turned the Telegram ping off" }),
+    onSuccess: done,
+  });
+}
+
 // Watch anything (5.18) -------------------------------------------------------------
 
 /** `watch.overview`: every watch with its value, history, fixes and question. Under the `ops` key, so the ops topic refetches it. */

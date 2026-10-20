@@ -19,6 +19,7 @@ import {
   type RoomItem,
   type ShipOptions,
   splitReady,
+  taskNameOf,
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
@@ -101,10 +102,14 @@ export interface InboxDeps {
   /** What a client reply draft answers, for its row. */
   clientDraft?: DecisionSources["clientDraft"];
   actions: DecisionActions;
+  /** The alerts of an incident task, or undefined when the task is not an incident: its decisions are one row. */
+  incidentOf?: (task: string) => { count: number; since: string; last: string } | undefined;
   /** Decisions the trust ladder and the money ceiling build themselves. */
   extras?: () => readonly OwnerDecision[] | Promise<readonly OwnerDecision[]>;
   /** The owner answered a decision: the scorecard learns whether the captain's opinion held. */
   answered?: (decision: OwnerDecision, option: string) => void;
+  /** The owner is answering a decision, before it is applied. */
+  answering?: (decision: OwnerDecision, option: string) => void;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** Whether a captain's proposal no longer matches the setting it was measured against. */
@@ -303,7 +308,7 @@ export class InboxService {
           ? who.org === undefined
             ? "Captain is paused"
             : `Captain in ${names[who.org] ?? who.org} is paused`
-          : `${who.id} is paused`;
+          : `${taskNameOf({ title: who.title })} is paused`;
       waits.set(account, [...(waits.get(account) ?? []), name]);
     }
     const unpaid = new Set(
@@ -327,10 +332,33 @@ export class InboxService {
       extras,
     });
     await this.markStale(all, items);
+    this.markIncidents(all);
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
     this.lastDecisions = all;
     return all;
+  }
+
+  /** A decision of an incident task is tagged, so the queue shows the incident as one row, and carries the alert count. */
+  private markIncidents(all: OwnerDecision[]): void {
+    const of = this.deps.incidentOf;
+    if (of === undefined) return;
+    const cache = new Map<string, ReturnType<typeof of>>();
+    for (const [i, d] of all.entries()) {
+      if (d.task === undefined) continue;
+      if (!cache.has(d.task)) cache.set(d.task, of(d.task));
+      const repeats = cache.get(d.task);
+      if (repeats === undefined) continue;
+      all[i] = {
+        ...d,
+        incident: true,
+        repeats,
+        options:
+          d.kind === "ship"
+            ? d.options.map((o) => (o.id === "merge" ? { ...o, label: "Ship the fix" } : o))
+            : d.options,
+      };
+    }
   }
 
   /** A proposal whose setting changed since says so and offers only Reject: it needs a fresh proposal. */
@@ -354,6 +382,7 @@ export class InboxService {
   async answer(input: DecisionAnswerInput): Promise<OwnerDecision[]> {
     const decision = (await this.list()).find((d) => d.id === input.id);
     if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
+    this.deps.answering?.(decision, input.option);
     await this.apply(decision, input, () => this.deps.items());
     this.noteAnswer(decision, input.option);
     return this.list();

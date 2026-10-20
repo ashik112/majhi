@@ -267,6 +267,11 @@ export class CaptainService {
     this.trigger(org, "ship", `${task} reached review`, "agent", task);
   }
 
+  /** A deploy plan was written: the ship chore, which waited for it, looks again. */
+  planWritten(org: string): void {
+    this.trigger(org, "ship", "A deploy plan was written", "majhi");
+  }
+
   /** A deploy went live: the next environment of its project may go now, so the ship chore looks again. */
   deployChanged(org: string): void {
     this.trigger(org, "ship", "A deploy went live", "majhi");

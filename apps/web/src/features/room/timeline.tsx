@@ -267,8 +267,8 @@ export function Timeline({
   }, [focusItem, state.loaded, state.more, rowOf, onLoadOlder, onLoadAround, onFocused]);
 
   const waiting = useMemo(
-    () => dockItems(state.items, owner?.task.status),
-    [state.items, owner?.task.status],
+    () => dockItems(state.items, owner?.task.status, owner?.task.typing?.type === "incident"),
+    [state.items, owner?.task.status, owner?.task.typing?.type],
   );
   // Only a task page has deploys: a chat or the captain's thread has none.
   const deploys = useTaskDeploys(

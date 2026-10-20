@@ -26,6 +26,7 @@ import {
 } from "@/features/actions/action-fields";
 import { useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
+import { plural } from "@/lib/format";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useProjects } from "@/lib/task-queries";
 import { useSaveWatch, useTestWatch } from "@/lib/watch-queries";
@@ -587,7 +588,7 @@ export function WatchForm({
             {(p) => (
               <Select {...p} value={d.everyMin} onChange={(e) => set("everyMin", e.target.value)}>
                 {EVERY.some((o) => o.v === d.everyMin) ? null : (
-                  <option value={d.everyMin}>{d.everyMin} minutes</option>
+                  <option value={d.everyMin}>{plural(Number(d.everyMin), "minute")}</option>
                 )}
                 {EVERY.map((o) => (
                   <option key={o.v} value={o.v}>

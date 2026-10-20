@@ -2056,6 +2056,31 @@ CREATE INDEX tasks_open_by_others ON tasks (org) WHERE status != 'done' AND kind
 UPDATE tasks SET mode = 'lead' WHERE mode != 'lead';
 `,
   },
+  {
+    // Workflow reset, step 4: a failed look says why as a typed value, so titles and the network-blip rule
+    // never read the detail text.
+    id: 193,
+    name: "ops look reason",
+    sql: `
+ALTER TABLE ops_state ADD COLUMN last_reason TEXT;
+`,
+  },
+  {
+    // Workflow reset, step 4: every incident task is typed. Tasks a watch or a deploy opened, and the old client
+    // claims (an ops task with no repo, made before 2026-10-08), were found by reading their origin at run time.
+    id: 194,
+    name: "type the incident tasks",
+    sql: `
+UPDATE tasks SET type = 'incident', type_by = 'captain'
+WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
+  AND json_extract(origin, '$.kind') IN ('watch', 'deploy');
+UPDATE tasks SET type = 'incident', type_by = 'captain'
+WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
+  AND json_extract(origin, '$.kind') = 'client' AND kind = 'ops'
+  AND created_at < '2026-10-08T12:00:00.000Z'
+  AND NOT EXISTS (SELECT 1 FROM task_repos WHERE task_repos.task = tasks.id);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

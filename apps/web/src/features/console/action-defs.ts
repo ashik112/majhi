@@ -39,7 +39,8 @@ export function needsActions(
   const first = row.decisions[0];
   if (first === undefined) return [later];
   const what = whatOf(row);
-  if (row.decisions.length > 1) {
+  // An incident is one row whose first decision leads: its other decisions wait behind it, never answered together.
+  if (row.decisions.length > 1 && first.incident !== true) {
     const unmerge: ActionDef = { id: "one-by-one", label: "One by one", run: () => deps.unmerge(row.id) };
     if (first.kind === "sign-in") {
       return [

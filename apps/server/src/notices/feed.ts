@@ -28,6 +28,8 @@ export interface FeedSources {
   bugs: readonly BugRow[];
   incidents: readonly IncidentRow[];
   deploys: readonly DeployRecord[];
+  /** `project · Name` of the tasks the feed names: an id is internal and never shows. */
+  labels: ReadonlyMap<string, string>;
   update: UpdateStatus | undefined;
   marks: { seen: string | undefined; rows: ReadonlySet<string> };
   /** A contact's name, for a mention the message carries no name for. */
@@ -235,7 +237,11 @@ const PAUSE_WORDS: Readonly<Record<string, string>> = {
 };
 
 /** A task in review, done or paused. The owner's own moves are left out, and so is what Needs you already holds. */
-function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string>): Omit<Notice, "read">[] {
+function taskNotices(
+  rows: readonly TaskStatusRow[],
+  waiting: ReadonlySet<string>,
+  labels: ReadonlyMap<string, string>,
+): Omit<Notice, "read">[] {
   const out: Omit<Notice, "read">[] = [];
   for (const row of rows) {
     const actor = actorOfName(row.actor);
@@ -248,15 +254,15 @@ function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string
       link: { kind: "task" as const, id: row.id },
     };
     const id = `task:${row.id}:${row.event}`;
+    const label = taskLabel({
+      id: row.id,
+      title: row.title,
+      ...(row.name === null ? {} : { name: row.name }),
+      repos: row.project === null ? [] : [{ project: row.project }],
+      org: orgOfTask(row.org),
+    });
     if (row.status === "running") {
       // A task the owner did not start has begun: its name, and how it ends.
-      const label = taskLabel({
-        id: row.id,
-        title: row.title,
-        ...(row.name === null ? {} : { name: row.name }),
-        repos: row.project === null ? [] : [{ project: row.project }],
-        org: orgOfTask(row.org),
-      });
       out.push({
         ...base,
         id,
@@ -267,9 +273,14 @@ function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string
     } else if (row.status === "review") {
       // A ready-to-ship decision says it, with the button.
       if (waiting.has(`ship:${row.id}`)) continue;
-      out.push({ ...base, id, kind: "task-review", subject: `${row.id} ready for review` });
+      out.push({
+        ...base,
+        id,
+        kind: "task-review",
+        subject: `${labels.get(row.id) ?? label} ready for review`,
+      });
     } else if (row.status === "done") {
-      out.push({ ...base, id, kind: "task-done", subject: `${row.id} done` });
+      out.push({ ...base, id, kind: "task-done", subject: `${labels.get(row.id) ?? label} done` });
     } else {
       if (waiting.has(`paused:${row.id}`)) continue;
       const cause = row.hold === null ? undefined : PAUSE_WORDS[row.hold];
@@ -278,14 +289,17 @@ function taskNotices(rows: readonly TaskStatusRow[], waiting: ReadonlySet<string
         id,
         kind: "task-paused",
         subject: oneLine(`${didWords(actor, "paused")}${cause === undefined ? "" : `: ${cause}`}`, 160),
-        detail: oneLine(`${row.id} ${row.title}`),
+        detail: oneLine(labels.get(row.id) ?? label),
       });
     }
   }
   return out;
 }
 
-function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[] {
+function deployNotices(
+  deploys: readonly DeployRecord[],
+  labels: ReadonlyMap<string, string>,
+): Omit<Notice, "read">[] {
   return deploys.map((d) => {
     const where = `${d.project} to ${d.env}`;
     const words =
@@ -294,7 +308,8 @@ function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[]
         : d.state === "failed"
           ? `Deploy ${where} failed`
           : `Deploy ${where} rolled back`;
-    const detail = d.state === "live" ? d.task : (d.reason ?? d.task);
+    const task = d.task === undefined ? undefined : labels.get(d.task);
+    const detail = d.state === "live" ? task : (d.reason ?? task);
     return {
       id: `deploy:${d.id}:${d.state}`,
       kind: "deploy" as const,
@@ -303,6 +318,7 @@ function deployNotices(deploys: readonly DeployRecord[]): Omit<Notice, "read">[]
       subject: oneLine(words, 160),
       ...(detail === undefined ? {} : { detail: oneLine(detail) }),
       needsYou: false,
+      ...(d.state === "live" ? { by: d.by } : {}),
       link:
         d.task === undefined
           ? { kind: "page" as const, page: "projects" as const }
@@ -396,8 +412,8 @@ export function buildFeed(src: FeedSources): NoticeList {
   const all = [
     ...src.decisions.map(decisionNotice),
     ...clientNotices(src.clientLines, src.contactName),
-    ...taskNotices(src.taskStatuses, waiting),
-    ...deployNotices(src.deploys),
+    ...taskNotices(src.taskStatuses, waiting, src.labels),
+    ...deployNotices(src.deploys, src.labels),
     ...incidentNotices(src.incidents, waiting, src.since),
     ...bugNotices(src.bugs),
     ...updateNotices(src.update, src.since),

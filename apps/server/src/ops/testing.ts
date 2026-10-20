@@ -67,6 +67,8 @@ export interface OpsWorld {
   /** Requests the ntfy server got. */
   ntfy: { url: string; body: Record<string, unknown> }[];
   ntfyDown: boolean;
+  /** Messages the owner's Telegram bot was asked to send. */
+  telegram: { account: string; chat: string; text: string }[];
   decisions: OwnerDecision[];
   answered: { id: string; option: string }[];
   quiet: boolean;
@@ -118,6 +120,7 @@ export function opsWorld(
     tasks: over.keep?.tasks ?? [],
     ntfy: over.keep?.ntfy ?? [],
     ntfyDown: over.keep?.ntfyDown ?? false,
+    telegram: over.keep?.telegram ?? [],
     decisions: over.keep?.decisions ?? [],
     answered: over.keep?.answered ?? [],
     quiet: false,
@@ -161,6 +164,12 @@ export function opsWorld(
   };
   const wiring: OpsWiring = {
     db,
+    telegram: {
+      bots: async () => [{ connection: "tg-bot", account: "@acme_bot" }],
+      send: async (account, chat, text) => {
+        world.telegram.push({ account, chat, text });
+      },
+    },
     findings,
     secrets,
     notifier: {

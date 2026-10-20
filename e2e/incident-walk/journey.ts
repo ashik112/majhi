@@ -22,36 +22,25 @@ import {
 } from "./walk.ts";
 
 const REPO = join(HOST_HOME, "Work", "storefront");
+/** The two switches of the run: `WALK_FIX=ships WALK_TELL=sends` is Captain ships and Captain sends. */
+const FIX = process.env.WALK_FIX === "ships" ? "ships" : "ask";
+const TELL = process.env.WALK_TELL === "sends" ? "sends" : "ask";
 
 let room = "";
 const TITLE = "Database usage over 90% on storefront";
 
 async function setup(w: World): Promise<string> {
+  // The workspace's one level and its two incident switches, set the way the owner sets them.
+  await cmd("authority.set", { org: "acme", level: "routine", fix: FIX, clientUpdate: TELL });
   await cmd("autonomy.configure", {
-    orgs: {
-      acme: {
-        authority: {
-          start: "decide",
-          questions: "decide",
-          approvals: "decide",
-          upkeep: "decide",
-          merge: "decide",
-          push: "decide",
-          deployStaging: "decide",
-          deployProduction: "ask",
-          tell: "decide",
-          own: "ask",
-        },
-        incident: { soakMin: 1, cadenceMin: 5 },
-        holds: { firstContact: false },
-      },
-    },
+    orgs: { acme: { incident: { soakMin: 1, cadenceMin: 5 }, holds: { firstContact: false } } },
   });
   await cmd("autonomy.start", {});
   await cmd("ops.settings", { escalateMin: 10, resolveMin: 1 });
   await cmd("projects.setEnvironments", {
     project: "storefront",
     environments: [
+      { env: "staging", tier: "staging", check: `http://127.0.0.1:${GITLAB_PORT}/health/staging` },
       { env: "production", tier: "production", check: `http://127.0.0.1:${GITLAB_PORT}/health/production` },
     ],
   });
@@ -59,7 +48,111 @@ async function setup(w: World): Promise<string> {
   room = row.id;
   setReplies([{ when: "Write a short title", say: TITLE }]);
   void w;
-  return "Acme: Start, Tell, Merge, Push are the captain's; Auto-pilot on; soak 1 min; Slack channel linked";
+  return `Acme: Routine, Fix ${FIX}, Client update ${TELL}; Auto-pilot on; soak 1 min; Slack channel linked`;
+}
+
+/** Needs you, in light and dark, as it stands now. */
+async function needsShots(w: World, name: string): Promise<void> {
+  for (const mode of ["light", "dark"] as const) {
+    await w.page.evaluate(
+      (m) =>
+        localStorage.setItem(
+          "majhi.look",
+          JSON.stringify({ theme: "graphite", mode: m, density: "comfortable" }),
+        ),
+      mode,
+    );
+    console.log(await shot(w, `${name}-${mode}`, "/"));
+  }
+  await w.page.evaluate(() =>
+    localStorage.setItem(
+      "majhi.look",
+      JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
+    ),
+  );
+}
+
+/** A page after steps that open a sheet, in light and dark. */
+async function needsShotsAt(w: World, name: string, path: string, open: () => Promise<void>): Promise<void> {
+  for (const mode of ["light", "dark"] as const) {
+    await w.page.evaluate(
+      (m) =>
+        localStorage.setItem(
+          "majhi.look",
+          JSON.stringify({ theme: "graphite", mode: m, density: "comfortable" }),
+        ),
+      mode,
+    );
+    await w.page.goto(`http://127.0.0.1:${PORT}${path}`);
+    await open();
+    await sleep(500);
+    const file = `${process.env.WALK_SHOTS ?? "."}/${name}-${mode}.png`;
+    await w.page.screenshot({ path: file });
+    console.log(file);
+  }
+  await w.page.evaluate(() =>
+    localStorage.setItem(
+      "majhi.look",
+      JSON.stringify({ theme: "graphite", mode: "light", density: "comfortable" }),
+    ),
+  );
+}
+
+/** Under Client update Ask me the captain's updates wait in Needs you: the owner sends each one. */
+async function releaseDrafts(): Promise<number> {
+  if (TELL !== "ask") return 0;
+  const list = (await cmd("decisions.list", {})).decisions as any[];
+  let n = 0;
+  for (const d of list) {
+    if (d.kind !== "draft" && d.kind !== "reply") continue;
+    const option = d.options.find((o: any) => o.primary) ?? d.options[0];
+    if (option === undefined) continue;
+    await cmd("decisions.answer", { id: d.id, option: option.id });
+    n += 1;
+  }
+  return n;
+}
+let shownHeld = false;
+
+/** Clicks a button of a row of Needs you, as the owner does: select the row, press the button. */
+async function clickInRow(w: World, rowText: string, button: string, answers = true): Promise<void> {
+  await w.page.goto(`http://127.0.0.1:${PORT}/`);
+  const row = w.page.locator('[data-pane="needs"] [role="option"]', { hasText: rowText }).first();
+  await row.waitFor({ timeout: 30_000 });
+  await row.click();
+  const target = row.getByRole("button").filter({ hasText: button }).first();
+  await target.waitFor({ timeout: 15_000 });
+  // A button that answers a decision sends it after its five second Undo time: the answer must come back 200.
+  const sent = answers
+    ? w.page.waitForResponse((r) => r.url().includes("decisions.answer"), { timeout: 150_000 })
+    : undefined;
+  await target.click();
+  if (sent !== undefined) {
+    const res = await sent;
+    if (res.status() !== 200)
+      throw new Error(`${button}: the answer failed with ${res.status()}: ${await res.text()}`);
+  }
+}
+
+/** The first held update is photographed in Needs you, then every held update is sent. */
+async function holdThenRelease(w: World): Promise<void> {
+  if (TELL !== "ask") return;
+  const held = (await cmd("decisions.list", {})).decisions.some(
+    (d: any) => d.kind === "draft" || d.kind === "reply",
+  );
+  if (held && !shownHeld) {
+    shownHeld = true;
+    await needsShots(w, "03-update-waits");
+    // The update is inside the incident's row, and its own button sends it.
+    const before = w.slack.sent.length;
+    await clickInRow(w, "Database usage over 90", "Send update");
+    await until("the update to reach Slack", async () => w.slack.sent.length > before, 30_000);
+    const left = (await cmd("decisions.list", {})).decisions.filter(
+      (d: any) => d.kind === "reply" || d.kind === "draft",
+    );
+    if (left.length > 0) throw new Error("the update is still waiting after Send update");
+  }
+  await releaseDrafts();
 }
 
 const FLAGS = { promisedTime: false, money: false, security: false, severalClients: false };
@@ -181,7 +274,23 @@ async function clientSaysDown(w: World): Promise<string> {
     user: "U0SARA",
     text: "Hi, the server is down! Our orders page does not load.",
   });
-  const sent = await until("the first reply in Slack", async () => w.slack.sent[0], 120_000);
+  const sent = await until(
+    "the first reply in Slack",
+    async () => {
+      if (TELL === "ask" && !shownHeld) {
+        const held = (await cmd("decisions.list", {})).decisions.some(
+          (d: any) => d.kind === "draft" || d.kind === "reply",
+        );
+        if (held) {
+          shownHeld = true;
+          await needsShots(w, "02-update-waits");
+        }
+      }
+      await releaseDrafts();
+      return w.slack.sent[0];
+    },
+    120_000,
+  );
   const tasks = await incidentTasks();
   if (tasks.length !== 1) throw new Error(`expected one incident task, saw ${tasks.length}`);
   const task = await until(
@@ -192,8 +301,12 @@ async function clientSaysDown(w: World): Promise<string> {
     },
     60_000,
   );
-  const watches = JSON.stringify(await cmd("watch.overview", { org: "acme" }));
-  if (!watches.includes(WATCH_NAME)) throw new Error("the captain did not add the watch");
+  // The captain's script adds the watch after it replied: wait for its next step.
+  await until(
+    "the captain to add the watch",
+    async () => JSON.stringify(await cmd("watch.overview", { org: "acme" })).includes(WATCH_NAME),
+    60_000,
+  );
   return `the captain opened or joined ${task.id}, told the client: "${sent.text}", and added the watch "${WATCH_NAME}"`;
 }
 
@@ -228,14 +341,41 @@ async function leadFixes(w: World, id: string): Promise<string> {
   });
   await until(
     "the client to get a reply for Identified",
-    async () => w.slack.sent.length > toldBefore,
+    async () => {
+      await holdThenRelease(w);
+      return w.slack.sent.length > toldBefore;
+    },
     90_000,
   );
   return `lead committed the fix in ${tree}; cause recorded; the client got a reply after the status change`;
 }
 
-const GL_RUNS = [{ kind: "gitlab-pipeline", remote: "origin", ref: "base" }];
+const GL_RUNS = [{ kind: "gitlab-pipeline", remote: "gitlab", ref: "base" }];
 const git = (...args: string[]) => execFileSync("git", args, { cwd: REPO }).toString().trim();
+
+/** The deploys of a task, oldest first. */
+async function deploysOf(id: string): Promise<any[]> {
+  const v = await cmd("projects.deployView", { project: "storefront" });
+  return v.history.filter((h: any) => h.task === id).toSorted((x: any, y: any) => x.id - y.id);
+}
+
+/** Waits for the plan to go live, staging first, and returns both records. */
+async function planLive(id: string): Promise<{ staging: any; production: any }> {
+  return until(
+    "staging and then production to go live",
+    async () => {
+      const list = await deploysOf(id);
+      const failed = list.find((r: any) => r.state === "failed");
+      if (failed !== undefined) throw new Error(`deploy failed: ${failed.reason}`);
+      const staging = list.find((r: any) => r.env === "staging");
+      const production = list.find((r: any) => r.env === "production");
+      if (staging?.state !== "live" || production?.state !== "live") return false;
+      if (production.createdAt < staging.createdAt) throw new Error("production was made before staging");
+      return { staging, production };
+    },
+    240_000,
+  );
+}
 
 async function ship(w: World, id: string): Promise<string> {
   await until(
@@ -243,27 +383,60 @@ async function ship(w: World, id: string): Promise<string> {
     async () => ["review", "mr"].includes((await cmd("tasks.get", { id })).status),
     120_000,
   );
-  await cmd("tasks.merge", { id, done: false });
-  const sha = git("rev-parse", "main");
+  // The deploy plan the captain writes after a fix: staging, then production.
+  await cmd("projects.planDeploy", {
+    task: id,
+    steps: [
+      { project: "storefront", env: "staging", runs: GL_RUNS },
+      { project: "storefront", env: "production", runs: GL_RUNS },
+    ],
+  });
+  const before = git("rev-parse", "main");
+  if (FIX === "ask") {
+    // Ask me: the fix is one row in Needs you, and one click merges it and deploys it, each step behind its guards.
+    const row = await until(
+      "the Ship the fix row",
+      async () =>
+        (await cmd("decisions.list", {})).decisions.find(
+          (d: any) => d.task === id && d.incident === true && d.kind === "ship",
+        ),
+      120_000,
+    );
+    if (!row.options.some((o: any) => o.label === "Ship the fix"))
+      throw new Error("the row does not say Ship the fix");
+    await needsShots(w, "04-ship-the-fix");
+    await clickInRow(w, "Database usage over 90", "Ship the fix");
+  } else {
+    // Captain ships: nobody clicks and no command merges: the captain merges when the checks pass.
+    const waiting = (await cmd("decisions.list", {})).decisions.find(
+      (d: any) => d.task === id && d.kind === "ship" && d.options.some((o: any) => o.id === "merge"),
+    );
+    void waiting;
+  }
+  const sha = await until(
+    "main to move",
+    async () => (git("rev-parse", "main") !== before ? git("rev-parse", "main") : false),
+    FIX === "ships" ? 150_000 : 240_000,
+  ).catch(async (err) => {
+    const log = await cmd("captain.log", { org: "acme", limit: 12 }).catch((e: unknown) => String(e));
+    const task = await cmd("tasks.get", { id }).catch(() => undefined);
+    throw new Error(`${String(err)}; task ${task?.status}; log ${JSON.stringify(log).slice(0, 2500)}`);
+  });
   // The fake GitLab has no git over http: its main branch is moved to the merged commit, which is what a push does.
   w.hosts.branches.set("gitlab:acme/storefront:main", sha);
-  const out = await cmd("projects.deploy", {
-    project: "storefront",
-    env: "production",
-    runs: GL_RUNS,
-    task: id,
-  });
-  const done = await until(
-    "the deploy to go live",
-    async () => {
-      const v = await cmd("projects.deployView", { project: "storefront" });
-      const r = v.history.find((h: any) => h.id === out.record.id);
-      if (r?.state === "failed") throw new Error(`deploy failed: ${r.reason}`);
-      return r?.state === "live" ? r : false;
-    },
-    120_000,
-  );
-  return `merged ${sha.slice(0, 7)} into main, pushed (fake GitLab main moved), deploy ${done.id} live`;
+  const live = await planLive(id);
+  if (FIX === "ships") {
+    // The captain's deploys are Done items, and nobody was asked.
+    const notices = await cmd("notices.list", {});
+    const done = notices.notices.filter((n: any) => n.kind === "deploy" && n.by === "captain");
+    if (!done.some((n: any) => n.subject.includes("production")))
+      throw new Error(
+        `no Done by the captain item for production: ${JSON.stringify(notices.notices.map((n: any) => [n.kind, n.by, n.subject]))}`,
+      );
+    await needsShots(w, "04-captain-shipped");
+    return `Captain ships: the captain merged ${sha.slice(0, 7)} and deployed staging ${live.staging.id} then production ${live.production.id} with no click and no command; ${done.length} Done items`;
+  }
+  return `Ship the fix: one click merged ${sha.slice(0, 7)}, staging ${live.staging.id} and then production ${live.production.id} went live`;
 }
 
 async function recovers(w: World, id: string): Promise<string> {
@@ -296,11 +469,21 @@ async function recovers(w: World, id: string): Promise<string> {
   // The client hears of it on the next incident sweep (every 20 s), not at the instant the status flips.
   await until(
     "the client to be told Resolved",
-    async () => w.slack.sent.some((m) => m.text.includes("resolved")),
+    async () => {
+      await releaseDrafts();
+      return w.slack.sent.some((m) => m.text.includes("resolved"));
+    },
     60_000,
   ).catch(() => {
     throw new Error(`the client was never told Resolved: ${JSON.stringify(w.slack.sent.map((m) => m.text))}`);
   });
+  if (TELL === "sends") {
+    // Captain sends: what it told the client is a Done by the captain item, and nobody was asked.
+    const notices = await cmd("notices.list", {});
+    if (!notices.notices.some((n: any) => n.kind === "client-reply"))
+      throw new Error("no Done by the captain item for the update it sent");
+    await needsShots(w, "05-captain-sent");
+  }
   const told = w.slack.sent.map((m) => m.text);
   return `monitoring (${view.facts}), then Resolved; task ${task.status}; client was told ${told.length} messages, the last: "${told.at(-1)}"`;
 }
@@ -337,6 +520,26 @@ async function rcaSent(w: World, id: string): Promise<string> {
     120_000,
   );
   const room = view.rooms[0].room;
+  if (TELL === "sends") {
+    // Captain sends: the report follows the switch and went to the chat by itself, and it stays frozen.
+    const sent = await until(
+      "the captain to send the report",
+      async () => {
+        const v = await cmd("incident.view", { task: id });
+        return v.report.sent.length === 1 ? v : false;
+      },
+      90_000,
+    );
+    const msg = w.slack.sent.find((m) => m.text.includes("Summary"));
+    if (!msg) throw new Error("nothing reached Slack");
+    return `the captain sent the report (${sent.report.sent.length} chat); Slack got: ${JSON.stringify(msg.text).slice(0, 200)}`;
+  }
+  // Ask me: a Review report row waits in Needs you, and the owner's click sends it.
+  await needsShots(w, "06-review-report");
+  const row = (await cmd("decisions.list", {})).decisions.find((d: any) => d.id === `iask:report:${id}`);
+  if (row === undefined) throw new Error("no Review report row in Needs you");
+  await clickInRow(w, "Database usage over 90", "Review report", false);
+  await w.page.waitForURL((u) => u.pathname.startsWith(`/t/${id}`), { timeout: 15_000 });
   const sentBefore = w.slack.sent.length;
   const out = await cmd("incident.sendReport", { task: id, room });
   const after = await cmd("incident.view", { task: id });
@@ -359,7 +562,7 @@ async function failedDeploy(w: World): Promise<string> {
     "-m",
     "chore: a change that breaks the deploy",
   );
-  w.hosts.branches.set("gitlab:acme/storefront:main", git("rev-parse", "main"));
+  git("push", "--quiet", "origin", "main");
   w.hosts.outcome.gitlab = "failed";
   const before = (await incidentTasks()).length;
   const out = await cmd("projects.deploy", { project: "storefront", env: "production", runs: GL_RUNS });
@@ -385,12 +588,21 @@ async function failedDeploy(w: World): Promise<string> {
     throw new Error(`expected one new incident task, saw ${tasks.length - before}`);
   const mine = tasks.find((t: any) => t.id === failed.incident);
   if (!mine) throw new Error("the deploy has no incident task");
-  console.log(await shot(w, "07-deploy-failed-needs-you", "/decisions"));
+  await needsShots(w, "07-deploy-failed");
   console.log(await shot(w, "07-deploy-failed-board"));
   // The owner presses Roll back (the fake pipeline succeeds again), through the card.
   w.hosts.outcome.gitlab = "success";
-  if (card.options.some((o: any) => o.id === "rollback"))
-    await cmd("decisions.answer", { id: card.id, option: "rollback" });
+  if (card.options.some((o: any) => o.id === "rollback")) {
+    await clickInRow(w, "Deploy storefront production", "Roll back");
+    await until(
+      "the rollback to finish",
+      async () => {
+        const v2 = await cmd("projects.deployView", { project: "storefront" });
+        return v2.history.find((h: any) => h.id === out.record.id)?.rollback?.ok === true;
+      },
+      60_000,
+    );
+  }
   const v = await cmd("projects.deployView", { project: "storefront" });
   const rec = v.history.find((h: any) => h.id === out.record.id);
   return `deploy ${failed.state} ("${card.title}"); incident ${mine.id} is ${mine.status}; after the card: ${rec.state}, rollback ${JSON.stringify(rec.rollback?.ok)}`;
@@ -419,10 +631,178 @@ async function refireAndRecover(w: World): Promise<string> {
     },
     300_000,
   );
-  console.log(await shot(w, "08-recovered", "/t/ACM-1"));
-  await cmd("decisions.answer", { id: card.id, option: "close" });
+  await needsShots(w, "08-recovered");
+  await clickInRow(w, "Database usage over 90", "Close: it recovered");
+  await until(
+    "the task to be done",
+    async () => (await cmd("tasks.get", { id: "ACM-1" })).status === "done",
+    30_000,
+  );
   const done = await cmd("tasks.get", { id: "ACM-1" });
   return `re-fire reopened ACM-1 (${reopened.status}) with no new task; recovery card "${card.title}"; closed -> ${done.status}`;
+}
+
+/** A high incident that fires many times: one row with its alert count and one Acknowledge. */
+async function highIncident(w: World): Promise<string> {
+  const saved = await cmd("ops.serviceSave", {
+    org: "acme",
+    name: "Checkout",
+    url: "http://127.0.0.1:1/checkout",
+    tls: false,
+    dns: false,
+    impact: "high",
+    project: "storefront",
+  });
+  for (let i = 0; i < 8; i += 1) await cmd("ops.checkNow", { id: saved.id });
+  const row = await until(
+    "the row of the high incident",
+    async () =>
+      (await cmd("decisions.list", {})).decisions.find(
+        (d: any) => d.incident === true && d.repeats?.count >= 5,
+      ),
+    120_000,
+  );
+  await needsShots(w, "01-high-incident");
+  // Acknowledge, once, through the row: the incident is acknowledged and stops alerting.
+  await clickInRow(w, "storefront", "Acknowledge");
+  await until(
+    "the incident to be acknowledged",
+    async () =>
+      (await cmd("ops.overview", {})).incidents.some(
+        (i: any) => i.title === "Checkout is down" && i.ackedAt !== undefined,
+      ),
+    30_000,
+  );
+  return `one row for the incident: "${row.title}", ${row.repeats.count} alerts, options ${JSON.stringify(row.options.map((o: any) => o.label))}`;
+}
+
+/** A severity 1 incident while the only running place holds the owner's own task: the row offers to pause it. */
+async function pauseAndStart(w: World): Promise<string> {
+  const made = await cmd("tasks.create", {
+    title: "Long running migration",
+    text: "Run the migration and keep going.",
+    org: "acme",
+    repos: [{ project: "storefront" }],
+    start: true,
+  });
+  const long = made.id as string;
+  await until(
+    "the owner's task to run",
+    async () => (await cmd("tasks.get", { id: long })).status === "running",
+    60_000,
+  );
+  const saved = await cmd("ops.serviceSave", {
+    org: "acme",
+    name: "Checkout",
+    url: "http://127.0.0.1:1/checkout",
+    tls: false,
+    dns: false,
+    impact: "high",
+    project: "storefront",
+  });
+  await cmd("ops.checkNow", { id: saved.id });
+  await cmd("ops.checkNow", { id: saved.id });
+  const card = await until(
+    "the Pause and start card",
+    async () =>
+      (await cmd("decisions.list", {})).decisions.find((d: any) =>
+        d.options?.some((o: any) => String(o.label).startsWith("Pause ")),
+      ),
+    90_000,
+  );
+  await needsShots(w, "11-pause-and-start");
+  const incident = card.task as string;
+  if ((await cmd("tasks.get", { id: incident })).status === "running")
+    throw new Error("the incident started without asking, past the cap");
+  await clickInRow(w, "Database usage over 90", "Pause");
+  await until(
+    "the incident to run and the owner's task to wait",
+    async () =>
+      (await cmd("tasks.get", { id: incident })).status === "running" &&
+      (await cmd("tasks.get", { id: long })).status !== "running",
+    60_000,
+  );
+  const after = await cmd("tasks.get", { id: long });
+  return `the row said "${card.options[0].label}"; one click started ${incident} and ${long} is now ${after.status}`;
+}
+
+/** The owner's Telegram: set up in Alerts with the step shown, a test ping, and the one incident ping. */
+async function telegram(w: World): Promise<string> {
+  await w.page.goto(`http://127.0.0.1:${PORT}/watch`);
+  await w.page
+    .getByRole("button", { name: /Alerts/ })
+    .first()
+    .click();
+  await w.page.getByRole("button", { name: "Set up Telegram" }).waitFor({ timeout: 30_000 });
+  await needsShotsAt(w, "12-telegram-setup", "/watch", async () => {
+    await w.page
+      .getByRole("button", { name: /Alerts/ })
+      .first()
+      .click();
+    await w.page.getByRole("button", { name: "Set up Telegram" }).waitFor({ timeout: 30_000 });
+  });
+  await w.page.goto(`http://127.0.0.1:${PORT}/watch`);
+  await w.page
+    .getByRole("button", { name: /Alerts/ })
+    .first()
+    .click();
+  await w.page.getByRole("button", { name: "Set up Telegram" }).click();
+  const step = await w.page.locator("code", { hasText: "/start" }).first().innerText();
+  const code = step.split(" ").filter((x) => x !== "")[2];
+  if (code === undefined) throw new Error(`no code in the step: ${step}`);
+  await needsShotsAt(w, "12-telegram-waiting", "/watch", async () => {
+    await w.page
+      .getByRole("button", { name: /Alerts/ })
+      .first()
+      .click();
+    await w.page.locator("code", { hasText: "/start" }).first().waitFor({ timeout: 30_000 });
+  });
+  // The owner sends the message the screen showed, in Telegram.
+  w.telegram.say(42, `/start ${code}`);
+  await until(
+    "Telegram to be paired",
+    async () => (await cmd("ops.overview", {})).telegram.state === "on",
+    30_000,
+  );
+  await w.page.goto(`http://127.0.0.1:${PORT}/watch`);
+  await w.page
+    .getByRole("button", { name: /Alerts/ })
+    .first()
+    .click();
+  await w.page.getByRole("button", { name: "Send a test" }).last().click();
+  await until(
+    "the test ping in Telegram",
+    async () => w.telegram.sent.some((m) => m.text.includes("test ping")),
+    15_000,
+  );
+  await needsShotsAt(w, "12-telegram-on", "/watch", async () => {
+    await w.page
+      .getByRole("button", { name: /Alerts/ })
+      .first()
+      .click();
+    await w.page.getByRole("button", { name: "Send a test" }).last().waitFor({ timeout: 30_000 });
+  });
+  // One incident gives one ping.
+  const before = w.telegram.sent.filter((m) => m.text.startsWith("Acme: incident")).length;
+  const saved = await cmd("ops.serviceSave", {
+    org: "acme",
+    name: "Search",
+    url: "http://127.0.0.1:2/search",
+    tls: false,
+    dns: false,
+    impact: "high",
+    project: "storefront",
+  });
+  for (let i = 0; i < 4; i += 1) await cmd("ops.checkNow", { id: saved.id });
+  await until(
+    "the incident ping in Telegram",
+    async () => w.telegram.sent.filter((m) => m.text.startsWith("Acme: incident")).length > before,
+    30_000,
+  );
+  await sleep(3000);
+  const pings = w.telegram.sent.filter((m) => m.text.startsWith("Acme: incident")).length - before;
+  if (pings !== 1) throw new Error(`expected one ping for four alerts, got ${pings}`);
+  return `paired with "${step.trim()}", a test ping arrived, and four alerts of one incident gave ${pings} ping`;
 }
 
 const laneItems = async (task: string): Promise<any[]> =>
@@ -559,6 +939,9 @@ try {
   }
   if (run("7")) await stage("7 failed deploy journey", () => failedDeploy(w));
   if (run("8")) await stage("8 watch re-fire and recovery without a fix", () => refireAndRecover(w));
+  if (only.includes("11")) await stage("11 pause the owner's task for a severity 1", () => pauseAndStart(w));
+  if (only.includes("12")) await stage("12 the owner's Telegram", () => telegram(w));
+  if (only.includes("10")) await stage("10 high incident with an alert count", () => highIncident(w));
   if (only.includes("9")) await stage("9 two lanes, read-only commands, waiting line", () => unblock(w));
   void [execFileSync, until, sleep, results, REPO, run];
 } finally {

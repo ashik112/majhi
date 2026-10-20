@@ -1,11 +1,14 @@
 import {
+  alertsLine,
   buildQueue,
   type DecisionGroup,
+  type MergeKey,
   type Notice,
   type OrgView,
   type OwnerDecision,
   PRIVATE,
   parseDecisionId,
+  plural,
   type QueueGroup,
   type TaskSummary,
   taskNameOf,
@@ -68,7 +71,7 @@ function rowOf(
   at: string,
   id: string,
   ctx: Context,
-  key: { kind: "signin" } | { kind: "blocker"; tasks: readonly string[] } | undefined,
+  key: MergeKey | undefined,
 ): NeedsRow {
   const first = decisions[0] as OwnerDecision;
   const org = first.org ?? (first.task === undefined ? undefined : (ctx.taskOrg(first.task) ?? PRIVATE));
@@ -85,7 +88,7 @@ function rowOf(
       lamp: "needs",
       org: undefined,
       prefix: undefined,
-      name: `${decisions.length} accounts signed out`,
+      name: `${plural(decisions.length, "account")} signed out`,
       gist: "Their agents cannot run",
       count: decisions.length,
       list: [...accounts, ...waits].join(", "),
@@ -105,7 +108,7 @@ function rowOf(
       ...base,
       lamp: "needs",
       prefix: undefined,
-      name: `${decisions.length} tasks blocked by ${blockers.length === 1 ? (blockers[0] as string) : `${blockers.length} tasks`}`,
+      name: `${plural(decisions.length, "task")} blocked by ${blockers.length === 1 ? (blockers[0] as string) : plural(blockers.length, "task")}`,
       gist: "Remove the link and they continue",
       count: decisions.length,
       list: names.join(". "),
@@ -114,6 +117,21 @@ function rowOf(
   }
   const label = labelOf(first.task === undefined ? undefined : ctx.task(first.task), ws);
   const lamp: Lamp = "needs";
+  if (key?.kind === "incident") {
+    // One incident is one row: its first decision leads, the alert count says how often it fired.
+    const repeats = decisions.find((d) => d.repeats !== undefined)?.repeats;
+    const others = decisions.slice(1).map((d) => d.title);
+    return {
+      ...base,
+      lamp,
+      prefix: label?.prefix ?? (org === undefined ? undefined : ws),
+      name: label?.name ?? first.taskTitle ?? afterLead(first),
+      gist: alertsLine(repeats, ctx.now) || gistOf(first),
+      count: repeats?.count ?? 1,
+      list: others.length === 0 ? undefined : others.join(". "),
+      quick: primaryOption(first, undefined)?.label ?? openLabel(first.link),
+    };
+  }
   // A question's answers can be whole paragraphs, so its quiet button says what it does.
   const quick =
     first.kind === "question" && first.options.length > 0
@@ -145,6 +163,8 @@ function rowOf(
 }
 
 interface Context {
+  /** The time the model is built at, for "last 20s ago". */
+  now: number;
   orgs: readonly OrgView[] | undefined;
   task: (id: string) => TaskSummary | undefined;
   taskOrg: (id: string) => string | undefined;
@@ -156,6 +176,7 @@ export function splitRow(
   input: { tasks: ReadonlyMap<string, TaskSummary>; orgs: readonly OrgView[] | undefined },
 ): NeedsRow[] {
   const ctx: Context = {
+    now: Date.now(),
     orgs: input.orgs,
     task: (id) => input.tasks.get(id),
     taskOrg: (id) => input.tasks.get(id)?.org,
@@ -166,6 +187,11 @@ export function splitRow(
 
 /** What the captain did by itself that the owner has not read: a reply it sent to a client, a bug it filed. */
 const CAPTAIN_NOTICE_KINDS: ReadonlySet<Notice["kind"]> = new Set(["client-reply", "bug"]);
+
+/** A reply or a bug it filed, or a deploy it started that went live. */
+function doneByCaptain(notice: Notice): boolean {
+  return CAPTAIN_NOTICE_KINDS.has(notice.kind) || (notice.kind === "deploy" && notice.by === "captain");
+}
 
 /**
  * Needs you: the decisions in four groups with repeats merged (`buildQueue`), incidents first, then
@@ -179,6 +205,7 @@ export function buildNeeds(input: {
   orgs: readonly OrgView[] | undefined;
 }): Needs {
   const ctx: Context = {
+    now: Date.now(),
     orgs: input.orgs,
     task: (id) => input.tasks.get(id),
     taskOrg: (id) => input.tasks.get(id)?.org,
@@ -194,7 +221,7 @@ export function buildNeeds(input: {
   // The most repeats first among incidents, then oldest first within every group.
   needs.incident.sort((a, b) => b.count - a.count || a.at.localeCompare(b.at));
   for (const notice of input.notices) {
-    if (notice.read || !CAPTAIN_NOTICE_KINDS.has(notice.kind)) continue;
+    if (notice.read || !doneByCaptain(notice)) continue;
     const ws = workspaceName(input.orgs, notice.org);
     needs.captain.push({
       id: `notice:${notice.id}`,

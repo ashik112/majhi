@@ -323,6 +323,8 @@ import {
   OpsServiceViewSchema,
   OpsSettingsInputSchema,
   OpsSettingsSchema,
+  OpsTelegramSetupInputSchema,
+  OpsTelegramStatusSchema,
 } from "./ops.ts";
 import {
   GoalCreateInputSchema,
@@ -1225,6 +1227,25 @@ export const commands = {
     summary: "Turn the phone push off and delete its topic and tokens. The owner's",
     input: z.object({}),
     output: OpsPhoneStatusSchema,
+  },
+  "ops.telegramSetup": {
+    risk: "change",
+    summary:
+      "Start pairing the owner's Telegram for incident pings with one of the workspace's Telegram bots. Returns the exact message to send to the bot; the bot learns the owner's chat from it. The owner's",
+    input: OpsTelegramSetupInputSchema,
+    output: OpsTelegramStatusSchema,
+  },
+  "ops.telegramTest": {
+    risk: "change",
+    summary: "Send one test ping to the owner's Telegram. The owner's",
+    input: z.object({}),
+    output: OpsPhoneTestResultSchema,
+  },
+  "ops.telegramForget": {
+    risk: "change",
+    summary: "Stop pinging the owner's Telegram and forget the paired chat. The owner's",
+    input: z.object({}),
+    output: OpsTelegramStatusSchema,
   },
   // Watch anything (5.18) --------------------------------------------------------
   "watch.overview": {

@@ -1,4 +1,10 @@
-import { type ConnectionView, connectionFailing, failureSentence, type OwnerDecision } from "@majhi/shared";
+import {
+  type ConnectionView,
+  connectionFailing,
+  FAILURE_TITLE,
+  failureSentence,
+  type OwnerDecision,
+} from "@majhi/shared";
 
 /**
  * A connection that fails and that agents rely on waits for the owner like any other decision: it counts in
@@ -14,10 +20,7 @@ export function failingConnectionDecisions(views: readonly ConnectionView[]): Ow
       id: `connection:${view.id}`,
       kind: "sign-in",
       org: view.org,
-      title: (health.state === "failed"
-        ? `Fix ${view.name}: its agents cannot use it until you do`
-        : `${view.name} needs one step from you`
-      ).slice(0, 300),
+      title: `${view.name} ${FAILURE_TITLE[health.reason]}`.slice(0, 300),
       sentence:
         `${view.name} ${health.state === "failed" ? "is failing" : "needs attention"}. ${failureSentence(view)}`.slice(
           0,

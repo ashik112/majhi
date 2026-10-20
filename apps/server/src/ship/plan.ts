@@ -65,6 +65,8 @@ export interface ShipPlannerDeps {
   backlog(task: string): boolean;
   /** An incident's own task: working hours do not hold it. */
   incident(task: Task): boolean;
+  /** The owner clicked Ship the fix on this incident: its Fix switch counts as Captain ships for this one fix. */
+  fixApproved?(task: Task): boolean;
   /** The environments of a project. A merge or push into the branch of one is a deploy of it. */
   environments(project: string): Promise<readonly DeployEnvironment[]>;
   /** Whether the task changes a project with environments and its deploy has no plan yet (not even "nothing deploys"). */
@@ -103,7 +105,13 @@ export class ShipPlanner {
       task.noAutonomy !== true && mayWork(policy, this.deps.backlog(task.id) ? "backlog" : "reacting").ok;
     const base = shipSteps(
       levelOf(settings, org),
-      { incident: incidentShipsOf(settings, org), incidentFix: this.deps.incident(task) },
+      {
+        incident:
+          this.deps.fixApproved?.(task) === true
+            ? { ...incidentShipsOf(settings, org), fix: "ships" }
+            : incidentShipsOf(settings, org),
+        incidentFix: this.deps.incident(task),
+      },
       acts,
     );
     const gate = await this.gate(task, base);

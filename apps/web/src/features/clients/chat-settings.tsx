@@ -212,6 +212,17 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
           ))}
         </Select>
       </Row>
+      <Row label="Incident updates">
+        <Segmented<"on" | "off">
+          label="Incident updates"
+          value={data.incidentUpdates ? "on" : "off"}
+          segments={[
+            { value: "off", label: "Off" },
+            { value: "on", label: "On" },
+          ]}
+          onChange={(next) => change({ incidentUpdates: next === "on" })}
+        />
+      </Row>
       <Rules rules={data.rules} busy={save.isPending} onSave={(rules) => change({ rules })} />
 
       <Section>Ask me before sending</Section>

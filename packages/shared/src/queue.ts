@@ -1,4 +1,4 @@
-import type { OwnerDecision, OwnerDecisionKind } from "./inbox.ts";
+import { type OwnerDecision, type OwnerDecisionKind, parseDecisionId } from "./inbox.ts";
 
 /**
  * The Needs you queue of the console (docs/briefs/workflow-reset.md, step 3): the decisions the inbox
@@ -43,8 +43,10 @@ const GROUP_OF_KIND: Record<OwnerDecisionKind, Exclude<QueueGroup, "captain">> =
 };
 
 /** The group a decision is shown in. */
-export function queueGroupOf(decision: Pick<OwnerDecision, "kind">): Exclude<QueueGroup, "captain"> {
-  return GROUP_OF_KIND[decision.kind];
+export function queueGroupOf(
+  decision: Pick<OwnerDecision, "kind" | "incident">,
+): Exclude<QueueGroup, "captain"> {
+  return decision.incident === true ? "incident" : GROUP_OF_KIND[decision.kind];
 }
 
 /**
@@ -52,13 +54,22 @@ export function queueGroupOf(decision: Pick<OwnerDecision, "kind">): Exclude<Que
  * every sign-in is "an account is signed out"; tasks held by the same unmet dependencies wait on one
  * thing, so one answer fixes them all. A decision with no repeat has no key and stands alone.
  */
-export type MergeKey = { kind: "signin" } | { kind: "blocker"; tasks: readonly string[] };
+export type MergeKey =
+  | { kind: "signin" }
+  | { kind: "blocker"; tasks: readonly string[] }
+  /** Every decision of one incident task is one row. */
+  | { kind: "incident"; task: string };
 
 export function mergeKeyOf(
-  decision: Pick<OwnerDecision, "kind" | "task">,
+  decision: Pick<OwnerDecision, "id" | "kind" | "task" | "incident">,
   waitingOn: (task: string) => readonly string[],
 ): MergeKey | undefined {
-  if (decision.kind === "sign-in") return { kind: "signin" };
+  if (decision.incident === true && decision.task !== undefined) {
+    return { kind: "incident", task: decision.task };
+  }
+  // Only an account that is signed out merges with the others; a failing connection names what is wrong with it.
+  if (decision.kind === "sign-in" && parseDecisionId(decision.id)?.kind === "signin")
+    return { kind: "signin" };
   if (decision.kind === "paused" && decision.task !== undefined) {
     const tasks = waitingOn(decision.task);
     if (tasks.length > 0) return { kind: "blocker", tasks: tasks.toSorted() };
@@ -67,6 +78,7 @@ export function mergeKeyOf(
 }
 
 function keyText(key: MergeKey): string {
+  if (key.kind === "incident") return `incident:${key.task}`;
   return key.kind === "signin" ? "signin" : `blocker:${key.tasks.join(",")}`;
 }
 
@@ -78,7 +90,7 @@ export interface QueueRow {
   /** Stable while the row exists: the id of its decision, or the merge key of a merged row. */
   id: string;
   group: DecisionGroup;
-  decisions: readonly OwnerDecision[];
+  decisions: OwnerDecision[];
   /** What the repeats have in common, when there are several. */
   key?: MergeKey;
   /** The oldest decision's time: how long the row has waited. */
@@ -113,5 +125,36 @@ export function buildQueue(
       seen.decisions.push(decision);
     }
   }
+  // An incident row leads with what decides the incident: its own card, then the fix to ship, then the rest.
+  for (const row of rows.incident) {
+    if (row.key?.kind !== "incident") continue;
+    const sorted = row.decisions.toSorted((a, b) => incidentRank(a) - incidentRank(b));
+    row.decisions = sorted;
+  }
   return rows;
 }
+
+/** What the incident waits for first: a start that needs the owner, then the rest by kind. */
+function incidentRank(d: Pick<OwnerDecision, "id" | "kind">): number {
+  const parsed = parseDecisionId(d.id);
+  if (parsed?.kind === "iask" && parsed.what === "start") return -1;
+  return INCIDENT_RANK[d.kind];
+}
+
+const INCIDENT_RANK: Record<OwnerDecisionKind, number> = {
+  incident: 0,
+  // The update the client waits for goes before the fix to ship.
+  reply: 1,
+  draft: 1,
+  batch: 1,
+  ship: 2,
+  paused: 3,
+  question: 4,
+  approval: 4,
+  publish: 5,
+  budget: 5,
+  "sign-in": 5,
+  secret: 5,
+  trust: 5,
+  notifications: 5,
+};

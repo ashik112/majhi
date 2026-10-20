@@ -436,7 +436,12 @@ export function WatchView() {
         />
       )}
       {alerts && data !== undefined && (
-        <AlertsSheet phone={data.phone} settings={data.settings} onClose={() => setAlerts(false)} />
+        <AlertsSheet
+          phone={data.phone}
+          telegram={data.telegram}
+          settings={data.settings}
+          onClose={() => setAlerts(false)}
+        />
       )}
     </div>
   );

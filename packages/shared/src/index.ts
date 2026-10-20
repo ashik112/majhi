@@ -62,6 +62,7 @@ export * from "./paths.ts";
 export * from "./permission-labels.ts";
 export * from "./plain-text.ts";
 export * from "./playbooks.ts";
+export * from "./plural.ts";
 export * from "./processes.ts";
 export * from "./project-card.ts";
 export * from "./project-create.ts";

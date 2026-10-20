@@ -23,6 +23,7 @@ import {
   PRIVATE,
   type ServiceEntry,
   type TaskId,
+  taskLabel,
   textValue,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
@@ -175,7 +176,8 @@ import { createWatchHost } from "./ops/anything/host.ts";
 import { incidentLines } from "./ops/digest-lines.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
-import type { OpsWatch } from "./ops/watch.ts";
+import type { OwnerTelegram } from "./ops/telegram-owner.ts";
+import { type OpsWatch, renderTimeline } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -452,6 +454,8 @@ export interface Services {
   chat: ClientChat;
   /** The parts behind it, for the tests that drive them. */
   chatParts: ClientChatParts;
+  /** The incident engine: the one place incidents are opened and joined. */
+  incidentEngine: IncidentEngine;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
@@ -1445,6 +1449,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     contactName: (id) => store.client.contact(id)?.name,
     decisions: () => inbox.list(),
     update: () => readUpdateStatus(env.majhiHome),
+    taskLabel: async (id) => {
+      const found = store.tasks.get(id);
+      if (found === undefined) return undefined;
+      const name = found.org === undefined ? undefined : (await config.sections()).orgs[found.org]?.name;
+      return taskLabel(found, name);
+    },
   });
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
@@ -1676,6 +1686,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
+    incidentOf: (task) => incidentEngine?.alertsOf(task),
     incidentDetail: async (id) => {
       const inc = opsWatch?.incident(id);
       if (inc === undefined) return undefined;
@@ -1748,7 +1759,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerChoice: (task, item, option) => tasks.answerChoice(task, item, option),
       answerPermission: (task, item, option) => tasks.answerPermission(task, item, option),
       decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
-      cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
+      cardAction: async (task, item, action) => {
+        // Ship the fix is one click: for an incident the merge also pushes, so the deploys that follow find the commit on the host.
+        const found = store.tasks.get(task);
+        const push =
+          action === "merge" &&
+          found !== undefined &&
+          isIncidentTask(found) &&
+          (await mrs.shipOptions(task)).mergePush.ok;
+        return cardActions.act({
+          task,
+          item,
+          action: push ? "mergePush" : action,
+          by: "owner",
+          agent: false,
+        });
+      },
       askChanges: (task, text, lead) =>
         tasks.send({
           task,
@@ -1827,6 +1853,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...(outcomesService?.decisions() ?? []),
       ...(macNotify?.decision() ?? []),
       ...(incidentEngine?.decisions(() => undefined) ?? []),
+      ...(clientChat?.incidents.decisions() ?? []),
       ...(clientChat?.waits.decisions() ?? []),
       ...(await payDecisions.decisions()),
       ...failingConnectionDecisions(await connections.list().catch(() => [])),
@@ -1839,6 +1866,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ),
     ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
+    answering: (decision, option) => {
+      if (
+        decision.incident === true &&
+        decision.kind === "ship" &&
+        option === "merge" &&
+        decision.task !== undefined
+      ) {
+        incidentEngine?.approveShip(decision.task);
+      }
+    },
   });
   /** An audit row whose agent is the captain's is the captain's, not an agent's. */
   const logAsCaptain = (row: Parameters<typeof store.permissions.log>[0]): void => {
@@ -2158,6 +2195,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    incidentDetail: (f) => {
+      const inc = opsWatch?.incidentOfFinding(f.id);
+      return inc === undefined ? undefined : renderTimeline(inc);
+    },
     // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
     // A client's message has its own triage (chat/triage.ts), which has no tools and never dismisses by Laya's word.
     triage: (f) =>
@@ -2335,6 +2376,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     halted: () => captainRepo.isStopped(),
     backlog: (task) => autonomy.isAutonomous(task),
     incident: (task) => isIncidentTask(task),
+    fixApproved: (task) => incidentEngine?.shipApproved(task.id) === true,
     environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
     needsDeployPlan: async (task) =>
       (await deployWorld.ports.needsPlan(task.org ?? PRIVATE, task.id)) !== undefined,
@@ -2358,16 +2400,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text, org) => notifier.captain(key, text, org),
-    incident: async (input) =>
-      (
+    incident: async (input) => {
+      const env = (await projects.get(input.project).catch(() => undefined))?.deploy.find(
+        (e) => e.env === input.record.env,
+      );
+      return (
         await incidentEngine?.open({
           kind: "deploy",
           org: input.org,
           record: input.record,
           title: input.title,
           text: input.text,
+          ...(env === undefined ? {} : { tier: env.tier }),
         })
-      )?.task,
+      )?.task;
+    },
     taskNote: (task, key, level, text) => room.post(task as TaskId, key, { type: "system", level, text }),
     onLive: (org) => captainRef.current?.deployChanged(org),
     changed: () => events.emit(["tasks", "projects", "captain"]),
@@ -2763,11 +2810,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       incidentOfFinding: (finding) => opsWatch?.incidentOfFinding(finding),
     },
     settings: async (org) => effectiveIncident((await config.settings()).autonomy.orgs[org]?.incident),
+    greenMin: () => opsWatch?.settings().resolveMin ?? 0,
     envs: async (project) => (await projects.infos()).find((p) => p.id === project)?.deploy.length ?? 0,
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   const incidentEngineNow = new IncidentEngine({
     blocked: () => autonomy.reactingBlocked(),
+    opened: (task) => {
+      if (task.org !== undefined) clientChat?.incidents.linkSubscribers(task.id, task.org);
+    },
     store,
     facts: incidentFacts,
     room,
@@ -2779,10 +2830,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     announce: {
       wake: (org, text) => autonomy.news(text, org),
-      notice: (_org, incident, text) =>
-        void notifier
-          .incident({ id: -incident, text, severity: "medium", repeat: false })
-          .catch(() => undefined),
     },
     watchProject: (inc) =>
       inc.watch !== undefined
@@ -2792,10 +2839,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           : opsWatch?.projectOfService(inc.service),
     tasks: {
       create: (input) => tasks.create({ ...input, gate: gateOf(input.provenance) }),
-      start: (id, by) => tasks.start(id, by),
+      start: (id, by, options) => tasks.start(id, by, options),
+      pauseVictim: (id) => tasks.pauseVictim(id),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
-      setType: (id, type, by) => tasks.setType(id, type, by),
     },
     deploys: { rollback: (id, actor) => deployWorld.service.rollback(id, actor) },
     projects: async (org) =>
@@ -2824,6 +2871,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   incidentEngine = incidentEngineNow;
+  let ownerTelegram: OwnerTelegram | undefined;
+  /** The Telegram bots that are connected, for the owner's Telegram ping. */
+  const telegramBots = async (): Promise<{ connection: string; account: string }[]> =>
+    Object.entries(connectionScopes(await config.sections())).flatMap(([, entry]) =>
+      Object.entries(entry.connections ?? {}).flatMap(([id, connection]) =>
+        connection.type === "chat" && connection.fields?.service === "telegram"
+          ? [{ connection: id, account: connection.fields?.account ?? id }]
+          : [],
+      ),
+    );
   const chatParts = createClientChat({
     store,
     room,
@@ -2846,6 +2903,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
       ),
     secretOf: connectionSecret,
+    clientUpdate: async (org) =>
+      (await config.settings()).autonomy.orgs[org]?.incident?.clientUpdate === "sends" ? "sends" : "ask",
+    intercept: async (connection, envelope) => (await ownerTelegram?.claims(connection, envelope)) === true,
     housekeeper: reactingHousekeeper,
     blocked: () => autonomy.reactingBlocked(),
     wake: (org, text, settled, job) => lanes.tell(org, text, settled, job),
@@ -3174,6 +3234,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   const ops = createOps({
     db: store.raw,
+    telegram: {
+      bots: telegramBots,
+      send: async (account, chat, text) => {
+        await chatParts.hub.send(
+          "telegram",
+          account,
+          { chat },
+          { body: [{ t: "paragraph", children: [{ t: "text", text }] }], people: () => undefined },
+        );
+      },
+    },
     findings,
     secrets,
     notifier,
@@ -3199,7 +3270,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     host: watchHost,
     fixLive: (inc) => incidentEngine?.fixLive(inc) ?? Promise.resolve(false),
-    incidentResolved: (inc, told) => void incidentEngine?.fixRecovered(inc, told),
+    incidentResolved: (inc) => void incidentEngine?.fixRecovered(inc),
     incidentMeta: async (inc) => {
       const quiet = await autonomy.quietWhy(inc.org);
       const task =
@@ -3271,6 +3342,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
   });
+  ownerTelegram = ops.telegram;
   admin.useScript({
     run: runScript,
     holds: async (org, id) => {
@@ -3431,6 +3503,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     chat: chatParts.chat,
     chatParts,
+    incidentEngine: incidentEngineNow,
     outcomes,
     handoff,
     deploy: deployWorld,

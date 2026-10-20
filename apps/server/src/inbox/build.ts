@@ -83,6 +83,8 @@ export interface DecisionSources {
     title: string;
     at: string;
     escalated: boolean;
+    /** The incident task that carries it, when one was opened: the queue shows the task's decisions and this one as one row. */
+    task?: string | undefined;
     /** A fix the owner is asked to approve (Watch anything). */
     question?: { text: string; options: { id: string; label: string }[] } | undefined;
   }[];
@@ -516,13 +518,18 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
           ? ""
           : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
       const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
+      const sendOptions: DecisionOption[] =
+        client.incident === undefined
+          ? options
+          : options.map((o) => (o.id === "send" ? { ...o, label: "Send update" } : o));
       out.push({
         id,
         kind: "reply",
         org: d.org,
+        ...(client.incident === undefined ? {} : { task: client.incident as TaskId }),
         title: oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
         sentence: `A reply to ${who} in ${client.chat} (${client.app}) is ready.${said}${why} Nothing is sent until you approve it.`,
-        ...decorate(id, options, undefined, src.orgName?.(d.org)),
+        ...decorate(id, sendOptions, undefined, src.orgName?.(d.org)),
         at: d.createdAt,
         link: { kind: "chat", id: client.room as TaskId },
       });
@@ -574,6 +581,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       id,
       kind: "incident",
       org: inc.org,
+      ...(inc.task === undefined ? {} : { task: inc.task as TaskId }),
       title: oneLine(inc.escalated ? `${inc.title} (not acknowledged yet)` : inc.title),
       sentence:
         inc.question !== undefined
@@ -583,7 +591,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
             : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
       options,
       at: inc.at,
-      link: { kind: "watch" },
+      link: inc.task === undefined ? { kind: "watch" } : { kind: "task", id: inc.task as TaskId },
     });
   }
 

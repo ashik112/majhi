@@ -16,6 +16,8 @@ export interface FactsDeps {
   };
   /** The workspace's soak and update cadence. */
   settings: (org: string) => Promise<{ soakMin: number; cadenceMin: number }>;
+  /** How long the watch's checks stay green before it closes its incident: the green stretch began that long before. */
+  greenMin?: () => number;
   /** How many deploy environments a project has: none means a merge ships it. */
   envs: (project: string) => Promise<number>;
   now?: (() => Date) | undefined;
@@ -50,6 +52,11 @@ export class IncidentFacts {
 
   now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** The workspace's soak in minutes: how long checks stay green after the fix is live. */
+  async soakMin(org: string): Promise<number> {
+    return (await this.deps.settings(org)).soakMin;
   }
 
   events(task: string): IncidentRead["events"] {
@@ -94,6 +101,12 @@ export class IncidentFacts {
     return [...by.values()];
   }
 
+  /** When the checks of a closed watch incident first went green: it closed `greenMin` minutes after that. */
+  private greenSince(watch: OpsIncident): string {
+    const closed = Date.parse(watch.resolvedAt ?? watch.openedAt);
+    return new Date(closed - (this.deps.greenMin?.() ?? 0) * 60_000).toISOString();
+  }
+
   async read(task: Task): Promise<IncidentRead> {
     const org = task.org ?? "";
     const settings = await this.deps.settings(org);
@@ -134,9 +147,7 @@ export class IncidentFacts {
         ? {}
         : {
             watch: {
-              ...(watch.status === "resolved" && recovered(watch)
-                ? { greenAt: watch.resolvedAt ?? watch.openedAt }
-                : {}),
+              ...(watch.status === "resolved" && recovered(watch) ? { greenAt: this.greenSince(watch) } : {}),
             },
           }),
       ...(task.status === "done" ? { doneAt: task.updatedAt } : {}),

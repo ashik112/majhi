@@ -38,6 +38,12 @@ export interface RepliesDeps {
   tell: (org: string) => Promise<AuthorityChoice>;
   /** The Hold list of a workspace, every class filled in. */
   holds: (org: string) => Promise<Holds>;
+  /** Words a client must never read in a reply to this room: the task id, branch and commits of the incidents it follows. */
+  internalMarks?: ((room: string) => string[]) | undefined;
+  /** The Client update switch of the incident update this room is due, or undefined when it is due none. */
+  incidentUpdate?: ((room: string) => Promise<"ask" | "sends" | undefined>) | undefined;
+  /** The incident task whose update a draft is, when it is one. */
+  incidentOfDraft?: ((draft: number) => string | undefined) | undefined;
   /** The names of the workspaces, to keep one workspace's name out of another's replies. */
   orgNames: () => Promise<ReadonlyMap<string, string>>;
   /** When today began in the workspace's time zone (ISO): the daily reply limit counts from it. Default: UTC midnight. */
@@ -75,6 +81,8 @@ export interface ClientDraftInfo {
   said?: string;
   /** Why it waits, in plain words. */
   hold?: string;
+  /** The incident task this reply is an update of: the owner sees it inside that incident's row. */
+  incident?: string;
 }
 
 export type ReplyResult =
@@ -166,11 +174,14 @@ export class ClientReplies {
   async captain(input: ReplyInput): Promise<ReplyResult> {
     const room = this.roomOf(input.room);
     const org = room.org as string;
-    if (room.chat.holder !== "captain") {
+    // An incident update is the Client update switch's: Ask me holds it for the owner, Captain sends lets it out behind the holds.
+    const update = await this.deps.incidentUpdate?.(room.id);
+    if (room.chat.holder !== "captain" && update === undefined) {
       throw new UserError("You hold this chat, so the captain does not write in it.", 409);
     }
     const rails = {
-      tell: await this.deps.tell(org),
+      tell: update === "ask" ? ("ask" as const) : await this.deps.tell(org),
+      internal: this.deps.internalMarks?.(room.id) ?? [],
       // The chat's own Ask-me cases over the workspace's list.
       holds: holdsForRoom(await this.deps.holds(org), room.chat),
 
@@ -334,7 +345,10 @@ export class ClientReplies {
    * What the rails would hold a report back for that nothing can lift: a secret or another client's name. The owner
    * edits the words until neither is left. Undefined when the text is clean.
    */
-  async reportProblem(room: string, text: string): Promise<"secret" | "other-client" | undefined> {
+  async reportProblem(
+    room: string,
+    text: string,
+  ): Promise<"secret" | "other-client" | "internal" | undefined> {
     const row = this.roomOf(room);
     const verdict = railsFor({
       tell: "ask",
@@ -342,12 +356,15 @@ export class ClientReplies {
       text,
       flags: undefined,
       others: await this.others(row),
+      internal: this.deps.internalMarks?.(room) ?? [],
       firstContact: false,
       afterGap: false,
       report: true,
     });
     if (verdict.send) return undefined;
-    return verdict.why === "secret" || verdict.why === "other-client" ? verdict.why : undefined;
+    return verdict.why === "secret" || verdict.why === "other-client" || verdict.why === "internal"
+      ? verdict.why
+      : undefined;
   }
 
   /**
@@ -392,6 +409,9 @@ export class ClientReplies {
       app: CHAT_APP_LABEL[room.chat.app],
       ...(client === undefined ? {} : { from: client.sender.name, said: this.plain(room, client.text) }),
       ...(mine?.hold === undefined ? {} : { hold: REPLY_HOLD_LABEL[mine.hold] }),
+      ...(this.deps.incidentOfDraft?.(draft.id) === undefined
+        ? {}
+        : { incident: this.deps.incidentOfDraft(draft.id) as string }),
     };
   }
 

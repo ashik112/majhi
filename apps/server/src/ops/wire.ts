@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import type {
   AutomationAction,
   AutomationRun,
@@ -21,8 +22,10 @@ import { pathPrint } from "./anything/probe.ts";
 import { realWatchPorts } from "./anything/real-ports.ts";
 import { WatchRepo } from "./anything/repo.ts";
 import { PhoneChannel, SECRET_KEY, type SecretsPort } from "./phone.ts";
+import { IncidentPings } from "./ping.ts";
 import { numberAt, type ProbePorts, systemPorts } from "./probes.ts";
 import { OpsRepo } from "./repo.ts";
+import { OwnerTelegram, type OwnerTelegramDeps } from "./telegram-owner.ts";
 import { PhoneTokens } from "./tokens.ts";
 import { type OpsDeps, OpsWatch } from "./watch.ts";
 
@@ -82,6 +85,8 @@ export interface OpsWiring {
   notifications: () => Promise<NotificationsSettings>;
   /** False when this machine has no network. */
   online: () => Promise<boolean>;
+  /** The Telegram bots, and a send through one, for the owner's Telegram ping. */
+  telegram: Pick<OwnerTelegramDeps, "bots" | "send">;
   /** An incident opened or fired again: the incident engine's task for it (see `OpsDeps.incidentTask`). */
   incidentTask?: OpsDeps["incidentTask"];
   incidentMeta?: OpsDeps["incidentMeta"];
@@ -102,6 +107,7 @@ export interface Ops {
   watch: OpsWatch;
   engine: WatchEngine;
   phone: PhoneChannel;
+  telegram: OwnerTelegram;
   repo: OpsRepo;
   tokens: PhoneTokens;
   /** Starts the half-minute tick. */
@@ -138,6 +144,22 @@ export function createOps(w: OpsWiring): Ops {
     ack: (id) => watch.ack(id, OWNER),
     changed: w.changed,
   });
+  const telegram = new OwnerTelegram({
+    repo,
+    bots: w.telegram.bots,
+    send: w.telegram.send,
+    orgName: async (org) => w.orgName(org),
+    newCode: () => String(randomInt(100_000, 1_000_000)),
+    now,
+    changed: w.changed,
+  });
+  const pings = new IncidentPings([
+    { name: "ntfy", push: (incident, repeat) => phone.pushIncident(incident, repeat) },
+    {
+      name: "telegram",
+      push: (incident, repeat) => telegram.ping({ org: incident.org, severity: incident.severity, repeat }),
+    },
+  ]);
   const ports: ProbePorts = {
     ...systemPorts({
       fetch: w.probes?.fetch ?? fetch,
@@ -171,6 +193,8 @@ export function createOps(w: OpsWiring): Ops {
     findings: w.findings,
     ports,
     phone,
+    pings,
+    telegram,
     notify: async (n) => {
       if (n.severity === "low") return;
       await w.notifier.incident({ id: n.id, text: n.text, severity: n.severity, repeat: n.repeat });
@@ -265,6 +289,7 @@ export function createOps(w: OpsWiring): Ops {
     watch,
     engine: looks,
     phone,
+    telegram,
     repo,
     tokens,
     start() {

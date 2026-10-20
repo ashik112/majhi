@@ -179,6 +179,10 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
     projectUnknown: z.literal(true).optional(),
     at: z.string(),
   }),
+  /** The owner clicked Ship the fix: the merge and the deploys of this fix follow without a click for each, behind every guard. */
+  z.object({ event: z.literal("shipApproved"), at: z.string() }),
+  /** Another report joined this incident: a second watch, a failed deploy, a client message. Counted as an alert. */
+  z.object({ event: z.literal("joined"), source: z.enum(["watch", "client", "deploy"]), at: z.string() }),
   /**
    * A client room was woken to the captain for a status: it is never woken for that status again. `draft` is the
    * captain's reply that went out for it, when one did.
@@ -300,3 +304,52 @@ export const IncidentEditReportInputSchema = z.object({
   text: ReportTextSchema.partial(),
 });
 export const IncidentSendReportInputSchema = z.object({ task: TaskIdSchema, room: TaskIdSchema });
+
+const span = (ms: number): string => {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.round(minutes / 60)} h`;
+};
+
+/** "47 alerts in 12 min, last 20s ago": how often an incident fired. Empty for a single alert. */
+export function alertsLine(
+  repeats: { count: number; since: string; last: string } | undefined,
+  nowMs: number,
+): string {
+  if (repeats === undefined || repeats.count < 2) return "";
+  const lastMs = Date.parse(repeats.last);
+  const sinceMs = Date.parse(repeats.since);
+  if (Number.isNaN(lastMs) || Number.isNaN(sinceMs)) return `${repeats.count} alerts`;
+  const ago = Math.max(0, nowMs - lastMs);
+  const seconds = Math.round(ago / 1000);
+  const when = seconds < 60 ? `${seconds}s ago` : `${span(ago)} ago`;
+  return `${repeats.count} alerts in ${span(lastMs - sinceMs)}, last ${when}`;
+}
+
+// ---------------------------------------------------------------------------
+// The ping
+
+/** Why majhi is considering a ping for an incident. */
+export const PING_CAUSES = ["opened", "raised", "reopened", "escalated"] as const;
+export const PingCauseSchema = z.enum(PING_CAUSES);
+export type PingCause = z.infer<typeof PingCauseSchema>;
+
+/** Which channels a ping goes to. `desktop` is the banner and open tabs, `phone` is every phone channel (ntfy, Telegram). */
+export interface PingPlan {
+  desktop: boolean;
+  phone: boolean;
+}
+
+/**
+ * The one decision about pinging the owner for an incident; every channel follows it. An incident pings when it
+ * opens, once more when it grows worse, and once more when a severity 1 stays unacknowledged. Failing again inside
+ * the reopen window is the same incident and never pings. A low incident never pings. The phone channels carry
+ * severity 1 (high) only.
+ */
+export function pingFor(cause: PingCause, severity: "high" | "medium" | "low"): PingPlan {
+  if (severity === "low" || cause === "reopened") return { desktop: false, phone: false };
+  const high = severity === "high";
+  if (cause === "escalated") return { desktop: high, phone: high };
+  return { desktop: true, phone: high };
+}
