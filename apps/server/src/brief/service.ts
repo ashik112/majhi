@@ -14,6 +14,8 @@ import { oneLine, pushText, type Writer, writeBrief } from "./words.ts";
 
 /** The longest the overnight span reaches back: a server that was off for days still briefs about one night. */
 const SPAN_MAX_MS = 36 * 3_600_000;
+/** How many workspaces' briefs the model words at once. */
+const WORDING_AT_ONCE = 4;
 /** How many briefs `brief.list` returns at most. */
 const LIST_MAX = 60;
 
@@ -56,11 +58,9 @@ function isQuiet(f: BriefFacts): boolean {
     f.shipped === 0 &&
     f.merged === 0 &&
     f.failed === 0 &&
-    f.spent === 0 &&
     f.findingsNew === 0 &&
     f.findingsFixed === 0 &&
     f.captainDecided === 0 &&
-    f.captainUpkeep === 0 &&
     f.needs.count === 0
   );
 }
@@ -98,8 +98,9 @@ export class BriefService {
       });
       this.making = { day, run };
       await run;
-    } catch {
+    } catch (err) {
       // The next minute tries again; a brief that failed wrote nothing for its workspace, so nothing is half done.
+      console.error("majhi: the morning brief failed:", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -110,25 +111,42 @@ export class BriefService {
     const now = this.now();
     const last = this.deps.repo.lastBriefAt(day);
     const earliest = now.getTime() - SPAN_MAX_MS;
-    const from = new Date(Math.max(last === undefined ? 0 : new Date(last).getTime(), earliest)).toISOString();
+    const from = new Date(
+      Math.max(last === undefined ? 0 : new Date(last).getTime(), earliest),
+    ).toISOString();
     const to = now.toISOString();
     const decisions = await this.deps.decisions();
     const findings = this.deps.findings().filter((f) => this.deps.briefHidden?.(f) !== true);
+    // Facts are cheap and read in order; the model is asked a few workspaces at a time, so 20 workspaces take 5 waits.
+    const all: BriefFacts[] = [];
+    for (const org of orgs) all.push(await this.facts(org, day, from, to, decisions, findings));
     const made: Brief[] = [];
-    for (const org of orgs) {
-      const facts = await this.facts(org, day, from, to, decisions, findings);
-      const quiet = isQuiet(facts);
-      // A quiet workspace costs no model call: its brief is never shown.
-      const { lines, source } = await writeBrief(facts, quiet ? undefined : this.deps.write, this.deps.modelTimeoutMs);
-      const brief: Brief = { org: org.id, day, at: to, lines, source, facts, quiet };
-      // The primary key decides: if another process made it first, that one stands and nothing is said twice.
-      if (this.deps.repo.add(brief)) made.push(brief);
+    for (let i = 0; i < all.length; i += WORDING_AT_ONCE) {
+      const group = all.slice(i, i + WORDING_AT_ONCE);
+      const worded = await Promise.all(
+        group.map(async (facts) => {
+          const quiet = isQuiet(facts);
+          // A quiet workspace costs no model call: its brief is never shown.
+          const { lines, source } = await writeBrief(
+            facts,
+            quiet ? undefined : this.deps.write,
+            this.deps.modelTimeoutMs,
+          );
+          return { org: facts.org, day, at: to, lines, source, facts, quiet } satisfies Brief;
+        }),
+      );
+      for (const brief of worded) {
+        // The primary key decides: if another process made it first, that one stands and nothing is said twice.
+        if (this.deps.repo.add(brief)) made.push(brief);
+      }
     }
     if (made.length === 0) return;
     this.deps.changed?.();
     const told = made.filter((b) => !b.quiet);
     for (const b of told) await this.deps.chatLine?.(b.org, day, b.lines).catch(() => undefined);
-    if (told.length > 0 && this.deps.repo.claimPush(day, to)) this.deps.tell?.(day, pushText(told));
+    const push = pushText(told);
+    // Nothing shipped, failed or waiting anywhere: the briefs are there to read, and nothing is pushed.
+    if (push !== "" && this.deps.repo.claimPush(day, to)) this.deps.tell?.(day, push);
   }
 
   /** Code gathers every fact of one workspace. Nothing here asks a model. */
@@ -142,7 +160,9 @@ export class BriefService {
   ): Promise<BriefFacts> {
     const over = await this.deps.overnight(from, to, org.id);
     const mine = findings.filter((f) => (f.org ?? PRIVATE) === org.id);
-    const waiting = decisions.filter((d) => (d.org ?? (d.task === undefined ? undefined : PRIVATE)) === org.id);
+    const waiting = decisions.filter(
+      (d) => (d.org ?? (d.task === undefined ? undefined : PRIVATE)) === org.id,
+    );
     const fromMs = new Date(from).getTime();
     const toMs = new Date(to).getTime();
     const within = (iso: string) => {

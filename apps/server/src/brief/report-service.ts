@@ -1,6 +1,6 @@
 import { addDays, dayStart, localDay, weekStart } from "../usage/ranges.ts";
-import type { ReportRepo } from "./report-repo.ts";
 import { quietWeek, reportFacts, reportTexts } from "./report.ts";
+import type { ReportRepo } from "./report-repo.ts";
 import { briefDue, ownerZone } from "./time.ts";
 
 export interface ReportDeps {
@@ -38,10 +38,13 @@ export class ReportService {
       const clock = await this.deps.clock();
       for (const org of await this.deps.orgs()) {
         if (this.deps.rooms(org.id).length === 0) continue;
-        await this.makeFor(org, clock).catch(() => undefined);
+        await this.makeFor(org, clock).catch((err: unknown) =>
+          console.error("majhi: the weekly report failed:", err instanceof Error ? err.message : String(err)),
+        );
       }
-    } catch {
+    } catch (err) {
       // The next minute tries again.
+      console.error("majhi: the weekly report failed:", err instanceof Error ? err.message : String(err));
     }
   }
 

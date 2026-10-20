@@ -120,6 +120,7 @@ const PAUSE_TITLE: Record<string, string> = {
   down: "Paused: every agent is down",
   loop: "Stopped: the agents are going in circles",
   blocked: "Blocked and waits for you",
+  autonomy: "Stopped by Autonomous",
 };
 
 interface Draft {
@@ -518,9 +519,12 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
           ? ""
           : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
       const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
-      const sendLabel = client.incident !== undefined ? "Send update" : client.weekly === true ? "Send report" : undefined;
+      const sendLabel =
+        client.incident !== undefined ? "Send update" : client.weekly === true ? "Send report" : undefined;
       const sendOptions: DecisionOption[] =
-        sendLabel === undefined ? options : options.map((o) => (o.id === "send" ? { ...o, label: sendLabel } : o));
+        sendLabel === undefined
+          ? options
+          : options.map((o) => (o.id === "send" ? { ...o, label: sendLabel } : o));
       out.push({
         id,
         kind: "reply",
@@ -528,7 +532,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
         ...(client.incident === undefined ? {} : { task: client.incident as TaskId }),
         title:
           client.weekly === true
-            ? oneLine(`Weekly report for ${client.chat} (${client.app}): ${d.body}`)
+            ? oneLine(`Weekly report for ${client.chat} (${client.app})`)
             : oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
         sentence:
           client.weekly === true

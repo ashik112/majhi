@@ -188,16 +188,14 @@ export async function writeBrief(
  * or a client's words. It goes to the owner's own channels, so workspace names are fine; the text is built from counts.
  */
 export function pushText(briefs: readonly Brief[]): string {
-  const parts = briefs
-    .filter((b) => !b.quiet)
-    .map((b) => {
-      const f = b.facts;
-      const bits: string[] = [];
-      if (f.shipped > 0) bits.push(`${f.shipped} shipped`);
-      if (f.failed > 0) bits.push(`${f.failed} failed`);
-      if (f.needs.count > 0) bits.push(`${f.needs.count} ${f.needs.count === 1 ? "needs" : "need"} you`);
-      if (bits.length === 0) bits.push("quiet");
-      return `${oneLine(f.orgName, 30)}: ${bits.join(", ")}`;
-    });
+  const parts = briefs.flatMap((b) => {
+    const f = b.facts;
+    const bits: string[] = [];
+    if (f.shipped > 0) bits.push(`${f.shipped} shipped`);
+    if (f.failed > 0) bits.push(`${f.failed} failed`);
+    if (f.needs.count > 0) bits.push(`${f.needs.count} ${f.needs.count === 1 ? "needs" : "need"} you`);
+    // A workspace with only upkeep or spend to say is in its brief, not in the push.
+    return bits.length === 0 ? [] : [`${oneLine(f.orgName, 30)}: ${bits.join(", ")}`];
+  });
   return oneLine(parts.join("; "), 240);
 }

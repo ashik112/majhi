@@ -1,5 +1,5 @@
-import { addDays } from "../usage/ranges.ts";
 import { failingMinutes } from "../chat/failing.ts";
+import { addDays } from "../usage/ranges.ts";
 
 /**
  * The weekly client report (docs/briefs/captain.md): the facts of one workspace's previous Monday to Sunday, all
@@ -16,7 +16,11 @@ export interface WeekRows {
   /** Agent cost in dollars. */
   cost: number;
   /** Incidents open at any time in the week, with the watch's timeline. */
-  incidents: { openedAt: string; resolvedAt?: string | undefined; timeline: { kind: string; at: string }[] }[];
+  incidents: {
+    openedAt: string;
+    resolvedAt?: string | undefined;
+    timeline: { kind: string; at: string }[];
+  }[];
   /** The workspace has monitoring, so an uptime figure means something. */
   monitored: boolean;
 }
@@ -53,12 +57,19 @@ export function reportFacts(input: {
   const { rows, from, to } = input;
   const fromMs = Date.parse(from);
   const toMs = Date.parse(to);
-  const spanMs = rows.runs.reduce((n, r) => n + Math.max(0, Date.parse(r.endedAt) - Date.parse(r.startedAt)), 0);
-  const began = rows.incidents.filter((i) => Date.parse(i.openedAt) >= fromMs && Date.parse(i.openedAt) < toMs);
+  const spanMs = rows.runs.reduce(
+    (n, r) => n + Math.max(0, Date.parse(r.endedAt) - Date.parse(r.startedAt)),
+    0,
+  );
+  const began = rows.incidents.filter(
+    (i) => Date.parse(i.openedAt) >= fromMs && Date.parse(i.openedAt) < toMs,
+  );
   let failing = 0;
   for (const i of rows.incidents) {
     const start = new Date(Math.max(Date.parse(i.openedAt), fromMs)).toISOString();
-    const end = new Date(Math.min(i.resolvedAt === undefined ? toMs : Date.parse(i.resolvedAt), toMs)).toISOString();
+    const end = new Date(
+      Math.min(i.resolvedAt === undefined ? toMs : Date.parse(i.resolvedAt), toMs),
+    ).toISOString();
     if (end > start) failing += failingMinutes(start, end, i.timeline).minutes;
   }
   const totalMinutes = (toMs - fromMs) / 60_000;

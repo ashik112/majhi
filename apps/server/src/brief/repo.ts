@@ -88,14 +88,16 @@ export class BriefRepo {
 
   /** When the newest brief before this day was made, for the span "since the last brief". */
   lastBriefAt(before: string): string | undefined {
-    const row = this.db
-      .prepare("SELECT MAX(at) AS at FROM workspace_briefs WHERE day < ?")
-      .get(before) as { at: string | null };
+    const row = this.db.prepare("SELECT MAX(at) AS at FROM workspace_briefs WHERE day < ?").get(before) as {
+      at: string | null;
+    };
     return row.at ?? undefined;
   }
 
   /** Marks the morning's push as sent. False when it was marked already (a second tab, a restart). */
   claimPush(day: string, at: string): boolean {
-    return this.db.prepare("INSERT OR IGNORE INTO brief_pushes (day, at) VALUES (?, ?)").run(day, at).changes > 0;
+    return (
+      this.db.prepare("INSERT OR IGNORE INTO brief_pushes (day, at) VALUES (?, ?)").run(day, at).changes > 0
+    );
   }
 }

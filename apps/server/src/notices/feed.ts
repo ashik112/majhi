@@ -408,7 +408,7 @@ function briefNotices(rows: readonly BriefNoticeRow[]): Omit<Notice, "read">[] {
         kind: "brief" as const,
         org: b.org,
         at: b.at,
-        subject: didWords(CAPTAIN, "wrote the morning brief"),
+        subject: "Morning brief",
         detail: oneLine(first),
         by: "captain" as const,
         needsYou: false,

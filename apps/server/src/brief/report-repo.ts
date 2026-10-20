@@ -12,8 +12,9 @@ export class ReportRepo {
   /** Marks the week of a workspace as reported. False when it was marked already (a restart, a second sweep). */
   claim(week: string, org: string, at: string): boolean {
     return (
-      this.db.prepare("INSERT OR IGNORE INTO weekly_reports (week, org, at) VALUES (?, ?, ?)").run(week, org, at)
-        .changes > 0
+      this.db
+        .prepare("INSERT OR IGNORE INTO weekly_reports (week, org, at) VALUES (?, ?, ?)")
+        .run(week, org, at).changes > 0
     );
   }
 
@@ -36,7 +37,9 @@ export class ReportRepo {
       )
       .all(PRIVATE, org, from, to) as { startedAt: string; endedAt: string }[];
     const cost = this.db
-      .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS cost FROM turns WHERE COALESCE(org, ?) = ? AND at >= ? AND at < ?")
+      .prepare(
+        "SELECT COALESCE(SUM(cost_usd), 0) AS cost FROM turns WHERE COALESCE(org, ?) = ? AND at >= ? AND at < ?",
+      )
       .get(PRIVATE, org, from, to) as { cost: number };
     const incidents = (
       this.db
@@ -53,7 +56,11 @@ export class ReportRepo {
       } catch {
         timeline = [];
       }
-      return { openedAt: i.openedAt, ...(i.resolvedAt === null ? {} : { resolvedAt: i.resolvedAt }), timeline };
+      return {
+        openedAt: i.openedAt,
+        ...(i.resolvedAt === null ? {} : { resolvedAt: i.resolvedAt }),
+        timeline,
+      };
     });
     const monitored =
       this.db.prepare("SELECT 1 FROM ops_services WHERE org = ? LIMIT 1").get(org) !== undefined;
