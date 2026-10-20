@@ -301,8 +301,12 @@ async function clientSaysDown(w: World): Promise<string> {
     },
     60_000,
   );
-  const watches = JSON.stringify(await cmd("watch.overview", { org: "acme" }));
-  if (!watches.includes(WATCH_NAME)) throw new Error("the captain did not add the watch");
+  // The captain's script adds the watch after it replied: wait for its next step.
+  await until(
+    "the captain to add the watch",
+    async () => JSON.stringify(await cmd("watch.overview", { org: "acme" })).includes(WATCH_NAME),
+    60_000,
+  );
   return `the captain opened or joined ${task.id}, told the client: "${sent.text}", and added the watch "${WATCH_NAME}"`;
 }
 

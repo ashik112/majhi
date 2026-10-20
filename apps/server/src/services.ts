@@ -1752,7 +1752,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerChoice: (task, item, option) => tasks.answerChoice(task, item, option),
       answerPermission: (task, item, option) => tasks.answerPermission(task, item, option),
       decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
-      cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
+      cardAction: async (task, item, action) => {
+        // Ship the fix is one click: for an incident the merge also pushes, so the deploys that follow find the commit on the host.
+        const found = store.tasks.get(task);
+        const push =
+          action === "merge" &&
+          found !== undefined &&
+          isIncidentTask(found) &&
+          (await mrs.shipOptions(task)).mergePush.ok;
+        return cardActions.act({
+          task,
+          item,
+          action: push ? "mergePush" : action,
+          by: "owner",
+          agent: false,
+        });
+      },
       askChanges: (task, text, lead) =>
         tasks.send({
           task,
