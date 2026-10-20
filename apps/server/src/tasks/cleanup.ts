@@ -60,8 +60,13 @@ export class CleanupService {
   async preview(days: number, cachesOnly = false, cachesAfterDays?: number): Promise<CleanupPreview> {
     const tasks: CleanupTask[] = [];
     const age = cachesOnly ? (cachesAfterDays ?? 0) : days;
-    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(age))) {
-      const task = this.deps.store.tasks.get(id);
+    const done = this.deps.store.tasks.doneBefore(this.cutoff(age));
+    // Four queries for all of them, not four per task.
+    const loaded = new Map(
+      this.deps.store.tasks.getMany(done.map((d) => d.id)).map((t) => [t.id as string, t]),
+    );
+    for (const { id, doneAt } of done) {
+      const task = loaded.get(id);
       if (task === undefined) continue;
       const planned = await this.plan(task);
       const steps = cachesOnly ? this.cacheSteps(planned, cachesAfterDays) : planned;

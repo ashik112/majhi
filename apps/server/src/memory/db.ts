@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { migrate } from "../store/migrations.ts";
+import { openSqlite } from "../store/sqlite.ts";
 import { MEMORY_MIGRATIONS } from "./migrations.ts";
 
 export const MEMORY_DB_PATH = ["memory", "memory.db"] as const;
@@ -14,7 +15,7 @@ export const MEMORY_DB_PATH = ["memory", "memory.db"] as const;
  */
 export function openMemoryDb(file: string): Database.Database {
   if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
-  const db = new Database(file);
+  const db = openSqlite(file);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");

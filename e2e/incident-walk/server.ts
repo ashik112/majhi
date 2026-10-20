@@ -130,4 +130,5 @@ globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
   }
   return realFetch(input, init);
 }) as typeof fetch;
-await import("../../apps/server/src/main.ts");
+// WALK_SERVER_ENTRY: another file to start instead (the memory pass runs the built server from dist/ this way).
+await import(process.env.WALK_SERVER_ENTRY ?? "../../apps/server/src/main.ts");

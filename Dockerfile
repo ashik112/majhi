@@ -379,12 +379,16 @@ ENV MAJHI_COMMIT=$MAJHI_COMMIT \
     MAJHI_PORT=7070 \
     MAJHI_WEB_DIST=/app/web \
     HOME=/tmp/majhi \
-    MALLOC_ARENA_MAX=2
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_MMAP_THRESHOLD_=65536 \
+    MALLOC_TRIM_THRESHOLD_=131072
 EXPOSE 7070
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:7070/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # A 2 MB young generation (V8 grows it to 16 MB by default) and two malloc arenas keep the server's
-# resident memory under the 200 MB target of SPEC 5.17; see docs/PROGRESS.md.
+# resident memory under the 200 MB target of SPEC 5.17; see docs/PROGRESS.md. glibc's mmap threshold is
+# fixed at 64 KB (it otherwise rises to 32 MB after the first big free, so a backup's buffers land in the
+# heap and stay resident) and the heap top is given back past 128 KB: 25 MB less after a daily backup.
 CMD ["node", "--max-semi-space-size=2", "dist/main.js"]
 
 # The images compose runs: the stages above, or the release images, with a passwd entry for the

@@ -6,6 +6,9 @@ import type { MediaSink } from "./media.ts";
 /** Terminal output past this is cut in the middle. */
 export const TERMINAL_MAX_CHARS = 16 * 1024;
 
+/** How many finished tool calls keep their output in the mapper (the newest ones). */
+const FINISHED_TOOLS_KEPT = 32;
+
 export interface ItemSink {
   post(id: string, payload: RoomPayload, options?: { defer?: boolean }): void;
 }
@@ -23,6 +26,10 @@ export class ItemMapper {
   private readonly text = new Map<string, string>();
   private readonly media = new Map<string, MediaRef[]>();
   private readonly tools = new Map<string, ToolPayload>();
+  /** Finished tool calls whose output is still held here, oldest first. */
+  private readonly finished: string[] = [];
+  /** Tool calls that finished long ago: their output is only in the room's store, not here. */
+  private readonly released = new Set<string>();
   private plan: PlanEntries = [];
   /** Key of the agent message this turn wrote last: its final message (5.3). */
   private lastMessage: string | undefined;
@@ -37,6 +44,9 @@ export class ItemMapper {
   beginTurn(): void {
     this.turn++;
     this.lastMessage = undefined;
+    // Keys carry the turn, so no chunk of an earlier turn can land on these again.
+    this.text.clear();
+    this.media.clear();
   }
 
   /** The text of the turn's last agent message, or empty when it wrote none. */
@@ -121,6 +131,9 @@ export class ItemMapper {
   }
 
   private tool(event: Extract<SessionEvent, { type: "tool" }>, skill: string | undefined): void {
+    // A call that finished long ago has no output here to merge with, and posting it again would replace its
+    // stored output with nothing. A late update that brings output is posted; one that does not is dropped.
+    if (this.released.has(event.toolCallId) && event.content === undefined) return;
     const before = this.tools.get(event.toolCallId);
     const used = skill ?? before?.skill;
     const next: ToolPayload = {
@@ -135,7 +148,26 @@ export class ItemMapper {
       ...(used === undefined ? {} : { skill: used }),
     };
     this.tools.set(event.toolCallId, next);
+    this.released.delete(event.toolCallId);
     this.sink.post(this.toolItemId(event.toolCallId), next);
+    if (next.status === "completed" || next.status === "failed") this.keepFinished(event.toolCallId);
+  }
+
+  /**
+   * A run of a thousand tool calls would hold every call's output (up to 16 KB each) for as long as the
+   * session lives. Only the newest finished calls keep it here; the room's store has all of them.
+   */
+  private keepFinished(toolCallId: string): void {
+    const at = this.finished.indexOf(toolCallId);
+    if (at >= 0) this.finished.splice(at, 1);
+    this.finished.push(toolCallId);
+    while (this.finished.length > FINISHED_TOOLS_KEPT) {
+      const old = this.finished.shift();
+      const tool = old === undefined ? undefined : this.tools.get(old);
+      if (old === undefined || tool === undefined) continue;
+      this.tools.set(old, { ...tool, content: [] });
+      this.released.add(old);
+    }
   }
 
   /** The title a tool call was shown with, like Codex's `mcp.<server>.<tool>`. */

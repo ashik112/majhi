@@ -21,10 +21,10 @@ import {
   type BackupList,
   type BackupVerify,
 } from "@majhi/shared";
-import Database from "better-sqlite3";
 import type { ConfigHistory } from "../config/history.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { decrypts } from "../secrets/store.ts";
+import { openSqlite } from "../store/sqlite.ts";
 import {
   ARCHIVE_NAME,
   createBackup,
@@ -110,7 +110,7 @@ export function fileSources(home: string): DbSource[] {
   return rels.map((rel) => ({
     rel,
     async backup(dest: string) {
-      const db = new Database(join(home, rel), { fileMustExist: true });
+      const db = openSqlite(join(home, rel), { fileMustExist: true });
       try {
         await db.backup(dest);
       } finally {
