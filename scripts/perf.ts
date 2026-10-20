@@ -102,6 +102,8 @@ async function startServer(): Promise<{ pid: number; stop: () => void }> {
     env: {
       ...process.env,
       MALLOC_ARENA_MAX: "2",
+      MALLOC_MMAP_THRESHOLD_: "65536",
+      MALLOC_TRIM_THRESHOLD_: "131072",
       MAJHI_HOST: "127.0.0.1",
       MAJHI_PORT: String(E2E_PORT),
       MAJHI_BROWSER_ORIGIN: `http://127.0.0.1:${E2E_PORT}`,
