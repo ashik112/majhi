@@ -1,9 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "./migrations.ts";
 import * as schema from "./schema.ts";
+import { openSqlite } from "./sqlite.ts";
 
 export type Db = ReturnType<typeof createDb>["db"];
 
@@ -84,7 +85,7 @@ export function createDb(file: string): {
   baseline: SqliteBaseline;
 } {
   if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
-  const sqlite = new Database(file);
+  const sqlite = openSqlite(file);
   const baseline = applyBaseline(sqlite);
   migrate(sqlite);
   cacheStatements(sqlite);

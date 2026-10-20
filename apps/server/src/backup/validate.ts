@@ -3,11 +3,12 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { errorMessage, UserError } from "../errors.ts";
 import { MEMORY_MIGRATIONS } from "../memory/migrations.ts";
 import { MIGRATIONS } from "../store/migrations.ts";
+import { openSqlite } from "../store/sqlite.ts";
 import { BUNDLE_FILE, DATA_DIR, Damaged, type Manifest } from "./manifest.ts";
 
 const run = promisify(execFile);
@@ -31,7 +32,7 @@ const RULES: DbRule[] = [
 function checkDb(file: string, rule: DbRule): string {
   let db: Database.Database | undefined;
   try {
-    db = new Database(file, { readonly: true, fileMustExist: true });
+    db = openSqlite(file, { readonly: true, fileMustExist: true });
     // memory.db keeps its vectors in sqlite-vec tables, which the integrity check cannot read without the extension.
     if (rule.vec) sqliteVec.load(db);
     const check = db.pragma("integrity_check", { simple: true });

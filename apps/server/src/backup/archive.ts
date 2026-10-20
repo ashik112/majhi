@@ -2,9 +2,9 @@ import { createReadStream } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BackupKind } from "@majhi/shared";
-import Database from "better-sqlite3";
 import type { ConfigHistory } from "../config/history.ts";
 import { errorMessage, UserError } from "../errors.ts";
+import { openSqlite } from "../store/sqlite.ts";
 import { decryptStream, encryptStream, type Lock } from "./crypto.ts";
 import {
   BUNDLE_FILE,
@@ -87,7 +87,7 @@ export const ARCHIVE_NAME =
 
 /** Newest applied migration id of a database file, or null when it has no migrations table. */
 export function newestMigration(file: string): number | null {
-  const db = new Database(file, { readonly: true, fileMustExist: true });
+  const db = openSqlite(file, { readonly: true, fileMustExist: true });
   try {
     const row = db.prepare("SELECT MAX(id) AS id FROM migrations").get() as { id: number | null } | undefined;
     return row?.id ?? null;
@@ -172,7 +172,7 @@ async function copyIfThere(from: string, to: string): Promise<void> {
 }
 
 function quickCheck(file: string): string {
-  const db = new Database(file, { readonly: true, fileMustExist: true });
+  const db = openSqlite(file, { readonly: true, fileMustExist: true });
   try {
     return String(db.pragma("quick_check", { simple: true }));
   } finally {

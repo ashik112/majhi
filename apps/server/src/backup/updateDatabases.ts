@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { z } from "zod";
+import { openSqlite } from "../store/sqlite.ts";
 import { applyPendingRestore, readPending, stageSwap } from "./swap.ts";
 
 export const UPDATE_DATABASE_DIR = "update-databases";
@@ -37,7 +37,7 @@ export async function snapshotUpdateDatabases(home: string): Promise<void> {
       if (!(await lstat(file)).isFile()) throw new Error(`Database path is not a regular file: ${rel}`);
       const dest = join(stage, rel);
       await mkdir(dirname(dest), { recursive: true, mode: 0o700 });
-      const db = new Database(file, { readonly: true, fileMustExist: true });
+      const db = openSqlite(file, { readonly: true, fileMustExist: true });
       try {
         await db.backup(dest);
       } finally {
@@ -69,7 +69,7 @@ export async function restoreUpdateDatabases(home: string): Promise<void> {
     if (!snapshot.present[rel]) continue;
     const file = join(source, rel);
     if (!(await lstat(file)).isFile()) throw new Error(`Database snapshot is not regular: ${rel}`);
-    const db = new Database(file, { readonly: true, fileMustExist: true });
+    const db = openSqlite(file, { readonly: true, fileMustExist: true });
     try {
       if (rel === "memory/memory.db") sqliteVec.load(db);
       if (db.pragma("integrity_check", { simple: true }) !== "ok")
