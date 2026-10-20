@@ -169,7 +169,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give it a short name (2 to 4 words, like Login redirect): it is what the owner reads, and its branch and folder come from it. A task you make is an idea: it is filed for the owner and never starts until the owner starts it, whatever you pass in start. Called from a chat with the owner, it turns THIS chat into the task by default: the same conversation and room, now with the repos, a branch and a lifecycle, so the owner keeps one chat. Set separate true only when the owner asked for a second task or the work is clearly a side job; a separate task you made, or one the owner names in the chat, you can then steer with tell, add_repo, remove_repo, look and read_room. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent (your own task only), it becomes a subtask that holds the parent open. Work found in a task that can wait or ship apart (a fix, a later improvement) is a follow-up: set followUpOf to that task, never parent, so the source closes without it. With dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. To start it later, use start (only the owner starts a task you made).",
+      "Create a task, from a chat with the owner (in a task you file none: steps go in your plan, follow-ups in your report). Give it a short name (2 to 4 words, like Login redirect): it is what the owner reads, and its branch and folder come from it. A task you make is an idea: it is filed for the owner and never starts until the owner starts it, whatever you pass in start. Called from a chat with the owner, it turns THIS chat into the task by default: the same conversation and room, now with the repos, a branch and a lifecycle, so the owner keeps one chat. Set separate true only when the owner asked for a second task or the work is clearly a side job; a separate task you made, or one the owner names in the chat, you can then steer with tell, add_repo, remove_repo, look and read_room. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent (your own task only), it becomes a subtask that holds the parent open. Work found in a task that can wait or ship apart (a fix, a later improvement) is a follow-up: set followUpOf to that task, never parent, so the source closes without it. With dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. To start it later, use start (only the owner starts a task you made).",
   },
   {
     name: "split",
@@ -598,13 +598,19 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: TASKS_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
   // Typing a task is the captain's: no other agent is offered the tool.
   const isCaptain = async () => (await deps.config.sections()).boss === caller.agent;
+  // Steps of a task are not tasks (workflow reset): an agent working in a task files none. In a chat with the
+  // owner, create turns the chat into the task the owner asked for.
+  const inChat = () => deps.tasks.get(caller.task).kind === "chat";
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const captain = await isCaptain();
+    const files = captain || inChat();
     return {
       tools: [
         ...listed(
           TASK_TOOLS.filter(
-            (t) => captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields"),
+            (t) =>
+              (captain || (t.command !== "tasks.setType" && t.command !== "tasks.setFields")) &&
+              (files || t.command !== "tasks.create"),
           ),
           true,
         ),
@@ -684,6 +690,11 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
         const done = await deps.admin.runAllowed(caller, "tasks.split", args, { reason });
         return done.isError ? fail(done.text) : ok(done.text);
+      }
+      if (tool.command === "tasks.create" && !captain && !inChat()) {
+        return fail(
+          "You do not file tasks from a task. Steps go in your plan (split) and in Now and Next (status). Work that can wait goes in your report as a follow-up, for the owner to file. If majhi lacks a tool you need, say so in your report and ask the owner with ask.",
+        );
       }
       // An agent's task is an idea: it never starts, so it is never asked to.
       if (tool.command === "tasks.create" && !captain) args.start = false;
