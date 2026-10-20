@@ -167,10 +167,9 @@ export class Lanes {
       const account = sections.accounts[id];
       if (account === undefined)
         return { problem: `the account ${id} is not in majhi.yaml`, why: "no-account" };
-      // The workspace's own account must be the workspace's; the captain's account is the owner's, or the workspace's.
-      const allowed =
-        id === rules?.account ? account.org === org : account.org === PRIVATE || account.org === org;
-      if (!allowed) {
+      // The owner's own accounts (Private) run the captain anywhere, named for a workspace or not; a workspace's
+      // account runs only its own. Before the one captain, naming the owner's account was how it paid for a workspace.
+      if (account.org !== PRIVATE && account.org !== org) {
         return {
           problem: `${id} belongs to ${name(account.org)}, so it cannot run the captain in ${name(org)}`,
           why: "account-of-another-workspace",
