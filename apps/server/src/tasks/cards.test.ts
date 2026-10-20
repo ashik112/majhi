@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { RoomItem } from "@majhi/shared";
+import type { RoomItem, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { git } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
@@ -62,3 +62,53 @@ describe("the review card", () => {
     expect((await act("done")).status).toBe(409);
   });
 });
+
+describe("an ask card", () => {
+  it("starts the idea an option names when the owner picks it, and never on the captain's pick", async () => {
+    w = await taskWorld();
+    agentSays("Asked.");
+    must200(
+      await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }),
+    );
+    await idle();
+    const { tasks, coordinator } = w.h.majhi.services;
+    const idea = await tasks.create({
+      text: "add uptime watches",
+      name: "Uptime watches",
+      repos: [{ project: "acme-api" }],
+      provenance: { kind: "in-chat", room: "ACM-1" as TaskId },
+      gate: "agent",
+      agent: "acme-builder",
+      attachments: [],
+    });
+    expect(tasks.get(idea.id).idea).toBeDefined();
+    const ask = () =>
+      coordinator.postAskCard("ACM-1", "acme-builder", [
+        {
+          id: "q",
+          question: "Start the watches now?",
+          options: [
+            { id: "now", label: "Start it now", start: idea.id },
+            { id: "later", label: "Later" },
+          ],
+          freeText: false,
+        },
+      ]);
+
+    // The captain's pick starts nothing: an idea waits for the owner.
+    const first = await ask();
+    await tasks.answerAsk("ACM-1", first.id, { q: "now" }, "majhi-captain");
+    expect(tasks.get(idea.id).status).toBe("inbox");
+
+    // The owner's pick is the owner's start.
+    const second = await ask();
+    must200(await w.h.cmd("room.answerAsk", { task: "ACM-1", item: second.id, answers: { q: "now" } }));
+    await idle();
+    expect(tasks.get(idea.id).idea).toBeUndefined();
+    expect(["running", "review", "done"]).toContain(tasks.get(idea.id).status);
+  });
+});
+
+function must200(res: { status: number; body: unknown }): void {
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+}
