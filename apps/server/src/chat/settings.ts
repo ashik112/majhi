@@ -90,6 +90,7 @@ export class ChatSettings {
       repliesToday: await this.repliesToday(room),
       people: this.people(room),
       incidentUpdates: room.chat.incidentUpdates === true,
+      weeklyReport: room.chat.weeklyReport === true,
       ...(room.chat.archived === true ? { archived: true as const } : {}),
     };
   }
@@ -104,6 +105,9 @@ export class ChatSettings {
     if (input.notify !== undefined) change.notify = input.notify;
     if (input.incidentUpdates !== undefined) {
       change.incidentUpdates = input.incidentUpdates ? true : undefined;
+    }
+    if (input.weeklyReport !== undefined) {
+      change.weeklyReport = input.weeklyReport ? true : undefined;
     }
     if (input.rules !== undefined) {
       const rules = input.rules.trim();

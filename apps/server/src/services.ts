@@ -49,6 +49,8 @@ import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { BriefRepo } from "./brief/repo.ts";
+import { ReportRepo } from "./brief/report-repo.ts";
+import { ReportService } from "./brief/report-service.ts";
 import { BriefService } from "./brief/service.ts";
 import { BrowserService } from "./browsers/service.ts";
 import { TestBrowserService } from "./browsers/test-service.ts";
@@ -3032,6 +3034,46 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     INCIDENT_SWEEP_MS,
   );
   incidentSweep.unref();
+  // The weekly client report: Monday at the brief hour, once per workspace and week.
+  const weeklyReports = new ReportService({
+    repo: new ReportRepo(store.raw),
+    clock: async () => {
+      const a = (await config.settings()).autonomy;
+      return { at: a.brief_at, tz: a.tz };
+    },
+    orgs: async () => {
+      const settings = (await config.settings()).autonomy;
+      return Object.entries((await config.sections()).orgs).map(([id, o]) => ({
+        id,
+        name: o.name,
+        tz: settings.orgs[id]?.tz,
+      }));
+    },
+    clientUpdate: async (org) =>
+      (await config.settings()).autonomy.orgs[org]?.incident?.clientUpdate === "sends" ? "sends" : "ask",
+    showCost: async (org) => (await config.settings()).autonomy.orgs[org]?.reportCost === true,
+    rooms: (org) =>
+      store.client
+        .rooms()
+        .filter((r) => r.org === org && r.chat.archived !== true)
+        .map((r) => ({ room: r.id, weekly: r.chat.weeklyReport === true })),
+    send: async (roomId, _org, text, mode) => {
+      await chatParts.replies.captain({
+        room: roomId,
+        text,
+        weekly: mode,
+        note: `Sent the weekly report to ${store.client.room(roomId)?.chat.title ?? "a chat"}`,
+      });
+    },
+    internal: async (org, week, text) => {
+      const chat = await lanes.ensure(org);
+      room.post(chat.id as TaskId, `weekly:${week}`, { type: "system", level: "info", text });
+    },
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const reportSweep = setInterval(() => background.run(() => weeklyReports.sweep()), BRIEF_SWEEP_MS);
+  reportSweep.unref();
+  background.run(() => weeklyReports.sweep());
   // Each chat keeps only the newest messages its Keep says, once a day (and once at start).
   const keepSweep = setInterval(
     () => background.run(async () => void chatParts.settings.sweep()),
@@ -3602,6 +3644,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       chatParts.hub.stop();
       clearInterval(limitSweep);
       clearInterval(briefSweep);
+      clearInterval(reportSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

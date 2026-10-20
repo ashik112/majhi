@@ -523,6 +523,8 @@ export const AutonomyOrgSchema = z.strictObject({
   providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
   /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
   account: z.string().regex(ACCOUNT_ID).optional(),
+  /** The weekly client report shows the agent cost. Off unless the owner turns it on. */
+  reportCost: z.boolean().optional(),
   /** Removed in D9, kept so old config loads. */
   chores: z.unknown().optional(),
   /** Before the level: full access. Read only by `levelOfOrg` and the migration that removes it. */
@@ -591,6 +593,7 @@ export const AutonomyOrgPatchSchema = z
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
+    reportCost: z.boolean().nullable(),
     /** Only the classes that change. `null` switches every class back on. */
     holds: HoldsPatchSchema.nullable(),
     /** Only the fields that change. `null` goes back to the defaults. */

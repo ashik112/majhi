@@ -94,6 +94,36 @@ function IncidentSwitches({ org, mine }: { org: OrgView; mine: CaptainOrg }) {
           className="self-start"
         />
       </div>
+      <ReportCost org={org} on={mine.rules.reportCost === true} />
+    </div>
+  );
+}
+
+/** Whether the weekly client report shows the agent cost. Off unless the owner turns it on; saved at once. */
+function ReportCost({ org, on }: { org: OrgView; on: boolean }) {
+  const toast = useToast();
+  const save = useCaptainRules();
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-sm text-fg-faint">Show cost to client</span>
+      <Segmented<"off" | "on">
+        label={`Show the agent cost in ${org.name}'s weekly report`}
+        value={on ? "on" : "off"}
+        segments={[
+          { value: "off", label: "Off", disabled: save.isPending },
+          { value: "on", label: "On", disabled: save.isPending },
+        ]}
+        onChange={(next) =>
+          save.mutate(
+            {
+              input: { orgs: { [org.id]: { reportCost: next === "on" } } },
+              reason: `Owner changed the weekly report cost line of ${org.name}`,
+            },
+            { onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }) },
+          )
+        }
+        className="self-start"
+      />
     </div>
   );
 }

@@ -144,6 +144,7 @@ const ClientMessage = z.object({
 const ClientReply = z.object({
   by: z.enum(["captain", "you"]),
   state: z.enum(["held", "sent", "failed", "discarded"]),
+  weekly: z.literal(true).optional(),
   text: z.string().default(""),
   mentions: z.record(z.string(), z.string()).optional(),
 });
@@ -212,12 +213,20 @@ function clientNotices(
         org,
         at: line.at,
         subject: oneLine(
-          reply.state === "sent"
-            ? didWords(CAPTAIN, "replied", `in ${line.title}`)
-            : `Reply failed in ${line.title}`,
+          reply.weekly === true
+            ? reply.state === "sent"
+              ? "Client told: weekly report"
+              : `Weekly report failed in ${line.title}`
+            : reply.state === "sent"
+              ? didWords(CAPTAIN, "replied", `in ${line.title}`)
+              : `Reply failed in ${line.title}`,
           160,
         ),
-        detail: oneLine(mentionNames(reply.text, reply.mentions, contactName)),
+        detail: oneLine(
+          reply.weekly === true && reply.state === "sent"
+            ? `The captain sent the weekly report to ${line.title}`
+            : mentionNames(reply.text, reply.mentions, contactName),
+        ),
         needsYou: false,
         link,
       });

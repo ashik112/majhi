@@ -1162,6 +1162,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     thread: z.string().optional(),
     replyTo: z.string().optional(),
     draft: z.number().int().positive().optional(),
+    /** The weekly report of the workspace, not an answer to anyone. */
+    weekly: z.literal(true).optional(),
     state: z.enum(["held", "sent", "failed", "discarded"]),
     hold: ReplyHoldSchema.optional(),
     result: z.string().optional(),

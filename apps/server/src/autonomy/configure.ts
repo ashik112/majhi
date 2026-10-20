@@ -90,7 +90,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
     }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    const rules = (["freeze", "tz", "branches", "providers", "account"] as const).filter(
+    const rules = (["freeze", "tz", "branches", "providers", "account", "reportCost"] as const).filter(
       (k) => change[k] !== undefined,
     );
     if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
@@ -106,7 +106,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   return lines.length === 0 ? "changed nothing in Autonomous" : lines.join("; ");
 }
 
-function ruleWord(key: "freeze" | "tz" | "branches" | "providers" | "account"): string {
+function ruleWord(key: "freeze" | "tz" | "branches" | "providers" | "account" | "reportCost"): string {
   switch (key) {
     case "freeze":
       return "freeze dates";
@@ -118,5 +118,7 @@ function ruleWord(key: "freeze" | "tz" | "branches" | "providers" | "account"): 
       return "AI providers";
     case "account":
       return "paying account";
+    case "reportCost":
+      return "weekly report cost line";
   }
 }

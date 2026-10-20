@@ -2134,6 +2134,19 @@ DROP TABLE IF EXISTS autonomy_summaries;
 DROP TABLE IF EXISTS autonomy_day_caps;
 `,
   },
+  {
+    // Captain, step 5: the weekly client report is made once per workspace and week.
+    id: 199,
+    name: "weekly reports",
+    sql: `
+CREATE TABLE weekly_reports (
+  week TEXT NOT NULL,
+  org TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (week, org)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

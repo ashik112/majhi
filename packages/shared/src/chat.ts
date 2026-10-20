@@ -243,6 +243,8 @@ export const ClientRoomSchema = z.strictObject({
   trouble: ChatTroubleSchema.optional(),
   /** The chat hears about incidents of its workspace, also those nobody here reported. Off unless the owner turns it on. */
   incidentUpdates: z.boolean().optional(),
+  /** The chat gets the workspace's weekly report. Off unless the owner turns it on. */
+  weeklyReport: z.boolean().optional(),
 });
 export type ClientRoom = z.infer<typeof ClientRoomSchema>;
 
@@ -673,6 +675,8 @@ export const ChatSettingsViewSchema = z.object({
   archived: z.boolean().optional(),
   /** The chat gets incident updates (default off). */
   incidentUpdates: z.boolean(),
+  /** The chat gets the weekly report (default off). */
+  weeklyReport: z.boolean(),
 });
 export type ChatSettingsView = z.infer<typeof ChatSettingsViewSchema>;
 
@@ -697,6 +701,7 @@ export const ChatSettingsInputSchema = z.strictObject({
   keep: KeepSchema.optional(),
   notify: NotifySchema.optional(),
   incidentUpdates: z.boolean().optional(),
+  weeklyReport: z.boolean().optional(),
 });
 export type ChatSettingsInput = z.infer<typeof ChatSettingsInputSchema>;
 

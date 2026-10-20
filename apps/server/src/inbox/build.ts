@@ -518,17 +518,22 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
           ? ""
           : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
       const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
+      const sendLabel = client.incident !== undefined ? "Send update" : client.weekly === true ? "Send report" : undefined;
       const sendOptions: DecisionOption[] =
-        client.incident === undefined
-          ? options
-          : options.map((o) => (o.id === "send" ? { ...o, label: "Send update" } : o));
+        sendLabel === undefined ? options : options.map((o) => (o.id === "send" ? { ...o, label: sendLabel } : o));
       out.push({
         id,
         kind: "reply",
         org: d.org,
         ...(client.incident === undefined ? {} : { task: client.incident as TaskId }),
-        title: oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
-        sentence: `A reply to ${who} in ${client.chat} (${client.app}) is ready.${said}${why} Nothing is sent until you approve it.`,
+        title:
+          client.weekly === true
+            ? oneLine(`Weekly report for ${client.chat} (${client.app}): ${d.body}`)
+            : oneLine(`Reply to ${who} in ${client.chat} (${client.app}): ${d.body}`),
+        sentence:
+          client.weekly === true
+            ? `The weekly report for ${client.chat} (${client.app}) is ready.${why} Read it, edit it in the chat if you want, then send it. Nothing is sent until you approve it.`
+            : `A reply to ${who} in ${client.chat} (${client.app}) is ready.${said}${why} Nothing is sent until you approve it.`,
         ...decorate(id, sendOptions, undefined, src.orgName?.(d.org)),
         at: d.createdAt,
         link: { kind: "chat", id: client.room as TaskId },
