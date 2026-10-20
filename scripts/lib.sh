@@ -114,6 +114,24 @@ with_timeout() {
   fi
 }
 
+# Something on this computer answers on 127.0.0.1:$1, so Docker cannot publish majhi there. curl exits 7
+# only when the connection is refused, so anything else, a timeout included, counts as taken.
+port_taken() {
+  status=0
+  curl -s -o /dev/null --connect-timeout 1 --max-time 2 "http://127.0.0.1:$1/" || status=$?
+  [ "$status" != 7 ]
+}
+
+# Writes NAME=value into .env, keeping every other line.
+dotenv_set() {
+  file="${REPO_DIR:-.}/.env"
+  {
+    if [ -f "$file" ]; then grep -vE "^[[:space:]]*$1[[:space:]]*=" "$file" || true; fi
+    printf '%s=%s\n' "$1" "$2"
+  } >"$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
 # Node 20 or newer at $1. It runs from $HOME, where the login service starts it, so a version
 # manager's shim picks the same version there.
 node_ok() {

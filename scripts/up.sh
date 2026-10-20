@@ -2,7 +2,7 @@
 # Starts majhi from this checkout, the one path `make up` and install.sh share: checks this computer,
 # builds the images (from this checkout, or on top of the release images when .env sets
 # MAJHI_VERSION), keeps or creates the secrets key, installs the host helper, mounts every workspace
-# root from majhi.yaml and starts majhi on http://127.0.0.1:7070. Safe to run again.
+# root from majhi.yaml and starts majhi on http://127.0.0.1:7070, or the next free port. Safe to run again.
 #
 #   sh scripts/up.sh                 (make up)
 #   LAYA=off LAYA_GPU=off sh scripts/up.sh
@@ -19,6 +19,31 @@ if [ "$(uname -s)" = Linux ] && [ "${LAYA:-docker}" = docker ] && [ -z "${LAYA_G
   LAYA_GPU=$(nvidia_gpu)
 fi
 compose_env
+
+# majhi publishes one port (docker-compose.yml). When another program holds it, the first free one from
+# 7070 goes into .env, where compose, the host helper and the installer read it. MAJHI_PORT set in the
+# environment is the owner's choice and is never moved. majhi's own running server holds its port already.
+if [ -z "$(docker compose ps -q --status running server 2>/dev/null)" ]; then
+  port=${MAJHI_PORT:-$(dotenv MAJHI_PORT)}
+  port=${port:-7070}
+  if port_taken "$port"; then
+    if [ -n "${MAJHI_PORT:-}" ]; then
+      printf '%s\n' "Port $port (MAJHI_PORT) is in use by another program. Stop that program or pick another port, then run ${MAJHI_RERUN:-make up} again." >&2
+      exit 1
+    fi
+    taken=$port
+    port=7070
+    while port_taken "$port"; do
+      port=$((port + 1))
+      if [ "$port" -gt 7170 ]; then
+        printf '%s\n' "Ports 7070 to 7170 are all in use. Set MAJHI_PORT to a free port, then run ${MAJHI_RERUN:-make up} again." >&2
+        exit 1
+      fi
+    done
+    dotenv_set MAJHI_PORT "$port"
+    echo "Port $taken is in use by another program, so majhi uses $port"
+  fi
+fi
 
 mkdir -p "$HOME/.majhi" "$HOME/.ssh"
 touch "$HOME/.ssh/config" "$HOME/.ssh/known_hosts"
