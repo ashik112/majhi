@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
  * with a default of 16 MB per connection (`DEFAULT_CACHE_SIZE=-16000`), and a backup, a check or any
  * scan of a big table fills it and keeps it for the life of the connection. majhi's connections read
  * a few hot tables and stream the rest, so 4 MB holds what is reused. Measured in the server image on a
- * 157 MB database: one backup left 35 MB resident with the default and 8 MB with this.
+ * 157 MB database: one backup raised the process by 35 MB with the default and by 11 MB with this.
  */
 export const PAGE_CACHE_KIB = 4_000;
 
