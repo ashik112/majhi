@@ -86,13 +86,12 @@ async function majhi(
 }
 
 describe("the Codex hook script", () => {
-  it("lets a call run only when majhi says allow, and sends the call and the run's token as they are", async () => {
-    const m = await majhi((_, body) => body(JSON.stringify({ decision: "allow" })));
-    expect(await runHook(m.env)).toEqual({ code: 0, stdout: "" });
-    expect(m.seen).toEqual([{ auth: "Bearer run-token", body: CALL }]);
-  });
+  it("fails closed, and lets a call run only on majhi's allow: no majhi, a garbage reply, an error, no credential, no call, an owner who has not answered by a deadline shorter than Codex's timeout", async () => {
+    // The one way through: majhi says allow, and the call and the run's token reach it as they are.
+    const allowed = await majhi((_, body) => body(JSON.stringify({ decision: "allow" })));
+    expect(await runHook(allowed.env)).toEqual({ code: 0, stdout: "" });
+    expect(allowed.seen).toEqual([{ auth: "Bearer run-token", body: CALL }]);
 
-  it("fails closed: no majhi at the address, a garbage reply, an error, no credential, no call, and an owner who has not answered", async () => {
     // A port nothing listens on.
     const down = await majhi("silent");
     await down.stop();
@@ -120,9 +119,8 @@ describe("the Codex hook script", () => {
       denied(run.stdout);
     }
     expect(denied(runs.deadline.stdout)).toBe("Waiting for the owner's answer in majhi.");
-  });
 
-  it("gives up before Codex does: its deadline is shorter than the hook's timeout in requirements.toml", () => {
+    // Codex lets a call run when its hook times out, so the hook must answer first.
     const source = readFileSync(HOOK, "utf8");
     const line = source.split("\n").find((l) => l.startsWith("const DEADLINE_MS = "));
     const deadlineMs = Number(
