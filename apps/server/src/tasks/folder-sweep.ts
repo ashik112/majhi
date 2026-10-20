@@ -280,9 +280,8 @@ export class TaskFolderSweep {
     const tasksDir = await this.deps.tasksDir();
     const pinned = this.deps.pinned?.() ?? new Set<string>();
     const folders: Task[] = [];
-    for (const [id] of this.deps.store.tasks.statuses()) {
-      const task = this.deps.store.tasks.get(id);
-      if (task === undefined) continue;
+    const all = this.loadMany([...this.deps.store.tasks.statuses().keys()]);
+    for (const task of all.values()) {
       const here = await stat(task.folder).then(
         (s) => s.isDirectory(),
         () => false,
@@ -400,8 +399,10 @@ export class TaskFolderSweep {
     if (tasksRoot === undefined) return report;
     const cutoff = new Date(this.now().getTime() - options.hours * HOUR_MS).toISOString();
     const treeCutoff = new Date(this.now().getTime() - options.worktreeDays * DAY_MS).toISOString();
-    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(cutoff)) {
-      const task = this.deps.store.tasks.get(id);
+    const done = this.deps.store.tasks.doneBefore(cutoff);
+    const doneTasks = this.loadMany(done.map((d) => d.id));
+    for (const { id, doneAt } of done) {
+      const task = doneTasks.get(id);
       if (task === undefined) continue;
       if (options.org !== undefined && (task.org ?? "private") !== options.org) continue;
       const wholeTrees = options.worktreeDays > 0 && doneAt < treeCutoff;
@@ -412,8 +413,10 @@ export class TaskFolderSweep {
     const idleDays = options.idleDays ?? 0;
     if (idleDays > 0) {
       const idleCutoff = new Date(this.now().getTime() - idleDays * DAY_MS).toISOString();
-      for (const { id, at } of this.deps.store.tasks.idleBefore(idleCutoff)) {
-        const task = this.deps.store.tasks.get(id);
+      const idle = this.deps.store.tasks.idleBefore(idleCutoff);
+      const idleTasks = this.loadMany(idle.map((d) => d.id));
+      for (const { id, at } of idle) {
+        const task = idleTasks.get(id);
         if (task === undefined) continue;
         if (options.org !== undefined && (task.org ?? "private") !== options.org) continue;
         const result = await this.sweepTask(task, at, tasksRoot, "idle", false, dry);
@@ -422,6 +425,11 @@ export class TaskFolderSweep {
       }
     }
     return report;
+  }
+
+  /** The tasks by id in four queries, however many there are (`get` runs four per task). */
+  private loadMany(ids: readonly string[]): Map<string, Task> {
+    return new Map(this.deps.store.tasks.getMany(ids).map((t) => [t.id as string, t]));
   }
 
   /** True while the task is still in the state it was chosen in (done, or review or paused) and unchanged since. */
