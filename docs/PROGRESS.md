@@ -6,37 +6,38 @@ Branch `perf/server-memory`. Plan: measure the built server in the server image 
 
 | | Before | After |
 |---|---|---|
-| Server RSS, idle 60 s (median, range) | 218 MB (192 to 227, 7 runs) | 159 MB (148 to 166, 6 runs) |
-| Container `docker stats`, idle | 213 MB (199 to 236) | 160 MB (153 to 164) |
-| Server RSS, 4 tasks running | 210 MB (195 to 225) | 155 MB (144 to 157) |
-| Server container with 4 tasks in container mode (+ 4 docker clients at 27.5 MB) | about 320 MB | about 265 MB |
-| V8 heap used / total | 68 to 70 / 76 to 80 MB | 56.5 / 66.5 MB |
+| Server RSS, idle 60 s (median, range) | 218 MB (192 to 227, 7 runs) | 160 MB (153 to 163, 6 runs) |
+| Container `docker stats`, idle | 213 MB (199 to 236) | 159 MB (147 to 167) |
+| Server RSS, 4 tasks running | 210 MB (195 to 225, 2 runs) | 149 MB (147 to 156, 3 runs) |
+| Server container with 4 tasks in container mode (computed: server RSS + 4 docker clients at 27.5 MB, not walked) | about 320 MB | about 260 MB |
+| V8 heap used / total | 68 to 70 / 76 to 80 MB | 62.1 / 72 MB |
 | external, arrayBuffers | 3.8, 0.1 MB | 3.8, 0.1 MB |
 | Start to `/health` | 0.6 to 1.1 s | 0.6 to 0.9 s |
-| JS read at start | 11.2 MB, 1,670 modules, 1 file | 5.9 MB, 1,348 modules, 5 files (2.8 MB of drivers on demand) |
+| JS read at start | 11.2 MB, 1,670 modules, 1 file | 8.2 MB, 1,348 modules, 5 files (3.1 MB of drivers on demand) |
 | Timers alive at idle | 30 | 30 |
 | Prepared statements at idle | 177 to 207 | 207 (cache cap 400 per connection) |
-| `tasks.list` / `decisions.list` / `room.items` p50, p95 | 0.7, 1.6 / 4.6, 6.7 / 1.5, 2.0 ms | 0.7, 0.9 / 4.5, 6.0 / 1.6, 2.4 ms |
+| `tasks.list` / `decisions.list` / `room.items` p50, p95 | 0.7, 1.6 / 4.6, 6.7 / 1.5, 2.0 ms | 0.7, 0.9 / 4.5, 6.0 / 1.6, 2.4 ms (measured on the minified build, same code paths) |
 
-**Where the memory was** (heap snapshot, idle, before): V8 heap 71 MB of which 22 MB is the bundle's own source as a UTF-16 string, 17 MB code (bytecode, line tables, shared function info), 10 MB objects, 6.8 MB one object holding the zod schemas and shared tables, 6 MB closures. Objects and arrays together are 17 MB, nearly all module-level tables and schemas: no cache, room or prepared statement set grows with the tasks opened. Outside the heap: 52 MB of the node binary, and glibc's heap, 27 MB at start and 76 MB after the daily backup. Top retainers by retained size, before then after: the bundle's code 24.3 then 8.2 MB (its source string 22.0 then 8.0); module context 23.4 then 5.4; zod and shared tables 6.8 then 6.7; the second chunk 2.8 (source 2.8); source text modules 2.3 then 1.1 each; bytecode 2.1 then 1.0; line tables 2.1 then 1.1; `AdminService` 0.4 and the per-place tool lists 0.8 together (built once, nothing to fix).
+**Where the memory was** (heap snapshot, idle, before): V8 heap 71 MB of which 22 MB is the bundle's own source as a UTF-16 string, 17 MB code (bytecode, line tables, shared function info), 10 MB objects, 6.8 MB one object holding the zod schemas and shared tables, 6 MB closures. Objects and arrays together are 17 MB, nearly all module-level tables and schemas: no cache, room or prepared statement set grows with the tasks opened. Outside the heap: 52 MB of the node binary, and glibc's heap, 27 MB at start and 76 MB after the daily backup. Top retainers by retained size, before then after: the bundle's code 24.3 then 12.6 MB (+ 4.2 for the shared zod chunk; its source string 22.0 then 11.3 + 3.8); module scope 23.4 then 5.4 + 6.7; zod and shared tables 6.8 then 6.7; source text modules 2.3 then 1.1 each; shared function info 2.1 then 1.0; bytecode 2.1 then 1.0; line tables 2.1 then 1.2; constant pools 1.1 then 0.6; `AdminService` 0.4 and the per-place tool lists 0.8 together (built once, nothing to fix). Reachable heap 71.0 then 63.2 MB.
 
 **Changes, with what each saved** (same build and database, run to run spread about 15 MB; details in DECISIONS):
-- SQLite page cache 4 MB per connection instead of 16: one backup left 35 MB resident, now 8. About 25 to 30 MB at idle after the daily backup.
+- SQLite page cache 4 MB per connection instead of 16: one backup raised the process by 35 MB, now by 11. About 25 to 30 MB at idle after the daily backup.
 - glibc mmap and trim thresholds fixed in the image: about 25 MB at idle after the backup (201 and 211 MB to 175 and 182 MB in the same build).
-- Split bundle with the database drivers on demand, minified whitespace and no comments: heap used 68 to 56.5 MB, 5.3 MB less JS read at start.
+- Split bundle with the database drivers on demand: heap used 68 to 62 MB, 3 MB less JS read at start. Whitespace minifying was measured on top and gave 5.6 MB less heap used but the same resident memory (159 and 160 MB median), so the bundle stays readable.
 - The run's item mapper kept every tool output and message of a session: 36 MB for 2,000 calls per running agent, now 2 MB. Not visible with the fake agent (small outputs), which is why it is not in the table; it is what grows with the number of tasks.
 - Cleanup chore and folder budget loaded each done task with four queries: 1,169 `get` calls (4,676 queries) in the first minute of a throwaway with 284 done tasks, now four queries for all of them.
 
 **Runners.** The idle rule exists: `limits.idle_timeout` (default 3 minutes) ends the process of an idle agent, the docker spawner then runs `docker rm -f` on its container, and the next message resumes the session. A fake runner (runner image, fake ACP agent idle on stdin) reads 22.5 MiB in `docker stats` (65 MB RSS counting shared pages); the real adapter is what weighs 190 to 230 MB, and no real account was used here, so the 150 MB target is not judged by this pass. Each runner's `docker run -i` client runs inside the server container at 27.5 MB; with 4 tasks that is 110 MB of the server container's memory. `GOGC` and `GOMEMLIMIT` do not change it.
 
 **Left, no accepted gaps.**
-- The live number is the owner's to read after the next update: `docker stats majhi-server-1` after about an hour idle. From the throwaway it should be near 160 plus the 25 to 70 MB the live server shows over it, so 185 to 230 MB; the part above 200 would be page cache of the 164 MB database and the host mounts, which `docker stats` counts, and live work the throwaway lacks (chat connections, real wiki, real captain turns).
+- The live number is the owner's to read after the next update: `docker stats majhi-server-1` after about an hour idle. From the throwaway it should be near 160 plus the 25 to 70 MB the live server shows over it, so 185 to 230 MB, and the lower end is likelier; the part above 200 would be page cache of the 164 MB database and the host mounts, which `docker stats` counts, and live work the throwaway lacks (chat connections, real wiki, real captain turns).
 - 110 MB for four docker clients, and a `docker stats` spawn every 45 s (about 30 MB for a second or two). Both go with talking to the Docker Engine API from Node: its own step, it touches the runner's mounts and capabilities.
-- 10.8 MB of the heap is the source of the bundle as UTF-16 and 6.7 MB is schemas. A CommonJS build would take 5 MB of the first; lazy services about 3 MB more. Neither is needed for the targets.
+- 15 MB of the heap is the source of the bundle as UTF-16 and 6.7 MB is schemas. A CommonJS build with no character above U+00FF would hold the source at half that, about 7 MB less (it needs the top-level `await` in `main.ts` gone and cannot split); lazy services about 3 MB more. Neither is needed for the targets.
+- `tasks.get` per task: 319 call sites, about 9 inside a loop or `flatMap` over open tasks, children or ids (`incident/engine.ts`, `incident/facts.ts`, `tasks/detail.ts`, `tasks/orchestrator.ts`, `tasks/service.ts`). None fired in the 60 s idle profile beyond the two fixed; each costs four queries per task over a small set. Left.
 - Live disk reads: the live container's block I/O grew 1.8 to 3.8 GB in about two hours idle. In the throwaway, the periodic work that touches disk is `du` of task folders (hourly), `git` per project (every minute), `docker stats` (every 45 s) and the cleanup previews (hourly); with the live data the share of each could not be measured without touching the live container.
 - The 30 timers (26 intervals and 4 timeouts) are clock based sweeps of one to a few queries; none polls where an event exists today. The 60 s sweeps for briefs, reports, budget lifts and chat could each be one timer set for the next due time; that saves wake-ups, not memory.
 
-**Checked.** `pnpm -r typecheck`, `biome check .` (no errors; the 33 warnings were there before), vitest 103 files and 418 tests passed (1 skipped), then the incident walk stages 0 to 4 (`WALK_SERVER_ENTRY=<repo>/apps/server/dist/main.js node --import tsx e2e/incident-walk/journey.ts 1 2 3 4`) against the built, split and minified server: all pass. One test added: `runs/items.test.ts`.
+**Checked.** `pnpm -r typecheck`, `biome check .` (no errors; the 33 warnings were there before), vitest 103 files and 418 tests passed (1 skipped), then the incident walk stages 0 to 4 (`WALK_SERVER_ENTRY=<repo>/apps/server/dist/main.js node --import tsx e2e/incident-walk/journey.ts 1 2 3 4`) against the built, split server: all pass. Also run on the split build: `node dist/cli.js gen-key` prints a key, and a markdown file exports to html and docx through `dist/export/worker.js`. One test added: `runs/items.test.ts`. The branch starts at `5ceb1262`; `main` has moved since (it changed `scripts/lib.sh` and `scripts/up.sh`, which this branch does not touch).
 
 ## Workflow reset, step 4: incidents end to end, 2026-10-20
 
