@@ -7,7 +7,6 @@ import {
 } from "@majhi/shared";
 import type { z } from "zod";
 import type { ConfigSections } from "../config/sections.ts";
-import { limitWord } from "./sizes.ts";
 import { capText } from "./spend.ts";
 
 /**
@@ -48,11 +47,8 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
     else delete orgs[id];
   }
   const tz = patch.tz ?? current.tz;
-  // The pick rule's workspace list moved to the per-workspace choice (5.18); it is not kept.
-  const pick = { size: patch.pick?.size ?? current.pick.size };
   return {
     ...current,
-    pick,
     day: patch.day ?? current.day,
     orgs,
     floors: {
@@ -75,7 +71,6 @@ export function toFile(
     ...(patch.floors === undefined ? {} : { floors: next.floors }),
     ...(patch.summary_at === undefined ? {} : { summary_at: next.summary_at }),
     ...(patch.tz === undefined ? {} : { tz: next.tz }),
-    ...(patch.pick === undefined ? {} : { pick: next.pick }),
   };
 }
 
@@ -95,7 +90,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
     }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
+    const rules = (["freeze", "tz", "branches", "providers", "account"] as const).filter(
       (k) => change[k] !== undefined,
     );
     if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
@@ -104,18 +99,15 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   if (patch.floors?.weekly !== undefined) parts.push(`the weekly floor to ${patch.floors.weekly}%`);
   if (patch.summary_at !== undefined) parts.push(`the daily summary to ${patch.summary_at}`);
   if (patch.tz !== undefined) parts.push(`the time zone to ${patch.tz}`);
-  if (patch.pick?.size !== undefined) parts.push(`the task size it takes to ${limitWord(patch.pick.size)}`);
   const lines = [
     ...(own.length === 0 ? [] : [`set ${own.join(", ")}`]),
-    ...(parts.length === 0 ? [] : [`set Auto-pilot's ${parts.join(", ")}`]),
+    ...(parts.length === 0 ? [] : [`set Autonomous's ${parts.join(", ")}`]),
   ];
-  return lines.length === 0 ? "changed nothing in Auto-pilot" : lines.join("; ");
+  return lines.length === 0 ? "changed nothing in Autonomous" : lines.join("; ");
 }
 
-function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
+function ruleWord(key: "freeze" | "tz" | "branches" | "providers" | "account"): string {
   switch (key) {
-    case "hours":
-      return "working hours";
     case "freeze":
       return "freeze dates";
     case "tz":

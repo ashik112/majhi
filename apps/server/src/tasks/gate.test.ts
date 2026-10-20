@@ -60,6 +60,19 @@ describe("the task gate", () => {
         }
       },
     ],
+    [
+      "what the captain files without the owner asking, which is its own idea and never starts",
+      () => {
+        for (const start of [true, false]) {
+          expect(
+            admit({ origin: "captain", org: "acme", wantsStart: start, counts: counts(0, 0), limits, ownerAsked: false }),
+          ).toEqual({ kind: "idea", reason: "captain-made" });
+        }
+        expect(
+          admit({ origin: "captain", org: "acme", wantsStart: true, counts: counts(0, 0), limits, ownerAsked: true }),
+        ).toEqual({ kind: "start" });
+      },
+    ],
   ])("starts every origin under the running cap and queues it at and over the cap: %s", (_cap, check) => {
     check();
   });

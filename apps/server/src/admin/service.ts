@@ -329,7 +329,10 @@ export class AdminService {
       // Starting a task on priority, or making it urgent, may pause a running one: the command needs to know
       // whether the owner asked for it in the conversation.
       const input =
-        (spec.command === "tasks.start" || spec.command === "tasks.update") && ownerAsked === true
+        (spec.command === "tasks.start" ||
+          spec.command === "tasks.update" ||
+          spec.command === "tasks.create") &&
+        ownerAsked === true
           ? { ...rest, ownerAsked: true }
           : rest;
       this.aboutTask(caller, spec.command, input);

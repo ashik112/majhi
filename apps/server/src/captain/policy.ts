@@ -19,7 +19,6 @@ export function captainPolicyOf(
     authority: authorityOf(settings, org),
     autopilot: live.autopilot,
     stopped: live.stopped,
-    hours: rules?.hours,
     freeze: rules?.freeze,
     tz: zoneOr(rules?.tz ?? settings.tz),
   };

@@ -2082,6 +2082,17 @@ WHERE type IS NULL AND COALESCE(type_by, '') != 'owner'
 `,
   },
   {
+    // Captain, step 5: the owner's mark "Not for the captain" is an idea the owner keeps (`held-by-owner`): only the
+    // owner starts it, which is what the mark meant. The column goes.
+    id: 196,
+    name: "not for the captain becomes an idea",
+    sql: `
+UPDATE tasks SET idea = 'held-by-owner'
+WHERE no_autonomy = 1 AND idea IS NULL AND status != 'done' AND kind != 'chat';
+ALTER TABLE tasks DROP COLUMN no_autonomy;
+`,
+  },
+  {
     // Captain, step 5: Autonomous is on until a time, or until the owner turns it off.
     id: 195,
     name: "autonomous until",

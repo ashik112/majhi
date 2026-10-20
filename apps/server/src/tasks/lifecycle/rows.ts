@@ -93,7 +93,9 @@ export class LifecycleRows {
     if (row === undefined) return undefined;
     const status = StoredStatusSchema.parse(row.status);
     const pausedBy: PausedBy | undefined =
-      row.pausedBy === "captain" || row.pausedBy === "autonomy-off" ? row.pausedBy : undefined;
+      row.pausedBy === "captain" || row.pausedBy === "autonomy-off" || row.pausedBy === "autonomy-stop"
+        ? row.pausedBy
+        : undefined;
     return {
       stored: {
         status,

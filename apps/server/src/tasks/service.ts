@@ -42,6 +42,7 @@ import {
   parseMentions,
   parsePathMentions,
   parseTaskText,
+  madeByOwner,
   priorityRank,
   type ReadMount,
   type RoomItem,
@@ -324,8 +325,10 @@ export interface CreateInput {
   dependsOn?: string[] | undefined;
   /** Makes the new task a fix task of this one: a `follow-up` link to it. */
   followUpOf?: string | undefined;
-  /** Marked Not for the captain from the start. */
-  noAutonomy?: boolean | undefined;
+  /** For the captain's origin: false when the owner did not ask for this task, so it is the captain's own idea. */
+  ownerAsked?: boolean | undefined;
+  /** Kept from the captain from the start: filed as an idea, and only the owner starts it. */
+  heldByOwner?: boolean | undefined;
   /** When those count as met. Default `merged`. */
   dependsWhen?: "merged" | "ready" | undefined;
   /** Connection ids its root agents get beyond the task's org's. */
@@ -604,8 +607,9 @@ export class TaskService {
     const admission =
       promoting !== undefined || kind === "chat"
         ? undefined
-        : await this.admission(input.gate, org ?? PRIVATE, input.start);
-    const idea = admission?.kind === "idea" ? admission.reason : undefined;
+        : await this.admission(input.gate, org ?? PRIVATE, input.start, input.ownerAsked);
+    const idea: IdeaReason | undefined =
+      input.heldByOwner === true ? "held-by-owner" : admission?.kind === "idea" ? admission.reason : undefined;
     const wantsStart = input.start && idea === undefined;
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
@@ -719,7 +723,6 @@ export class TaskService {
       await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
       if (promoting === undefined) {
         store.tasks.insert(task);
-        if (input.noAutonomy === true) store.tasks.setNoAutonomy(id, true);
         if (wantsStart) store.tasks.setStartWhenReady(id, true);
       } else {
         // The same row, room and folder: only what makes it a task is added.
@@ -1043,12 +1046,18 @@ export class TaskService {
    * What the gate says about a new task of this origin in this workspace. Reads the limits and counts
    * what is running and open; the decision is `admit`'s alone.
    */
-  private async admission(origin: GateOrigin, org: string, wantsStart: boolean): Promise<Admission> {
+  private async admission(
+    origin: GateOrigin,
+    org: string,
+    wantsStart: boolean,
+    ownerAsked?: boolean,
+  ): Promise<Admission> {
     const limits = await this.gateLimits();
     return admit({
       origin,
       org,
       wantsStart,
+      ownerAsked,
       counts: { running: this.runningCount(undefined), openByOthers: this.deps.store.tasks.openByOthers() },
       limits,
     });
@@ -1340,7 +1349,7 @@ export class TaskService {
       .map((t) => ({
         id: t.id,
         priority: t.priority,
-        ownedByOwner: t.origin === undefined || t.origin.kind === "owner" || t.origin.kind === "chat",
+        ownedByOwner: madeByOwner(t.origin),
       }));
     return preemptionVictim({ wanted: task.priority, ...preempt, running });
   }
@@ -1687,6 +1696,11 @@ export class TaskService {
       const at = this.now().toISOString();
       let event: lifecycle.LifecycleEvent;
       if (by === "autonomy-off") event = { type: "autopilotOff", at, mode: "now" };
+      else if (by === "autonomy-stop")
+        event = {
+          type: "holdPlaced",
+          hold: { cause: "autonomous-stop", at, why: why ?? "Autonomous stopped it." },
+        };
       else if (reason === "owner")
         event = this.cards.byCaptain(by)
           ? { type: "captainStop", at, ...(why === undefined ? {} : { why }) }
@@ -4600,7 +4614,11 @@ function ideaLine(reason: IdeaReason, askedToStart: boolean): string {
   const why =
     reason === "agent-made"
       ? "It was made by an agent or a scan, so it does not start by itself."
-      : "Its workspace already has the most open tasks you did not start.";
+      : reason === "captain-made"
+        ? "The captain filed it on its own, so Autonomous does not start it."
+        : reason === "held-by-owner"
+          ? "You kept it from the captain."
+          : "Its workspace already has the most open tasks you did not start.";
   return `Filed as an idea${askedToStart ? " (it was not started)" : ""}. ${why} Start it when you want it done.`;
 }
 

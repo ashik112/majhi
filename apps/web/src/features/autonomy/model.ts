@@ -3,14 +3,12 @@ import type {
   AutonomyEventKind,
   AutonomyMode,
   AutonomyPatch,
-  AutonomyPick,
   AutonomySettings,
   AutonomySummary,
   Budget,
   CapUse,
   TaskPriority,
   TaskSize,
-  TaskSizeLimit,
 } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
 import { readStored, writeStored } from "@/features/memory/storage";
@@ -296,29 +294,6 @@ export function limitsPatch(
     patch.floors = { window: window.value, weekly: weekly.value };
   if (draft.summaryAt !== settings.summary_at) patch.summary_at = draft.summaryAt;
   return { patch };
-}
-
-// The pick rules ------------------------------------------------------------
-
-export const SIZE_LIMIT_WORD: Record<TaskSizeLimit, string> = {
-  small: "Small only",
-  medium: "Up to medium",
-  any: "Any size",
-};
-
-export const SIZE_WORD: Record<TaskSize, string> = { small: "Small", medium: "Medium", large: "Large" };
-
-export interface PickDraft {
-  size: TaskSizeLimit;
-}
-
-export function pickDraft(pick: AutonomyPick): PickDraft {
-  return { size: pick.size };
-}
-
-/** The `autonomy.configure` input for the pick rules, or undefined when nothing changed. */
-export function pickPatch(draft: PickDraft, pick: AutonomyPick): AutonomyPatch | undefined {
-  return draft.size === pick.size ? undefined : { pick: { size: draft.size } };
 }
 
 // The log --------------------------------------------------------------------

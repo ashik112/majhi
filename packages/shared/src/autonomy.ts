@@ -131,8 +131,6 @@ export const AutonomyBacklogItemSchema = z.object({
   size: TaskSizeSchema.optional(),
   /** How the size is known, one line: "Laya rated it medium (0.62)", "Not rated yet". */
   sizeNote: z.string(),
-  /** The owner marked it Not for autonomous mode. */
-  noAutonomy: z.boolean(),
   /** Why the pick rules leave it out, one line. Absent: the captain may take it. */
   leftOut: z.string().optional(),
 });
@@ -492,9 +490,6 @@ export const AutonomyGuideResultSchema = z.object({
  * The tasks it paused when it was last turned off resume.
  */
 export const AutonomyStartInputSchema = z.object({ until: z.iso.datetime().nullable().default(null) });
-
-/** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
-export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });
 
 /** The captain's own tools: no approval card, only for the captain in its autonomy chat while the mode is not off. */
 export const AUTONOMY_BOSS_COMMANDS = [

@@ -583,7 +583,6 @@ export class TaskRepo {
           summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
         if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
         Object.assign(summary, priorityAndDue(row));
-        if (row.noAutonomy) summary.noAutonomy = true;
         if (autonomous.has(row.id)) summary.autonomous = true;
         return summary;
       },
@@ -849,11 +848,6 @@ export class TaskRepo {
     if (row === undefined) throw new Error(`No task ${id}.`);
     const json = fieldsJson({ typing: typingOf(row), fields });
     this.db.update(tasks).set({ fields: json }).where(eq(tasks.id, id)).run();
-  }
-
-  /** The owner's mark Not for autonomous mode. It does not move the task in the lists. */
-  setNoAutonomy(id: string, on: boolean): void {
-    this.db.update(tasks).set({ noAutonomy: on }).where(eq(tasks.id, id)).run();
   }
 
   /** Replaces the title and brief text of a task. */
@@ -1517,7 +1511,6 @@ function buildTask(
     ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
     ...(row.pausedBy === null ? {} : { pausedBy: row.pausedBy }),
     ...priorityAndDue(row),
-    ...(row.noAutonomy ? { noAutonomy: true } : {}),
     folder: row.folder,
     repos: repos.map((r) => ({
       project: r.project,

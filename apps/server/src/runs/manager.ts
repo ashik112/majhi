@@ -250,12 +250,17 @@ export interface RunDeps {
   markSignedOut?: (account: string, detail: string) => Promise<void>;
   /** A turn failed with an error and nothing is queued after it: its step goes to another agent. */
   onTurnFailed?: (turn: { task: string; agent: string; text: string }) => void;
+  /** A run ended in an error (its session is closed): Autonomous counts it against a task of its own. */
+  onRunFailed?: (task: string) => void;
   /**
    * Autonomous mode's mid-turn cap check (PRV-74), asked at a running turn's tool calls with what the
    * turn spent so far (USD, from the agent's running cost). A line when a cap is passed by more
    * than its margin: the turn stops there and the run pauses with `limit`.
    */
-  overCap?: (task: string, turnCostUsd: number) => Promise<string | undefined>;
+  overCap?: (
+    task: string,
+    turnCostUsd: number,
+  ) => Promise<{ reason: "owner" | "limit"; why: string } | undefined>;
   /** A paused or cut agent is resuming: the task runs again. */
   onResumed?: (task: string) => void;
   /** An agent failed in a way that looks like a lost connection: check the network now. */
@@ -1643,6 +1648,7 @@ export class RunManager {
       this.markTurn(run, false, true);
       this.live.system(run, "error", `@${run.agent} failed: ${message}`);
       this.endSession(run, "error");
+      this.deps.onRunFailed?.(run.task);
       void session.close().catch(() => undefined);
       this.setLive(run, { status: "error", nowDoing: undefined });
       // A resume tries once more by itself; anything else is the team's to pick up.
@@ -1813,7 +1819,7 @@ export class RunManager {
       if (why === undefined || !run.prompting || run.paused !== undefined || run.closing) return;
       run.queue.unshift({ kind: "continue" });
       this.live.refreshQueued(run);
-      this.pause(run, "limit", why, true);
+      this.pause(run, why.reason, why.why, true);
       await this.cancelRun(run);
     } catch {
       // A check that fails leaves the turn alone; the gate between turns still holds.

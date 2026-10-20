@@ -42,6 +42,8 @@ export type HeldReason = "owner" | "limit";
 
 /** The hold scope that marks a task Stop now paused, so turning on again can resume it. */
 export const STOPPED_NOW = "stop-now";
+/** The hold scope of a task that spent the budget of its size: Autonomous stopped it, and only the owner resumes it. */
+export const TASK_BUDGET = "task-budget";
 
 export interface AutonomyTaskRow {
   task: string;
@@ -509,6 +511,33 @@ export class AutonomyRepo {
          GROUP BY COALESCE(t.org, ?)`,
       )
       .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
+  }
+
+  /**
+   * What a task Autonomous works on has cost, in dollars, since it took it on or the owner last resumed it by
+   * hand (a resume is a new allowance). 0 for a task Autonomous did not take.
+   */
+  taskCost(task: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(t.cost_usd), 0) AS cost
+         FROM turns t JOIN autonomy_tasks a ON a.task = t.task
+         WHERE t.task = ? AND t.at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
+      )
+      .get(task) as { cost: number } | undefined;
+    return row?.cost ?? 0;
+  }
+
+  /** How many runs of a task Autonomous works on ended in an error since it took it on or the owner last resumed it. */
+  failedRuns(task: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n
+         FROM runs r JOIN autonomy_tasks a ON a.task = r.task
+         WHERE r.task = ? AND r.stop_reason = 'error' AND r.started_at >= MAX(a.since, COALESCE(a.resumed_at, a.since))`,
+      )
+      .get(task) as { n: number } | undefined;
+    return row?.n ?? 0;
   }
 
   /** The same turns as `spendRows`, with their workspace, for the per-day chart. */

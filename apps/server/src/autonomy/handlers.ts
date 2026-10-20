@@ -13,7 +13,6 @@ type AutonomyCommand =
   | "authority.set"
   | "autonomy.guide"
   | "autonomy.forget"
-  | "autonomy.exclude"
   | "autonomy.plan"
   | "autonomy.note"
   | "autonomy.answer";
@@ -63,10 +62,6 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
     "autonomy.forget": async (input, ctx) => {
       ownerOnly(ctx);
       return autonomy.forget(input.id, ctx);
-    },
-    "autonomy.exclude": async (input, ctx) => {
-      ownerOnly(ctx);
-      return autonomy.exclude(input.task, input.exclude);
     },
     "autonomy.plan": (_input, ctx) => bossOnly(ctx),
     "autonomy.note": (_input, ctx) => bossOnly(ctx),

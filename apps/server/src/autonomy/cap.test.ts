@@ -80,15 +80,14 @@ describe("the day cap of autonomous mode", () => {
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await h.majhi.services.autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");
-    const made = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
-      name: "Test task",
-      text: "fix the api",
-      repos: [{ project: "acme-api" }],
-      start: true,
+    // A task the owner made, which the captain takes from the backlog.
+    const id = ((await h.cmd("tasks.create", { text: "fix the api", repos: [{ project: "acme-api" }], start: false }))
+      .body as Task).id;
+    const taken = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_start", {
+      id,
       reason: "the top task of the backlog",
     });
-    expect(made.isError).toBe(false);
-    const id = (JSON.parse(made.text) as { id: string }).id;
+    expect(taken.isError).toBe(false);
     const task = (): Task | undefined => h.majhi.services.store.tasks.get(id);
 
     await w.until(() => task()?.status === "paused", "the cap to stop the turn");

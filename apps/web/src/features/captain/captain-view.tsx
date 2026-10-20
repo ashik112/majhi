@@ -1,90 +1,44 @@
-import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
-import { Sheet } from "@/components/ui/sheet";
-import { markSeen } from "@/features/autonomy/summary-seen";
-import { useOrgFilter } from "@/lib/org-filter";
-import { useAutonomyStatus } from "@/lib/autonomy-queries";
+import { Segmented } from "@/components/ui/segmented";
 import { useCaptainStatus } from "@/lib/captain-queries";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
-import { Conversation } from "./conversation";
-import { AutopilotDashboard } from "./dashboard/dashboard";
-import { DelegationSheet } from "./delegation";
 import { FindingsSheet } from "./findings";
-import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
 import { ScorecardSheet } from "./scorecard";
-import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
-type View = "dashboard" | "captain";
+type View = "history" | "results" | "findings";
 
-type Open = "delegation" | "log" | "summary" | "findings" | "scorecard";
+const VIEWS: readonly { value: View; label: string }[] = [
+  { value: "history", label: "History" },
+  { value: "results", label: "Results" },
+  { value: "findings", label: "Findings" },
+];
 
-/** The sheet an old `?tab=` link asked for: Rules is the delegation grid, Log is the log. */
-function sheetOf(tab: string | undefined): Open | undefined {
-  if (tab === "rules") return "delegation";
-  if (tab === "log") return "log";
+/** The view an old `?tab=` link asked for: the log is History, findings are Findings. */
+function viewOf(tab: string | undefined): View {
   if (tab === "findings") return "findings";
-  return undefined;
+  if (tab === "results") return "results";
+  return "history";
 }
 
 /**
- * The Captain page, one screen and no tabs: the slim header with the Auto-pilot switch and spend, and the
- * conversation under it. What needs you, what runs and what is done live in the console. Delegation,
- * findings, the full log and yesterday's summary open in sheets. Old
- * links with `?tab=` land here and open the sheet they meant.
+ * The Captain page in Settings: what the captain did (History), how it turned out (Results) and what it and the
+ * agents noticed (Findings). Talking to it, its switch and its rules live elsewhere: the console, the top bar and
+ * each workspace's settings.
  */
 export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
-  const autonomy = useAutonomyStatus(true).data;
   const now = useNow(30_000);
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();
-  const { setOrg } = useOrgFilter();
-  const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
-  const thread = search.thread;
-  const tab = search.tab;
-  // The dashboard is the top view while Auto-pilot is on, and a tab when it is off. Old links to a
-  // thread or to a sheet's tab open the conversation.
-  const [picked, setPicked] = useState<View | undefined>(() =>
-    tab === "dashboard" ? "dashboard" : undefined,
-  );
-  const forced = thread !== undefined || (tab !== undefined && tab !== "dashboard");
-  const view: View = forced ? "captain" : (picked ?? (autonomy?.mode === "on" ? "dashboard" : "captain"));
-  // A link to a thread (an old address of a lane chat) selects it in the conversation.
-  useEffect(() => {
-    if (thread !== undefined) setOrg(thread);
-  }, [thread, setOrg]);
-  // A link to an old tab opens its sheet, and the chat tab selects the conversation.
-  useEffect(() => {
-    const asked = sheetOf(tab);
-    if (asked !== undefined) setOpen(asked);
-  }, [tab]);
-
-  const close = () => {
-    setOpen(undefined);
-    if (tab !== undefined || thread !== undefined)
-      void navigate({
-        to: PAGE_PATH.captain,
-        search: (prev: AppSearch) => {
-          const { tab: _tab, thread: _thread, urgent: _urgent, ...rest } = prev;
-          return rest;
-        },
-        replace: true,
-      } as never);
-  };
-  const summary = autonomy?.summary;
-  const openSummary = () => {
-    if (summary === undefined) return;
-    markSeen(summary.day);
-    setOpen("summary");
-  };
+  const view = viewOf(search.tab);
 
   if (query.isError)
     return (
@@ -94,57 +48,36 @@ export function CaptainView() {
     );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <CaptainHeader
-        captain={status}
-        autonomy={autonomy}
-        now={now}
-        onPermissions={() => setOpen("delegation")}
-        onSummary={openSummary}
-        onResults={() => setOpen("scorecard")}
-        onHistory={() => setOpen("log")}
-        onFindings={() => setOpen("findings")}
-        view={view}
-        onView={(v) => {
-          setPicked(v);
-          if (tab !== undefined || thread !== undefined) close();
-        }}
-      />
-      {view === "dashboard" ? (
-        <AutopilotDashboard autonomy={autonomy} now={now} />
-      ) : (
-        <section
-          aria-label="Conversation"
-          className={`flex min-h-0 min-w-0 flex-1 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
-        >
-          <Conversation />
-        </section>
-      )}
-      {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
-      {open === "log" && status && (
-        <Sheet title="History" subtitle="What the captain did, and why" onClose={close}>
-          <FullLog orgs={status.orgs} now={now} />
-        </Sheet>
-      )}
-      {open === "scorecard" && (
-        <Sheet title="Results" subtitle="What the captain did and how it turned out" onClose={close} wide>
-          <ScorecardSheet />
-        </Sheet>
-      )}
-      {open === "findings" && status && (
-        <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
+      <header
+        className={cn(
+          "mb-3 flex min-h-11 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl px-3.5 py-1.5",
+          GLASS,
+        )}
+      >
+        <h1 className="text-lg leading-5 font-semibold text-fg">Captain</h1>
+        <Segmented
+          label="Captain view"
+          value={view}
+          onChange={(next) =>
+            void navigate({
+              to: ".",
+              replace: true,
+              search: (prev: AppSearch) => ({ ...prev, tab: next === "history" ? undefined : next }),
+            } as never)
+          }
+          segments={VIEWS}
+        />
+      </header>
+      <section
+        aria-label={VIEWS.find((v) => v.value === view)?.label}
+        className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-2xl p-4", GLASS)}
+      >
+        {view === "history" && status && <FullLog orgs={status.orgs} now={now} />}
+        {view === "results" && <ScorecardSheet />}
+        {view === "findings" && status && (
           <FindingsSheet orgs={status.orgs} now={now} focus={Number(search.id) || undefined} />
-        </Sheet>
-      )}
-      {open === "summary" && summary && (
-        <Sheet
-          title="Daily summary"
-          subtitle={dayLabel(summary.day)}
-          onClose={close}
-          footer={autonomy && <SummaryTime settings={autonomy.settings} />}
-        >
-          <SummaryView summary={summary} />
-        </Sheet>
-      )}
+        )}
+      </section>
     </div>
   );
 }

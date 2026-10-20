@@ -963,6 +963,8 @@ export function createHandlers({
           from: ctx.meta.task,
           byOwner,
           gate: maker.kind === "owner" ? "owner" : maker.kind === "agent" ? "agent" : "captain",
+          // The captain's own task, made without the owner asking, is an idea Autonomous never starts.
+          ...(maker.kind === "captain" ? { ownerAsked: input.ownerAsked === true } : {}),
           provenance:
             chat === undefined || joined
               ? createdBy(ctx, rest.parent !== undefined)

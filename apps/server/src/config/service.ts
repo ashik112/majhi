@@ -10,6 +10,7 @@ import {
   loadConfig,
   parseConfigText,
 } from "./load.ts";
+import { dropLegacyAutonomous, legacyAutonomousKeys } from "./migrate-autonomous.ts";
 import { planLevels } from "./migrate-levels.ts";
 import { foldedOrgs, orgsWithMergeSwitch, removeOrgMergeSwitches } from "./migrate-org-merge.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
@@ -230,9 +231,33 @@ export class ConfigService {
         if (now === undefined) return;
         changed = true;
         await writeSettings(this.file, {
-          autonomy: { orgs: now.orgs, ...(now.pick === undefined ? {} : { pick: now.pick }) },
+          autonomy: { orgs: now.orgs },
           ...(now.rulesChanged ? { policy: { rules: now.rules } } : {}),
         });
+      },
+    );
+    return changed;
+  }
+
+  /**
+   * Startup migration: Autonomous keeps its rules by itself, so the settings Auto-pilot had for them
+   * (`autonomy.pick`, `tasksAtOnce`, `hours`) leave majhi.yaml (see `migrate-autonomous.ts`). The file is written
+   * atomically and a copy of the old one is kept. Returns whether it changed anything; a second run finds nothing.
+   */
+  async migrateAutonomous(): Promise<boolean> {
+    const first = await legacyAutonomousKeys(this.file);
+    if (first.length === 0) return false;
+    let changed = false;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: `Autonomous keeps its own rules now: ${first.join(", ")} left majhi.yaml`,
+      },
+      async () => {
+        if ((await legacyAutonomousKeys(this.file)).length === 0) return;
+        changed = true;
+        await dropLegacyAutonomous(this.file);
       },
     );
     return changed;

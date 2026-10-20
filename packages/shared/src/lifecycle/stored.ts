@@ -96,6 +96,8 @@ function pausedHold(f: StoredFields, c: StoredContext, lane: Lane): Hold {
     case "owner":
       if (f.pausedBy === "captain")
         return { cause: "captain-stop", at: c.at, ...(c.why === undefined ? {} : { why: c.why }) };
+      if (f.pausedBy === "autonomy-stop")
+        return { cause: "autonomous-stop", at: c.at, why: c.why ?? "Autonomous stopped it." };
       if (f.pausedBy === "autonomy-off" || (f.held === "owner" && f.heldScope === STOPPED_NOW))
         return { cause: "autopilot-off", at: c.at, mode: "now" };
       return { cause: "owner-stop", at: c.at };
@@ -176,6 +178,8 @@ export function toStored(state: Lifecycle, c: Pick<StoredContext, "at" | "resume
       return paused({ pausedReason: "owner" });
     case "captain-stop":
       return paused({ pausedReason: "owner", pausedBy: "captain" });
+    case "autonomous-stop":
+      return paused({ pausedReason: "owner", pausedBy: "autonomy-stop" });
     case "autopilot-off":
       return hold.mode === "now"
         ? paused({ pausedReason: "owner", pausedBy: "autonomy-off", held: "owner", heldScope: STOPPED_NOW })

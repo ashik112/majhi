@@ -28,7 +28,6 @@ describe("Autonomous with an end time", () => {
     const autonomy = h.majhi.services.autonomy;
     const status = async () => (await h.cmd("autonomy.status", {})).body as AutonomyStatus;
     expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
-    expect((await h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 2 } } })).status).toBe(200);
 
     const until = "2026-10-21T08:00:00.000Z";
     expect((await h.cmd("autonomy.start", { until })).status).toBe(200);
@@ -36,16 +35,15 @@ describe("Autonomous with an end time", () => {
     const chat = await autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no lane for Acme");
     const made: string[] = [];
-    for (const name of ["First task", "Second task"]) {
-      const res = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
-        name,
-        text: "fix the api",
-        repos: [{ project: "acme-api" }],
-        start: true,
+    for (const text of ["Fix the api", "Fix the web app"]) {
+      // Tasks the owner made, which the captain takes from the backlog.
+      const id = ((await h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: false })).body as { id: string }).id;
+      const res = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_start", {
+        id,
         reason: "next in the backlog",
       });
       expect(res.isError).toBe(false);
-      made.push((JSON.parse(res.text) as { id: string }).id);
+      made.push(id);
     }
     const task = (id: string) => h.majhi.services.store.tasks.get(id);
     await w.until(() => made.every((id) => task(id)?.status === "running"), "both tasks to run");

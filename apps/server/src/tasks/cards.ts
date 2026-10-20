@@ -43,7 +43,7 @@ export class OwnerCards {
    * Recorded on the item when it is written, so a later change of captain does not relabel history.
    */
   byCaptain(by: string): boolean {
-    if (by === "autonomy" || by === "autonomy-off") return true;
+    if (by === "autonomy" || by === "autonomy-off" || by === "autonomy-stop") return true;
     const captain = this.deps.captain?.();
     return captain !== undefined && by.replace(/^@/, "") === captain;
   }

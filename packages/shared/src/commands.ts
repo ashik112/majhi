@@ -57,7 +57,6 @@ import {
   AutonomyAnswerResultSchema,
   AutonomyEventSchema,
   AutonomyEventsInputSchema,
-  AutonomyExcludeInputSchema,
   AutonomyGuideInputSchema,
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
@@ -2355,8 +2354,13 @@ export const commands = {
        * first task instead of making another, so a double press or a retry cannot duplicate it.
        */
       requestId: z.string().min(8).max(80).optional(),
-      /** The owner marks the new task Not for the captain: the captain never starts, messages, ships or changes it. */
-      noAutonomy: z.boolean().optional(),
+      /** The owner keeps the new task from the captain: it is filed as an idea, and only the owner starts it. */
+      heldByOwner: z.boolean().optional(),
+      /**
+       * For the captain's call: true only when the owner asked for this task in the conversation. Without it the task is
+       * the captain's own idea, and Autonomous never starts those.
+       */
+      ownerAsked: z.boolean().optional(),
     }),
     output: TaskSchema,
   },
@@ -4249,13 +4253,6 @@ export const commands = {
     risk: "change",
     summary: "Remove a standing instruction of autonomous mode. Owner only",
     input: z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) }),
-    output: AutonomyStatusSchema,
-  },
-  "autonomy.exclude": {
-    risk: "change",
-    summary:
-      "Mark a task Not for autonomous mode (exclude true), so the captain in autonomous mode leaves it alone, or clear the mark. Owner only",
-    input: AutonomyExcludeInputSchema,
     output: AutonomyStatusSchema,
   },
   // The captain per workspace (5.18) --------------------------------------------

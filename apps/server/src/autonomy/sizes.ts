@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Task, TaskSize, TaskSizeLimit } from "@majhi/shared";
+import type { Task, TaskSize } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import type { TaskRating } from "../decisions/api.ts";
 import type { Difficulty } from "../runs/difficulty.ts";
@@ -37,30 +37,6 @@ export function sizeOfLevel(level: Difficulty): TaskSize {
   return level === "trivial" ? "small" : level;
 }
 
-const LIMIT_WORD: Record<TaskSizeLimit, string> = {
-  small: "Small only",
-  medium: "Up to medium",
-  any: "Any size",
-};
-
-export function limitWord(limit: TaskSizeLimit): string {
-  return LIMIT_WORD[limit];
-}
-
-/** Whether a task of this size may start under the limit. An unknown size fits only `any`. */
-export function fitsSize(limit: TaskSizeLimit, size: TaskSize | undefined): boolean {
-  if (limit === "any") return true;
-  if (size === undefined) return false;
-  return limit === "medium" ? size !== "large" : size === "small";
-}
-
-/** Why the size rule keeps the task from starting, or undefined when it fits. */
-export function sizeProblem(limit: TaskSizeLimit, of: SizeOf): string | undefined {
-  if (fitsSize(limit, of.size)) return undefined;
-  return of.size === undefined
-    ? `its size is not known (${lowerFirst(of.note)}), and the size rule is ${LIMIT_WORD[limit]}`
-    : `it is ${of.size}, and the size rule is ${LIMIT_WORD[limit]}`;
-}
 
 /** The line for a rating: counted, a guess, or none. */
 export function sizeFromRating(rating: TaskRating | undefined): SizeOf {

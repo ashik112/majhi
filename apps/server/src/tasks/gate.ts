@@ -3,7 +3,7 @@
  * caller reads the counts and the limits and acts on the answer.
  *
  *  - The owner's own tasks are never ideas. They start, or wait in line when `tasks_running` tasks run.
- *  - A task an agent or a finding makes is always an idea: it exists, shows under Ideas, and starts only
+ *  - A task the captain files on its own (the owner did not ask) is an idea too, and so is one an agent or a finding makes. It is always an idea: it exists, shows under Ideas, and starts only
  *    when the owner starts it.
  *  - The captain, client chats and schedules are capped: past `open_by_others` open tasks the owner did
  *    not start, in one workspace, a new one is an idea; under it they start or wait like the owner's.
@@ -30,7 +30,7 @@ export type Admission =
   /** Created and kept in the backlog: nobody asked it to start. */
   | { kind: "file" }
   | { kind: "queue"; reason: "running-cap" | "project-busy" }
-  | { kind: "idea"; reason: "open-cap" | "agent-made" };
+  | { kind: "idea"; reason: "open-cap" | "agent-made" | "captain-made" };
 
 /** Whether a start has room: `start`, or the line it waits in. */
 export function admitRunning(
@@ -49,9 +49,13 @@ export function admit(input: {
   wantsStart: boolean;
   counts: GateCounts;
   limits: GateLimits;
+  /** For the captain's origin: whether the owner asked for this task. `false`: it is the captain's own idea. */
+  ownerAsked?: boolean | undefined;
 }): Admission {
   const { origin, org, wantsStart, counts, limits } = input;
   if (origin === "agent" || origin === "finding") return { kind: "idea", reason: "agent-made" };
+  // Autonomous never works on its own ideas: what the captain files without the owner asking waits for the owner.
+  if (origin === "captain" && input.ownerAsked === false) return { kind: "idea", reason: "captain-made" };
   // An incident is reacting work: it is never an idea. It still waits for a running place, urgent first.
   if (
     origin !== "owner" &&

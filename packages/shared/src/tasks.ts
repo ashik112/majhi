@@ -161,17 +161,28 @@ export function priorityRank(priority: TaskPriority | undefined): number {
   return TASK_PRIORITIES.indexOf(priority ?? "normal");
 }
 
+/** A task the owner made (or started in a chat), as against one the captain, an agent or a signal made. */
+export function madeByOwner(origin: { kind: string } | undefined): boolean {
+  return origin === undefined || origin.kind === "owner" || origin.kind === "chat";
+}
+
 /**
- * The order waiting starts take their places: priority first, then the oldest wish. When a place
+ * The order waiting starts take their places: priority first, then the owner's before the captain's, then the oldest wish. When a place
  * frees, the first of this order starts. A running task is stopped for a more urgent one only when
  * the owner (or the captain, for a task it made or the owner asked about) starts that one on priority.
  */
-export function lineOrder<T extends { priority?: TaskPriority | undefined; updatedAt: string; id: string }>(
-  waiting: readonly T[],
-): T[] {
+export function lineOrder<
+  T extends {
+    priority?: TaskPriority | undefined;
+    updatedAt: string;
+    id: string;
+    origin?: { kind: string } | undefined;
+  },
+>(waiting: readonly T[]): T[] {
   return [...waiting].sort(
     (a, b) =>
       priorityRank(a.priority) - priorityRank(b.priority) ||
+      Number(!madeByOwner(a.origin)) - Number(!madeByOwner(b.origin)) ||
       a.updatedAt.localeCompare(b.updatedAt) ||
       a.id.localeCompare(b.id),
   );
@@ -210,7 +221,7 @@ export const ShipFixSchema = z.discriminatedUnion("page", [
 ]);
 export type ShipFix = z.infer<typeof ShipFixSchema>;
 
-export const PausedBySchema = z.enum(["captain", "autonomy-off"]);
+export const PausedBySchema = z.enum(["captain", "autonomy-off", "autonomy-stop"]);
 export type PausedBy = z.infer<typeof PausedBySchema>;
 
 /** Paused until the owner continues it: never resumed by majhi on its own. */
@@ -386,9 +397,10 @@ export type ReadMount = z.infer<typeof ReadMountSchema>;
 /**
  * Why a task is an idea: filed, not started, and never started except by the owner (workflow reset,
  * Step 1). `agent-made`: an agent, a scan or a finding made it. `open-cap`: its workspace already
- * had `limits.open_by_others` open tasks the owner did not start.
+ * had `limits.open_by_others` open tasks the owner did not start. `captain-made`: the captain filed it for
+ * itself, which Autonomous never does on its own. `held-by-owner`: the owner kept it from the captain.
  */
-export const IdeaReasonSchema = z.enum(["agent-made", "open-cap"]);
+export const IdeaReasonSchema = z.enum(["agent-made", "open-cap", "captain-made", "held-by-owner"]);
 export type IdeaReason = z.infer<typeof IdeaReasonSchema>;
 
 export const TaskSchema = z.object({
@@ -428,7 +440,6 @@ export const TaskSchema = z.object({
   /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
   due: DaySchema.optional(),
   /** The owner marked it Not for autonomous mode: the captain in autonomous mode leaves it alone. */
-  noAutonomy: z.boolean().optional(),
   /** Absolute path of the task folder. */
   folder: z.string(),
   repos: z.array(TaskRepoSchema),
@@ -613,7 +624,6 @@ export const TaskSummarySchema = TaskSchema.pick({
   pausedBy: true,
   priority: true,
   due: true,
-  noAutonomy: true,
   team: true,
   mode: true,
   updatedAt: true,

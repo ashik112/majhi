@@ -102,7 +102,7 @@ export class ShipPlanner {
       stopped: this.deps.halted(),
     });
     const acts =
-      task.noAutonomy !== true && mayWork(policy, this.deps.backlog(task.id) ? "backlog" : "reacting").ok;
+      task.idea === undefined && mayWork(policy, this.deps.backlog(task.id) ? "backlog" : "reacting").ok;
     const base = shipSteps(
       levelOf(settings, org),
       {

@@ -32,7 +32,7 @@ const LINE_MAX = 180;
  * running tasks, say), so a refusal by the same gate in the same state is the same fact.
  */
 export interface StartGate {
-  kind: "machine" | "workspace" | "accounts";
+  kind: "machine" | "captain" | "running" | "accounts";
   text: string;
   key: string;
 }

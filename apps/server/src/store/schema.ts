@@ -53,7 +53,6 @@ export const tasks = sqliteTable("tasks", {
   /** `agent-made` or `open-cap` while the task is an idea; NULL otherwise (migration 191). */
   idea: text("idea"),
   /** The owner marked it Not for autonomous mode (migration 114). */
-  noAutonomy: integer("no_autonomy", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

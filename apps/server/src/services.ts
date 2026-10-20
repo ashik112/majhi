@@ -651,6 +651,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           return found === undefined ? undefined : (found.org ?? PRIVATE);
         },
       });
+      await config.migrateAutonomous();
     },
     (err) => console.error(`Could not move the workspaces to authority levels: ${errorMessage(err)}`),
   );
@@ -1057,6 +1058,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return tasks.crew.successor(task, agent);
     },
     onTurnFailed: (turn) => idleWatch.turnFailed(turn),
+    onRunFailed: (task) => autonomy.runFailed(task),
     // Bound below: autonomous mode is built after the task service.
     overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),

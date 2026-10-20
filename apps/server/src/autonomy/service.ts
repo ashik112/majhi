@@ -54,7 +54,6 @@ import {
   restOf,
   type Spend,
   STOPPED_WHY,
-  TASKS_AT_ONCE,
   type Task,
   type TaskId,
   ToolIdSchema,
@@ -112,11 +111,11 @@ import {
 } from "./limits.ts";
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
-import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
+import { AutonomyRepo, type HeldReason, STOPPED_NOW, TASK_BUDGET } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 import { finishedByDay, flowByDay, hourlySpend, machineOf, spendByDay } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
-import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
+import { type SizeOf, type SizeRater, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
   capHoldFor,
@@ -134,6 +133,8 @@ import { evaluateWaits, waitProblem } from "./waits.ts";
 
 /** Who the pause is credited to: the labels read "Paused when Auto-pilot was turned off". */
 const OFF_BY = "autonomy-off";
+/** Credited when Autonomous stops a task of its own: it failed twice. */
+const STOP_BY = "autonomy-stop";
 /** The hold scope that marks a task Stop everything paused. */
 const HALTED = "halted";
 const HALT_WHY = "Stop everything was pressed.";
@@ -722,7 +723,10 @@ export class AutonomyService {
   async held(task: string): Promise<{ reason: "owner" | "limit"; why: string } | undefined> {
     try {
       const hold = this.holdFor(task);
-      if (hold === undefined) return undefined;
+      if (hold === undefined) {
+        const over = await this.overBudget(task, 0);
+        return over === undefined ? undefined : { reason: "owner", why: over };
+      }
       this.repo.hold(task, hold.reason, hold.scope);
       return { reason: hold.reason, why: hold.why };
     } catch {
@@ -736,7 +740,10 @@ export class AutonomyService {
    * autonomous task spent so far, passed the day cap or its workspace's cap by more than
    * `CAP_MARGIN`. Records the hold, so the cap lifting restarts the task. Never throws.
    */
-  async overCap(task: string, turnCostUsd: number): Promise<string | undefined> {
+  async overCap(
+    task: string,
+    turnCostUsd: number,
+  ): Promise<{ reason: "owner" | "limit"; why: string } | undefined> {
     try {
       if (this.repo.state().mode !== "on" || !this.repo.isAutonomous(task)) return undefined;
       const [all, sections] = await Promise.all([this.deps.config.settings(), this.deps.config.sections()]);
@@ -751,18 +758,63 @@ export class AutonomyService {
       );
       const names = Object.fromEntries(Object.entries(sections.orgs).map(([id, o]) => [id, o.name]));
       const passed = capPassed(spend, this.deps.store.tasks.get(task)?.org ?? PRIVATE, turnCostUsd, names);
-      if (passed === undefined) return undefined;
+      if (passed === undefined) {
+        const over = await this.overBudget(task, turnCostUsd);
+        return over === undefined
+          ? undefined
+          : { reason: "owner", why: `${over} This agent stopped in the middle of its turn.` };
+      }
       this.repo.hold(task, "limit", passed.scope);
       const used =
         passed.scope === DAY_SCOPE
           ? spend.total.used.cost
           : (spend.orgs.find((o) => o.org === passed.scope)?.used.cost ?? 0);
       const line = waitText(passed.scope, askName(passed.scope, names), used + turnCostUsd);
-      return `${line}. This agent stopped in the middle of its turn and continues when the budget is raised or tomorrow.`;
+      return {
+        reason: "limit",
+        why: `${line}. This agent stopped in the middle of its turn and continues when the budget is raised or tomorrow.`,
+      };
     } catch {
       // The database closed under a shutdown: the run stops anyway.
       return undefined;
     }
+  }
+
+  /**
+   * Whether a task Autonomous works on spent the budget of its size (`limits.captain_task_cost`; a task not rated
+   * yet counts as medium): the line when it did, and the task is marked as Autonomous's stop, so only the owner
+   * resumes it and the resume is a new allowance. Undefined for any other task.
+   */
+  private async overBudget(task: string, turnCostUsd: number): Promise<string | undefined> {
+    if (!this.repo.isAutonomous(task)) return undefined;
+    const found = this.deps.store.tasks.get(task);
+    if (found === undefined) return undefined;
+    const { limits } = await this.deps.config.settings();
+    const size = this.sizes.known(found)?.size ?? "medium";
+    const budget = limits.captain_task_cost[size];
+    const spent = this.repo.taskCost(task) + turnCostUsd;
+    if (spent <= budget) return undefined;
+    this.repo.hold(task, "owner", TASK_BUDGET);
+    return `It spent $${spent.toFixed(2)}, over the $${budget.toFixed(2)} Autonomous gives a ${size} task.`;
+  }
+
+  /**
+   * A run of a task ended in an error. Autonomous stops a task of its own the second time, since taking it on or
+   * since the owner last resumed it: the owner decides what to change. Never throws.
+   */
+  runFailed(task: string): void {
+    void this.stopIfFailedTwice(task).catch(() => undefined);
+  }
+
+  private async stopIfFailedTwice(task: string): Promise<void> {
+    const row = this.repo.task(task);
+    const found = this.deps.store.tasks.get(task);
+    if (row === undefined || found === undefined || found.status === "paused" || found.status === "done") return;
+    if (this.repo.failedRuns(task) < 2) return;
+    const why = "It failed twice.";
+    await this.deps.tasks.stop(task, "owner", why, STOP_BY);
+    this.event({ kind: "task", text: `${task} stopped: ${why}`, task, ...orgOf(found) });
+    this.deps.events.emit(["autonomy", "tasks"]);
   }
 
   private staffingSource: StaffingSource | undefined;
@@ -1044,17 +1096,17 @@ export class AutonomyService {
   }
 
   /**
-   * The workspace's limit on tasks the captain works on at once (`tasksAtOnce`, default 1): the line
-   * when it is reached, or undefined. Counts the workspace's running tasks that have a live run, not
-   * chats or the lanes. A task whose status says running with no run (a restart cut it) holds no slot.
+   * Autonomous works on at most `limits.captain_tasks` tasks at once, across every workspace: the line when it
+   * is reached, or undefined. Counts the captain's running tasks that have a live run, not chats or the lanes.
+   * A task whose status says running with no run (a restart cut it) holds no slot. The owner's own tasks are the
+   * task gate's (`limits.tasks_running`), and go first in its line.
    */
-  private async workspaceFull(org: string, except?: string): Promise<string | undefined> {
-    return (await this.workspaceGate(org, except))?.text;
+  private async captainFull(except?: string): Promise<string | undefined> {
+    return (await this.captainGate(except))?.text;
   }
 
-  private async workspaceGate(org: string, except?: string): Promise<StartGate | undefined> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const limit = settings.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE;
+  private async captainGate(except?: string): Promise<StartGate | undefined> {
+    const limit = (await this.deps.config.settings()).limits.captain_tasks;
     const running = this.deps.store.tasks
       .list(false)
       .filter(
@@ -1063,14 +1115,17 @@ export class AutonomyService {
           this.isLive(t.id) &&
           t.kind !== "chat" &&
           t.id !== except &&
-          (t.org ?? PRIVATE) === org &&
+          this.repo.isAutonomous(t.id) &&
           this.deps.lanes.orgOf(t.id) === undefined,
       );
     if (running.length < limit) return undefined;
-    const names = running.map((t) => t.id).join(", ");
+    const names = running
+      .map((t) => t.id)
+      .sort()
+      .join(", ");
     return {
-      kind: "workspace",
-      text: `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`,
+      kind: "captain",
+      text: `Autonomous works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`,
       key: `${limit}:${running
         .map((t) => t.id)
         .sort()
@@ -1095,8 +1150,10 @@ export class AutonomyService {
   private async startGate(task: Pick<Task, "team" | "id" | "org">): Promise<StartGate | undefined> {
     const busy = this.machineBusy();
     if (busy !== undefined) return { kind: "machine", text: `${upperFirst(busy)}.`, key: "machine" };
-    const full = await this.workspaceGate(task.org ?? PRIVATE, task.id);
+    const full = await this.captainGate(task.id);
     if (full !== undefined) return full;
+    const place = await this.deps.tasks.noRoom(task.id);
+    if (place !== undefined) return { kind: "running", text: place, key: place };
     const accounts = await this.teamAccountIds(task);
     const line = noRoomLine(await this.deps.runs.capacity(accounts), accounts);
     return line === undefined ? undefined : { kind: "accounts", text: line, key: line };
@@ -1160,11 +1217,9 @@ export class AutonomyService {
           this.deps.lanes.orgOf(t.id) === undefined,
       );
     const atOnce = new Map<string, { running: string[]; max: number }>();
+    const captainRunning = running.filter((t) => this.repo.isAutonomous(t.id)).map((t) => t.id);
     for (const org of new Set(waiting.map((t) => t.org ?? PRIVATE))) {
-      atOnce.set(org, {
-        running: running.filter((t) => (t.org ?? PRIVATE) === org).map((t) => t.id),
-        max: settings.autonomy.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE,
-      });
+      atOnce.set(org, { running: captainRunning, max: settings.limits.captain_tasks });
     }
     const on = this.repo.state().mode === "on";
     const budgets: Extract<lifecycle.Blocker, { gate: "budget" }>[] = [];
@@ -1365,7 +1420,6 @@ export class AutonomyService {
     // Backlog the captain would start where it decides when work starts.
     const backlog = this.backlog().filter(
       (b) =>
-        b.task.noAutonomy !== true &&
         (scope === DAY_SCOPE || (b.org ?? PRIVATE) === scope) &&
         authorityOf(settings, b.org ?? PRIVATE).start === "decide",
     ).length;
@@ -1593,7 +1647,6 @@ export class AutonomyService {
     if (command.startsWith("autonomy.")) return undefined;
     const sections = ctx?.sections ?? (await this.deps.config.sections());
     const settings = (await this.deps.config.settings()).autonomy;
-    const { pick } = settings;
     const names = orgNames(sections);
     const group = command.split(".", 1)[0];
     const starts = startsWork(command, input);
@@ -1605,9 +1658,10 @@ export class AutonomyService {
           : this.deps.store.tasks.get(id);
       return t === undefined ? [] : [t];
     });
-    const marked = touched.find((t) => t.noAutonomy === true);
-    if (marked !== undefined) {
-      return `Refused: the owner marked ${marked.id} Not for the captain, so the captain leaves it alone.`;
+    // An idea, the agents' or the captain's own, is only the owner's to start.
+    const idea = touched.find((t) => t.idea !== undefined && starts && t.id === str(input.id));
+    if (idea !== undefined) {
+      return `Refused: ${idea.id} is an idea. Only the owner starts an idea, so the captain leaves it alone.`;
     }
     // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
     if (command === "tasks.start") {
@@ -1652,9 +1706,7 @@ export class AutonomyService {
         return `Refused: ${orgName(org, names)} lets the captain start work on ${providers.join(", ")} only, and this would run on ${other}.`;
       }
     }
-    if (!starts || pick.size === "any") return undefined;
-    const big = await this.sizeRefusal(command, input);
-    return big === undefined ? undefined : `Refused: ${big}. Pick work the size rule allows.`;
+    return undefined;
   }
 
   /** Why the captain may not resume this paused task now, or undefined: see `resumeRefusal`. */
@@ -1700,47 +1752,7 @@ export class AutonomyService {
     return { accounts, ...(hold === undefined ? {} : { budgetHold: this.waitLine(hold) }) };
   }
 
-  /** For a call that starts work: why the size rule keeps it from starting. */
-  private async sizeRefusal(
-    command: CommandName,
-    input: Record<string, unknown>,
-  ): Promise<string | undefined> {
-    const { pick } = (await this.deps.config.settings()).autonomy;
-    const existing = (id: string | undefined) =>
-      id === undefined ? undefined : this.deps.store.tasks.get(id);
-    const check = (label: string, of: SizeOf) => {
-      const problem = sizeProblem(pick.size, of);
-      return problem === undefined ? undefined : `${label} was not started: ${problem}`;
-    };
-    if (command === "tasks.start") {
-      const task = existing(str(input.id));
-      return task === undefined ? undefined : check(task.id, await this.sizes.of(task));
-    }
-    if (command === "team.add" || command === "tasks.addAgent") {
-      const task = existing(str(input.task) ?? str(input.id));
-      // An autonomous task passed the rule when it started.
-      if (task === undefined || this.repo.isAutonomous(task.id)) return undefined;
-      return check(task.id, await this.sizes.of(task));
-    }
-    const texts = command === "tasks.create" ? [input] : [];
-    for (const raw of texts as Record<string, unknown>[]) {
-      const text = str(raw.text) ?? "";
-      const title =
-        text
-          .split("\n")
-          .find((l) => l.trim() !== "")
-          ?.trim() ?? "";
-      const repos = (Array.isArray(raw.repos) ? raw.repos : []).flatMap((r) => {
-        const project =
-          typeof r === "object" && r !== null ? str((r as { project?: unknown }).project) : undefined;
-        return project === undefined ? [] : [project];
-      });
-      const of = await this.sizes.rateText({ title, brief: text, kind: "code", repos });
-      const problem = check(`"${clip(title, 60)}"`, of);
-      if (problem !== undefined) return problem;
-    }
-    return undefined;
-  }
+
 
   /** While Autonomous is turning off, calls that start work are refused. */
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
@@ -1801,13 +1813,18 @@ export class AutonomyService {
           ];
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
-    const atOnce = await this.workspaceFull(world.org, str(input.id));
+    const atOnce = await this.captainFull(str(input.id));
+    // The owner's tasks come first: the captain takes a free running place, never a place in the line.
+    const id = str(input.id);
+    const running = command === "tasks.start" && id !== undefined ? await this.deps.tasks.noRoom(id) : undefined;
     const full =
       busy !== undefined
         ? `${upperFirst(busy)}.`
         : atOnce !== undefined
           ? atOnce
-          : candidates.length === 0
+          : running !== undefined
+            ? running
+            : candidates.length === 0
             ? noRoomLine(capacity, named)
             : lines.every((l) => l !== undefined)
               ? lines[0]
@@ -2288,29 +2305,6 @@ export class AutonomyService {
     return this.status();
   }
 
-  /** The owner marks a task Not for autonomous mode, or clears the mark. */
-  async exclude(task: string, exclude: boolean): Promise<AutonomyStatus> {
-    const found = this.deps.store.tasks.get(task);
-    if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
-    if (found.id === this.repo.state().chat || this.laneOrg(found.id) !== undefined) {
-      throw new UserError(`${task} is a chat of the captain.`, 409);
-    }
-    if ((found.noAutonomy === true) !== exclude) {
-      this.deps.store.tasks.setNoAutonomy(task, exclude);
-      this.event({
-        kind: "guide",
-        text: exclude
-          ? `Marked ${task} Not for Auto-pilot: ${found.title}`
-          : `Cleared the mark Not for Auto-pilot on ${task}: ${found.title}`,
-        task,
-        ...orgOf(found),
-      });
-      this.deps.events.emit(["autonomy", "tasks"]);
-      if (!exclude) this.wake(`The owner let Auto-pilot take ${task} again`, found.org ?? PRIVATE);
-    }
-    return this.status();
-  }
-
   // ---------------------------------------------------------------------------
   // The driver's inputs (rule 8)
 
@@ -2339,7 +2333,7 @@ export class AutonomyService {
   backlog(org?: string): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
     const listed = this.deps.store.tasks.list(false).filter((t) => {
-      if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return false;
+      if (t.chat === true || t.idea !== undefined || (t.status !== "inbox" && t.status !== "ready")) return false;
       return org === undefined || (t.org ?? PRIVATE) === org;
     });
     const full = new Map(this.deps.store.tasks.getMany(listed.map((t) => t.id)).map((t) => [t.id, t]));
@@ -2368,14 +2362,13 @@ export class AutonomyService {
       this.deps.config.settings(),
       this.deps.config.sections(),
     ]);
-    const { pick } = settings.autonomy;
     const names = orgNames(sections);
     const items = this.backlog(org);
     const known = this.sizes.knownMany(items.map((i) => i.task));
     return items.map((item) => {
       const size = known.get(item.id) ?? { note: "Not rated yet" };
       const authority = authorityOf(settings.autonomy, item.org ?? PRIVATE);
-      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, authority) };
+      return { item, size, leftOut: leftOutWhy(item.task, names, authority) };
     });
   }
 
@@ -2388,11 +2381,8 @@ export class AutonomyService {
     org?: string,
   ): Promise<{ backlog: BacklogTask[]; leftOut: number; rules: string[] }> {
     if (fillMs > 0) {
-      const marked = (t: Task) => t.noAutonomy === true;
       await this.sizes.fill(
-        this.backlog(org)
-          .map((b) => b.task)
-          .filter((t) => !marked(t)),
+        this.backlog(org).map((b) => b.task),
         fillMs,
       );
     }
@@ -2408,7 +2398,7 @@ export class AutonomyService {
         return [{ ...rest, ...(size.size === undefined ? {} : { size: size.size }) }];
       }),
       leftOut: rows.filter((r) => r.leftOut !== undefined).length,
-      rules: pickLines(settings.autonomy.pick, orgNames(sections), org),
+      rules: pickLines(orgNames(sections), org),
     };
   }
 
@@ -2423,7 +2413,6 @@ export class AutonomyService {
       ...(item.due === undefined ? {} : { due: item.due }),
       ...(size.size === undefined ? {} : { size: size.size }),
       sizeNote: size.note,
-      noAutonomy: item.task.noAutonomy === true,
       ...(leftOut === undefined ? {} : { leftOut }),
     }));
   }
@@ -2435,7 +2424,7 @@ export class AutonomyService {
     const tasks = this.backlog()
       .slice(0, 100)
       .map((b) => b.task)
-      .filter((t) => t.noAutonomy !== true && this.sizes.known(t) === undefined);
+      .filter((t) => this.sizes.known(t) === undefined);
     if (tasks.length === 0) {
       this.filling = false;
       return;

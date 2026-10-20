@@ -1,11 +1,11 @@
-import { type Authority, type AuthorityRow, type AutonomyPick, PRIVATE } from "@majhi/shared";
+import { type Authority, type AuthorityRow, PRIVATE, type Task } from "@majhi/shared";
 import { askedWhy } from "../captain/levels.ts";
-import { limitWord, type SizeOf, sizeProblem } from "./sizes.ts";
 
 /**
- * The owner's pick rules for autonomous mode (PRV-74 follow-up, 5.18): the largest task size it may
- * start, the workspaces where the captain starts work, and the tasks marked Not for the captain. Pure: the digest leaves out what
- * they exclude, and the service refuses the captain's calls that break them.
+ * What Autonomous may take from the backlog (docs/briefs/captain.md). Pure: the digest leaves out what these rules
+ * exclude, and the service refuses the captain's calls that break them. The rules are fixed, not settings:
+ * only tasks the owner made or approved (never an idea), and only in a workspace whose level lets the captain
+ * start work.
  */
 
 /** An org's name for the lines, `Private` for tasks with no org. */
@@ -16,10 +16,10 @@ export function orgName(org: string, names: OrgNames): string {
 }
 
 /**
- * Why the workspace's authority table (5.18) keeps the captain from this call, or undefined when a
- * row that governs it is "Captain decides". `rows` are the rows that govern the call; any one on
- * "Captain decides" is enough (a plain change to a task needs the captain to start work or do upkeep).
- * Auto-pilot is not read here: it only governs backlog work (`may.ts`).
+ * Why the workspace's level (SPEC 5.18) keeps the captain from this call, or undefined when a row that governs it
+ * is "Captain decides". `rows` are the rows that govern the call; any one on "Captain decides" is enough (a plain
+ * change to a task needs the captain to start work or do upkeep). The Autonomous switch is not read here: it only
+ * governs backlog work (`may.ts`).
  */
 export function authorityProblem(
   authority: Authority,
@@ -33,30 +33,23 @@ export function authorityProblem(
 
 /** Why the rules leave a backlog task out, or undefined when the captain may take it. */
 export function leftOutWhy(
-  pick: AutonomyPick,
-  task: { org?: string | undefined; noAutonomy?: boolean | undefined },
-  size: SizeOf,
+  task: Pick<Task, "idea" | "org">,
   names: OrgNames,
   authority: Authority,
 ): string | undefined {
-  if (task.noAutonomy === true) return "Marked Not for the captain";
+  if (task.idea !== undefined) return "It is an idea: only the owner starts it";
   if (authority.start !== "decide")
     return `In ${orgName(task.org ?? PRIVATE, names)} you decide when work starts`;
-  const big = sizeProblem(pick.size, size);
-  return big === undefined ? undefined : upperFirst(big);
+  return undefined;
 }
 
 /** The rules in one line each, for the digest of one workspace's lane. */
-export function pickLines(pick: AutonomyPick, names: OrgNames, org?: string): string[] {
+export function pickLines(names: OrgNames, org?: string): string[] {
   return [
-    `Task size: ${limitWord(pick.size)}${pick.size === "any" ? ". Take large tasks too, splitting them when that helps." : ". Larger tasks, and tasks whose size is not known, are not started."}`,
+    "Tasks of any size. Take large tasks too, writing the steps into the plan when that helps. A task stops for the owner when it spends its budget (by size) or fails twice.",
     org === undefined
       ? "Workspaces: only those where the captain decides when work starts, each in its own lane."
       : `Workspace: ${orgName(org, names)} only. This lane never sees or acts in another workspace.`,
-    "Tasks the owner marked Not for the captain are left alone.",
+    "Ideas, the agents' and your own, are left alone: only the owner starts one.",
   ];
-}
-
-function upperFirst(text: string): string {
-  return text === "" ? text : text[0]?.toUpperCase() + text.slice(1);
 }

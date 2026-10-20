@@ -49,13 +49,11 @@ function canon(value: unknown): string {
 
 const FIELD_WORD: Record<string, string> = {
   cap: "Daily budget",
-  hours: "Work hours",
   freeze: "Freeze",
   tz: "Time zone",
   branches: "Branches",
   providers: "Providers",
   account: "Account",
-  tasksAtOnce: "Tasks at once",
 };
 
 function show(value: unknown): string {

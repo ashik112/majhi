@@ -22,6 +22,7 @@ import { badgeLetters, plural } from "@/lib/format";
 import { useConfig } from "@/lib/queries";
 import { useNow } from "@/lib/use-now";
 import { GitAccounts } from "./git-accounts";
+import { CaptainRules } from "./captain-rules";
 import { OrgSettings } from "./org-settings";
 
 const ROW = "flex min-h-9 min-w-0 items-center gap-3 border-t border-line py-1.5 first:border-t-0";
@@ -214,6 +215,8 @@ export function OrgDetail({
       <GitAccounts key={`git-${org.id}`} org={org} />
 
       <OrgSettings key={org.id} org={org} onRenamed={onRenamed} />
+
+      <CaptainRules key={`captain-${org.id}`} org={org} />
     </DetailPane>
   );
 }

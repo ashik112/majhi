@@ -7,7 +7,7 @@ let w: BossWorld;
 afterEach(() => w?.cleanup());
 
 describe("the captain proposes what it may not do alone", () => {
-  const PACE = { orgs: { acme: { tasksAtOnce: 3 } } };
+  const PACE = { orgs: { acme: { cap: { cost: 3 } } } };
 
   async function lane() {
     w = await bossWorld();
@@ -19,7 +19,7 @@ describe("the captain proposes what it may not do alone", () => {
     const caller = { task: chat, agent: "boss" };
     const call = (tool: string, args: Record<string, unknown>) =>
       h.majhi.services.admin.call(caller, tool, { ...args, ownerAsked: false, reason: "test" });
-    const pace = async () => (await h.cmd("settings.get")).body.autonomy.orgs.acme.tasksAtOnce;
+    const pace = async () => (await h.cmd("settings.get")).body.autonomy.orgs.acme?.cap;
     const proposals = async () =>
       (await w!.items(chat)).filter((i) => i.type === "approval") as Extract<
         RoomItem,
@@ -42,7 +42,7 @@ describe("the captain proposes what it may not do alone", () => {
     expect(await pace()).toBe(before);
     const [card] = await proposals();
     expect(card).toMatchObject({ state: "pending", command: "autonomy.configure" });
-    expect(card?.proposal?.changes).toEqual(["Tasks at once: none → 3"]);
+    expect(card?.proposal?.changes).toEqual(['Daily budget: none → {"cost":3}']);
     expect(JSON.parse(card?.input ?? "{}")).toEqual(PACE);
     // The same call again is the same card.
     await call("majhi_autonomy_configure", PACE);

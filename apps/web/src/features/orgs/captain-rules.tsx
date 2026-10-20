@@ -5,8 +5,9 @@ import {
   type Freeze,
   HOLD_CLASSES,
   HOLD_LABEL,
-  PRIVATE,
+  type OrgView,
 } from "@majhi/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,12 +15,17 @@ import { ChipsInput } from "@/components/ui/chips-input";
 import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { DetailSection } from "@/components/ui/list-detail";
+import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
-import { useCaptainRules } from "@/lib/captain-queries";
+import { type ApiRequestError, cmd } from "@/lib/api";
+import { useCaptainRules, useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
-import { type RulesDraft, rulesDraft, rulesPatch, rulesProblem, shortDay } from "./model";
+import { queryKeys } from "@/lib/queries";
+import { useAccounts } from "@/lib/studio-queries";
+import { type RulesDraft, rulesDraft, rulesPatch, rulesProblem, shortDay } from "./captain-rules-model";
 
 const PROVIDERS = [
   { id: "claude", label: "Claude" },
@@ -27,37 +33,86 @@ const PROVIDERS = [
 ] as const;
 
 /**
- * What most owners never change, folded away under each workspace: when the captain may act, the
- * days it does nothing, where it ships and how, which AI tools it may use, and the account that pays
- * for its decisions. One draft, with Cancel and Save showing while something changed.
+ * What the captain does in this workspace, set by the owner alone: who merges and deploys an incident's fix and
+ * who tells the client, the account it runs on here, the daily budget, the days it does nothing, where it ships and
+ * which AI tools it may use. Most owners never change them. The first two save at once; the rest are one draft with
+ * Cancel and Save while something changed.
  */
-export function MoreRules({
-  org,
-  accounts,
-  zone,
-  onDone,
-  doneLabel = "Fold away",
-}: {
-  org: CaptainOrg;
-  accounts: readonly AccountView[];
-  zone: string;
-  onDone: () => void;
-  /** What the button that leaves the form says: "Fold away" in the page, "Close" in a dialog. */
-  doneLabel?: string;
-}) {
+export function CaptainRules({ org }: { org: OrgView }) {
+  const status = useCaptainStatus().data;
+  const accounts = useAccounts().data;
+  const mine = status?.orgs.find((o) => o.org === org.id);
+  if (mine === undefined) return null;
+  return (
+    <DetailSection title="Captain">
+      <IncidentSwitches org={org} mine={mine} />
+      <Rules key={JSON.stringify(mine.rules)} org={mine} accounts={accounts ?? []} />
+    </DetailSection>
+  );
+}
+
+/** Fix and Client update: the owner's choice per workspace. Saved at once through `authority.set`. */
+function IncidentSwitches({ org, mine }: { org: OrgView; mine: CaptainOrg }) {
+  const toast = useToast();
+  const client = useQueryClient();
+  const set = useMutation<unknown, ApiRequestError, { fix?: "ask" | "ships"; clientUpdate?: "ask" | "sends" }>({
+    mutationFn: (change) =>
+      cmd("authority.set", { org: org.id, ...change }, { reason: `Owner changed the incident switches of ${org.name}` }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.settings }),
+        client.invalidateQueries({ queryKey: queryKeys.captain }),
+      ]),
+    onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }),
+  });
+  const incident = mine.rules.incident;
+  return (
+    <div className="grid min-w-0 gap-x-6 gap-y-3 min-[1180px]:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <span className="text-sm text-fg-faint">Fix</span>
+        <Segmented
+          label={`Who ships an incident's fix in ${org.name}`}
+          value={incident?.fix ?? "ask"}
+          segments={[
+            { value: "ask", label: "Ask me", disabled: set.isPending },
+            { value: "ships", label: "Captain ships", disabled: set.isPending },
+          ]}
+          onChange={(fix) => set.mutate({ fix })}
+          className="self-start"
+        />
+      </div>
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <span className="text-sm text-fg-faint">Client update</span>
+        <Segmented
+          label={`Who tells the client about an incident in ${org.name}`}
+          value={incident?.clientUpdate ?? "ask"}
+          segments={[
+            { value: "ask", label: "Ask me", disabled: set.isPending },
+            { value: "sends", label: "Captain sends", disabled: set.isPending },
+          ]}
+          onChange={(clientUpdate) => set.mutate({ clientUpdate })}
+          className="self-start"
+        />
+      </div>
+    </div>
+  );
+}
+
+function Rules({ org, accounts }: { org: CaptainOrg; accounts: readonly AccountView[] }) {
   const toast = useToast();
   const save = useCaptainRules();
-  const base = useMemo(() => rulesDraft(org.rules), [org.rules]);
+  const base = useMemo(() => rulesDraft(org.rules, org.budget?.cost), [org.rules, org.budget]);
   const [draft, setDraft] = useState<RulesDraft>();
   const form = draft ?? base;
-  const patch = rulesPatch(form, org.rules);
+  const patch = rulesPatch(form, org.rules, org.budget?.cost);
   const problem = rulesProblem(form);
   const dirty = draft !== undefined && patch !== undefined;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const set = (next: Partial<RulesDraft>) => setDraft({ ...form, ...next });
-  // An account of this workspace, or a Private one: never another workspace's.
-  const payers = accounts.filter((a) => a.org === org.org || a.org === PRIVATE);
+  // The workspace's own accounts: never another workspace's.
+  const own = accounts.filter((a) => a.org === org.org);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const addFreeze = () => {
     if (from === "") return;
@@ -75,48 +130,51 @@ export function MoreRules({
           setDraft(undefined);
           toast(`Saved ${org.name}'s rules`);
         },
-        onError: (error) =>
-          toast("Could not save the rules", { detail: describeError(error), tone: "error" }),
+        onError: (error) => toast("Could not save the rules", { detail: describeError(error), tone: "error" }),
       },
     );
   };
 
   return (
-    <section
-      aria-label={`More rules for ${org.name}`}
-      className="flex flex-col gap-4 border-t border-line pt-3.5"
-    >
+    <section aria-label={`Captain rules for ${org.name}`} className="flex flex-col gap-4">
       <div className="grid min-w-0 gap-x-6 gap-y-4 min-[1180px]:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <Switch
-            label="Act only in working hours"
-            checked={form.hoursOn}
-            onChange={(on) => set({ hoursOn: on })}
-          />
-          {form.hoursOn && (
-            <div className="flex items-center gap-2 text-sm text-fg-muted">
-              <Input
-                type="time"
-                aria-label="From"
-                value={form.from}
-                onChange={(e) => set({ from: e.target.value })}
-                className="tnum h-8 w-[140px] font-mono text-sm"
-              />
-              to
-              <Input
-                type="time"
-                aria-label="To"
-                value={form.to}
-                onChange={(e) => set({ to: e.target.value })}
-                className="tnum h-8 w-[140px] font-mono text-sm"
-              />
-            </div>
+        <Field
+          label="Captain uses this workspace's account"
+          hint={
+            org.pays === undefined
+              ? "No account may run the captain here yet."
+              : `Now it runs on ${org.pays}. Leave it empty to use the captain's own account everywhere.`
+          }
+        >
+          {(props) => (
+            <Select
+              {...props}
+              value={form.account}
+              onChange={(e) => set({ account: e.target.value })}
+              className="h-8 text-sm"
+            >
+              <option value="">The captain's own account</option>
+              {own.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id}
+                </option>
+              ))}
+            </Select>
           )}
-          <span className="text-xs text-fg-faint text-pretty">
-            Outside these hours it does nothing on its own; what comes up waits for the next hour it may act.
-          </span>
-        </div>
-        <Field label="Time zone" hint={`For hours, freeze dates and its day. Empty: ${zone}.`}>
+        </Field>
+        <Field label="Daily budget" hint="Dollars a day for the captain's work here. Empty: it shares the Autonomous budget.">
+          {(props) => (
+            <Input
+              {...props}
+              inputMode="decimal"
+              value={form.budget}
+              placeholder="Shared"
+              onChange={(e) => set({ budget: e.target.value })}
+              className="tnum h-8 w-[140px] font-mono text-sm"
+            />
+          )}
+        </Field>
+        <Field label="Time zone" hint={`For freeze dates and its day. Empty: ${zone}.`}>
           {(props) => (
             <Input
               {...props}
@@ -170,6 +228,9 @@ export function MoreRules({
               Add
             </Button>
           </div>
+          <span className="text-xs text-fg-faint text-pretty">
+            On these days it does nothing on its own; what comes up waits.
+          </span>
         </div>
         <Field label="Ships to" hint="The branches it may merge into. Empty: each project's own base branch.">
           {(props) => (
@@ -207,28 +268,6 @@ export function MoreRules({
             captain's own turns and the work it starts here.
           </span>
         </div>
-        <Field
-          label="Pays for its decisions"
-          hint={org.pays === undefined ? "No account may pay yet." : `Now: ${org.pays}.`}
-        >
-          {(props) => (
-            <Select
-              {...props}
-              value={form.account}
-              onChange={(e) => set({ account: e.target.value })}
-              className="h-8 text-sm"
-            >
-              <option value="">
-                {org.org === PRIVATE ? "The captain's own account" : "This workspace's own account"}
-              </option>
-              {payers.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.id}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
       </div>
       <HoldList org={org} />
       <div className="flex min-h-8 items-center gap-2">
@@ -237,27 +276,21 @@ export function MoreRules({
             {problem}
           </p>
         )}
-        <span className="ml-auto flex items-center gap-2">
-          {dirty ? (
-            <>
-              <Button size="sm" variant="ghost" disabled={save.isPending} onClick={() => setDraft(undefined)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={save.isPending || problem !== undefined}
-                onClick={submit}
-              >
-                {save.isPending ? "Saving" : "Save"}
-              </Button>
-            </>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={onDone}>
-              {doneLabel}
+        {dirty && (
+          <span className="ml-auto flex items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={save.isPending} onClick={() => setDraft(undefined)}>
+              Cancel
             </Button>
-          )}
-        </span>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={save.isPending || problem !== undefined}
+              onClick={submit}
+            >
+              {save.isPending ? "Saving" : "Save"}
+            </Button>
+          </span>
+        )}
       </div>
     </section>
   );
@@ -289,8 +322,7 @@ function HoldList({ org }: { org: CaptainOrg }) {
                   reason: `Owner changed what is held for them in ${org.name}`,
                 },
                 {
-                  onError: (error) =>
-                    toast("Could not save it", { detail: describeError(error), tone: "error" }),
+                  onError: (error) => toast("Could not save it", { detail: describeError(error), tone: "error" }),
                 },
               )
             }
@@ -300,3 +332,4 @@ function HoldList({ org }: { org: CaptainOrg }) {
     </div>
   );
 }
+

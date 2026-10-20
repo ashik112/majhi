@@ -1,7 +1,7 @@
 import type { Authority, AuthorityRow } from "./authority.ts";
 import type { AutonomyMode } from "./autonomy.ts";
 import type { CaptainChore } from "./chores.ts";
-import type { Freeze, WorkHours } from "./settings.ts";
+import type { Freeze } from "./settings.ts";
 
 /**
  * May the captain do this now? The one place that answers it (rule set of 2026-10-08).
@@ -35,8 +35,7 @@ export interface CaptainPolicy {
   autopilot: AutonomyMode;
   /** The owner pressed Stop everything. */
   stopped: boolean;
-  /** Working hours and freeze dates, in `tz`. Absent: any time. */
-  hours?: WorkHours | undefined;
+  /** Freeze dates, in `tz`. */
   freeze?: readonly Freeze[] | undefined;
   tz: string;
 }
@@ -58,7 +57,7 @@ export type May =
   | { ok: false; because: "stopped" | "autopilot" | "line" | "rest"; why: string; row?: AuthorityRow };
 
 export const STOPPED_WHY = "Stop everything is on";
-export const AUTOPILOT_WHY = "Auto-pilot is off, so the captain takes no backlog work";
+export const AUTOPILOT_WHY = "Autonomous is off, so the captain takes no backlog work";
 
 /** What Auto-pilot and the Stop switch alone say: no line, no hours. */
 export function mayWork(policy: Pick<CaptainPolicy, "autopilot" | "stopped">, job: Job): May {
@@ -87,9 +86,9 @@ export function may(
   return { ok: true };
 }
 
-/** Why the workspace rests now (a freeze date, or outside working hours), or undefined. */
+/** Why the workspace rests now (a freeze date), or undefined. */
 export function restOf(
-  policy: Pick<CaptainPolicy, "hours" | "freeze" | "tz">,
+  policy: Pick<CaptainPolicy, "freeze" | "tz">,
   now: Date,
 ): string | undefined {
   const day = dayIn(now, policy.tz);
@@ -98,9 +97,6 @@ export function restOf(
     return frozen.from === frozen.to
       ? `${day} is a freeze date`
       : `${frozen.from} to ${frozen.to} is a freeze`;
-  }
-  if (policy.hours !== undefined && !withinHours(policy.hours, clockIn(now, policy.tz))) {
-    return `outside working hours (${policy.hours.from} to ${policy.hours.to})`;
   }
   return undefined;
 }

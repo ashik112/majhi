@@ -49,6 +49,8 @@ export const HoldSchema = z.discriminatedUnion("cause", [
     error: z.string().max(2000),
   }),
   z.object({ cause: z.literal("loop-guard"), at: At, why: z.string() }),
+  // Autonomous stopped a task it was working on: it failed twice, or it spent the budget of its size. The owner decides.
+  z.object({ cause: z.literal("autonomous-stop"), at: At, why: z.string() }),
   z.object({ cause: z.literal("idle"), at: At, why: z.string() }),
   // A more urgent task took this one's running place (priority preemption). It resumes through the line.
   z.object({ cause: z.literal("preempted"), at: At }),
@@ -210,6 +212,11 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
     lifters: () => ["owner", "captain"],
     autoClears: () => ({ kind: "never" }),
     sentence: (h) => `It stopped with an error: ${sentenceEnd(h.error)}`,
+  },
+  "autonomous-stop": {
+    lifters: () => ["owner"],
+    autoClears: () => ({ kind: "never" }),
+    sentence: (h) => `${sentenceEnd(h.why)} Autonomous stopped it. Say what to change, then resume it.`,
   },
   "loop-guard": {
     lifters: () => ["owner"],
