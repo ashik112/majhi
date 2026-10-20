@@ -1,3 +1,28 @@
+## Codex runs in the container sandbox, gated by a majhi hook, 2026-10-21
+
+Branch `feat/codex-hooks`, brief `docs/briefs/codex-hooks.md`. Built by a builder who did not run a real Codex session: the lead runs one through the built image.
+
+**What works.**
+- Codex starts in `agent-full-access` for every ACP session that runs in a runner container (`containerEnv` of the Codex tool, set in `openSession`). Next to majhi (`MAJHI_RUNNER=local`) it keeps its own sandbox. Census of the paths that start Codex: runs, the captain and chats all go through `launch.ts` and get the hook token; the memory housekeeper and the decisions stand-in start a session without one, so the hook denies every tool call there (they ran no command before either, bwrap failed); sign-in, probes and the usage read are not ACP sessions and have no mode.
+- The runner image holds `/etc/codex/requirements.toml` and `/etc/codex/hooks/majhi-pretool.mjs` (from `docker/codex/`). Real Codex 0.158.0 in the built image, as uid 501 with an own `config.toml` that sets `hooks = false`: `hooks/list` still shows the hook managed, enabled, matcher `.*`, timeout 3600, and `codex features list` shows `hooks true`, `unified_exec false`.
+- A hook call asks majhi (`POST /mcp/codex-hook`, session token in `MAJHI_HOOK_TOKEN`, revoked when the session ends) and gets the answer of the same decision code as an ACP permission request (`CodexHookGate` in `runs/codex-hook.ts` builds the `PermissionAsk`, `PermissionFlow.ask` decides). Walked on a throwaway majhi (port 7499, fake Codex agent) with the real script in a real runner container: an allowed command passes in 30 ms, `git push origin main` makes a Needs you card and waits, the owner's Deny comes back as a deny with the reason, a hook that gives up after its deadline prints "Waiting for the owner's answer in majhi." and leaves the card, the same call after the owner's Allow goes through once and the next try asks again, a bad token and a token of a finished session are denied.
+- Timing of the script in a runner container, 200 runs: p50 29.7 ms, p95 32.3 ms per command (`node -e 0` alone: p50 9.5 ms).
+
+**How to try it.** Typecheck, then `pnpm exec vitest run apps/server/src/runs/codex-hook.test.ts apps/server/src/rooms/codex-hook.test.ts packages/acp/src/runner/codex-hook.test.ts`. The image: `docker build --target runner` with the owner's `HOST_UID`, `HOST_GID` and `HOST_HOME`; the write test is in the report of this step (`touch /etc/codex/x` as the agent's uid fails with Permission denied). Real run: start a Codex agent in a task and ask it to run `git push origin main`.
+
+**Two things the brief did not know.**
+- Codex spells every character of an MCP server and tool that is not a letter, digit or `_` as `_` in the hook's `tool_name` (`mcp__acme_obs__run_query` for `acme-obs`, `run-query`; codex-mcp `sanitize_responses_api_tool_name`). The connection gate matches the run's real names, so the endpoint maps the spelling back from the run's servers and connection tool lists. Without it, every connection MCP write would have run unasked.
+- `write_stdin` has no PreToolUse hook. With `unified_exec` on, `exec_command bash` then `write_stdin "kubectl delete ..."` walks past the gate. `requirements.toml` pins `unified_exec = false`, so a command runs to its end and no shell stays open. Cost: a command is cut after 10 s unless the agent sets `timeout_ms`; the lead's real session should look at this on a longer command.
+
+**Left, no accepted gaps.**
+- An owner whose host uid is 0 runs the agent as uid 0 with no capabilities: root without capabilities still owns root's files and can `chmod` them. The image paths are safe for every other uid. Nothing in majhi starts a runner as uid 0 by itself; a root-on-Linux owner would need the files to belong to another uid. Not built, nobody uses it today.
+- Codex runs the hook with the shell its executor reports, non-login (`sh -c`, `core/src/session/mod.rs`). Only when it reports none does it fall back to `-lc`, which reads the account home's `.profile`, which the agent can write. Not seen in a real session yet: the lead's run should confirm the shell (a hook that fails to start lets the call run).
+- The memory housekeeper and the decisions stand-in cannot run a tool on Codex until they get a way to ask (no task, no room for a card). The decisions stand-in is meant to refuse every tool request; the housekeeper's repo reads are denied.
+- An MCP server the agent adds to its own `CODEX_HOME/config.toml` starts when Codex next starts, outside the hook. The same holds for other agents' config homes; a requirements allow list for MCP servers is the fix.
+- Codex's own tool list in `runs/codex-hook.ts` is from 0.158.0. Read it again when the version in the Dockerfile moves: a new tool is denied until it is listed.
+
+**Checked.** `pnpm -r typecheck`, `tsc -p e2e`, `biome check .` (the 33 warnings were there before), vitest 106 files and 424 tests passed (1 skipped), Playwright finds no spec (there are none left). The runner image was built twice from this branch as `majhi-runner:codex-hooks` (its build runs the hook as an unprivileged user and checks it denies); the last small change to the script (a clearer message for a refused token) came after the second build.
+
 ## Workflow reset, memory pass, 2026-10-20
 
 Branch `perf/server-memory`. Plan: measure the built server in the server image (not tsx, not macOS: RSS means something else there), find what the memory is, fix the biggest parts with the smallest changes, measure again the same way.
