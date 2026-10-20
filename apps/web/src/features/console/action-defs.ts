@@ -11,7 +11,9 @@ export interface NeedsDeps {
   answerMany: (decisions: NeedsRow["decisions"], intent: "approve" | "leave", text: string) => void;
   unblock: (decisions: NeedsRow["decisions"], text: string) => void;
   open: (link: NeedsRow["decisions"][number]["link"]) => void;
+  /** The captain's done item: Done marks it read, Open goes where it lives. */
   read: (row: NeedsRow) => void;
+  openNotice: (row: NeedsRow) => void;
   later: (row: NeedsRow) => void;
   unmerge: (rowId: string) => void;
   reply: (rowId: string, option: string) => void;
@@ -34,7 +36,10 @@ export function needsActions(
 ): ActionDef[] {
   const later: ActionDef = { id: "later", label: "Later", ghost: true, run: () => deps.later(row) };
   if (row.notice !== undefined) {
-    return [{ id: "read", label: "Read it", primary: true, run: () => deps.read(row) }];
+    return [
+      { id: "done", label: "Done", primary: true, run: () => deps.read(row) },
+      { id: "open", label: "Open", run: () => deps.openNotice(row) },
+    ];
   }
   const first = row.decisions[0];
   if (first === undefined) return [later];

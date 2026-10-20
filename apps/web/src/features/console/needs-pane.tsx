@@ -93,11 +93,15 @@ function Detail({ row, detail }: { row: NeedsRow; detail: DecisionDetail | undef
       : `Captain suggests ${
           only.options.find((o) => o.id === only.suggestion?.option)?.label ?? only.suggestion.option
         }${only.suggestion.reason === "" ? "" : `: ${only.suggestion.reason}`}`;
-  const body = bodyOf(row, only, detail);
+  const body = row.notice?.body ?? bodyOf(row, only, detail);
   const diff = detail?.diff;
   return (
     <>
-      {body !== undefined && <div className="cs-q">{body}</div>}
+      {body !== undefined && (
+        <div className="cs-q" data-full={row.notice?.body !== undefined || undefined}>
+          {body}
+        </div>
+      )}
       {detail?.command !== undefined && (
         <div className="cs-q" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
           {detail.command}

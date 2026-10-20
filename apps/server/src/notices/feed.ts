@@ -227,6 +227,7 @@ function clientNotices(
             ? `The captain sent the weekly report to ${line.title}`
             : mentionNames(reply.text, reply.mentions, contactName),
         ),
+        body: mentionNames(reply.text, reply.mentions, contactName).slice(0, 4000),
         needsYou: false,
         link,
       });
@@ -394,13 +395,14 @@ function bugNotices(rows: readonly BugRow[]): Omit<Notice, "read">[] {
 /** A morning brief: the captain's, one per workspace and day. The row says the first line; the rest is one click away. */
 function briefNotices(rows: readonly BriefNoticeRow[]): Omit<Notice, "read">[] {
   return rows.flatMap((b) => {
-    let first: string | undefined;
+    let all: string[] = [];
     try {
       const lines: unknown = JSON.parse(b.lines);
-      if (Array.isArray(lines) && typeof lines[0] === "string") first = lines[0];
+      if (Array.isArray(lines)) all = lines.filter((l): l is string => typeof l === "string");
     } catch {
-      first = undefined;
+      all = [];
     }
+    const first = all[0];
     if (first === undefined) return [];
     return [
       {
@@ -410,6 +412,7 @@ function briefNotices(rows: readonly BriefNoticeRow[]): Omit<Notice, "read">[] {
         at: b.at,
         subject: "Morning brief",
         detail: oneLine(first),
+        body: all.join("\n").slice(0, 4000),
         by: "captain" as const,
         needsYou: false,
         link: { kind: "page" as const, page: "captain" as const },

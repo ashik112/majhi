@@ -195,6 +195,7 @@ export function ConsoleScreen() {
       unblock: (decisions, text) => acts.unblock(decisions, data.tasks, text),
       open: acts.open,
       read: acts.read,
+      openNotice: acts.openNotice,
       later: (row) => acts.putOff([row], row.name),
       unmerge: (rowId) => setUnmerged((s) => new Set([...s, rowId])),
       reply: (row, option) => setReplying({ row, option }),
@@ -442,11 +443,13 @@ export function ConsoleScreen() {
     (id: string) => {
       const row = needs.incident.concat(needs.decide, needs.review, needs.captain).find((r) => r.id === id);
       if (row === undefined) return;
+      // Read it opens the whole text in the row.
+      if (row.notice !== undefined) return selectNeeds(row.id);
       needsActionsOf(row, undefined)
         .find((a) => a.primary === true)
         ?.run();
     },
-    [needs, needsActionsOf],
+    [needs, needsActionsOf, selectNeeds],
   );
 
   const waitsOnOf = useCallback(

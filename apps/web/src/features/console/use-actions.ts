@@ -197,7 +197,7 @@ export function useConsoleActions(openChat: (id: string) => void) {
     [navigate, openChat],
   );
 
-  /** Read the captain's done item: it opens where it lives and stops being new. */
+  /** Done with the captain's done item: it stops being new and leaves Needs you. */
   const read = useCallback(
     (row: NeedsRow) => {
       const notice = row.notice;
@@ -205,6 +205,15 @@ export function useConsoleActions(openChat: (id: string) => void) {
       void cmd("notices.markRead", { id: notice.id }, { reason: "Owner read a notice" }).then(() =>
         client.invalidateQueries({ queryKey: queryKeys.notices }),
       );
+    },
+    [client],
+  );
+
+  /** Open where the captain's done item lives. It stays until the owner says Done. */
+  const openNotice = useCallback(
+    (row: NeedsRow) => {
+      const notice = row.notice;
+      if (notice === undefined) return;
       if (notice.kind === "brief") {
         // The brief is a line in the workspace's own captain conversation: open it there.
         if (filter.org !== undefined && notice.org !== undefined && filter.org !== notice.org) {
@@ -215,7 +224,7 @@ export function useConsoleActions(openChat: (id: string) => void) {
         void navigate({ to: PAGE_PATH[notice.link.page] });
       } else open(notice.link);
     },
-    [client, filter, navigate, open, openChat],
+    [filter, navigate, open, openChat],
   );
 
   const start = useCallback(
@@ -260,5 +269,17 @@ export function useConsoleActions(openChat: (id: string) => void) {
     [lost, toast, refresh],
   );
 
-  return { answerOne, answerMany, unblock, unblockTask, putOff, open, read, start, stop, openLabel };
+  return {
+    answerOne,
+    answerMany,
+    unblock,
+    unblockTask,
+    putOff,
+    open,
+    read,
+    openNotice,
+    start,
+    stop,
+    openLabel,
+  };
 }
