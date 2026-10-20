@@ -11,6 +11,7 @@ import {
   type StoredOrigin,
   type Task,
   type TaskId,
+  taskLabel,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -375,7 +376,7 @@ export class IncidentEngine {
       this.deps.room.post(task.id as TaskId, `own:${task.id}`, {
         type: "system",
         level: "info",
-        text: `Opened as its own incident. ${sameProject.id} is open on the same project for another report. Link them if they are one problem.`,
+        text: `Opened as its own incident. ${taskLabel(sameProject)} is open on the same project for another report. Link them if they are one problem.`,
       });
     }
     this.record(
