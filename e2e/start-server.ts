@@ -22,10 +22,11 @@
  * web server. Expects `apps/web/dist` to be built already; the configs build it first.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../apps/server/src/secrets/store.ts";
+import { hostBinary as hostBinaryFor } from "../apps/server/src/testing/hostBinary.ts";
 import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
 import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FILE } from "./paths.ts";
 
@@ -137,24 +138,9 @@ Object.assign(process.env, gitEnv, {
 // before the assignments above.
 await import("../apps/server/src/main.ts");
 
-// The helper is the Go binary of this computer's OS and CPU (apps/host/dist). `MAJHI_HOST_BIN` names another.
-// A missing one is built with scripts/build-host.sh, which runs Go in a container.
-function hostBinary(): string {
-  if (process.env.MAJHI_HOST_BIN) return process.env.MAJHI_HOST_BIN;
-  const os = process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch === "arm64" ? "arm64" : "amd64";
-  const file = fileURLToPath(new URL(`../apps/host/dist/majhi-host-${os}-${arch}`, import.meta.url));
-  if (!existsSync(file)) {
-    execFileSync(
-      "sh",
-      [fileURLToPath(new URL("../scripts/build-host.sh", import.meta.url)), `${os}/${arch}`],
-      {
-        stdio: "inherit",
-      },
-    );
-  }
-  return file;
-}
+// The helper is the Go binary of this computer's OS and CPU (apps/host/dist), built when it is missing or older than
+// its sources (scripts/build-host.sh runs Go in a container). `MAJHI_HOST_BIN` names another.
+const hostBinary = (): string => process.env.MAJHI_HOST_BIN ?? hostBinaryFor("helper");
 
 const helperEnv: NodeJS.ProcessEnv = {
   ...process.env,

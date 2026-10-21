@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"majhi/host/internal/protocol"
@@ -87,6 +88,7 @@ type wslPlatform struct {
 	paths   WslPaths
 	session func() map[string]string
 
+	mu         sync.Mutex
 	distro     string
 	powershell string
 	userPath   string
@@ -148,28 +150,52 @@ func (w *wslPlatform) desktopEnv() map[string]string {
 		}
 	}
 	if env["WSL_DISTRO_NAME"] == "" {
-		if w.distro == "" {
-			w.distro = DistroOf(w.wslpath("-w", "/"))
+		w.mu.Lock()
+		known := w.distro
+		w.mu.Unlock()
+		if known == "" {
+			known = DistroOf(w.wslpath("-w", "/"))
+			w.mu.Lock()
+			w.distro = known
+			w.mu.Unlock()
 		}
-		if w.distro != "" {
-			env["WSL_DISTRO_NAME"] = w.distro
+		if known != "" {
+			env["WSL_DISTRO_NAME"] = known
 		}
 	}
 	return env
 }
 
 func (w *wslPlatform) findPowershell() string {
-	if w.powershell == "" {
-		w.powershell = w.program("powershell.exe", powershellExe)
+	w.mu.Lock()
+	known := w.powershell
+	w.mu.Unlock()
+	if known != "" {
+		return known
 	}
-	return w.powershell
+	found := w.program("powershell.exe", powershellExe)
+	w.mu.Lock()
+	w.powershell = found
+	w.mu.Unlock()
+	return found
 }
 
 // userFolder is the Windows user's folder: the one person's folder in C:\Users, else %USERPROFILE% from cmd.exe.
 func (w *wslPlatform) userFolder() string {
-	if w.userPath != "" {
-		return w.userPath
+	w.mu.Lock()
+	known := w.userPath
+	w.mu.Unlock()
+	if known != "" {
+		return known
 	}
+	found := w.findUserFolder()
+	w.mu.Lock()
+	w.userPath = found
+	w.mu.Unlock()
+	return found
+}
+
+func (w *wslPlatform) findUserFolder() string {
 	entries, _ := os.ReadDir(w.paths.UsersDir)
 	var people []string
 	for _, e := range entries {
@@ -179,8 +205,7 @@ func (w *wslPlatform) userFolder() string {
 		}
 	}
 	if len(people) == 1 {
-		w.userPath = filepath.Join(w.paths.UsersDir, people[0])
-		return w.userPath
+		return filepath.Join(w.paths.UsersDir, people[0])
 	}
 	cmd := w.program("cmd.exe", cmdExe)
 	if cmd == "" {
@@ -200,8 +225,7 @@ func (w *wslPlatform) userFolder() string {
 	if result.Code != 0 || line == "" {
 		return ""
 	}
-	w.userPath = w.toLinux(line)
-	return w.userPath
+	return w.toLinux(line)
 }
 
 func isLetter(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }

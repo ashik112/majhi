@@ -90,8 +90,9 @@ RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit 
 # The host helper (`apps/host`, Go): one static binary per OS and CPU, no runtime to install. It runs on the
 # owner's computer, not here; `make up` and an update copy the right one out of the image. Windows builds
 # are made now so the targets stay honest, though nothing runs them yet (docs/DECISIONS.md). Only the Go
-# sources are copied, so a change to the web app or the server never rebuilds it.
-FROM ${GO_IMAGE} AS host-build
+# sources are copied, so a change to the web app or the server never rebuilds it. It runs on the builder's own CPU
+# and cross-compiles every target, so a multi-platform build never runs Go under emulation.
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS host-build
 WORKDIR /src
 COPY apps/host/go.mod apps/host/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download

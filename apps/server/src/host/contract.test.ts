@@ -1,7 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import {
   CLI_TOOLS,
@@ -19,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateKey } from "../secrets/store.ts";
 import { createMajhiApp } from "../server.ts";
 import { git, makeRepo, tempDir, testEnv } from "../testing/fixtures.ts";
+import { hostBinary } from "../testing/hostBinary.ts";
 import { HostJobError, HostLink, type HostParams, type HostResult } from "./link.ts";
 
 /**
@@ -34,11 +34,6 @@ import { HostJobError, HostLink, type HostParams, type HostResult } from "./link
  * The test builds the helper through scripts/build-host.sh (Go in a container) when it is missing.
  * It never skips.
  */
-
-const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const GOOS = process.platform === "darwin" ? "darwin" : "linux";
-const GOARCH = process.arch === "arm64" ? "arm64" : "amd64";
-const BINARY = join(ROOT, "apps/host/dist", `contract-${GOOS}-${GOARCH}`);
 
 const DOCKER = `#!/bin/sh
 echo "$*" >> "$DOCKER_LOG"
@@ -125,6 +120,8 @@ async function script(dir: string, name: string, text: string): Promise<void> {
   await chmod(join(dir, name), 0o755);
 }
 
+let BINARY = "";
+
 describe("the Go host helper against the shared schemas", { timeout: 120_000 }, () => {
   const called = new Set<string>();
   let cleanup: () => Promise<void>;
@@ -154,14 +151,7 @@ describe("the Go host helper against the shared schemas", { timeout: 120_000 }, 
   }
 
   beforeAll(async () => {
-    try {
-      await stat(BINARY);
-    } catch {
-      execFileSync("sh", [join(ROOT, "scripts/build-host.sh"), "--contract", `${GOOS}/${GOARCH}`], {
-        stdio: "inherit",
-        timeout: 600_000,
-      });
-    }
+    BINARY = hostBinary("contract");
     let dir: string;
     ({ dir, cleanup } = await tempDir());
     dir = await realpath(dir);

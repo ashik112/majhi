@@ -3,6 +3,7 @@ package platform
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"majhi/host/internal/notify"
@@ -172,6 +173,7 @@ type linuxAgent struct {
 	composeSock string
 	ownAgent    string
 	keyring     Keyring
+	mu          sync.Mutex
 	current     string
 	lastNote    string
 }
@@ -198,21 +200,24 @@ func (a *linuxAgent) Socket() string {
 		try(trimmed(userManagerEnv(a.deps)["SSH_AUTH_SOCK"]), "the systemd user manager")
 	}
 	try(a.ownAgent, "majhi's own agent")
-	note := "none"
-	a.current = ""
+	note, current := "none", ""
 	if hit != nil {
-		a.current = hit.path
+		current = hit.path
 		note = hit.path + "|" + hit.source
 	}
-	if note != a.lastNote {
-		a.lastNote = note
+	a.mu.Lock()
+	a.current = current
+	changed := note != a.lastNote
+	a.lastNote = note
+	a.mu.Unlock()
+	if changed {
 		if hit == nil {
 			a.deps.Log("no SSH agent socket in the helper's environment, the systemd user manager or " + a.ownAgent)
 		} else {
 			a.deps.Log("SSH agent socket " + hit.path + " (from " + hit.source + ")")
 		}
 	}
-	return a.current
+	return current
 }
 
 func (a *linuxAgent) Passphrases() Keeping {
@@ -227,8 +232,11 @@ func (a *linuxAgent) ComposeSocket() string { return a.composeSock }
 func (a *linuxAgent) Serve() func() {
 	return serveAgent(a.composeSock, func(failed string) string {
 		// The agent found last, so the container signs with the keys `ssh` loaded.
-		if failed == "" && a.current != "" {
-			return a.current
+		a.mu.Lock()
+		current := a.current
+		a.mu.Unlock()
+		if failed == "" && current != "" {
+			return current
 		}
 		return a.Socket()
 	}, a.deps.Log)

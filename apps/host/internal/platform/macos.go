@@ -3,6 +3,7 @@ package platform
 import (
 	"errors"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"majhi/host/internal/notify"
@@ -136,6 +137,7 @@ func (k keychain) Remove(item KeyringItem) error {
 
 type macAgent struct {
 	deps        sys.Deps
+	mu          sync.Mutex
 	lastNote    string
 	composeSock string
 }
@@ -156,8 +158,11 @@ func (a *macAgent) Socket() string {
 	if socket == "" {
 		note = "none|" + launchd
 	}
-	if note != a.lastNote {
-		a.lastNote = note
+	a.mu.Lock()
+	changed := note != a.lastNote
+	a.lastNote = note
+	a.mu.Unlock()
+	if changed {
 		if socket == "" {
 			a.deps.Log("no SSH agent socket in the helper's environment or from launchctl")
 		} else {

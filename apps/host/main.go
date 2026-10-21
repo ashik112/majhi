@@ -97,7 +97,7 @@ func start() error {
 		UID: os.Getuid(), GID: os.Getgid(),
 		Exit:      func(code int) { os.Exit(code) },
 		OSRelease: kernelRelease(deps), GOOS: runtime.GOOS, Arch: runtime.GOARCH,
-		ImagePath:  "/app/host/majhi-host-" + runtime.GOOS + "-" + runtime.GOARCH,
+		ImagePath:  imagePath(),
 		SignBinary: signer(deps),
 	})
 	if err != nil {
@@ -192,4 +192,13 @@ func sshDryRun(cfg config.Config, osName string, env map[string]string) {
 	if report.Status.Error != "" {
 		fmt.Println("error: " + report.Status.Error)
 	}
+}
+
+// imagePath is where the helper for this OS and CPU sits inside majhi's image.
+func imagePath() string {
+	path := "/app/host/majhi-host-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		path += ".exe"
+	}
+	return path
 }
