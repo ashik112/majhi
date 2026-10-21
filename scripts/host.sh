@@ -1,10 +1,10 @@
 #!/bin/sh
-# Installs or removes the majhi host helper: a small Node process on this
-# machine that lists folders for the folder browser and remounts workspace
-# roots when they change (SPEC 4.2). On macOS it runs as a LaunchAgent. On
-# Linux and WSL2 it runs as the systemd user unit majhi-host.service, next to
-# majhi-ssh-agent.service, majhi's own SSH agent. `make up` installs it and
-# `make down` removes it.
+# Installs or removes the majhi host helper: one small program (Go, no runtime
+# to install) on this machine that lists folders for the folder browser and
+# remounts workspace roots when they change (SPEC 4.2). On macOS it runs as a
+# LaunchAgent. On Linux and WSL2 it runs as the systemd user unit
+# majhi-host.service, next to majhi-ssh-agent.service, majhi's own SSH agent.
+# `make up` installs it and `make down` removes it.
 #
 #   sh scripts/host.sh install | uninstall | pubkeys
 #
@@ -23,7 +23,9 @@ HOST_UNIT="majhi-host.service"
 AGENT_UNIT="majhi-ssh-agent.service"
 ENV_FILE="$UNIT_DIR/majhi-host.env"
 MAJHI_DIR="$HOME/.majhi"
-BUNDLE="$MAJHI_DIR/bin/majhi-host.mjs"
+BIN="$MAJHI_DIR/bin/majhi-host"
+# What an install before the Go helper left behind: a bundle that needed Node.
+OLD_BUNDLE="$MAJHI_DIR/bin/majhi-host.mjs"
 LOG_DIR="$MAJHI_DIR/logs"
 RUN_DIR="$MAJHI_DIR/run"
 IMAGE="majhi-server:dev"
@@ -62,7 +64,6 @@ env_entry() {
 }
 
 write_plist() {
-  node_bin=$1
   port=$(majhi_port)
   {
     cat <<EOF
@@ -74,8 +75,7 @@ write_plist() {
   <string>$(xml "$LABEL")</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$(xml "$node_bin")</string>
-    <string>$(xml "$BUNDLE")</string>
+    <string>$(xml "$BIN")</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -161,7 +161,6 @@ write_env_file() {
 # systemd starts the helper again whenever it exits, with no limit: it exits on purpose after an
 # update or a restart from majhi.
 write_host_unit() {
-  node_bin=$1
   cat >"$UNIT_DIR/$HOST_UNIT.tmp" <<EOF
 # Written by make up (scripts/host.sh). make down removes it.
 [Unit]
@@ -169,7 +168,7 @@ Description=majhi host helper
 StartLimitIntervalSec=0
 
 [Service]
-ExecStart=$(exec_program "$node_bin") $(exec_arg "$BUNDLE")
+ExecStart=$(exec_program "$BIN")
 EnvironmentFile=$(unit_path "$ENV_FILE")
 Restart=always
 RestartSec=2
@@ -216,24 +215,47 @@ program() {
   esac
 }
 
-# Copies the helper out of the image `make up` just built.
-extract_bundle() {
-  mkdir -p "$(dirname "$BUNDLE")"
+# The name of the helper in the image for this computer: majhi-host-<os>-<cpu>.
+helper_name() {
+  case $(uname -s) in
+    Darwin) os=darwin ;;
+    Linux) os=linux ;;
+    *) return 1 ;;
+  esac
+  case $(uname -m) in
+    arm64 | aarch64) arch=arm64 ;;
+    x86_64 | amd64) arch=amd64 ;;
+    *) return 1 ;;
+  esac
+  printf 'majhi-host-%s-%s' "$os" "$arch"
+}
+
+# Copies the helper for this computer out of the image `make up` just built. On macOS it is signed
+# ad hoc, as the notifier is, when codesign is there. Developer ID signing needs the owner's
+# certificate and is a later step (docs/DECISIONS.md).
+extract_binary() {
+  name=$(helper_name) || return 1
+  mkdir -p "$(dirname "$BIN")"
   cid=$(docker create "$IMAGE") || return 1
   copied=0
-  if docker cp "$cid:/app/host/majhi-host.mjs" "$BUNDLE.tmp" >/dev/null; then copied=1; fi
+  if docker cp "$cid:/app/host/$name" "$BIN.tmp" >/dev/null; then copied=1; fi
   docker rm "$cid" >/dev/null 2>&1 || true
   if [ "$copied" -ne 1 ]; then
-    rm -f "$BUNDLE.tmp"
+    rm -f "$BIN.tmp"
     return 1
   fi
-  mv "$BUNDLE.tmp" "$BUNDLE"
+  chmod 755 "$BIN.tmp"
+  if [ "$(uname -s)" = Darwin ] && command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - "$BIN.tmp" >/dev/null 2>&1 || say "could not sign the helper ad hoc; it runs unsigned."
+  fi
+  mv "$BIN.tmp" "$BIN"
+  # The Node bundle of an older install is of no use now.
+  rm -f "$OLD_BUNDLE"
 }
 
 start_launch_agent() {
-  node_bin=$1
   mkdir -p "$AGENTS_DIR"
-  write_plist "$node_bin"
+  write_plist
 
   domain="gui/$(id -u)"
   launchctl bootout "$domain/$LABEL" 2>/dev/null || true
@@ -247,7 +269,7 @@ start_launch_agent() {
     fi
     sleep 0.5
   done
-  say "running as $LABEL with node $("$node_bin" --version). Logs: make host-logs"
+  say "running as $LABEL. Logs: make host-logs"
 }
 
 # WSL has no login of its own: Docker Desktop boots the distro at Windows sign-in, and only then
@@ -263,11 +285,10 @@ linger() {
 }
 
 start_units() {
-  node_bin=$1
   mkdir -p "$UNIT_DIR" "$RUN_DIR"
   chmod 700 "$RUN_DIR"
   write_env_file
-  write_host_unit "$node_bin"
+  write_host_unit
   agent=""
   if agent_bin=$(program ssh-agent) && mkdir_bin=$(program mkdir) && rm_bin=$(program rm); then
     write_agent_unit "$agent_bin" "$mkdir_bin" "$rm_bin"
@@ -289,7 +310,7 @@ start_units() {
     exit 0
   fi
   if [ "$(host_os)" = wsl ]; then linger; fi
-  say "running as $HOST_UNIT with node $("$node_bin" --version). Logs: make host-logs"
+  say "running as $HOST_UNIT. Logs: make host-logs"
 }
 
 install() {
@@ -308,21 +329,15 @@ install() {
       exit 0
       ;;
   esac
-  if ! node_bin=$(find_node); then
-    say "Node 20 or newer was not found. Folder browsing and automatic remounts need it."
-    if [ "$os" != macos ]; then say "SSH keys reach majhi through it too, so git over SSH does not work without it."; fi
-    say "majhi still works: type folder paths, and run $MAJHI_RERUN after adding a root."
-    exit 0
-  fi
-  if ! extract_bundle; then
+  if ! extract_binary; then
     say "could not copy the helper out of the $IMAGE image. Folder browsing and automatic remounts are off."
     exit 0
   fi
   mkdir -p "$LOG_DIR"
   if [ "$os" = macos ]; then
-    start_launch_agent "$node_bin"
+    start_launch_agent
   else
-    start_units "$node_bin"
+    start_units
   fi
 }
 
@@ -358,11 +373,10 @@ uninstall() {
 }
 
 # Prints the SSH public keys to mount read-only, one path per line, using the installed helper.
-# Prints nothing when the helper or Node is missing: majhi then starts without those mounts.
+# Prints nothing when the helper is missing: majhi then starts without those mounts.
 pubkeys() {
-  [ -f "$BUNDLE" ] || exit 0
-  node_bin=$(find_node) || exit 0
-  "$node_bin" "$BUNDLE" --ssh-pubkeys 2>/dev/null || true
+  [ -x "$BIN" ] || exit 0
+  "$BIN" --ssh-pubkeys 2>/dev/null || true
 }
 
 case "${1:-}" in

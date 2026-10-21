@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"majhi/host/internal/durable"
@@ -176,6 +177,7 @@ func latestRelease(ctx Context, url string, latest LatestFn) (Release, error) {
 // TargetReader reads what an update would run, for the version check: a dev checkout's HEAD, or on a
 // release install the latest release, asked at most every CheckEvery. A failed ask keeps the last answer.
 type TargetReader struct {
+	mu      sync.Mutex
 	ctx     Context
 	now     func() time.Time
 	latest  LatestFn
@@ -197,6 +199,8 @@ func NewTargetReader(ctx Context, now func() time.Time, latest LatestFn) *Target
 
 // Read is the state an update would reach.
 func (t *TargetReader) Read() (RepoState, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	state, ok := ReadRepo(t.ctx)
 	if !ok {
 		return RepoState{}, false

@@ -5,6 +5,7 @@ package checkout
 import (
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"majhi/host/internal/git"
@@ -131,23 +132,29 @@ type Facts struct {
 	Env    map[string]string
 	Run    run.Func
 
+	mu      sync.Mutex
 	state   *RepoState
 	runtime string
 }
 
-// Refresh reads the checkout and Docker again. Call it from one goroutine.
+// Refresh reads the checkout and Docker again.
 func (f *Facts) Refresh() {
 	if f.Target != nil {
-		if state, ok := f.Target(); ok {
+		state, ok := f.Target()
+		f.mu.Lock()
+		if ok {
 			f.state = &state
 		} else {
 			f.state = nil
 		}
+		f.mu.Unlock()
 	}
 	if docker := f.Docker(); docker != "" {
 		res := f.Run(docker, []string{"info", "--format", "{{.OperatingSystem}}"}, run.Options{Env: f.Env, Cwd: "/", Timeout: gitTimeout})
 		if res.Code == 0 {
+			f.mu.Lock()
 			f.runtime = ParseDockerRuntime(res.Stdout)
+			f.mu.Unlock()
 		}
 		// Docker is not up: keep the last answer.
 	}
@@ -155,6 +162,8 @@ func (f *Facts) Refresh() {
 
 // Repo is the last reading of the checkout.
 func (f *Facts) Repo() (RepoState, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.state == nil {
 		return RepoState{}, false
 	}
@@ -162,7 +171,11 @@ func (f *Facts) Repo() (RepoState, bool) {
 }
 
 // Runtime is the docker runtime last seen, or "".
-func (f *Facts) Runtime() string { return f.runtime }
+func (f *Facts) Runtime() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.runtime
+}
 
 // ParseDockerRuntime reads what `docker info --format {{.OperatingSystem}}` printed. OrbStack says
 // "OrbStack", Docker Desktop "Docker Desktop".

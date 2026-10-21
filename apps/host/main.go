@@ -78,6 +78,10 @@ func start() error {
 			return nil
 		}
 	}
+	if len(os.Args) > 1 && os.Args[1] == "--ssh-dry-run" {
+		sshDryRun(cfg, osName, env)
+		return nil
+	}
 	log, err := hostlog.NewFile(filepath.Join(cfg.MajhiHome, "logs", "host.log"), hostlog.MaxBytes)
 	if err != nil {
 		return err
@@ -156,5 +160,36 @@ func signer(deps sys.Deps) func(path string) {
 		if res.Code != 0 {
 			deps.Log("update: could not sign the new helper ad hoc")
 		}
+	}
+}
+
+// sshDryRun reports what the key loader would do on this computer, and changes nothing: no `ssh-add`
+// add, no Keychain load, no keyring change. It prints paths and short fingerprints.
+func sshDryRun(cfg config.Config, osName string, env map[string]string) {
+	quiet := func(string) {}
+	deps := sys.Real(env, osName, cfg.Home, cfg.MajhiHome, quiet, false)
+	plat := platform.New(osName, deps, false, false)
+	keys := ssh.New(ssh.Deps{
+		Run: deps.Run, ReadText: readText, Exists: deps.Exists, Home: cfg.Home, Path: deps.Path, Find: deps.Find,
+		Agent: plat.SSHAgent(), Keyring: plat.Keyring(), Log: quiet, DryRun: true,
+	})
+	report := keys.Inspect()
+	socket := report.Socket
+	if socket == "" {
+		socket = "none"
+	}
+	fmt.Printf("agent socket: %s\nkeys in the agent: %d\n", socket, report.Status.Loaded)
+	for _, key := range report.Keys {
+		line := fmt.Sprintf("  %-16s %s", key.State, key.Path)
+		if key.Fingerprint != "" {
+			line += "  " + key.Fingerprint
+		}
+		fmt.Println(line)
+	}
+	if len(report.Keys) == 0 {
+		fmt.Println("  no key files found")
+	}
+	if report.Status.Error != "" {
+		fmt.Println("error: " + report.Status.Error)
 	}
 }

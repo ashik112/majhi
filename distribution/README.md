@@ -4,7 +4,7 @@ Public installers and packaged releases for majhi. Application source is maintai
 
 ## Install majhi
 
-Install Docker with Compose and Node 20 or newer, then run:
+Install Docker with Compose, then run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ashik112/majhi-releases/main/install.sh | sh

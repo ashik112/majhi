@@ -63,7 +63,7 @@ need() {
 }
 
 # The tag of the latest release, as GitHub's releases API names it (`tag_name`). The host helper
-# reads the same pointer for its updates (apps/host/src/release.ts).
+# reads the same pointer for its updates (apps/host/internal/checkout/release.go).
 latest_version() {
   out=$(curl -sSL -H 'Accept: application/vnd.github+json' -w '\n%{http_code}' "$LATEST_URL" 2>&1) ||
     fail "Could not reach $LATEST_URL: $(printf '%s\n' "$out" | tail -n 1). Check your internet connection, then run $MAJHI_RERUN again."
