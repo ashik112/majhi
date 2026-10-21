@@ -83,7 +83,7 @@ func start() error {
 		return err
 	}
 	deps := sys.Real(env, osName, cfg.Home, cfg.MajhiHome, log, cfg.Notify)
-	plat := platform.New(osName, deps, cfg.Notify)
+	plat := platform.New(osName, deps, cfg.Notify, cfg.Isolated)
 	self, err := os.Executable()
 	if err != nil {
 		self = ""

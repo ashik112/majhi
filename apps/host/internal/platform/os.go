@@ -82,7 +82,7 @@ func (w withNotifier) Notifier() notify.Notifier { return w.notifier }
 func WithNotifier(p Platform, n notify.Notifier) Platform { return withNotifier{p, n} }
 
 // New builds the platform for os. With notifications off the notifier only logs (MAJHI_HOST_NOTIFY=off).
-func New(os string, deps sys.Deps, notifications bool) Platform {
+func New(os string, deps sys.Deps, notifications, isolated bool) Platform {
 	var p Platform
 	switch os {
 	case protocol.OSMacOS:
@@ -92,5 +92,9 @@ func New(os string, deps sys.Deps, notifications bool) Platform {
 	default:
 		p = NewLinux(deps, nil)
 	}
-	return WithNotifier(p, notify.Desktop(notifications, p.Notifier(), deps.Log))
+	p = WithNotifier(p, notify.Desktop(notifications, p.Notifier(), deps.Log))
+	if isolated {
+		p = Isolated(p)
+	}
+	return p
 }

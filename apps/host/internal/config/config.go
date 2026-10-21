@@ -25,6 +25,8 @@ type Config struct {
 	Version string
 	// Notify says whether notifications reach the desktop.
 	Notify bool
+	// Isolated: the helper next to a test server never touches the owner's keyring or SSH agent.
+	Isolated bool
 }
 
 // Parse reads the settings from env (empty values count as unset, as a plist or `.env` may hold).
@@ -70,6 +72,7 @@ func Parse(env map[string]string, home string) (Config, error) {
 		MajhiHome: filepath.Clean(majhiHome),
 		Version:   version,
 		Notify:    notify != "off",
+		Isolated:  get("MAJHI_HOST_ISOLATED") == "1",
 	}
 	if repo != "" {
 		cfg.Repo = filepath.Clean(repo)
