@@ -14,6 +14,7 @@ const run = promisify(execFile);
  */
 export const GITIGNORE = [
   "accounts/",
+  "account-pins/",
   "agent-homes/",
   "connections/",
   "memory/",

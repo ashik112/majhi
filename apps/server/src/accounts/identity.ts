@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AccountIdentity, getTool, type RuntimeOptions } from "@majhi/acp";
 import type { AccountConfig } from "@majhi/shared";
@@ -12,8 +12,8 @@ import { accountHome, accountRuntime } from "./homes.ts";
  * Who an account is, pinned at sign-in. The sign-in file is the one file every workspace of an account shares
  * and an agent in any of them can write, so a session that swaps it for another person's would make every other
  * workspace's next session run on that other account. A session never starts on a file whose owner is not the
- * pinned one. The pin lives in majhi's own folder (`accounts/<id>/`, which no run mounts), never in a home an
- * agent writes.
+ * pinned one. The pin lives in majhi's own folder (`account-pins/<id>.json`), which no run, probe or login mounts,
+ * never in a home an agent writes.
  */
 const PinSchema = z.object({
   identity: z.object({ id: z.string(), label: z.string() }),
@@ -24,7 +24,8 @@ const PinSchema = z.object({
 });
 type Pin = z.infer<typeof PinSchema>;
 
-const PIN_FILE = ".majhi-pin.json";
+/** `<majhi home>/account-pins/<id>.json`. Nothing mounts this folder, not even a probe. */
+const PINS_DIR = "account-pins";
 
 /** How often a read is repeated when the file changed under it. */
 const READ_ATTEMPTS = 3;
@@ -144,7 +145,12 @@ export class SignInGuard {
   }
 
   private pinFile(id: string): string {
-    return join(accountHome(this.deps.majhiHome, id), PIN_FILE);
+    return join(this.deps.majhiHome, PINS_DIR, `${id}.json`);
+  }
+
+  /** Forgets the pin: the account is removed. */
+  async forget(id: string): Promise<void> {
+    await rm(this.pinFile(id), { force: true });
   }
 
   private async readPin(id: string): Promise<Pin | undefined> {
@@ -159,6 +165,7 @@ export class SignInGuard {
 
   private async writePin(id: string, pin: Pin): Promise<void> {
     const file = this.pinFile(id);
+    await mkdir(join(this.deps.majhiHome, PINS_DIR), { recursive: true, mode: 0o700 });
     const temp = `${file}.${process.pid}.tmp`;
     await writeFile(temp, JSON.stringify(pin), { mode: 0o600 });
     await rename(temp, file);

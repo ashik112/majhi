@@ -139,6 +139,7 @@ export class AccountService {
     );
     await rm(accountHome(majhiHome, id), { recursive: true, force: true });
     await this.removeAgentHomes(id);
+    await this.deps.identity.forget(id);
     if (account.key !== undefined) await secrets.delete(secretName(account.key));
     await cache.remove(id);
   }

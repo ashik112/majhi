@@ -35,6 +35,7 @@ const NEVER = new Set([
   "run",
   "cache",
   "accounts",
+  "account-pins",
   "agent-homes",
   "connections",
   "logs",
