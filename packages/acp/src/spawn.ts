@@ -15,6 +15,11 @@ export interface SpawnRequest {
   cwd: string;
   /** The account whose home the run mounts. Absent for a run that has none, like a task terminal. */
   account?: AccountRuntime | undefined;
+  /**
+   * `account.home` is the account's own folder (a probe, a login or a usage read, never an agent): a runner
+   * mounts it as it is. Absent for a session, whose `account.home` must be its workspace's home.
+   */
+  accountFolder?: boolean;
   /** More paths the run needs, like each task repo's `.git`. */
   mounts?: RunMount[];
   /** `cwd` is a throwaway folder: a runner uses its own instead of mounting one. */

@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isId } from "@majhi/shared";
+import { AGENT_HOMES_DIR, existingSignIn, isHomeOrg } from "../agent-home.ts";
 import { killTree } from "../exec.ts";
 import {
   type RunMount,
@@ -13,10 +15,11 @@ import {
 
 /**
  * Runner isolation (SPEC 4.2, 6, Phase 2c). Each agent session runs in its own container from the
- * runner image, which mounts only the task folder, the task repos' `.git` folders and the
- * account's own config home, at the same absolute paths as on the host. majhi's config folder,
- * the secrets key, other accounts' homes and the Docker socket are never mounted. Secrets reach
- * the run only through its environment, passed by name so they never show in a process list.
+ * runner image, which mounts only the task folder, the task repos' `.git` folders and its own
+ * workspace's agent home (`agent-homes/<org>/<account>`) with the account's sign-in file inside it, at the
+ * same absolute paths as on the host. majhi's config folder, the secrets key, the account folders, other
+ * workspaces' homes and the Docker socket are never mounted. Secrets reach the run only through its
+ * environment, passed by name so they never show in a process list.
  */
 export interface RunnerConfig {
   /** The runner image, like `majhi-runner:dev`. */
@@ -35,7 +38,7 @@ export interface RunnerConfig {
   docker?: string | undefined;
   /** Environment of the docker CLI itself (PATH, DOCKER_HOST). Never reaches the agent. */
   cliEnv: Record<string, string>;
-  /** majhi's config folder. Never mounted; inside it only the run's own account home is. */
+  /** majhi's config folder. Never mounted; inside it only the run's own agent home and its sign-in file are. */
   majhiHome: string;
   /** Never mounted, and no folder that holds them: the secrets key file, for one. */
   protectedPaths: string[];
@@ -112,8 +115,13 @@ function realForms(path: string): string[] {
 
 /**
  * The mounts of one run, checked. Throws `MountRefused` when any would expose majhi's config
- * folder (other than the run's own account home and, read-only, majhi's git hooks), a protected
- * path, or a folder holding one.
+ * folder (other than the run's own agent home, the account's sign-in file inside it and, read-only,
+ * majhi's git hooks), a protected path, or a folder holding one.
+ *
+ * A session's `account.home` must be `agent-homes/<org>/<account>`. Only a probe, a login or a usage
+ * read (`accountFolder`) mounts `accounts/<account>`, and no session ever does. The one file of an
+ * account's folder a session gets is its sign-in file, mounted by this function from `account.accountHome`
+ * (read-write, because the CLI refreshes tokens in place), never named by a caller's `mounts`.
  */
 export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const mounts: RunMount[] = [];
@@ -132,7 +140,15 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const ownHomes = req.account === undefined ? [] : realForms(req.account.home);
   const protectedPaths = [...majhiHomes, ...cfg.protectedPaths.flatMap(realForms), ...ALWAYS_PROTECTED];
 
-  const isOwnHome = (path: string) => ownHomes.includes(path) && accountsDirs.includes(dirname(path));
+  const agentHomesDirs = majhiHomes.map((h) => resolve(h, AGENT_HOMES_DIR));
+  // `agent-homes/<org>/<account>`, with ids that cannot climb out: the folder of one workspace and account.
+  const isAgentHome = (path: string) =>
+    agentHomesDirs.includes(dirname(dirname(path))) &&
+    isHomeOrg(basename(dirname(path))) &&
+    isId(basename(path));
+  const isOwnHome = (path: string) =>
+    ownHomes.includes(path) &&
+    (req.accountFolder === true ? accountsDirs.includes(dirname(path)) : isAgentHome(path));
   const hooksDirs = majhiHomes.map((h) => resolve(h, MAJHI_HOOKS_DIR));
   const isHooks = (path: string, m: RunMount) => m.readOnly === true && hooksDirs.includes(path);
   const runFolders = majhiHomes.map((h) => resolve(h, MAJHI_RUN_CONNECTIONS_DIR));
@@ -175,6 +191,19 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
         }
       }
     }
+  }
+  // The account's sign-in file, on its own: the exact file of the account's folder, under its own name inside
+  // the run's own agent home, and only when it is a plain file there. An API-key account has none.
+  const account = req.account;
+  const signIn = account === undefined || req.accountFolder === true ? undefined : existingSignIn(account);
+  if (account !== undefined && account.accountHome !== undefined && signIn !== undefined) {
+    const folder = resolve(account.accountHome);
+    const homeOk = realForms(account.home).every(isAgentHome) && basename(folder) === basename(account.home);
+    const folderOk = realForms(folder).every((f) => accountsDirs.includes(dirname(f)));
+    if (!homeOk || !folderOk) {
+      throw new MountRefused(`A run can only get the sign-in file of its own account, not ${signIn.source}.`);
+    }
+    mounts.push({ path: resolve(signIn.source), target: join(resolve(account.home), signIn.name) });
   }
   // Same path twice (a repo inside the task folder) is one mount.
   const seen = new Set<string>();

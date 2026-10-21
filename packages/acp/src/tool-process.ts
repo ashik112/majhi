@@ -34,7 +34,7 @@ export function toolRequest(
     env,
     cwd: "/tmp",
     scratch: true,
-    ...(account === undefined ? {} : { account }),
+    ...(account === undefined ? {} : { account, accountFolder: true }),
   };
 }
 

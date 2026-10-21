@@ -1,9 +1,11 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { looksExpired, SignInExpired } from "../auth-failure.ts";
 import { startTool, type ToolProcess } from "../tool-process.ts";
-import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
+import type { AccountIdentity, ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
   .looseObject({
@@ -137,6 +139,57 @@ async function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
   });
 }
 
+const CodexAuthFile = z.looseObject({
+  tokens: z.looseObject({ id_token: z.string().optional(), account_id: z.string().optional() }).nullish(),
+});
+
+/** What the sign-in's `id_token` says about its owner. Only the claims majhi reads. */
+const CodexIdClaims = z.looseObject({
+  sub: z.string().optional(),
+  email: z.string().optional(),
+  "https://api.openai.com/auth": z
+    .looseObject({ chatgpt_account_id: z.string().optional(), chatgpt_user_id: z.string().optional() })
+    .optional(),
+});
+
+/** The claims of a JWT, read the way Codex reads its own `id_token` (the payload, not verified). */
+function jwtClaims(jwt: string): unknown {
+  const payload = jwt.split(".")[1];
+  if (payload === undefined) return undefined;
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Who the sign-in belongs to, from the account and user ids and the email in `auth.json` itself: the file is
+ * the sign-in, so a swapped file changes the answer. `cli login status` names nobody and `account/read` needs
+ * the network, so neither is used. The ids come from the file as Codex wrote it and are not verified here.
+ */
+async function readCodexIdentity(ctx: UsageContext): Promise<AccountIdentity> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(join(ctx.account.home, "auth.json"), "utf8"));
+  } catch {
+    throw new Error("Codex has no readable sign-in file");
+  }
+  const file = CodexAuthFile.safeParse(raw);
+  const idToken = file.success ? file.data.tokens?.id_token : undefined;
+  const claims = CodexIdClaims.safeParse(idToken === undefined ? undefined : jwtClaims(idToken));
+  const auth = claims.success ? claims.data["https://api.openai.com/auth"] : undefined;
+  const email = claims.success ? claims.data.email : undefined;
+  const accountId = (file.success ? file.data.tokens?.account_id : undefined) ?? auth?.chatgpt_account_id;
+  const user = auth?.chatgpt_user_id ?? (claims.success ? claims.data.sub : undefined) ?? email;
+  if (accountId === undefined && user === undefined)
+    throw new Error("Codex reported no account for this sign-in");
+  return {
+    id: [accountId ?? "no-account", user ?? "no-user"].join("/"),
+    label: email ?? accountId ?? "a signed-in account",
+  };
+}
+
 /**
  * Codex compacts inside a turn once the conversation reaches `model_auto_compact_token_limit`
  * (codex-cli 0.158.0). codex-acp 2.0.0 merges the JSON in `CODEX_CONFIG` into every session's config.
@@ -182,6 +235,7 @@ export const codex: ToolDef = {
     midTurnCapMin: 0,
   },
   configHomeVar: "CODEX_HOME",
+  signInFile: "auth.json",
   apiKeyVar: "CODEX_API_KEY",
   // Written by codex for a signed-in account: `models[]` with a `slug` and, for a replaced model,
   // `upgrade: { model }` naming its replacement.
@@ -200,6 +254,7 @@ export const codex: ToolDef = {
   // asked by a managed PreToolUse hook instead (docker/codex/). codex-acp 2.0.0 applies this to new and loaded sessions.
   containerEnv: { INITIAL_AGENT_MODE: "agent-full-access" },
   readUsage: readCodexUsage,
+  readIdentity: readCodexIdentity,
   parseAuthStatus(exitCode) {
     return { signedIn: exitCode === 0 };
   },

@@ -23,6 +23,8 @@ export interface FakeAgentOptions {
   noLoadSession?: boolean;
   /** Do not advertise image prompts. */
   noImages?: boolean;
+  /** Who a sign-in made through this fake belongs to (an email). Default `fake@example.com`. */
+  identity?: string;
   /** Each turn adds this many tokens to the usage the fake reports, so a session fills up. */
   risingUsage?: number;
   /** `/compact` answers but leaves usage where it was, so majhi must hand off. */
@@ -69,6 +71,7 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
   if (options.slowMs) args.push("--slow", String(options.slowMs));
   if (options.noLoadSession) args.push("--no-load-session");
   if (options.noImages) args.push("--no-images");
+  if (options.identity) args.push("--identity", options.identity);
   if (options.risingUsage) args.push("--rising-usage", String(options.risingUsage));
   if (options.compactNoop) args.push("--compact-noop");
   const t = options.turnTokens;

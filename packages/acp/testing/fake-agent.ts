@@ -4,8 +4,9 @@
  * No tool argv means: speak ACP over stdio. Never touches the network or real credentials.
  * Only erasable TypeScript here, so Node runs it without a build step.
  */
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { z } from "zod";
@@ -25,6 +26,8 @@ const Flags = z.object({
   loadSession: z.boolean(),
   /** Advertise image prompts. */
   images: z.boolean(),
+  /** Who a sign-in made by this fake belongs to (an email). Written into the sign-in file, read back by the profile and the account id. */
+  identity: z.string().min(1),
   /** Tokens each turn adds to the reported usage (0: fixed readings). */
   risingUsage: z.number().int().nonnegative(),
   /** `/compact` does not lower usage. */
@@ -67,6 +70,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     slowMs: number;
     loadSession: boolean;
     images: boolean;
+    identity: string;
     risingUsage: number;
     compactNoop: boolean;
     turnTokens?: { input: number; output: number; thought: number; cacheRead: number; cacheWrite: number };
@@ -90,6 +94,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     slowMs: 0,
     loadSession: true,
     images: true,
+    identity: "fake@example.com",
     risingUsage: 0,
     compactNoop: false,
     usage: { fiveHourPct: 42, weekPct: 18, plan: "max" },
@@ -109,6 +114,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--slow") raw.slowMs = Number(argv[++i]);
     else if (a === "--no-load-session") raw.loadSession = false;
     else if (a === "--no-images") raw.images = false;
+    else if (a === "--identity") raw.identity = argv[++i] ?? "";
     else if (a === "--rising-usage") raw.risingUsage = Number(argv[++i]);
     else if (a === "--compact-noop") raw.compactNoop = true;
     else if (a === "--turn-tokens") {
@@ -178,13 +184,65 @@ function readLine(): Promise<string> {
   });
 }
 
+/** A stable id for an email, the way a real account has one. */
+function idOf(email: string): string {
+  const h = createHash("sha256").update(email).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+function jwt(claims: object): string {
+  const part = (v: object) => Buffer.from(JSON.stringify(v)).toString("base64url");
+  return `${part({ alg: "none", typ: "JWT" })}.${part(claims)}.fake`;
+}
+
 async function writeCredentials(flags: Flags): Promise<void> {
   await mkdir(homeFor(flags), { recursive: true, mode: 0o700 });
+  const id = idOf(flags.identity);
   const body =
     flags.tool === "claude"
-      ? { claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 } }
-      : { tokens: { access_token: "fake-access", refresh_token: "fake-refresh" } };
+      ? {
+          claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 },
+          // What a real token knows about its owner: the profile the CLI fetches with it.
+          fakeProfile: { accountUuid: id, emailAddress: flags.identity },
+        }
+      : {
+          tokens: {
+            id_token: jwt({
+              email: flags.identity,
+              sub: `user-${id}`,
+              "https://api.openai.com/auth": {
+                chatgpt_account_id: `acct-${id}`,
+                chatgpt_user_id: `user-${id}`,
+              },
+            }),
+            access_token: "fake-access",
+            refresh_token: "fake-refresh",
+            account_id: `acct-${id}`,
+          },
+        };
   await writeFile(credentialFile(flags), JSON.stringify(body), { mode: 0o600 });
+}
+
+/**
+ * What a real Claude session start does: it fetches the profile of its token and writes it to `.claude.json`.
+ * The fake does it from the profile in the sign-in file, so a swapped file shows as another account.
+ */
+async function refreshClaudeProfile(flags: Flags): Promise<void> {
+  if (flags.tool !== "claude") return;
+  try {
+    const creds: unknown = JSON.parse(await readFile(credentialFile(flags), "utf8"));
+    const profile = (creds as { fakeProfile?: { accountUuid?: string; emailAddress?: string } }).fakeProfile;
+    if (profile === undefined) return;
+    const file = join(homeFor(flags), ".claude.json");
+    const current: Record<string, unknown> = await readFile(file, "utf8").then(
+      (t) => JSON.parse(t) as Record<string, unknown>,
+      () => ({}),
+    );
+    const oauthAccount = { ...(profile as object), profileFetchedAt: Date.now() };
+    await writeFile(file, JSON.stringify({ ...current, oauthAccount }), { mode: 0o600 });
+  } catch {
+    // No sign-in file: a signed-out session fails on its own.
+  }
 }
 
 const HOUR_MS = 3_600_000;
@@ -355,6 +413,7 @@ function serve(flags: Flags): void {
     usageModel: flags.usageModel,
     replies: flags.replies,
     signedIn: () => isSignedIn(flags),
+    onNewSession: () => refreshClaudeProfile(flags),
     expired: flags.expired,
   });
 }

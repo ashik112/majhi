@@ -55,8 +55,17 @@ export interface RuntimeOptions {
 /** One account as the runtime needs it. */
 export interface AccountRuntime {
   tool: ToolId;
-  /** Absolute path of the account's config home. Created by the caller. */
+  /**
+   * Absolute path of the config home the process uses (`HOME` and the CLI's own variable). For a session this is
+   * its workspace's home (`agentHomePath`); for a probe, a login and a usage read it is the account's own folder.
+   * Created by the caller.
+   */
   home: string;
+  /**
+   * The account's own folder, set on a session's account (`home` is then a workspace's home): where the sign-in
+   * file is shared from and where a new home is seeded from. Absent for a probe, a login and a usage read.
+   */
+  accountHome?: string;
   /** Plain API key for `api-key` accounts, decrypted by the server just before use. Never logged. */
   apiKey?: string;
 }
@@ -65,6 +74,11 @@ export interface ToolSpec {
   info: ToolInfo;
   /** `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. */
   configHomeVar: string;
+  /**
+   * The CLI's sign-in file inside its config home: `.credentials.json` or `auth.json`. The one file of an
+   * account that every workspace's home shares, because the CLI rewrites it in place when it refreshes a token.
+   */
+  signInFile: string;
   /** `ANTHROPIC_API_KEY` or `CODEX_API_KEY`. */
   apiKeyVar: string;
   /**
@@ -90,6 +104,14 @@ export interface AccountProbe {
   models?: Omit<AccountModels, "account">;
 }
 
+export {
+  AGENT_HOMES_DIR,
+  agentHomePath,
+  existingSignIn,
+  INTERNAL_ORG,
+  isHomeOrg,
+  signInFileOf,
+} from "./agent-home.ts";
 export { isAuthFailure, looksSignedOut, SignInExpired } from "./auth-failure.ts";
 export {
   buildEnv,
@@ -101,6 +123,7 @@ export {
 } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";
+export { readIdentity } from "./identity.ts";
 export { type LimitFailure, limitFailure, limitLine, parseReset } from "./limit-failure.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";
@@ -141,7 +164,7 @@ export {
 } from "./spawn.ts";
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
-export { getTool, toolInfos, tools } from "./tools/index.ts";
+export { type AccountIdentity, getTool, toolInfos, tools } from "./tools/index.ts";
 export type { ContextCap, LimitShapes } from "./tools/types.ts";
 export { TurnMeter, type TurnUsage, type UsageMode } from "./turn-usage.ts";
 export { readUsage } from "./usage.ts";
