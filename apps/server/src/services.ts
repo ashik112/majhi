@@ -1051,6 +1051,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     markSignedOut: async (account, detail) => {
       await accounts.markSignedOut(account, detail);
     },
+    recheckSignIn: async (account) => {
+      const { account: view } = await accounts.health(account, true);
+      return {
+        ok: signedIn(view.status),
+        hash: await signInGuard.currentHash(account, await accounts.require(account)),
+      };
+    },
     accountLimit: accountLimitOf,
     markLimit: (account, failure) => accounts.markLimit(account, failure),
     takeOver: (task, from, to, how) => tasks.takeOver(task, from, to, how),

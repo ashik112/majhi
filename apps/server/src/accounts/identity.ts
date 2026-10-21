@@ -120,6 +120,11 @@ export class SignInGuard {
     return undefined;
   }
 
+  /** The hash of the account's sign-in file now (undefined when there is none). */
+  currentHash(id: string, config: AccountConfig): Promise<string | undefined> {
+    return this.hashOf(id, config);
+  }
+
   /** One read at a time per account and file content: a caller never gets the answer for a file that has changed. */
   private read(id: string, config: AccountConfig, hash: string): Promise<AccountIdentity> {
     const key = `${id}:${hash}`;

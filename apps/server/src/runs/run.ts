@@ -172,6 +172,8 @@ export class AgentRun {
   limitMark: AccountLimit | undefined;
   /** The account a failed turn found signed out: the loop hands off or pauses once the prompt is back in the queue. */
   signedOutAccount: string | undefined;
+  /** The sign-in turned out fine when a turn failed on it (another session refreshed it): the loop starts the session again. */
+  signInHealed = false;
   /** The account whose usage limit paused this run, for the lift at its reset. Cleared when the run resumes. */
   limitAccount: string | undefined;
   /** The room already said this run's account limit passed while resuming is off. */
