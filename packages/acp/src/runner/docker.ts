@@ -195,6 +195,20 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   // The account's sign-in file, on its own: the exact file of the account's folder, under its own name inside
   // the run's own agent home, and only when it is a plain file there. An API-key account has none.
   const account = req.account;
+  // A probe, a login or a usage read gets the file on its own too, over itself inside the folder. Claude writes
+  // its sign-in to a temp file and renames it over the old one when it can, and a renamed file is a new one:
+  // every running session keeps the file it mounted, with the refresh token that refresh used up. Over a mount
+  // the rename fails and the CLI writes the same file in place, as it does in a session.
+  const ownSignIn =
+    account === undefined || req.accountFolder !== true
+      ? undefined
+      : existingSignIn({ ...account, accountHome: account.home });
+  if (account !== undefined && ownSignIn !== undefined) {
+    if (!realForms(account.home).every((f) => accountsDirs.includes(dirname(f)))) {
+      throw new MountRefused(`Only an account's own folder holds its sign-in file, not ${account.home}.`);
+    }
+    mounts.push({ path: resolve(ownSignIn.source), target: resolve(ownSignIn.source) });
+  }
   const signIn = account === undefined || req.accountFolder === true ? undefined : existingSignIn(account);
   if (account !== undefined && account.accountHome !== undefined && signIn !== undefined) {
     const folder = resolve(account.accountHome);

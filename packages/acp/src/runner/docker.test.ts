@@ -157,7 +157,27 @@ describe("runner mounts", () => {
     expect(() => runMounts(make(), cfg)).toThrow(MountRefused);
   });
 
-  it("gives an API-key account or a missing sign-in file no sign-in mount, and a probe its account folder without one", () => {
+  it("gives a probe its account folder with the sign-in file mounted over itself, so the CLI cannot replace it by a rename", () => {
+    const probe = (account: SpawnRequest["account"]) =>
+      runMounts(request({ accountFolder: true, mounts: [], scratch: true, account }), cfg).map((m) => [
+        m.path,
+        m.target,
+      ]);
+    const file = join(accountFolder("claude-acme"), ".credentials.json");
+    expect(probe({ tool: "claude", home: accountFolder("claude-acme") })).toEqual([
+      [accountFolder("claude-acme"), undefined],
+      [file, file],
+    ]);
+    // No file yet (before a first sign-in), or an API-key account: the folder alone.
+    expect(probe({ tool: "claude", home: accountFolder("claude-globex") })).toEqual([
+      [accountFolder("claude-globex"), undefined],
+    ]);
+    expect(probe({ tool: "claude", home: accountFolder("claude-acme"), apiKey: "sk-test" })).toEqual([
+      [accountFolder("claude-acme"), undefined],
+    ]);
+  });
+
+  it("gives an API-key account or a missing sign-in file no sign-in mount", () => {
     const targets = (req: SpawnRequest) => runMounts(req, cfg).map((m) => m.target);
     expect(targets(request())).toContain(join(own(), ".credentials.json"));
     expect(
@@ -183,15 +203,5 @@ describe("runner mounts", () => {
         }),
       ),
     ).toEqual([undefined, undefined, undefined, undefined, undefined]);
-    const probe = runMounts(
-      request({
-        accountFolder: true,
-        mounts: [],
-        scratch: true,
-        account: { tool: "claude", home: accountFolder("claude-acme") },
-      }),
-      cfg,
-    );
-    expect(probe.map((m) => m.path)).toEqual([accountFolder("claude-acme")]);
   });
 });

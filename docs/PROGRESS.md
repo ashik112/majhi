@@ -41,6 +41,8 @@ Branch `fix/agent-homes`, brief `docs/briefs/agent-homes.md`. Built by a builder
 
 **Not checked (the lead).** A real Claude and a real Codex session in the rebuilt runner on a signed-in account in two workspaces: the sign-in survives a token refresh, `auth status` in a home, and the first Codex start in a new home (plugin sync, models cache). A Codex home also loses the old account folder's `config.toml` (trust and model settings).
 
+**Live, 2026-10-21: the sign-in file was replaced on refresh.** The first real Claude refresh on the deployed build ran in the account folder (a usage read) and gave `.credentials.json` a new inode: Claude writes a temp file and renames it over the old one when it can. A running session keeps the inode it mounted, so its next refresh would use a spent refresh token. Probes, logins and usage reads now get the sign-in file mounted over itself inside the account folder (`runMounts`): the rename fails with "Device or resource busy" and the CLI writes in place, as it does in a session. Checked in a real runner: the rename is refused, an in-place write lands on the same inode, and the rest of the folder stays writable.
+
 ## Codex wiki sessions read through majhi's files tools, 2026-10-21
 
 Branch `fix/codex-wiki-reads`, brief `docs/briefs/codex-wiki-reads.md`. Built by a builder who did not run a real Codex session: the lead runs one wiki session on a Codex account afterwards.
