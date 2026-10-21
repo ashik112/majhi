@@ -235,8 +235,12 @@ async function refreshClaudeProfile(flags: Flags): Promise<void> {
   if (flags.tool !== "claude") return;
   try {
     const creds: unknown = JSON.parse(await readFile(credentialFile(flags), "utf8"));
-    const profile = (creds as { fakeProfile?: { accountUuid?: string; emailAddress?: string } }).fakeProfile;
-    if (profile === undefined) return;
+    // A real token always has a profile; a sign-in file the fake did not write gets the fake's own identity.
+    const profile = (creds as { fakeProfile?: { accountUuid?: string; emailAddress?: string } })
+      .fakeProfile ?? {
+      accountUuid: idOf(flags.identity),
+      emailAddress: flags.identity,
+    };
     const file = join(homeFor(flags), ".claude.json");
     const current: Record<string, unknown> = await readFile(file, "utf8").then(
       (t) => JSON.parse(t) as Record<string, unknown>,

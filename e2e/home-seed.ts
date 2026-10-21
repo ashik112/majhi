@@ -135,7 +135,12 @@ export async function seedHome(seed: "roots" | "team" | "team-api"): Promise<voi
     writeFileSync(
       join(home, ".credentials.json"),
       JSON.stringify({
-        claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 },
+        claudeAiOauth: {
+          accessToken: "fake-access",
+          refreshToken: "fake-refresh",
+          // Far ahead: majhi refreshes a token that is about to run out before it starts a session.
+          expiresAt: Date.now() + 30 * 24 * 3_600_000,
+        },
       }),
       { mode: 0o600 },
     );
