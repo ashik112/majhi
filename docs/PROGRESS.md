@@ -12,7 +12,7 @@ Branch `fix/codex-wiki-reads`, brief `docs/briefs/codex-wiki-reads.md`. Built by
 **How to try it.** Typecheck, then `pnpm exec vitest run apps/server/src/memory/files-mcp.test.ts apps/server/src/rooms/codex-hook.test.ts apps/server/src/runs/codex-hook.test.ts`. Real run: set the wiki writer's account to a Codex account, rebuild a project's wiki page and read the session's files calls in its usage.
 
 **Left.**
-- Not run on real Codex: that PreToolUse names a files call `mcp__majhi_files__read` (the spelling follows `sanitize_responses_api_tool_name`, as the hook brief found for `acme_obs`). If it arrives otherwise, `mcpNamesOf` finds no server and the gate denies, so the writer would read nothing. The lead's real wiki session checks it.
+- Real Codex session (lead, 2026-10-21, codex-acp in `agent-full-access`, a stub `majhi-files` server and a stub hook endpoint with the same rule): Codex tried `pwd; rg --files ...`, got "No shell in this session. Read with the files tools: read, list, search.", then used `list`, `search` and `read` (named `mcp__majhi_files__list` and so on in the hook, as expected) with absolute paths inside the export, and wrote the page with correct `path:line` citations. It did not call `update_plan`, so a denied Codex own tool mid-turn is still unseen.
 - The wiki prompts already say "read and search tools", so they were not changed.
 
 **Checked.** `pnpm -r typecheck`, `tsc -p e2e`, `biome check .` (33 warnings, as before), vitest 107 files and 427 tests passed (1 skipped), Playwright finds no spec. The runner image was not rebuilt.
