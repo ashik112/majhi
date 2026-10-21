@@ -24,3 +24,8 @@ export async function readIdentity(
     timeoutMs: options.timeoutMs ?? DEFAULT_IDENTITY_TIMEOUT_MS,
   });
 }
+
+/** When the account's sign-in file runs out (ms since the epoch), or undefined when the file does not say. */
+export function signInExpiresAt(account: AccountRuntime): Promise<number | undefined> {
+  return getTool(account.tool).signInExpiresAt(account.home);
+}

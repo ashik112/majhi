@@ -26,6 +26,9 @@ import type { SignInGuard } from "./identity.ts";
 import { limitActive, limitFor, statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
 import type { AccountUsageReader } from "./usage.ts";
 
+/** A sign-in with less than this left is refreshed by majhi before a session starts on it. */
+export const FRESH_SIGN_IN_MS = 15 * 60_000;
+
 export interface AccountCreate {
   id: string;
   tool: ToolId;
@@ -257,8 +260,9 @@ export class AccountService {
    * too, without marking the account: nothing is known, so nothing starts, and the next start tries again.
    */
   async guardStart(id: string): Promise<void> {
-    const verdict = await this.deps.identity.check(id, await this.require(id));
-    if (verdict.state === "ok") return;
+    const config = await this.require(id);
+    const verdict = await this.deps.identity.check(id, config);
+    if (verdict.state === "ok") return await this.keepSignInFresh(id, config);
     if (verdict.state === "refused") {
       await this.markSignedOut(id, verdict.detail);
       throw new UserError(verdict.detail, 409);
@@ -267,6 +271,21 @@ export class AccountService {
       `Could not confirm who ${id} is signed in as, so no session started: ${verdict.detail}`,
       409,
     );
+  }
+
+  /**
+   * A token about to run out is refreshed here, one read at a time per account, before sessions start on it.
+   * Each workspace's home has its own copy of the CLI's refresh lock, so several sessions that find the token
+   * expired at the same time would each refresh it, and the refresh token rotates: all but one would fail. A
+   * read in the account's own folder refreshes the shared file once (the CLI writes it in place). A token that
+   * cannot be refreshed makes the account signed out, as any read of it does.
+   */
+  private async keepSignInFresh(id: string, config: AccountConfig): Promise<void> {
+    if (config.auth !== "login") return;
+    const expires = await this.deps.runtime.signInExpiresAt(accountRuntime(this.deps.majhiHome, id, config));
+    if (expires === undefined || expires - this.now().getTime() > FRESH_SIGN_IN_MS) return;
+    await this.deps.usage.read(id, config);
+    if (await this.needsLogin(id)) throw new UserError(`${id} is signed out. Sign in, then resume.`, 409);
   }
 
   /** Whether the account is known to need a new sign-in. From the last check, never a probe. */

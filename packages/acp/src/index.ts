@@ -123,7 +123,7 @@ export {
 } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";
-export { readIdentity } from "./identity.ts";
+export { readIdentity, signInExpiresAt } from "./identity.ts";
 export { type LimitFailure, limitFailure, limitLine, parseReset } from "./limit-failure.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";

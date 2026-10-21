@@ -27,6 +27,8 @@ export interface AcpRuntime {
   cliVersion(tool: ToolId, options: RuntimeOptions): Promise<string>;
   /** Who the account's sign-in file belongs to, read in the account's own folder. Rejects when it cannot be read. */
   readIdentity(account: AccountRuntime, options: RuntimeOptions): Promise<AccountIdentity>;
+  /** When the account's sign-in file runs out (ms since the epoch), or undefined when the file does not say. */
+  signInExpiresAt(account: AccountRuntime): Promise<number | undefined>;
 }
 
 export const realRuntime: AcpRuntime = {
@@ -37,5 +39,6 @@ export const realRuntime: AcpRuntime = {
   readUsage: acp.readUsage,
   cliVersion: acp.cliVersion,
   readIdentity: acp.readIdentity,
+  signInExpiresAt: acp.signInExpiresAt,
   startSession: (start) => acp.startSession(start),
 };

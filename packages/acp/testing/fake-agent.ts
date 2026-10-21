@@ -201,7 +201,11 @@ async function writeCredentials(flags: Flags): Promise<void> {
   const body =
     flags.tool === "claude"
       ? {
-          claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 },
+          claudeAiOauth: {
+            accessToken: "fake-access",
+            refreshToken: "fake-refresh",
+            expiresAt: Date.now() + 8 * HOUR_MS,
+          },
           // What a real token knows about its owner: the profile the CLI fetches with it.
           fakeProfile: { accountUuid: id, emailAddress: flags.identity },
         }

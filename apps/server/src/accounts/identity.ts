@@ -26,6 +26,9 @@ type Pin = z.infer<typeof PinSchema>;
 
 const PIN_FILE = ".majhi-pin.json";
 
+/** How often a read is repeated when the file changed under it. */
+const READ_ATTEMPTS = 3;
+
 /** What a check found. `unreadable` is not a mismatch: the owner could not be read, so nothing is known. */
 export type SignInVerdict =
   | { state: "ok" }
@@ -57,6 +60,16 @@ export class SignInGuard {
    */
   async check(id: string, config: AccountConfig): Promise<SignInVerdict> {
     if (config.auth !== "login") return { state: "ok" };
+    // A refresh (a session's, or the read's own when the token ran out) rewrites the file while it is read:
+    // what was read then belongs to a file that is gone, so it is read once more.
+    for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+      const verdict = await this.checkOnce(id, config);
+      if (verdict !== "changed") return verdict;
+    }
+    return { state: "unreadable", detail: "the sign-in file kept changing while it was read" };
+  }
+
+  private async checkOnce(id: string, config: AccountConfig): Promise<SignInVerdict | "changed"> {
     const hash = await this.hashOf(id, config);
     // No sign-in file: the account is signed out, which its own checks already say.
     if (hash === undefined) return { state: "ok" };
@@ -67,10 +80,11 @@ export class SignInGuard {
     }
     let found: AccountIdentity;
     try {
-      found = await this.read(id, config);
+      found = await this.read(id, config, hash);
     } catch (err) {
       return { state: "unreadable", detail: errorMessage(err) };
     }
+    if ((await this.hashOf(id, config)) !== hash) return "changed";
     if (pin === undefined) {
       await this.writePin(id, { identity: found, checked: hash });
       return { state: "ok" };
@@ -90,24 +104,30 @@ export class SignInGuard {
    */
   async pin(id: string, config: AccountConfig): Promise<AccountIdentity | undefined> {
     if (config.auth !== "login") return undefined;
-    const hash = await this.hashOf(id, config);
-    if (hash === undefined) return undefined;
-    try {
-      const found = await this.read(id, config);
-      await this.writePin(id, { identity: found, checked: hash });
-      return found;
-    } catch {
-      return undefined;
+    for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+      const hash = await this.hashOf(id, config);
+      if (hash === undefined) return undefined;
+      try {
+        const found = await this.read(id, config, hash);
+        if ((await this.hashOf(id, config)) !== hash) continue;
+        await this.writePin(id, { identity: found, checked: hash });
+        return found;
+      } catch {
+        return undefined;
+      }
     }
+    return undefined;
   }
 
-  private read(id: string, config: AccountConfig): Promise<AccountIdentity> {
-    const running = this.reading.get(id);
+  /** One read at a time per account and file content: a caller never gets the answer for a file that has changed. */
+  private read(id: string, config: AccountConfig, hash: string): Promise<AccountIdentity> {
+    const key = `${id}:${hash}`;
+    const running = this.reading.get(key);
     if (running !== undefined) return running;
     const started = this.deps.runtime
       .readIdentity(accountRuntime(this.deps.majhiHome, id, config), this.deps.options)
-      .finally(() => this.reading.delete(id));
-    this.reading.set(id, started);
+      .finally(() => this.reading.delete(key));
+    this.reading.set(key, started);
     return started;
   }
 

@@ -163,6 +163,22 @@ function jwtClaims(jwt: string): unknown {
   }
 }
 
+const CodexAccessClaims = z.looseObject({ exp: z.number().optional() });
+
+/** The access token's own `exp` (seconds), as Codex reads it. */
+async function codexSignInExpiresAt(home: string): Promise<number | undefined> {
+  try {
+    const file = z
+      .looseObject({ tokens: z.looseObject({ access_token: z.string().optional() }).nullish() })
+      .safeParse(JSON.parse(await readFile(join(home, "auth.json"), "utf8")));
+    const token = file.success ? file.data.tokens?.access_token : undefined;
+    const claims = CodexAccessClaims.safeParse(token === undefined ? undefined : jwtClaims(token));
+    return claims.success && claims.data.exp !== undefined ? claims.data.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Who the sign-in belongs to, from the account and user ids and the email in `auth.json` itself: the file is
  * the sign-in, so a swapped file changes the answer. `cli login status` names nobody and `account/read` needs
@@ -255,6 +271,7 @@ export const codex: ToolDef = {
   containerEnv: { INITIAL_AGENT_MODE: "agent-full-access" },
   readUsage: readCodexUsage,
   readIdentity: readCodexIdentity,
+  signInExpiresAt: codexSignInExpiresAt,
   parseAuthStatus(exitCode) {
     return { signedIn: exitCode === 0 };
   },

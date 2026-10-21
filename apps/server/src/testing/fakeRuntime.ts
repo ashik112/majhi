@@ -75,6 +75,8 @@ export interface FakeRuntime extends AcpRuntime {
   /** Who `readIdentity` says the sign-in belongs to, or throws when it is an Error. */
   identity: AccountIdentity | Error;
   identityReads: AccountRuntime[];
+  /** When `signInExpiresAt` says the sign-in runs out (ms since the epoch). Undefined: the file says nothing. */
+  signInExpiry: number | undefined;
   /** Shapes each new session, for example to set its `script`. */
   onSession: ((session: FakeSession, start: SessionStart) => void) | undefined;
 }
@@ -116,6 +118,7 @@ export function fakeRuntime(): FakeRuntime {
     signedOutHomes: [],
     identity: { id: "owner-1", label: "owner@example.com" },
     identityReads: [],
+    signInExpiry: undefined,
     resumes: true,
     onSession: undefined,
     async startSession(start): Promise<AgentSession> {
@@ -140,6 +143,9 @@ export function fakeRuntime(): FakeRuntime {
     async prepareHome(account) {
       runtime.prepared.push(account);
       await mkdir(account.home, { recursive: true, mode: 0o700 });
+    },
+    async signInExpiresAt() {
+      return runtime.signInExpiry;
     },
     async readIdentity(account) {
       runtime.identityReads.push(account);

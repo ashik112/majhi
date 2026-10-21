@@ -68,6 +68,12 @@ export interface ToolDef extends ToolSpec {
    * agent could change. Rejects with a one-line message when the CLI cannot say. Spends no model tokens.
    */
   readIdentity(ctx: UsageContext): Promise<AccountIdentity>;
+  /**
+   * When the sign-in file's access token runs out (ms since the epoch), read from the file in `home`. Undefined
+   * when the file says nothing about it. majhi refreshes a token that is about to run out itself, once, before it
+   * starts sessions of several workspaces that would each try (their homes do not share the CLI's refresh lock).
+   */
+  signInExpiresAt(home: string): Promise<number | undefined>;
   /** The words this CLI uses when the account hit a limit. See `limitFailure`. */
   limitShapes: LimitShapes;
   /** Extra env for API-key accounts, on top of the key itself. */

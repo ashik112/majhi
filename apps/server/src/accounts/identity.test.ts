@@ -61,12 +61,12 @@ describe("the sign-in file shared by an account's workspaces", () => {
 
     // The same file is refused again without reading it again, also by a health check.
     const reads = h.runtime.identityReads.length;
-    expect((await h.cmd("accounts.health", { id: "claude-acme", force: true })).body.health.ok).toBe(false);
+    expect((await h.majhi.services.accounts.health("claude-acme", true)).health.ok).toBe(false);
     expect(h.runtime.identityReads).toHaveLength(reads);
 
     // The owner signs in again as themselves: the account passes.
     await writeFile(signIn, '{"token":"four"}');
     h.runtime.identity = OWNER;
-    expect((await h.cmd("accounts.health", { id: "claude-acme", force: true })).body.health.ok).toBe(true);
+    expect((await h.majhi.services.accounts.health("claude-acme", true)).health.ok).toBe(true);
   });
 });

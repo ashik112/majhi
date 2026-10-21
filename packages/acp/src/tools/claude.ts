@@ -135,6 +135,21 @@ async function readClaudeAccount(home: string) {
   }
 }
 
+const ClaudeCredentialsFile = z.looseObject({
+  claudeAiOauth: z.looseObject({ expiresAt: z.number().optional() }).optional(),
+});
+
+async function claudeSignInExpiresAt(home: string): Promise<number | undefined> {
+  try {
+    const parsed = ClaudeCredentialsFile.safeParse(
+      JSON.parse(await readFile(join(home, ".credentials.json"), "utf8")),
+    );
+    return parsed.success ? parsed.data.claudeAiOauth?.expiresAt : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Who the sign-in belongs to. `auth status` is no answer: it reports the email from `.claude.json`, which the
  * token does not change, so a swapped `.credentials.json` would still read as its old owner (checked on Claude
@@ -225,6 +240,7 @@ export const claude: ToolDef = {
   loginArgs: ["--cli", "auth", "login", "--claudeai"],
   readUsage: readClaudeUsage,
   readIdentity: readClaudeIdentity,
+  signInExpiresAt: claudeSignInExpiresAt,
   parseAuthStatus(exitCode, stdout) {
     if (exitCode !== 0) return { signedIn: false };
     try {
