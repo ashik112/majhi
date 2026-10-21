@@ -409,6 +409,9 @@ COPY --from=build /src/apps/web/dist ./web
 # The host helper runs on the owner's machine, not here. `make up` and an update copy the binary for that
 # machine's OS and CPU out of the image.
 COPY --from=host-build /out ./host
+# The transition shim: what an install still on the Node helper copies out and runs once, to switch to
+# the binary above by itself (apps/host/transition, docs/DECISIONS.md).
+COPY apps/host/transition/majhi-host.mjs ./host/majhi-host.mjs
 # The git commit this image was built from, so majhi can tell when newer code is on disk. It comes last
 # so a new commit does not invalidate the layers above. `dev` means the build did not say.
 ARG MAJHI_COMMIT=dev

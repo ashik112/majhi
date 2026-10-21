@@ -14,14 +14,17 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"majhi/host/internal/app"
 	"majhi/host/internal/config"
 	"majhi/host/internal/hostlog"
 	"majhi/host/internal/platform"
 	"majhi/host/internal/run"
+	"majhi/host/internal/service"
 	"majhi/host/internal/ssh"
 	"majhi/host/internal/sys"
 )
@@ -77,6 +80,9 @@ func start() error {
 			}
 			return nil
 		}
+	}
+	if len(os.Args) > 1 && os.Args[1] == "install-service" {
+		return installService(cfg, osName, env, os.Args[2:])
 	}
 	if len(os.Args) > 1 && os.Args[1] == "--ssh-dry-run" {
 		sshDryRun(cfg, osName, env)
@@ -206,4 +212,63 @@ func imagePath() string {
 		path += ".exe"
 	}
 	return path
+}
+
+// installService writes the login service (the LaunchAgent, or the systemd user units) for this binary
+// and loads it. `scripts/host.sh install` runs it after it copies the binary out of the image. With
+// `--from-legacy` it is the second half of a switch from the Node helper: the transition shim started
+// it, and it first waits for the shim (`--wait-pid`) to exit, then takes over the service and removes
+// the old `.mjs`.
+func installService(cfg config.Config, osName string, env map[string]string, args []string) error {
+	fromLegacy := false
+	waitPID := 0
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--from-legacy":
+			fromLegacy = true
+		case "--wait-pid":
+			if i+1 < len(args) {
+				waitPID, _ = strconv.Atoi(args[i+1])
+				i++
+			}
+		default:
+			return fmt.Errorf("install-service does not take %q", args[i])
+		}
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+	log, err := hostlog.NewFile(filepath.Join(cfg.MajhiHome, "logs", "host.log"), hostlog.MaxBytes)
+	if err != nil {
+		return err
+	}
+	if fromLegacy {
+		// Only one switch at a time: the old service starts the shim again as soon as it exits.
+		lock, err := service.TakeLock(filepath.Join(cfg.MajhiHome, "run", "install-service.lock"), 5*time.Minute)
+		if err != nil {
+			return nil
+		}
+		defer lock()
+		if waitPID > 0 {
+			service.WaitForExit(waitPID, 30*time.Second)
+		}
+		log("service: switching from the Node helper to " + self)
+	}
+	opts := service.Options{
+		Env: env, OS: osName, Home: cfg.Home, MajhiHome: cfg.MajhiHome, Repo: cfg.Repo, Bin: self,
+		UID: os.Getuid(), Run: run.Exec, Say: func(line string) { fmt.Println("host helper: " + line) }, Log: log,
+	}
+	if err := service.Install(opts); err != nil {
+		log("service: could not install the login service: " + err.Error())
+		return err
+	}
+	if fromLegacy {
+		_ = os.Remove(filepath.Join(cfg.MajhiHome, "bin", "majhi-host.mjs"))
+		log("service: the helper now runs as the binary at " + self)
+	}
+	return nil
 }
