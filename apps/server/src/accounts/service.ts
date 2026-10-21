@@ -1,5 +1,6 @@
-import { rm } from "node:fs/promises";
-import type { RuntimeOptions } from "@majhi/acp";
+import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { AGENT_HOMES_DIR, type RuntimeOptions } from "@majhi/acp";
 import {
   type AccountConfig,
   type AccountLimit,
@@ -21,8 +22,12 @@ import { SECRETS_NOT_SET_UP, type SecretStore } from "../secrets/store.ts";
 import type { AccountCache } from "./cache.ts";
 import type { AccountProbes } from "./health.ts";
 import { accountHome, accountRuntime, secretName } from "./homes.ts";
+import type { SignInGuard } from "./identity.ts";
 import { limitActive, limitFor, statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
 import type { AccountUsageReader } from "./usage.ts";
+
+/** A sign-in with less than this left is refreshed by majhi before a session starts on it. */
+export const FRESH_SIGN_IN_MS = 15 * 60_000;
 
 export interface AccountCreate {
   id: string;
@@ -40,6 +45,8 @@ export interface AccountDeps {
   cache: AccountCache;
   probes: AccountProbes;
   usage: AccountUsageReader;
+  /** Pins the account's sign-in to its owner (identity.ts). */
+  identity: SignInGuard;
   runtime: AcpRuntime;
   options: RuntimeOptions;
   /** Called with the account id before its home is deleted, to end a running login. */
@@ -131,8 +138,18 @@ export class AccountService {
       removeAccountEntry(config.file, id),
     );
     await rm(accountHome(majhiHome, id), { recursive: true, force: true });
+    await this.removeAgentHomes(id);
+    await this.deps.identity.forget(id);
     if (account.key !== undefined) await secrets.delete(secretName(account.key));
     await cache.remove(id);
+  }
+
+  /** The account's home in every workspace (`agent-homes/<org>/<id>`): they hold nothing but what its sessions wrote. */
+  private async removeAgentHomes(id: string): Promise<void> {
+    const dir = join(this.deps.majhiHome, AGENT_HOMES_DIR);
+    for (const org of await readdir(dir).catch(() => [] as string[])) {
+      await rm(join(dir, org, id), { recursive: true, force: true });
+    }
   }
 
   /** Hides a model from `auto` picks, or shows it again. The list stays in the order it was hidden. */
@@ -237,6 +254,41 @@ export class AccountService {
     return this.deps.now?.() ?? new Date();
   }
 
+  /**
+   * Before an agent session starts on the account: its sign-in file must still belong to the person it was
+   * pinned to (identity.ts). Another person's file makes the account `needs-login` with the reason, so
+   * Needs you asks to sign in again, and the start fails. A file whose owner cannot be read fails the start
+   * too, without marking the account: nothing is known, so nothing starts, and the next start tries again.
+   */
+  async guardStart(id: string): Promise<void> {
+    const config = await this.require(id);
+    const verdict = await this.deps.identity.check(id, config);
+    if (verdict.state === "ok") return await this.keepSignInFresh(id, config);
+    if (verdict.state === "refused") {
+      await this.markSignedOut(id, verdict.detail);
+      throw new UserError(verdict.detail, 409);
+    }
+    throw new UserError(
+      `Could not confirm who ${id} is signed in as, so no session started: ${verdict.detail}`,
+      409,
+    );
+  }
+
+  /**
+   * A token about to run out is refreshed here, one read at a time per account, before sessions start on it.
+   * Each workspace's home has its own copy of the CLI's refresh lock, so several sessions that find the token
+   * expired at the same time would each refresh it, and the refresh token rotates: all but one would fail. A
+   * read in the account's own folder refreshes the shared file once (the CLI writes it in place). A token that
+   * cannot be refreshed makes the account signed out, as any read of it does.
+   */
+  private async keepSignInFresh(id: string, config: AccountConfig): Promise<void> {
+    if (config.auth !== "login") return;
+    const expires = await this.deps.runtime.signInExpiresAt(accountRuntime(this.deps.majhiHome, id, config));
+    if (expires === undefined || expires - this.now().getTime() > FRESH_SIGN_IN_MS) return;
+    await this.deps.usage.read(id, config);
+    if (await this.needsLogin(id)) throw new UserError(`${id} is signed out. Sign in, then resume.`, 409);
+  }
+
   /** Whether the account is known to need a new sign-in. From the last check, never a probe. */
   async needsLogin(id: string): Promise<boolean> {
     return statusFromHealth((await this.deps.probes.cached(id)).health) === "needs-login";
@@ -279,6 +331,9 @@ export class AccountService {
     };
     if (limitActive(cached.limit, this.now())) view.limit = cached.limit;
     if (cached.signedInAs !== undefined) view.signedInAs = cached.signedInAs;
+    if (view.status === "needs-login" && cached.signInFailed !== undefined) {
+      view.signedOutReason = cached.signInFailed.detail;
+    }
     if (cached.health !== undefined) view.lastHealth = cached.health;
     if (cached.usage !== undefined) view.usage = cached.usage;
     return view;

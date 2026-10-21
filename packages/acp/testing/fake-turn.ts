@@ -109,6 +109,8 @@ export interface ServeOptions {
   loadSession: boolean;
   images: boolean;
   signedIn: () => boolean;
+  /** Called when a session opens, before it answers (the real CLI fetches its token's profile here). */
+  onNewSession?: () => Promise<void>;
   /** Every prompt fails on auth, after the CLI's own error line. */
   expired: boolean;
   /** Tokens each turn adds to the session's reported usage. 0: the fixed readings 1k, 20k, 42k. */
@@ -599,6 +601,7 @@ export function serveAcp(o: ServeOptions): void {
       authenticate: async () => ({}),
       newSession: async (params) => {
         if (!o.signedIn()) throw RequestError.authRequired(undefined, "Sign in first");
+        await o.onNewSession?.();
         const sessionId = `fake-${crypto.randomUUID().slice(0, 8)}`;
         const s = register(params.cwd, sessionId, params.mcpServers);
         await writeStored(params.cwd, sessionId, { messages: [] });

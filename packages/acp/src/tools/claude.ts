@@ -1,9 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
+import { readSessionOptions } from "../acp-session.ts";
 import { SignInExpired } from "../auth-failure.ts";
 import { execTool } from "../tool-process.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
-import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
+import type { AccountIdentity, ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const AuthStatusJson = z.looseObject({
   loggedIn: z.boolean().optional(),
@@ -108,6 +111,67 @@ async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
   return mapClaudeUsage(json);
 }
 
+/** What `.claude.json` says about the account: written by the CLI, from the token's own profile. */
+const ClaudeAccountFile = z.looseObject({
+  oauthAccount: z
+    .looseObject({
+      accountUuid: z.string().optional(),
+      emailAddress: z.string().optional(),
+      organizationUuid: z.string().optional(),
+      organizationName: z.string().optional(),
+      profileFetchedAt: z.number().optional(),
+    })
+    .optional(),
+});
+
+async function readClaudeAccount(home: string) {
+  try {
+    const parsed = ClaudeAccountFile.safeParse(
+      JSON.parse(await readFile(join(home, ".claude.json"), "utf8")),
+    );
+    return parsed.success ? parsed.data.oauthAccount : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const ClaudeCredentialsFile = z.looseObject({
+  claudeAiOauth: z.looseObject({ expiresAt: z.number().optional() }).optional(),
+});
+
+async function claudeSignInExpiresAt(home: string): Promise<number | undefined> {
+  try {
+    const parsed = ClaudeCredentialsFile.safeParse(
+      JSON.parse(await readFile(join(home, ".credentials.json"), "utf8")),
+    );
+    return parsed.success ? parsed.data.claudeAiOauth?.expiresAt : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Who the sign-in belongs to. `auth status` is no answer: it reports the email from `.claude.json`, which the
+ * token does not change, so a swapped `.credentials.json` would still read as its old owner (checked on Claude
+ * Code 2.1.284). What follows the token is the profile the CLI fetches with it when a session starts and writes
+ * to `oauthAccount` with `profileFetchedAt`. So this opens a session (no prompt, no tokens) and reads that
+ * file, and only believes it when `profileFetchedAt` moved: an old record means the fetch did not happen.
+ */
+async function readClaudeIdentity(ctx: UsageContext): Promise<AccountIdentity> {
+  const before = (await readClaudeAccount(ctx.account.home))?.profileFetchedAt;
+  await readSessionOptions(ctx.options, ctx.account, ctx.adapter, ctx.env, ctx.timeoutMs);
+  const account = await readClaudeAccount(ctx.account.home);
+  const fetched = account?.profileFetchedAt;
+  if (fetched === undefined || (before !== undefined && fetched <= before)) {
+    throw new Error("Claude did not read the profile of this sign-in");
+  }
+  const id = account?.accountUuid ?? account?.emailAddress;
+  if (id === undefined) throw new Error("Claude reported no account for this sign-in");
+  const email = account?.emailAddress;
+  const label = [email, account?.organizationName].filter((p) => p !== undefined).join(", ");
+  return { id, label: label === "" ? id : label };
+}
+
 /**
  * Claude Code compacts when a turn reaches its window minus a reserve of up to 20k tokens for the
  * reply and 13k of margin (checked in 2.1.284). `CLAUDE_CODE_AUTO_COMPACT_WINDOW` sets that window,
@@ -161,6 +225,7 @@ export const claude: ToolDef = {
     midTurnCapMin: CLAUDE_MIN_WINDOW,
   },
   configHomeVar: "CLAUDE_CONFIG_DIR",
+  signInFile: ".credentials.json",
   apiKeyVar: "ANTHROPIC_API_KEY",
   adapter: { command: "claude-agent-acp", args: [] },
   // claude-agent-acp resets its tally when a turn starts (checked in 0.84.0).
@@ -174,6 +239,8 @@ export const claude: ToolDef = {
   authStatusArgs: ["--cli", "auth", "status", "--json"],
   loginArgs: ["--cli", "auth", "login", "--claudeai"],
   readUsage: readClaudeUsage,
+  readIdentity: readClaudeIdentity,
+  signInExpiresAt: claudeSignInExpiresAt,
   parseAuthStatus(exitCode, stdout) {
     if (exitCode !== 0) return { signedIn: false };
     try {

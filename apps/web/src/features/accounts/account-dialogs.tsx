@@ -32,7 +32,7 @@ export function RemoveAccountDialog({
   return (
     <ConfirmDialog
       title={`Remove ${account.id}?`}
-      body="This deletes the account's config home on this machine. You will need to sign in again to use it later."
+      body="This deletes the account's sign-in and everything its agents saved for it on this machine. You will need to sign in again to use it later."
       confirmLabel="Remove account"
       busy={remove.isPending}
       error={remove.isError ? describeError(remove.error) : undefined}

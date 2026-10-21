@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
-import { dockerRunArgs, type RunnerConfig } from "@majhi/acp";
+import { AGENT_HOMES_DIR, agentHomePath, dockerRunArgs, INTERNAL_ORG, type RunnerConfig } from "@majhi/acp";
 import { errorMessage, exitCode } from "../errors.ts";
 import type { Runner } from "./setup.ts";
 
@@ -11,18 +11,19 @@ const run = promisify(execFile);
 
 /** Starting a container takes a moment; a first pull of nothing is never needed (the image is local). */
 const CHECK_TIMEOUT_MS = 120_000;
-const PROBE_ACCOUNT = "_runner-check";
+const PROBE_ACCOUNT = "runner-check";
 const MARKER = ".runner-check";
-const SERENA_PROBE_ACCOUNT = "_serena-check";
+const SERENA_PROBE_ACCOUNT = "serena-check";
 /** Docker Desktop and OrbStack remount the host's folders now and then; a check that fails meanwhile passes moments later. */
 const RETRY_AFTER_MS = 5_000;
 const IMAGE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 /**
- * Checks the fixed script. `$1` must be visible (the run's own account home works); every other
- * argument must not be (majhi's config, the secrets key, other accounts, SSH, the Docker socket).
+ * Checks the fixed script. `$1` must be visible (the run's own agent home works); every other
+ * argument must not be (majhi's config, the secrets key, every account folder and their sign-in files, other
+ * workspaces' homes, SSH, the Docker socket).
  */
-const SCRIPT = `test -f "$1" || { echo "the run's own account home is not mounted"; exit 2; }
+const SCRIPT = `test -f "$1" || { echo "the run's own agent home is not mounted"; exit 2; }
 shift
 for p in "$@"; do if [ -e "$p" ]; then echo "a run can see $p"; exit 1; fi; done
 echo isolated`;
@@ -45,13 +46,25 @@ export interface RunnerVerdict {
   rebuild?: boolean;
 }
 
-/** Paths a run must never see. */
+/** A throwaway agent home of a check: `agent-homes/_majhi/<name>-<random>`, shaped like a session's own. */
+function checkHome(majhiHome: string, name: string): string {
+  return agentHomePath(majhiHome, INTERNAL_ORG, `${name}-${randomBytes(6).toString("hex")}`);
+}
+
+/** Paths a run must never see. `ownHome` is the agent home the run has, which is the one thing it may. */
 export async function hiddenPaths(
   input: Omit<RunnerCheckInput, "runner" | "docker">,
-  ownAccount = PROBE_ACCOUNT,
+  ownHome: string,
 ): Promise<string[]> {
   const { majhiHome } = input;
   const accounts = await readdir(join(majhiHome, "accounts")).catch(() => [] as string[]);
+  const homesDir = join(majhiHome, AGENT_HOMES_DIR);
+  const homes: string[] = [];
+  for (const org of await readdir(homesDir).catch(() => [] as string[])) {
+    for (const account of await readdir(join(homesDir, org)).catch(() => [] as string[])) {
+      homes.push(join(homesDir, org, account));
+    }
+  }
   return [
     join(majhiHome, "majhi.yaml"),
     join(majhiHome, "majhi.db"),
@@ -60,7 +73,9 @@ export async function hiddenPaths(
     join(majhiHome, ".git"),
     // The SSH agent sockets on Linux and WSL2: the helper's forwarder and majhi's own agent.
     join(majhiHome, "run"),
-    ...accounts.filter((a) => a !== ownAccount).map((a) => join(majhiHome, "accounts", a)),
+    // No account folder at all, and so no sign-in file but the one a session is given inside its own home.
+    ...accounts.map((a) => join(majhiHome, "accounts", a)),
+    ...homes.filter((h) => h !== ownHome),
     input.secretsKeyFile,
     "/run/secrets/majhi_key",
     join(input.hostHome, ".ssh"),
@@ -99,11 +114,10 @@ async function isolationOnce(input: RunnerCheckInput): Promise<RunnerVerdict & {
   let probeHome: string | undefined;
   try {
     await cfg.ready?.();
-    const accounts = join(input.majhiHome, "accounts");
-    await mkdir(accounts, { recursive: true, mode: 0o700 });
-    probeHome = await mkdtemp(join(accounts, `${PROBE_ACCOUNT}-`));
+    probeHome = checkHome(input.majhiHome, PROBE_ACCOUNT);
+    await mkdir(probeHome, { recursive: true, mode: 0o700 });
     await writeFile(join(probeHome, MARKER), "ok\n");
-    const hidden = await hiddenPaths(input, basename(probeHome));
+    const hidden = await hiddenPaths(input, probeHome);
     const args = dockerRunArgs(
       {
         command: { command: "sh", args: ["-c", SCRIPT, "sh", join(probeHome, MARKER), ...hidden] },
@@ -156,9 +170,8 @@ export async function checkSerena(
   let probeHome: string | undefined;
   try {
     await cfg.ready?.();
-    const accounts = join(input.majhiHome, "accounts");
-    await mkdir(accounts, { recursive: true, mode: 0o700 });
-    probeHome = await mkdtemp(join(accounts, `${SERENA_PROBE_ACCOUNT}-`));
+    probeHome = checkHome(input.majhiHome, SERENA_PROBE_ACCOUNT);
+    await mkdir(probeHome, { recursive: true, mode: 0o700 });
     const args = dockerRunArgs(
       {
         command: {

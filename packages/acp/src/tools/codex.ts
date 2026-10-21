@@ -1,9 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { looksExpired, SignInExpired } from "../auth-failure.ts";
 import { startTool, type ToolProcess } from "../tool-process.ts";
-import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
+import { verifyOpenAiToken } from "./openai-token.ts";
+import type { AccountIdentity, ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
   .looseObject({
@@ -137,6 +140,58 @@ async function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
   });
 }
 
+const CodexAuthFile = z.looseObject({
+  tokens: z.looseObject({ access_token: z.string().optional() }).nullish(),
+});
+
+/** The claims of a JWT, read without checking it (only for when a token runs out). */
+function jwtClaims(jwt: string): unknown {
+  const payload = jwt.split(".")[1];
+  if (payload === undefined) return undefined;
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+const CodexAccessClaims = z.looseObject({ exp: z.number().optional() });
+
+/** The access token's own `exp` (seconds), as Codex reads it. */
+async function codexSignInExpiresAt(home: string): Promise<number | undefined> {
+  try {
+    const file = z
+      .looseObject({ tokens: z.looseObject({ access_token: z.string().optional() }).nullish() })
+      .safeParse(JSON.parse(await readFile(join(home, "auth.json"), "utf8")));
+    const token = file.success ? file.data.tokens?.access_token : undefined;
+    const claims = CodexAccessClaims.safeParse(token === undefined ? undefined : jwtClaims(token));
+    return claims.success && claims.data.exp !== undefined ? claims.data.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Who the sign-in belongs to, from the signed `access_token` of `auth.json` and nothing else in the file: an
+ * agent can write that file, so its `id_token` and `account_id` fields would let it pair the owner's genuine
+ * `id_token` with another account's tokens. The token is checked against OpenAI's published keys (see
+ * `verifyOpenAiToken`), and its account and user ids are the identity, its email the label. A token that does not
+ * verify, or keys that cannot be read, rejects.
+ */
+async function readCodexIdentity(ctx: UsageContext): Promise<AccountIdentity> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(join(ctx.account.home, "auth.json"), "utf8"));
+  } catch {
+    throw new Error("Codex has no readable sign-in file");
+  }
+  const file = CodexAuthFile.safeParse(raw);
+  const token = file.success ? file.data.tokens?.access_token : undefined;
+  if (token === undefined) throw new Error("Codex has no access token in its sign-in file");
+  const holder = await verifyOpenAiToken(token, ctx.options.jwks);
+  return { id: `${holder.accountId}/${holder.userId}`, label: holder.email ?? holder.accountId };
+}
+
 /**
  * Codex compacts inside a turn once the conversation reaches `model_auto_compact_token_limit`
  * (codex-cli 0.158.0). codex-acp 2.0.0 merges the JSON in `CODEX_CONFIG` into every session's config.
@@ -182,6 +237,7 @@ export const codex: ToolDef = {
     midTurnCapMin: 0,
   },
   configHomeVar: "CODEX_HOME",
+  signInFile: "auth.json",
   apiKeyVar: "CODEX_API_KEY",
   // Written by codex for a signed-in account: `models[]` with a `slug` and, for a replaced model,
   // `upgrade: { model }` naming its replacement.
@@ -200,6 +256,8 @@ export const codex: ToolDef = {
   // asked by a managed PreToolUse hook instead (docker/codex/). codex-acp 2.0.0 applies this to new and loaded sessions.
   containerEnv: { INITIAL_AGENT_MODE: "agent-full-access" },
   readUsage: readCodexUsage,
+  readIdentity: readCodexIdentity,
+  signInExpiresAt: codexSignInExpiresAt,
   parseAuthStatus(exitCode) {
     return { signedIn: exitCode === 0 };
   },

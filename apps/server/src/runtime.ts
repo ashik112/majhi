@@ -1,4 +1,5 @@
 import type {
+  AccountIdentity,
   AccountProbe,
   AccountRuntime,
   AgentSession,
@@ -23,6 +24,10 @@ export interface AcpRuntime {
   /** Undefined for API-key accounts. Rejects when the read fails. */
   readUsage(account: AccountRuntime, options: RuntimeOptions): Promise<AccountUsage | undefined>;
   cliVersion(tool: ToolId, options: RuntimeOptions): Promise<string>;
+  /** Who the account's sign-in file belongs to, read in the account's own folder. Rejects when it cannot be read. */
+  readIdentity(account: AccountRuntime, options: RuntimeOptions): Promise<AccountIdentity>;
+  /** When the account's sign-in file runs out (ms since the epoch), or undefined when the file does not say. */
+  signInExpiresAt(account: AccountRuntime): Promise<number | undefined>;
 }
 
 export const realRuntime: AcpRuntime = {
@@ -32,5 +37,7 @@ export const realRuntime: AcpRuntime = {
   probeAccount: acp.probeAccount,
   readUsage: acp.readUsage,
   cliVersion: acp.cliVersion,
+  readIdentity: acp.readIdentity,
+  signInExpiresAt: acp.signInExpiresAt,
   startSession: (start) => acp.startSession(start),
 };

@@ -5,6 +5,7 @@ import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { AccountCache, CachedAccount } from "./cache.ts";
 import { accountRuntime, secretName } from "./homes.ts";
+import type { SignInGuard } from "./identity.ts";
 import type { AccountUsageReader } from "./usage.ts";
 
 /** A probe younger than this is reused, so a screen that asks often does not start the CLI each time. */
@@ -18,6 +19,8 @@ export interface ProbeDeps {
   cache: AccountCache;
   /** Reads usage after a passing check of a login account. */
   usage?: AccountUsageReader;
+  /** Fails the check of a login account whose sign-in file belongs to someone else than the pinned owner. */
+  identity?: SignInGuard;
   now?: () => number;
 }
 
@@ -96,7 +99,22 @@ export class AccountProbes {
     if (health.ok && config.auth === "login" && this.deps.usage !== undefined) {
       health = await this.confirmSignIn(id, config, health, before.signInFailed?.detail);
     }
-    await this.deps.cache.setHealth(id, health, extra);
+    // The CLI says "signed in" for any sign-in file, so a swapped one passes every step above. Only a file of
+    // another owner than the pinned one fails here; one whose owner cannot be read leaves the result as it is
+    // (the start of a session is where that stops).
+    let signInFailed: CachedAccount["signInFailed"];
+    if (health.ok && config.auth === "login" && this.deps.identity !== undefined) {
+      const verdict = await this.deps.identity.check(id, config);
+      if (verdict.state === "refused") {
+        health = this.failAuth(health, verdict.detail);
+        signInFailed = { at: new Date(this.now()).toISOString(), detail: verdict.detail };
+      }
+    }
+    await this.deps.cache.setHealth(
+      id,
+      health,
+      signInFailed === undefined ? extra : { ...extra, signInFailed },
+    );
     return health;
   }
 
@@ -119,7 +137,11 @@ export class AccountProbes {
         : signIn?.state === "unknown" && failedBefore !== undefined
           ? failedBefore
           : undefined;
-    if (detail === undefined) return health;
+    return detail === undefined ? health : this.failAuth(health, detail);
+  }
+
+  /** The check, failed on its `auth` step with `detail`. */
+  private failAuth(health: HealthCheck, detail: string): HealthCheck {
     const step: HealthStep = { name: "auth", ok: false, detail };
     const steps = health.steps.some((s) => s.name === "auth")
       ? health.steps.map((s) => (s.name === "auth" ? step : s))

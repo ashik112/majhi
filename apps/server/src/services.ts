@@ -31,6 +31,7 @@ import {
 } from "@majhi/shared";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
+import { SignInGuard } from "./accounts/identity.ts";
 import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
@@ -614,6 +615,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cache,
     onChanged: () => events.emit(["accounts"]),
   });
+  const signInGuard = new SignInGuard({ majhiHome: env.majhiHome, runtime, options: sessionOptions });
   const probes = new AccountProbes({
     majhiHome: env.majhiHome,
     runtime,
@@ -621,6 +623,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secrets,
     cache,
     usage,
+    identity: signInGuard,
   });
   const accounts = new AccountService({
     majhiHome: env.majhiHome,
@@ -630,6 +633,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cache,
     probes,
     usage,
+    identity: signInGuard,
     runtime,
     options: sessionOptions,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
@@ -848,6 +852,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       options: sessionOptions,
       majhiHome: env.majhiHome,
       standIn: async () => (await decisions.settings()).acp_agent,
+      guardSignIn: (account) => accounts.guardStart(account),
       usage: usageRecorder,
       rooms: roomAccess,
       containerRunner: env.runner.mode === "container",
@@ -916,6 +921,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           agents: agentStore,
           config,
           connectionFiles,
+          containerRunner: env.runner.mode === "container",
         },
         task,
         agent,
@@ -1019,6 +1025,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     admin: new AdminAccess(adminTokens),
     decisions,
     connectionFiles,
+    guardSignIn: (account) => accounts.guardStart(account),
     connections: { addTool: (...args) => connections.addTool(...args) },
     skills: skillStore,
     containerRunner: env.runner.mode === "container",
@@ -1043,6 +1050,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     markSignedOut: async (account, detail) => {
       await accounts.markSignedOut(account, detail);
+    },
+    recheckSignIn: async (account) => {
+      const { account: view } = await accounts.health(account, true);
+      return {
+        ok: signedIn(view.status),
+        hash: await signInGuard.currentHash(account, await accounts.require(account)),
+      };
     },
     accountLimit: accountLimitOf,
     markLimit: (account, failure) => accounts.markLimit(account, failure),
@@ -1146,6 +1160,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     markSignedOut: async (account, detail) => {
       await accounts.markSignedOut(account, detail);
     },
+    guardSignIn: (account) => accounts.guardStart(account),
     rooms: roomAccess,
     containerRunner: env.runner.mode === "container",
   });
@@ -1760,7 +1775,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     signedOut: async () =>
       (await accounts.list())
         .filter((a) => a.status === "needs-login" || a.status === "unreachable")
-        .map((a) => ({ id: a.id, org: a.org, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
+        .map((a) => ({
+          id: a.id,
+          org: a.org,
+          at: a.lastHealth?.checkedAt ?? new Date().toISOString(),
+          ...(a.signedOutReason === undefined ? {} : { reason: a.signedOutReason }),
+        })),
     recommendations: new RecommendationRepo(store.raw),
     proposalStale: (item) => admin.proposalStale(item),
     warn: (task, text) =>
@@ -3705,6 +3725,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         {
           majhiHome: env.majhiHome,
           accounts,
+          identity: signInGuard,
           terminals,
           runtime,
           options: sessionOptions,

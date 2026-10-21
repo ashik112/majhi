@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSession, RuntimeOptions } from "@majhi/acp";
+import { type AgentSession, INTERNAL_ORG, type RuntimeOptions } from "@majhi/acp";
 import { DECISIONS_TASK, type DecideRequest, stateText } from "@majhi/shared";
-import { accountRuntime, secretName } from "../accounts/homes.ts";
+import { secretName, sessionRuntime } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { RoomAccess } from "../rooms/access.ts";
@@ -27,6 +27,8 @@ export interface AcpProviderDeps {
   majhiHome: string;
   /** The agent named in `decisions.acp_agent`, if any. */
   standIn: () => Promise<string | undefined>;
+  /** Before a session starts on a login account: its sign-in must belong to the person the account was pinned to. */
+  guardSignIn?: ((account: string) => Promise<void>) | undefined;
   /** Records the stand-in's tokens and cost, under the `decisions` task. */
   usage?: UsageRecorder;
   /** Gives a Codex stand-in in a runner the hook token it needs, so its refused tools come back with the reason. */
@@ -70,7 +72,16 @@ export class AcpProvider implements DecisionProvider {
       apiKey = await deps.secrets.get(secretName(account.key));
       if (apiKey === undefined) throw new Error(`The API key of ${fm.account} is missing.`);
     }
-    const runtimeAccount = accountRuntime(deps.majhiHome, fm.account, account, apiKey);
+    await deps.guardSignIn?.(fm.account);
+    // The stand-in answers for no workspace: it has the internal home, never a workspace's.
+    const runtimeAccount = sessionRuntime(
+      deps.majhiHome,
+      fm.account,
+      account,
+      INTERNAL_ORG,
+      deps.containerRunner === true,
+      apiKey,
+    );
     await deps.runtime.prepareHome(runtimeAccount);
     const cwd = join(deps.majhiHome, "decisions");
     await mkdir(cwd, { recursive: true });

@@ -470,6 +470,8 @@ export const AccountViewSchema = z.object({
   status: AccountStatusSchema,
   /** From the last health check, like the signed-in email. */
   signedInAs: z.string().optional(),
+  /** Why a signed-out account is signed out, when a run or the sign-in check found out (a sign-in that belongs to someone else). */
+  signedOutReason: z.string().optional(),
   lastHealth: HealthCheckSchema.optional(),
   usage: AccountUsageSchema.optional(),
   /** Set while a run's limit error holds the account (5.7). */

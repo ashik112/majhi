@@ -4,11 +4,14 @@ import { UserError } from "../errors.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { TerminalManager } from "../terminal/manager.ts";
 import { accountRuntime } from "./homes.ts";
+import type { SignInGuard } from "./identity.ts";
 import type { AccountService } from "./service.ts";
 
 export interface LoginDeps {
   majhiHome: string;
   accounts: AccountService;
+  /** Pins the account to whoever signed in, when the login ends. */
+  identity: SignInGuard;
   terminals: TerminalManager;
   runtime: AcpRuntime;
   options: RuntimeOptions;
@@ -40,6 +43,7 @@ export async function startLogin(
           cwd: account.home,
           scratch: true,
           account,
+          accountFolder: true,
         });
   const terminal = deps.terminals.start({
     key: `login:${id}`,
@@ -51,6 +55,8 @@ export async function startLogin(
     onExit: async (code): Promise<HealthCheck | undefined> => {
       try {
         if (code !== 0) return undefined;
+        // The owner just signed in: the account now belongs to whoever did (identity.ts), before the check reads it.
+        await deps.identity.pin(id, config).catch(() => undefined);
         return (await deps.accounts.health(id, true)).health;
       } finally {
         deps.onFinished();

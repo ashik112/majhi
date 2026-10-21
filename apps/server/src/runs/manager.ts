@@ -148,6 +148,8 @@ export interface RunDeps {
   serena?: SerenaLaunch;
   /** Where connections keep their files (5.14). Absent: runs get no connections. */
   connectionFiles?: LaunchDeps["connectionFiles"];
+  /** Checks a login account's sign-in against its pin before a session starts (see `LaunchDeps.guardSignIn`). */
+  guardSignIn?: LaunchDeps["guardSignIn"];
   /** The skills store: runs get their agent's enabled skills (5.2). */
   skills?: LaunchDeps["skills"];
   /** Agents run in runner containers (Claude Code then lists the run's skills itself). */
@@ -249,6 +251,12 @@ export interface RunDeps {
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
   /** A turn failed on its account's sign-in: the account is `needs-login` from now, with `detail` for Accounts. */
   markSignedOut?: (account: string, detail: string) => Promise<void>;
+  /**
+   * Checks the account once more, right after a turn failed on its sign-in (another session may have refreshed
+   * the token the turn held): `ok` when it is signed in as the pinned owner and usable, with the hash of the
+   * sign-in file it was found in.
+   */
+  recheckSignIn?: (account: string) => Promise<{ ok: boolean; hash: string | undefined }>;
   /** A turn failed with an error and nothing is queued after it: its step goes to another agent. */
   onTurnFailed?: (turn: { task: string; agent: string; text: string }) => void;
   /** A run ended in an error (its session is closed): Autonomous counts it against a task of its own. */
@@ -293,6 +301,8 @@ export class RunManager {
   private readonly deliveries = new Map<string, Promise<void>>();
   /** Turn limit hits in a row without a new commit, per task (PRV-96). */
   private readonly limitStrikes = new Map<string, number>();
+  /** Task and sign-in hash a sign-out was already healed for: a second sign-out on the same file is a real one. */
+  private readonly healedSignIns = new Set<string>();
   /** Set by `closeAll`: no session starts after shutdown, and queued prompts wait in the store. */
   private closed = false;
   /** The machine-wide run cap as of the last look, for the line a waiting run shows. */
@@ -1445,6 +1455,11 @@ export class RunManager {
           this.putBack(run, entry);
           this.live.refreshQueued(run);
         }
+        // The sign-in was fine after all: the session starts again with the same prompt.
+        if (run.signInHealed) {
+          run.signInHealed = false;
+          continue;
+        }
         // The account is signed out: a fallback or a teammate takes the queue over, or the run waits for the sign-in.
         const signedOut = run.signedOutAccount;
         run.signedOutAccount = undefined;
@@ -1785,6 +1800,18 @@ export class RunManager {
    * When nobody else can run, the run pauses as `signed-out` and continues once the account is signed in.
    */
   private async signedOutMidTurn(run: AgentRun, account: string, said: string): Promise<void> {
+    // Two sessions that refresh in the same second: one wins, the other's token is dead, and the file is fine.
+    // The account is checked once more before it is called signed out, and the run goes on once per task and file.
+    const check = await this.deps.recheckSignIn?.(account).catch(() => undefined);
+    const key = check?.hash === undefined ? undefined : `${run.task}:${check.hash}`;
+    if (check?.ok === true && key !== undefined && !this.healedSignIns.has(key)) {
+      this.healedSignIns.add(key);
+      this.live.system(run, "info", "The sign-in was refreshed by another session. Resumed.");
+      this.markTurn(run, false, false);
+      run.requeue = true;
+      run.signInHealed = true;
+      return;
+    }
     const line = said.split("\n", 1)[0]?.trim() ?? said;
     const detail = `A run of @${run.agent} could not sign in: ${line} Sign in again from Accounts.`;
     await this.deps.markSignedOut?.(account, detail).catch(() => undefined);
