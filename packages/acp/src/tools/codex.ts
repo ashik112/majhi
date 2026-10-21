@@ -5,6 +5,7 @@ import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { looksExpired, SignInExpired } from "../auth-failure.ts";
 import { startTool, type ToolProcess } from "../tool-process.ts";
+import { verifyOpenAiToken } from "./openai-token.ts";
 import type { AccountIdentity, ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
@@ -140,19 +141,10 @@ async function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
 }
 
 const CodexAuthFile = z.looseObject({
-  tokens: z.looseObject({ id_token: z.string().optional(), account_id: z.string().optional() }).nullish(),
+  tokens: z.looseObject({ access_token: z.string().optional() }).nullish(),
 });
 
-/** What the sign-in's `id_token` says about its owner. Only the claims majhi reads. */
-const CodexIdClaims = z.looseObject({
-  sub: z.string().optional(),
-  email: z.string().optional(),
-  "https://api.openai.com/auth": z
-    .looseObject({ chatgpt_account_id: z.string().optional(), chatgpt_user_id: z.string().optional() })
-    .optional(),
-});
-
-/** The claims of a JWT, read the way Codex reads its own `id_token` (the payload, not verified). */
+/** The claims of a JWT, read without checking it (only for when a token runs out). */
 function jwtClaims(jwt: string): unknown {
   const payload = jwt.split(".")[1];
   if (payload === undefined) return undefined;
@@ -180,9 +172,11 @@ async function codexSignInExpiresAt(home: string): Promise<number | undefined> {
 }
 
 /**
- * Who the sign-in belongs to, from the account and user ids and the email in `auth.json` itself: the file is
- * the sign-in, so a swapped file changes the answer. `cli login status` names nobody and `account/read` needs
- * the network, so neither is used. The ids come from the file as Codex wrote it and are not verified here.
+ * Who the sign-in belongs to, from the signed `access_token` of `auth.json` and nothing else in the file: an
+ * agent can write that file, so its `id_token` and `account_id` fields would let it pair the owner's genuine
+ * `id_token` with another account's tokens. The token is checked against OpenAI's published keys (see
+ * `verifyOpenAiToken`), and its account and user ids are the identity, its email the label. A token that does not
+ * verify, or keys that cannot be read, rejects.
  */
 async function readCodexIdentity(ctx: UsageContext): Promise<AccountIdentity> {
   let raw: unknown;
@@ -192,18 +186,10 @@ async function readCodexIdentity(ctx: UsageContext): Promise<AccountIdentity> {
     throw new Error("Codex has no readable sign-in file");
   }
   const file = CodexAuthFile.safeParse(raw);
-  const idToken = file.success ? file.data.tokens?.id_token : undefined;
-  const claims = CodexIdClaims.safeParse(idToken === undefined ? undefined : jwtClaims(idToken));
-  const auth = claims.success ? claims.data["https://api.openai.com/auth"] : undefined;
-  const email = claims.success ? claims.data.email : undefined;
-  const accountId = (file.success ? file.data.tokens?.account_id : undefined) ?? auth?.chatgpt_account_id;
-  const user = auth?.chatgpt_user_id ?? (claims.success ? claims.data.sub : undefined) ?? email;
-  if (accountId === undefined && user === undefined)
-    throw new Error("Codex reported no account for this sign-in");
-  return {
-    id: [accountId ?? "no-account", user ?? "no-user"].join("/"),
-    label: email ?? accountId ?? "a signed-in account",
-  };
+  const token = file.success ? file.data.tokens?.access_token : undefined;
+  if (token === undefined) throw new Error("Codex has no access token in its sign-in file");
+  const holder = await verifyOpenAiToken(token, ctx.options.jwks);
+  return { id: `${holder.accountId}/${holder.userId}`, label: holder.email ?? holder.accountId };
 }
 
 /**

@@ -70,6 +70,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 
 | 17a | A new workspace home is seeded only with who the account is, never with MCP servers, hooks, settings, instructions, skills or plugins from the account folder, and a file the CLI already made is never overwritten. | `packages/acp/src/seed.test.ts`: copies only who the account is, never MCP servers, hooks, settings, instructions, skills or plugins |  |
 | 17b | A session never starts on a sign-in file that belongs to someone else than the person the account was pinned to: the account becomes signed out with the reason (Needs you shows Sign in), and a refreshed file of the same person passes. | `server/accounts/identity.test.ts`: refuses the next session when a changed file belongs to someone else and asks to sign in again, and lets a refreshed file of the same person through |  |
+| 17c | Codex's sign-in identity comes only from its signed access token (RS256 against OpenAI's published keys, issuer, expiry): a genuine id_token beside another account's access token, a forged signature, an unknown key id, another issuer, an expired token, or keys that cannot be read are refused. | `packages/acp/src/tools/codex.test.ts`: is the signed access token's account and user, and a genuine id_token beside another account's access token is refused | rows: stranger's key / unknown kid / other issuer / expired / no signature / keys unreadable |
 
 ## 2 Data loss and corruption (20)
 

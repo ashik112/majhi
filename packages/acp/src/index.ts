@@ -42,6 +42,11 @@ export interface RuntimeOptions {
    * agent. Codex usage goes through the adapter, so `adapters` covers it.
    */
   usage?: Partial<Record<ToolId, Command>>;
+  /**
+   * Where Codex's sign-in token is checked against OpenAI's published keys (`url`, and `fetch` to serve them).
+   * Production leaves it empty; tests serve a key set of their own.
+   */
+  jwks?: { url?: string; fetch?: typeof fetch };
   /** Per-step timeout for probes. Default 20 s. */
   timeoutMs?: number;
   /**
