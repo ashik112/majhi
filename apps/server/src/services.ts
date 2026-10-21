@@ -921,6 +921,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           agents: agentStore,
           config,
           connectionFiles,
+          containerRunner: env.runner.mode === "container",
         },
         task,
         agent,

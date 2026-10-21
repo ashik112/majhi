@@ -654,9 +654,10 @@ export class Housekeeper {
       fm.account,
       account,
       task.org ?? INTERNAL_ORG,
+      deps.containerRunner === true,
       apiKey,
     );
-    await deps.runtime.prepareHome(runtimeAccount, deps.options);
+    await deps.runtime.prepareHome(runtimeAccount);
     let cwd: string;
     if (mode.kind === "repo") {
       cwd = mode.root;

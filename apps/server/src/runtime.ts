@@ -18,8 +18,7 @@ export interface AcpRuntime {
   /** Opens an ACP session with an agent CLI. */
   startSession(start: SessionStart): Promise<AgentSession>;
   toolInfos(): ToolInfo[];
-  /** `options` tells how the session will run: a home made for a runner gets a place to mount the sign-in file, one next to majhi a link. */
-  prepareHome(account: AccountRuntime, options?: RuntimeOptions): Promise<void>;
+  prepareHome(account: AccountRuntime): Promise<void>;
   loginCommand(account: AccountRuntime, options: RuntimeOptions): LoginSpec;
   probeAccount(account: AccountRuntime, options: RuntimeOptions): Promise<AccountProbe>;
   /** Undefined for API-key accounts. Rejects when the read fails. */

@@ -184,7 +184,7 @@ export async function launch(
   if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
   await deps.guardSignIn?.(fm.account);
   const runtimeAccount = await runtimeAccountOf(deps, agent, task);
-  await deps.runtime.prepareHome(runtimeAccount, deps.options);
+  await deps.runtime.prepareHome(runtimeAccount);
 
   const attribution = await gitAttribution(deps, task, run.agent);
   const model = fm.model === "auto" ? undefined : fm.model;
@@ -474,7 +474,7 @@ function hooksMount(hooks: string): RunMount[] {
  * (`taskHomeOrg`), with its API key when it has one.
  */
 async function runtimeAccountOf(
-  deps: Pick<LaunchDeps, "secrets" | "majhiHome">,
+  deps: Pick<LaunchDeps, "secrets" | "majhiHome" | "containerRunner">,
   agent: ResolvedAgent,
   task: Pick<Task, "org" | "kind">,
 ) {
@@ -485,7 +485,14 @@ async function runtimeAccountOf(
     if (apiKey === undefined)
       throw new UserError(`The API key of ${fm.account} is missing. Add the account again.`);
   }
-  return sessionRuntime(deps.majhiHome, fm.account, account, taskHomeOrg(task), apiKey);
+  return sessionRuntime(
+    deps.majhiHome,
+    fm.account,
+    account,
+    taskHomeOrg(task),
+    deps.containerRunner === true,
+    apiKey,
+  );
 }
 
 /**
@@ -493,7 +500,10 @@ async function runtimeAccountOf(
  * mounts as its session, so a command behaves the same in the agent's shell and in majhi's.
  */
 export async function processLaunch(
-  deps: Pick<LaunchDeps, "store" | "options" | "secrets" | "majhiHome" | "connectionFiles"> & {
+  deps: Pick<
+    LaunchDeps,
+    "store" | "options" | "secrets" | "majhiHome" | "connectionFiles" | "containerRunner"
+  > & {
     agents: AgentStore;
     config: ConfigService;
   },

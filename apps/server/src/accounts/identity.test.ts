@@ -36,11 +36,9 @@ describe("the sign-in file shared by an account's workspaces", () => {
     await startTask("first");
     await until(() => h.runtime.starts.length === 1, "the first session");
     expect(h.runtime.identityReads).toHaveLength(2);
-    // The session has its workspace's home, and the account's folder only as the source of the sign-in file.
-    expect(h.runtime.starts[0]?.account).toMatchObject({
-      home: join(h.env.majhiHome, "agent-homes", "acme", "claude-acme"),
-      accountHome: folder,
-    });
+    // Next to majhi nothing is isolated: the session keeps the account folder as its home.
+    expect(h.runtime.starts[0]?.account).toMatchObject({ home: folder });
+    expect(h.runtime.starts[0]?.account.accountHome).toBeUndefined();
 
     // An agent swapped the file for another person's. No session starts on it.
     await writeFile(signIn, '{"token":"three, someone else"}');

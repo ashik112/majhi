@@ -74,8 +74,15 @@ export class AcpProvider implements DecisionProvider {
     }
     await deps.guardSignIn?.(fm.account);
     // The stand-in answers for no workspace: it has the internal home, never a workspace's.
-    const runtimeAccount = sessionRuntime(deps.majhiHome, fm.account, account, INTERNAL_ORG, apiKey);
-    await deps.runtime.prepareHome(runtimeAccount, deps.options);
+    const runtimeAccount = sessionRuntime(
+      deps.majhiHome,
+      fm.account,
+      account,
+      INTERNAL_ORG,
+      deps.containerRunner === true,
+      apiKey,
+    );
+    await deps.runtime.prepareHome(runtimeAccount);
     const cwd = join(deps.majhiHome, "decisions");
     await mkdir(cwd, { recursive: true });
 

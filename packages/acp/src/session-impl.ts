@@ -85,7 +85,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
  */
 export async function openSession(start: SessionStart, log: DebugLog = () => {}): Promise<AgentSession> {
   const { account, options } = start;
-  await prepareHome(account, options);
+  await prepareHome(account);
   // A connection's variables first: majhi's own (PATH, HOME, the account's) always win.
   const tool = getTool(account.tool);
   const capEnv = start.contextCap === undefined ? undefined : tool.capEnv?.(start.contextCap);

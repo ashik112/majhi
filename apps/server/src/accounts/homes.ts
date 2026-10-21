@@ -23,16 +23,21 @@ export function accountRuntime(
 }
 
 /**
- * The account as an agent session uses it: its workspace's own home, `agent-homes/<org>/<account>`, with the
- * account's folder only as the source of its sign-in file and of what a new home is seeded with.
+ * The account as an agent session uses it. In a runner (`isolated`): its workspace's own home,
+ * `agent-homes/<org>/<account>`, with the account's folder only as the source of its sign-in file and of what a
+ * new home is seeded with. Next to majhi (`MAJHI_RUNNER=local`) agents have no isolation at all, so a workspace
+ * home would add nothing, and Claude refuses the link that would share the sign-in: the account folder stays the
+ * home, as it always was there.
  */
 export function sessionRuntime(
   majhiHome: string,
   id: string,
   config: AccountConfig,
   org: string,
+  isolated: boolean,
   apiKey?: string,
 ): AccountRuntime {
+  if (!isolated) return accountRuntime(majhiHome, id, config, apiKey);
   const account: AccountRuntime = {
     tool: config.tool,
     home: agentHomePath(majhiHome, org, id),
