@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
+import type { Decider } from "./session-decision.ts";
 
 export const ROOM_SERVER_NAME = "majhi-room";
 export const TASKS_SERVER_NAME = "majhi-tasks";
@@ -32,6 +33,10 @@ export const SKILLS_PATH = "/mcp/skills";
 export const CONNECTIONS_SERVER_NAME = "majhi-connections";
 export const CONNECTIONS_PATH = "/mcp/connections";
 
+/** `read`, `list` and `search` over the folders of one read-only session, for agents that have no read tool of their own. */
+export const FILES_SERVER_NAME = "majhi-files";
+export const FILES_PATH = "/mcp/files";
+
 export type ToolServer =
   | "room"
   | "tasks"
@@ -42,10 +47,12 @@ export type ToolServer =
   | "skills"
   | "docker"
   | "codexHook"
+  | "files"
   | "testBrowser";
 
-/** The servers RoomAccess issues, in the order a session lists them. */
-const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
+/** The servers `attach` issues for a run's caller, in the order a session lists them. */
+type RunServer = Exclude<ToolServer, "docker" | "codexHook" | "files" | "testBrowser">;
+const SERVERS: readonly { key: RunServer; name: string; path: string }[] = [
   { key: "room", name: ROOM_SERVER_NAME, path: ROOM_PATH },
   { key: "tasks", name: TASKS_SERVER_NAME, path: TASKS_PATH },
   { key: "processes", name: PROCESSES_SERVER_NAME, path: PROCESSES_PATH },
@@ -61,13 +68,31 @@ export interface ToolCaller {
   agent: string;
 }
 
-/** Bearer tokens for one MCP server, one per agent session, in memory only. */
-export class ToolTokens {
-  private readonly tokens = new Map<string, ToolCaller>();
+/** The folders one `files` token reads: the session's own folder and the other folders it may read. */
+export interface FilesScope {
+  root: string;
+  also: readonly string[];
+}
 
-  issue(caller: ToolCaller): string {
+/**
+ * A session that has no run: it decides its own tool calls. A Codex session of the Housekeeper or of the decision
+ * stand-in holds one, and `servers` are the majhi servers it was given (the names the hook sees as `mcp__...`).
+ */
+export interface HookSession {
+  decide: Decider;
+  servers: readonly string[];
+}
+
+/** What a hook token is bound to: a run, whose calls go through the permission flow, or a session's own rule. */
+export type HookBinding = { kind: "run"; caller: ToolCaller } | { kind: "session"; session: HookSession };
+
+/** Bearer tokens for one MCP server, one per agent session, in memory only. */
+export class ToolTokens<T = ToolCaller> {
+  private readonly tokens = new Map<string, T>();
+
+  issue(holder: T): string {
     const token = randomBytes(32).toString("base64url");
-    this.tokens.set(token, caller);
+    this.tokens.set(token, holder);
     return token;
   }
 
@@ -75,7 +100,7 @@ export class ToolTokens {
     this.tokens.delete(token);
   }
 
-  lookup(token: string): ToolCaller | undefined {
+  lookup(token: string): T | undefined {
     return this.tokens.get(token);
   }
 
@@ -99,8 +124,13 @@ export class RoomAccess {
   readonly skills = new ToolTokens();
   /** Tokens of the `docker` shim: one per run, one per hand-off check. They only reach the caller's own task. */
   readonly docker = new ToolTokens();
-  /** Tokens of Codex's PreToolUse hook: one per Codex session. A token only asks about its own task and agent. */
-  readonly codexHook = new ToolTokens();
+  /**
+   * Tokens of Codex's PreToolUse hook: one per Codex session. A token only asks about its own run (task and agent),
+   * or is answered by its own session's rule.
+   */
+  readonly codexHook = new ToolTokens<HookBinding>();
+  /** Tokens of `majhi-files`: one per read-only session. A token reads only its own session's folders. */
+  readonly files = new ToolTokens<FilesScope>();
   /** Tokens for the test browser's WebSocket: one per run. They only reach the caller's own workspace. */
   readonly testBrowser = new ToolTokens();
 
@@ -163,11 +193,70 @@ export class RoomAccess {
     entry: { server: "codexHook"; token: string };
     env: Record<string, string>;
   } {
-    const token = this.codexHook.issue(caller);
+    return this.hookFor({ kind: "run", caller });
+  }
+
+  /**
+   * The same for a Codex session that has no run (the Housekeeper's, the stand-in's): its calls are judged by the
+   * session's own rule. Revoke `entry` when the session ends.
+   */
+  attachCodexSession(session: HookSession): {
+    entry: { server: "codexHook"; token: string };
+    env: Record<string, string>;
+  } {
+    return this.hookFor({ kind: "session", session });
+  }
+
+  private hookFor(binding: HookBinding): {
+    entry: { server: "codexHook"; token: string };
+    env: Record<string, string>;
+  } {
+    const token = this.codexHook.issue(binding);
     const base = this.mcpUrl().replace(/\/mcp$/, "");
     return {
       entry: { server: "codexHook", token },
       env: { MAJHI_HOOK_URL: `${base}${CODEX_HOOK_PATH}`, MAJHI_HOOK_TOKEN: token },
+    };
+  }
+
+  /**
+   * What a session with no run needs when its agent is Codex: `majhi-files` over `files` (a repo's export, read-only,
+   * for an agent with no read tool of its own), and, when `hook` (the session runs in a runner, where Codex has
+   * no sandbox of its own), the hook variables, so every tool call is judged by `decide`. `revoke` ends both tokens.
+   */
+  attachSession(session: { decide: Decider; files?: FilesScope | undefined; hook: boolean }): {
+    servers: McpServerSpec[];
+    env: Record<string, string>;
+    revoke(): void;
+  } {
+    const files = session.files === undefined ? undefined : this.attachFiles(session.files);
+    const hook = session.hook
+      ? this.attachCodexSession({
+          decide: session.decide,
+          servers: files === undefined ? [] : [FILES_SERVER_NAME],
+        })
+      : undefined;
+    return {
+      servers: files === undefined ? [] : [files.server],
+      env: hook?.env ?? {},
+      revoke: () =>
+        this.revoke([
+          ...(files === undefined ? [] : [files.entry]),
+          ...(hook === undefined ? [] : [hook.entry]),
+        ]),
+    };
+  }
+
+  /**
+   * `majhi-files` for a read-only session: the server entry (its token in a header, which the session keeps off
+   * command lines) and the entry to revoke when the session ends.
+   */
+  attachFiles(scope: FilesScope): { entry: { server: "files"; token: string }; server: McpServerSpec } {
+    const token = this.files.issue(scope);
+    const base = this.mcpUrl().replace(/\/mcp$/, "");
+    return {
+      entry: { server: "files", token },
+      server: spec(FILES_SERVER_NAME, `${base}${FILES_PATH}`, token),
     };
   }
 

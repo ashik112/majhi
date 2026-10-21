@@ -1,11 +1,12 @@
 import type { CodexHookPayload } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
+import type { HookBinding } from "../rooms/access.ts";
 import { CodexHookGate } from "./codex-hook.ts";
 import { flow } from "./permission-flow.fixture.ts";
 import type { AgentRun } from "./run.ts";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
-const caller = { task: "ACM-8", agent: "acme-codex" };
+const caller: HookBinding = { kind: "run", caller: { task: "ACM-8", agent: "acme-codex" } };
 
 /** The gate over the real permission flow, for runs that hold Acme's connections. */
 function gateOf(level = "routine") {

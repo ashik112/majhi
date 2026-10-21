@@ -33,6 +33,7 @@ import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import type { HandoffService } from "../handoff/service.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
+import { filesServer } from "../memory/files-mcp.ts";
 import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { processesServer } from "../processes/mcp.ts";
@@ -56,6 +57,9 @@ import {
   CONTAINERS_PATH,
   CONTAINERS_SERVER_NAME,
   DOCKER_PATH,
+  FILES_PATH,
+  FILES_SERVER_NAME,
+  type HookBinding,
   MEMORY_PATH,
   MEMORY_SERVER_NAME,
   PROCESSES_PATH,
@@ -378,7 +382,7 @@ export interface RoomMcpDeps {
    */
   codexHook?: {
     decide(
-      caller: ToolCaller,
+      binding: HookBinding,
       payload: CodexHookPayload,
       signal: AbortSignal,
     ): Promise<CodexHookVerdict | undefined>;
@@ -430,15 +434,25 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
         return c.json({ error: "The Codex hook is not for web pages" }, 403);
       }
       const token = bearerOf(c.req.header("authorization"));
-      const caller = token === undefined ? undefined : deps.access.codexHook.lookup(token);
-      if (caller === undefined) return c.json({ error: "A valid bearer token is required" }, 401);
+      const binding = token === undefined ? undefined : deps.access.codexHook.lookup(token);
+      if (binding === undefined) return c.json({ error: "A valid bearer token is required" }, 401);
       const body = CodexHookPayloadSchema.safeParse(await c.req.json().catch(() => undefined));
       if (!body.success) return c.json({ error: formatIssues(body.error).join("; ") }, 400);
-      const verdict = await codexHook.decide(caller, body.data, c.req.raw.signal);
+      const verdict = await codexHook.decide(binding, body.data, c.req.raw.signal);
       // The hook went away while it waited: nobody reads this.
       return c.json(verdict ?? { decision: "deny", reason: "The hook went away." });
     });
   }
+  app.all(FILES_PATH, (c) =>
+    serve(
+      c.req.raw,
+      c.req.header("origin"),
+      c.req.header("authorization"),
+      deps.access.files,
+      FILES_SERVER_NAME,
+      (scope) => filesServer(scope),
+    ),
+  );
   const containers = deps.containers;
   if (containers !== undefined) {
     app.post(DOCKER_PATH, async (c) => {
@@ -509,26 +523,26 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
   return app;
 }
 
-async function serve(
+async function serve<T>(
   request: Request,
   origin: string | undefined,
   authorization: string | undefined,
-  tokens: ToolTokens,
+  tokens: ToolTokens<T>,
   name: string,
-  build: (caller: ToolCaller) => Server,
+  build: (holder: T) => Server,
 ): Promise<Response> {
   if (origin !== undefined && !isLoopbackOrigin(origin)) {
     return Response.json({ error: `${name} is not for web pages` }, { status: 403 });
   }
   const token = bearerOf(authorization);
-  const caller = token === undefined ? undefined : tokens.lookup(token);
-  if (caller === undefined) {
+  const holder = token === undefined ? undefined : tokens.lookup(token);
+  if (holder === undefined) {
     return Response.json(
       { error: "A valid bearer token is required" },
       { status: 401, headers: { "www-authenticate": "Bearer" } },
     );
   }
-  const server = build(caller);
+  const server = build(holder);
   const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
   await server.connect(transport);
   try {

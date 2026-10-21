@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { PermissionAsk } from "@majhi/acp";
 import { CodexHookCommandInputSchema, type CodexHookPayload, type CodexHookVerdict } from "@majhi/shared";
 import type { GateConnection } from "../connections/gate.ts";
-import type { ToolCaller } from "../rooms/access.ts";
+import type { HookBinding, HookSession } from "../rooms/access.ts";
 import { mcpToolOf } from "./permissions.ts";
 import type { AgentRun } from "./run.ts";
 
@@ -191,7 +191,9 @@ const refused = (reason: string): CodexHookVerdict => ({ decision: "deny", reaso
 const STAYS = new AbortController().signal;
 
 /**
- * Answers Codex's hook with what the owner and the workspace's rules say. The hook script gives up after its own
+ * Answers Codex's hook with what the owner and the workspace's rules say. A token bound to a run goes through the
+ * run's permission flow; a token bound to a session's own rule (a Housekeeper session has no run) gets that rule's
+ * answer for the same `PermissionAsk`, with the rule's reason when it refuses. The hook script gives up after its own
  * deadline (docker/codex/hook.mjs), because Codex lets a call run when its hook times out: the script denies, and
  * the card stays. The owner's answer waits here for the same call, so the next try of the exact same call gets it
  * without a second card: allowed once, or refused once.
@@ -209,10 +211,12 @@ export class CodexHookGate {
 
   /** Resolves with the verdict, or undefined when `signal` aborts first: the hook went away and the card stays. */
   async decide(
-    caller: ToolCaller,
+    binding: HookBinding,
     payload: CodexHookPayload,
     signal?: AbortSignal,
   ): Promise<CodexHookVerdict | undefined> {
+    if (binding.kind === "session") return this.decideForSession(binding.session, payload);
+    const { caller } = binding;
     const run = this.deps.run(caller.task, caller.agent);
     if (run?.session === undefined) {
       return refused("majhi has no live run for this agent, so the call did not run.");
@@ -229,6 +233,20 @@ export class CodexHookGate {
     const verdict = await untilAborted(entry, signal);
     if (verdict !== undefined && this.waiting.get(key) === entry) this.waiting.delete(key);
     return verdict;
+  }
+
+  /**
+   * A session with no run: its own rule judges every call, the files tools it was given and nothing else. A tool
+   * of Codex's own is put to the rule too (as a tool of no kind), so a read-only session cannot use one either.
+   */
+  private async decideForSession(session: HookSession, payload: CodexHookPayload): Promise<CodexHookVerdict> {
+    const read = readHook(payload, { servers: session.servers, connections: [] });
+    if (read.kind === "deny") return refused(read.reason);
+    const ask: PermissionAsk =
+      read.kind === "ask" ? read.ask : { title: payload.tool_name, options: OPTIONS };
+    const decision = await session.decide(ask).catch(() => undefined);
+    if (decision === undefined) return refused("majhi could not judge this call, so it did not run.");
+    return decision.allow ? { decision: "allow" } : refused(decision.why);
   }
 
   /** The session ended: its open questions and uncollected answers go with it. */

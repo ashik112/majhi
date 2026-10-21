@@ -64,6 +64,9 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 46b | A destructive command through the Codex hook asks even when the connection's `allow` holds it and the level is Full (#40 and #44 for Codex). | `server/runs/codex-hook.test.ts`: asks for a destructive command even when the connection allows it and the level is Full |  |
 | 46c | The Codex hook script fails closed (server down, garbage or error reply, no credential, no call, deadline reached) and lets a call run only on majhi's allow, with a deadline shorter than Codex's timeout. | `acp/runner/codex-hook.test.ts`: fails closed, and lets a call run only on majhi's allow |  |
 | 46d | The Codex hook endpoint answers only a session's own credential: none, a wrong one, another server's or one of a session that ended is refused, and each token asks for its own task and agent. | `server/rooms/codex-hook.test.ts`: answers only a session's own token |  |
+| 46e | The `files` tools of a read-only session read inside its folders with numbered lines, and refuse a climb out with `..`, an absolute path, a link inside the folders that leads out, and `/proc/self/environ`. | `server/memory/files-mcp.test.ts`: read inside the folders with numbered lines, and refuse everything outside them |  |
+| 46f | A `files` token answers only for its own session's folders: another session's token, a hook token, a revoked token and none are refused. | `server/memory/files-mcp.test.ts`: answer only for their own session's folders |  |
+| 46g | Through the Codex hook endpoint, a read-only Housekeeper session gets a shell and a patch denied with the reason, and its files tools allowed. | `server/rooms/codex-hook.test.ts`: denies a shell and a patch to a read-only Housekeeper session with the reason, and allows its files tools |  |
 
 ## 2 Data loss and corruption (20)
 

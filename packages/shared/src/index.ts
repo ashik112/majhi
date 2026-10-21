@@ -37,6 +37,7 @@ export * from "./diagram.ts";
 export * from "./download.ts";
 export * from "./emoji.ts";
 export * from "./event-seq.ts";
+export * from "./files-tools.ts";
 export * from "./findings.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";

@@ -26,6 +26,8 @@ import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { ask } from "../decisions/acp.ts";
 import { errorMessage, UserError } from "../errors.ts";
+import { FILES_SERVER_NAME, type RoomAccess } from "../rooms/access.ts";
+import { handlerOf, refuseAll } from "../rooms/session-decision.ts";
 import { itemLine, trimMiddle } from "../runs/handoff.ts";
 import { modelForTier, normalizeOffered } from "../runs/model-options.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -34,7 +36,7 @@ import { readPrices } from "../usage/prices.ts";
 import { costTurn, type UsageRecorder } from "../usage/recorder.ts";
 import { Background } from "./background.ts";
 import type { CurationTask } from "./curator.ts";
-import { readOnlyHandler } from "./read-only.ts";
+import { readOnlyDecider } from "./read-only.ts";
 
 /** The room, after the hand-back messages, is cut to about this many tokens. */
 export const ROOM_TOKENS = 5_000;
@@ -487,7 +489,17 @@ export interface HousekeeperDeps {
   usage?: UsageRecorder;
   /** A session failed on the account's sign-in: the account is signed out until it is signed in again. */
   markSignedOut?: ((account: string, detail: string) => Promise<void>) | undefined;
+  /**
+   * Tokens for a Codex session: `majhi-files` to read a repo with (Codex has no read tool, and a read-only session
+   * refuses a shell), and the hook token that runs in a runner. Absent: a Codex session gets neither.
+   */
+  rooms?: RoomAccess | undefined;
+  /** Sessions run in runner containers, where Codex has no sandbox of its own and its hook must be answered. */
+  containerRunner?: boolean | undefined;
 }
+
+/** What the agent reads when a session that only answers is asked to use a tool. */
+const NOTES_REFUSAL = "This session only answers. It has no tools.";
 
 /** Nobody is set to do it, so there is nothing to tell the owner about. */
 export class NoHousekeeper extends Error {}
@@ -639,16 +651,36 @@ export class Housekeeper {
 
     const settings = await deps.config.settings();
     const wanted = mode.kind === "repo" ? settings.wiki.writer_model : settings.memory.housekeeper_model;
-    const session = await deps.runtime.startSession({
-      account: runtimeAccount,
-      options: deps.options,
-      cwd,
-      // Notes need no files: a runner gives them an empty folder of its own. A repo is the folder, read-only.
-      ...(mode.kind === "repo"
-        ? { mounts: [mode.root, ...(mode.also ?? [])].map((path) => ({ path, readOnly: true })) }
-        : { scratch: true }),
-      ...(wanted === undefined ? {} : { model: wanted }),
+    // Notes only answer, so every tool request is refused. A repo may be read and searched, nothing else. A Codex
+    // session has no read tool: it reads through majhi's files server, and in a runner its hook asks the same rule.
+    const codex = account.tool === "codex" ? deps.rooms : undefined;
+    const rule =
+      mode.kind === "repo"
+        ? readOnlyDecider(mode.root, mode.also, codex === undefined ? undefined : FILES_SERVER_NAME)
+        : refuseAll(NOTES_REFUSAL);
+    const bound = codex?.attachSession({
+      decide: rule,
+      ...(mode.kind === "repo" ? { files: { root: mode.root, also: mode.also ?? [] } } : {}),
+      hook: deps.containerRunner === true,
     });
+    let session: AgentSession;
+    try {
+      session = await deps.runtime.startSession({
+        account: runtimeAccount,
+        options: deps.options,
+        cwd,
+        // Notes need no files: a runner gives them an empty folder of its own. A repo is the folder, read-only.
+        ...(mode.kind === "repo"
+          ? { mounts: [mode.root, ...(mode.also ?? [])].map((path) => ({ path, readOnly: true })) }
+          : { scratch: true }),
+        ...(wanted === undefined ? {} : { model: wanted }),
+        ...(bound === undefined || bound.servers.length === 0 ? {} : { mcpServers: bound.servers }),
+        ...(bound === undefined || Object.keys(bound.env).length === 0 ? {} : { env: bound.env }),
+      });
+    } catch (err) {
+      bound?.revoke();
+      throw err;
+    }
     this.live.add(session);
     const prices = await readPrices(deps.config.file).catch(() => ({}));
     let spent = NO_SPEND;
@@ -671,9 +703,8 @@ export class Housekeeper {
     try {
       // Closed while the session was starting: `close` could not see it yet.
       if (this.closed) throw new HousekeeperClosed();
-      // Notes only answer, so every tool request is refused. A repo may be read and searched, nothing else.
       session.setPermissionHandler(
-        mode.kind === "repo" ? readOnlyHandler(mode.root, mode.also) : async () => undefined,
+        codex !== undefined || mode.kind === "repo" ? handlerOf(rule) : async () => undefined,
       );
       if (wanted === undefined) {
         // No model named: the cheapest the account offers for notes, the middle one for a repo.
@@ -689,6 +720,7 @@ export class Housekeeper {
       return { value, agent: fm.id, spent };
     } finally {
       stopUsage();
+      bound?.revoke();
       this.live.delete(session);
       await session.close().catch(() => undefined);
     }

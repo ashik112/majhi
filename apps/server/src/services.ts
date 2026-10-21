@@ -815,6 +815,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const usageService = new UsageService({ repo: usageRepo, config, events: store.usageEvents });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
+  // Before the decision provider and the Housekeeper: a Codex session of theirs gets its files and hook tokens here.
+  const roomAccess = new RoomAccess(
+    () => adminTokens.mcpUrl,
+    () => containers.available(),
+    () => testBrowser !== undefined,
+  );
   const layaDocker =
     options.layaDocker ??
     (env.laya === undefined
@@ -843,17 +849,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       majhiHome: env.majhiHome,
       standIn: async () => (await decisions.settings()).acp_agent,
       usage: usageRecorder,
+      rooms: roomAccess,
+      containerRunner: env.runner.mode === "container",
     }),
     rules: rulesProvider,
     secrets,
     agents: agentStore,
     adminMcpUrl: () => adminTokens.mcpUrl,
   });
-  const roomAccess = new RoomAccess(
-    () => adminTokens.mcpUrl,
-    () => containers.available(),
-    () => testBrowser !== undefined,
-  );
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
   // The ports majhi itself listens on: no service on this computer may name one (5.14).
   const ownPorts = (): number[] => [
@@ -1143,6 +1146,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     markSignedOut: async (account, detail) => {
       await accounts.markSignedOut(account, detail);
     },
+    rooms: roomAccess,
+    containerRunner: env.runner.mode === "container",
   });
   // The wiki folder: each project's source export, facts and code graph, read in a runner container with no
   // network. In the tasks folder: runners can mount it, and it is never inside majhi's config folder.

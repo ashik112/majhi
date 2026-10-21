@@ -1,3 +1,22 @@
+## Codex wiki sessions read through majhi's files tools, 2026-10-21
+
+Branch `fix/codex-wiki-reads`, brief `docs/briefs/codex-wiki-reads.md`. Built by a builder who did not run a real Codex session: the lead runs one wiki session on a Codex account afterwards.
+
+**What works.**
+- `majhi-files` (`/mcp/files`, `memory/files-mcp.ts`): `read` (numbered lines as `cat -n`, 400 lines by default, cut at 60,000 characters or the line count and says where to continue), `list` (folders end with `/`), `search` (literal text, case option, `path:line: text`, 100 hits, skips binary files, files over 2 MB and links, stops after 20,000 files or 20 s and says so). Every path is resolved against the session's folder, taken to its real path and refused outside the session's folders by `containment` in `memory/read-only.ts`, the same function `readOnlyDecision` uses. Per-session bearer token (`RoomAccess.files`), sent as a header of the MCP server entry.
+- A hook token has two bindings (`HookBinding` in `rooms/access.ts`): a run, which goes through `PermissionFlow.ask` as before, or a session's own rule (`Decider`, `rooms/session-decision.ts`), which `CodexHookGate` feeds the same `PermissionAsk` that `readHook` builds. The ACP permission handler of such a session is made from the same rule (`handlerOf`), so both paths judge a call alike. The gate has no Housekeeper case.
+- `readOnlyDecision` allows a call of the session's own files server and refuses a shell with "No shell in this session. Read with the files tools: read, list, search." Codex's own tools (such as `view_image`) and other servers are refused too for these sessions.
+- Housekeeper Codex sessions (repo and notes) and the decisions stand-in on Codex get the hook token when sessions run in a runner; repo sessions also get `majhi-files`, in host mode too (not checked there: the rule allows a call whose ACP title reads `mcp__majhi-files__read` or `mcp.majhi-files.read`, and a Codex that titles it otherwise is refused). Notes and stand-in sessions refuse every tool with "This session only answers. It has no tools." Claude's sessions are unchanged. Tokens are revoked when the session ends or fails to start.
+- Walk (throwaway, not the live majhi, port 7498, a stand-in agent that makes the calls Codex would make; the real `Housekeeper`, `CodexHookGate`, routes and tokens; the real hook script of this branch in `majhi-runner:dev`): `read src/app.ts` answers numbered lines from the export; `link.txt` (link out), `../secret.txt` and `/proc/self/environ` answer "<path> is outside the folders this session may read."; the same `read` posted from inside a runner container answers 200 with the lines, and `/proc/self/environ` is refused; the hook denies `Bash` (`sed -n 1,40p src/app.ts`, `cat /proc/self/environ`) with the reason above, denies `apply_patch` with "A read-only session may not use edit tools. Read with the files tools: read, list, search.", allows `mcp__majhi_files__read` (empty output), denies `mcp__majhi_room__post`; tokens are 0 after the session.
+
+**How to try it.** Typecheck, then `pnpm exec vitest run apps/server/src/memory/files-mcp.test.ts apps/server/src/rooms/codex-hook.test.ts apps/server/src/runs/codex-hook.test.ts`. Real run: set the wiki writer's account to a Codex account, rebuild a project's wiki page and read the session's files calls in its usage.
+
+**Left.**
+- Real Codex session (lead, 2026-10-21, codex-acp in `agent-full-access`, a stub `majhi-files` server and a stub hook endpoint with the same rule): Codex tried `pwd; rg --files ...`, got "No shell in this session. Read with the files tools: read, list, search.", then used `list`, `search` and `read` (named `mcp__majhi_files__list` and so on in the hook, as expected) with absolute paths inside the export, and wrote the page with correct `path:line` citations. It did not call `update_plan`, so a denied Codex own tool mid-turn is still unseen.
+- The wiki prompts already say "read and search tools", so they were not changed.
+
+**Checked.** `pnpm -r typecheck`, `tsc -p e2e`, `biome check .` (33 warnings, as before), vitest 107 files and 427 tests passed (1 skipped), Playwright finds no spec. The runner image was not rebuilt.
+
 ## Codex runs in the container sandbox, gated by a majhi hook, 2026-10-21
 
 Branch `feat/codex-hooks`, brief `docs/briefs/codex-hooks.md`. Built by a builder who did not run a real Codex session: the lead runs one through the built image.
