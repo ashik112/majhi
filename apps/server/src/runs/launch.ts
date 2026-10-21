@@ -16,7 +16,7 @@ import {
   type Task,
   type TeamOverride,
 } from "@majhi/shared";
-import { accountRuntime, secretName } from "../accounts/homes.ts";
+import { secretName, sessionRuntime, taskHomeOrg } from "../accounts/homes.ts";
 import { ADMIN_SERVER_NAME, type AdminAccess } from "../admin/access.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
@@ -117,6 +117,11 @@ export interface LaunchDeps {
   secrets: SecretStore;
   config: ConfigService;
   majhiHome: string;
+  /**
+   * Before a session starts on a login account: its sign-in file must belong to the person the account was
+   * pinned to, or this rejects (and the account becomes signed out, with the reason). Absent: no check.
+   */
+  guardSignIn?: ((account: string) => Promise<void>) | undefined;
   admin?: AdminAccess | undefined;
   decisions?: Decisions | undefined;
   /** majhi-room and majhi-tasks (Phase 3). */
@@ -175,10 +180,11 @@ export async function launch(
   agent: ResolvedAgent,
 ): Promise<Launched> {
   const { fm, boss } = agent;
-  const runtimeAccount = await runtimeAccountOf(deps, agent);
-  await deps.runtime.prepareHome(runtimeAccount);
   const task = deps.store.tasks.get(run.task);
   if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
+  await deps.guardSignIn?.(fm.account);
+  const runtimeAccount = await runtimeAccountOf(deps, agent, task);
+  await deps.runtime.prepareHome(runtimeAccount, deps.options);
 
   const attribution = await gitAttribution(deps, task, run.agent);
   const model = fm.model === "auto" ? undefined : fm.model;
@@ -463,8 +469,15 @@ function hooksMount(hooks: string): RunMount[] {
   return [{ path: hooks, readOnly: true }];
 }
 
-/** The agent's account as the runtime needs it, with its API key when it has one. */
-async function runtimeAccountOf(deps: Pick<LaunchDeps, "secrets" | "majhiHome">, agent: ResolvedAgent) {
+/**
+ * The agent's account as a session of this task needs it: the home of the task's workspace on that account
+ * (`taskHomeOrg`), with its API key when it has one.
+ */
+async function runtimeAccountOf(
+  deps: Pick<LaunchDeps, "secrets" | "majhiHome">,
+  agent: ResolvedAgent,
+  task: Pick<Task, "org" | "kind">,
+) {
   const { fm, account } = agent;
   let apiKey: string | undefined;
   if (account.auth === "api-key" && account.key !== undefined) {
@@ -472,7 +485,7 @@ async function runtimeAccountOf(deps: Pick<LaunchDeps, "secrets" | "majhiHome">,
     if (apiKey === undefined)
       throw new UserError(`The API key of ${fm.account} is missing. Add the account again.`);
   }
-  return accountRuntime(deps.majhiHome, fm.account, account, apiKey);
+  return sessionRuntime(deps.majhiHome, fm.account, account, taskHomeOrg(task), apiKey);
 }
 
 /**
@@ -490,7 +503,7 @@ export async function processLaunch(
   const task = deps.store.tasks.get(taskId);
   if (task === undefined) throw new UserError(`Task ${taskId} does not exist.`);
   const resolved = await resolveAgent(deps, agentId);
-  const account = await runtimeAccountOf(deps, resolved);
+  const account = await runtimeAccountOf(deps, resolved, task);
   const attribution = await gitAttribution(deps, task, agentId);
   const mounts = [
     ...(await readMounts(deps, task, agentId, resolved.fm.scope)),

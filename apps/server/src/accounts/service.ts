@@ -1,5 +1,6 @@
-import { rm } from "node:fs/promises";
-import type { RuntimeOptions } from "@majhi/acp";
+import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { AGENT_HOMES_DIR, type RuntimeOptions } from "@majhi/acp";
 import {
   type AccountConfig,
   type AccountLimit,
@@ -21,6 +22,7 @@ import { SECRETS_NOT_SET_UP, type SecretStore } from "../secrets/store.ts";
 import type { AccountCache } from "./cache.ts";
 import type { AccountProbes } from "./health.ts";
 import { accountHome, accountRuntime, secretName } from "./homes.ts";
+import type { SignInGuard } from "./identity.ts";
 import { limitActive, limitFor, statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
 import type { AccountUsageReader } from "./usage.ts";
 
@@ -40,6 +42,8 @@ export interface AccountDeps {
   cache: AccountCache;
   probes: AccountProbes;
   usage: AccountUsageReader;
+  /** Pins the account's sign-in to its owner (identity.ts). */
+  identity: SignInGuard;
   runtime: AcpRuntime;
   options: RuntimeOptions;
   /** Called with the account id before its home is deleted, to end a running login. */
@@ -131,8 +135,17 @@ export class AccountService {
       removeAccountEntry(config.file, id),
     );
     await rm(accountHome(majhiHome, id), { recursive: true, force: true });
+    await this.removeAgentHomes(id);
     if (account.key !== undefined) await secrets.delete(secretName(account.key));
     await cache.remove(id);
+  }
+
+  /** The account's home in every workspace (`agent-homes/<org>/<id>`): they hold nothing but what its sessions wrote. */
+  private async removeAgentHomes(id: string): Promise<void> {
+    const dir = join(this.deps.majhiHome, AGENT_HOMES_DIR);
+    for (const org of await readdir(dir).catch(() => [] as string[])) {
+      await rm(join(dir, org, id), { recursive: true, force: true });
+    }
   }
 
   /** Hides a model from `auto` picks, or shows it again. The list stays in the order it was hidden. */
@@ -237,6 +250,25 @@ export class AccountService {
     return this.deps.now?.() ?? new Date();
   }
 
+  /**
+   * Before an agent session starts on the account: its sign-in file must still belong to the person it was
+   * pinned to (identity.ts). Another person's file makes the account `needs-login` with the reason, so
+   * Needs you asks to sign in again, and the start fails. A file whose owner cannot be read fails the start
+   * too, without marking the account: nothing is known, so nothing starts, and the next start tries again.
+   */
+  async guardStart(id: string): Promise<void> {
+    const verdict = await this.deps.identity.check(id, await this.require(id));
+    if (verdict.state === "ok") return;
+    if (verdict.state === "refused") {
+      await this.markSignedOut(id, verdict.detail);
+      throw new UserError(verdict.detail, 409);
+    }
+    throw new UserError(
+      `Could not confirm who ${id} is signed in as, so no session started: ${verdict.detail}`,
+      409,
+    );
+  }
+
   /** Whether the account is known to need a new sign-in. From the last check, never a probe. */
   async needsLogin(id: string): Promise<boolean> {
     return statusFromHealth((await this.deps.probes.cached(id)).health) === "needs-login";
@@ -279,6 +311,9 @@ export class AccountService {
     };
     if (limitActive(cached.limit, this.now())) view.limit = cached.limit;
     if (cached.signedInAs !== undefined) view.signedInAs = cached.signedInAs;
+    if (view.status === "needs-login" && cached.signInFailed !== undefined) {
+      view.signedOutReason = cached.signInFailed.detail;
+    }
     if (cached.health !== undefined) view.lastHealth = cached.health;
     if (cached.usage !== undefined) view.usage = cached.usage;
     return view;

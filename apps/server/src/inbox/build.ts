@@ -59,6 +59,8 @@ export interface DecisionSources {
     org?: string | undefined;
     /** What waits on this sign-in, in words ("Captain in Globex"): their pauses are not cards of their own. */
     waits?: readonly string[] | undefined;
+    /** Why it is signed out, when a check found out (a sign-in that belongs to someone else than the account's owner). */
+    reason?: string | undefined;
   }[];
   /** Paused cards that wait on a signed-out account: the account's sign-in decision carries them. */
   foldedPauses?: ReadonlySet<string>;
@@ -629,6 +631,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...(account.waits === undefined || account.waits.length === 0 ? {} : { waits: [...account.waits] }),
       title: `Sign in ${account.id}: its agents cannot run until you do`,
       sentence: `${account.id} is signed out. Its agents cannot run until you sign in again.${
+        account.reason === undefined ? "" : ` ${account.reason}`
+      }${
         account.waits === undefined || account.waits.length === 0
           ? ""
           : ` Waiting on it: ${account.waits.join(", ")}.`

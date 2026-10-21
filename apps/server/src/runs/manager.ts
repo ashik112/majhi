@@ -148,6 +148,8 @@ export interface RunDeps {
   serena?: SerenaLaunch;
   /** Where connections keep their files (5.14). Absent: runs get no connections. */
   connectionFiles?: LaunchDeps["connectionFiles"];
+  /** Checks a login account's sign-in against its pin before a session starts (see `LaunchDeps.guardSignIn`). */
+  guardSignIn?: LaunchDeps["guardSignIn"];
   /** The skills store: runs get their agent's enabled skills (5.2). */
   skills?: LaunchDeps["skills"];
   /** Agents run in runner containers (Claude Code then lists the run's skills itself). */

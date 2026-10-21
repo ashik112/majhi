@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type {
+  AccountIdentity,
   AccountProbe,
   AccountRuntime,
   AgentSession,
@@ -71,6 +72,9 @@ export interface FakeRuntime extends AcpRuntime {
   startError: Error | undefined;
   /** Accounts, by the end of their home folder, that are signed out: their starts fail and their probes say so. */
   signedOutHomes: string[];
+  /** Who `readIdentity` says the sign-in belongs to, or throws when it is an Error. */
+  identity: AccountIdentity | Error;
+  identityReads: AccountRuntime[];
   /** Shapes each new session, for example to set its `script`. */
   onSession: ((session: FakeSession, start: SessionStart) => void) | undefined;
 }
@@ -110,6 +114,8 @@ export function fakeRuntime(): FakeRuntime {
     startGate: undefined,
     startError: undefined,
     signedOutHomes: [],
+    identity: { id: "owner-1", label: "owner@example.com" },
+    identityReads: [],
     resumes: true,
     onSession: undefined,
     async startSession(start): Promise<AgentSession> {
@@ -134,6 +140,11 @@ export function fakeRuntime(): FakeRuntime {
     async prepareHome(account) {
       runtime.prepared.push(account);
       await mkdir(account.home, { recursive: true, mode: 0o700 });
+    },
+    async readIdentity(account) {
+      runtime.identityReads.push(account);
+      if (runtime.identity instanceof Error) throw runtime.identity;
+      return runtime.identity;
     },
     loginCommand: () => runtime.login,
     async probeAccount(account, options) {

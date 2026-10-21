@@ -1,6 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentSession, isAuthFailure, type RuntimeOptions, type TurnUsage } from "@majhi/acp";
+import {
+  type AgentSession,
+  INTERNAL_ORG,
+  isAuthFailure,
+  type RuntimeOptions,
+  type TurnUsage,
+} from "@majhi/acp";
 import {
   type AuthMode,
   BRIEF_BULLETS,
@@ -21,7 +27,7 @@ import {
   type Thread,
 } from "@majhi/shared";
 import { z } from "zod";
-import { accountRuntime, secretName } from "../accounts/homes.ts";
+import { secretName, sessionRuntime } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { ask } from "../decisions/acp.ts";
@@ -489,6 +495,8 @@ export interface HousekeeperDeps {
   usage?: UsageRecorder;
   /** A session failed on the account's sign-in: the account is signed out until it is signed in again. */
   markSignedOut?: ((account: string, detail: string) => Promise<void>) | undefined;
+  /** Before a session starts on a login account: its sign-in must belong to the person the account was pinned to. */
+  guardSignIn?: ((account: string) => Promise<void>) | undefined;
   /**
    * Tokens for a Codex session: `majhi-files` to read a repo with (Codex has no read tool, and a read-only session
    * refuses a shell), and the hook token that runs in a runner. Absent: a Codex session gets neither.
@@ -639,8 +647,16 @@ export class Housekeeper {
       apiKey = await deps.secrets.get(secretName(account.key));
       if (apiKey === undefined) throw new Error(`The API key of ${fm.account} is missing.`);
     }
-    const runtimeAccount = accountRuntime(deps.majhiHome, fm.account, account, apiKey);
-    await deps.runtime.prepareHome(runtimeAccount);
+    await deps.guardSignIn?.(fm.account);
+    // A job of a workspace uses that workspace's home on the account; a job with no org the internal one.
+    const runtimeAccount = sessionRuntime(
+      deps.majhiHome,
+      fm.account,
+      account,
+      task.org ?? INTERNAL_ORG,
+      apiKey,
+    );
+    await deps.runtime.prepareHome(runtimeAccount, deps.options);
     let cwd: string;
     if (mode.kind === "repo") {
       cwd = mode.root;
