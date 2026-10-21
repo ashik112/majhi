@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
-import { readSessionOptions } from "../acp-session.ts";
 import { SignInExpired } from "../auth-failure.ts";
 import { execTool } from "../tool-process.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
@@ -111,30 +110,6 @@ async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
   return mapClaudeUsage(json);
 }
 
-/** What `.claude.json` says about the account: written by the CLI, from the token's own profile. */
-const ClaudeAccountFile = z.looseObject({
-  oauthAccount: z
-    .looseObject({
-      accountUuid: z.string().optional(),
-      emailAddress: z.string().optional(),
-      organizationUuid: z.string().optional(),
-      organizationName: z.string().optional(),
-      profileFetchedAt: z.number().optional(),
-    })
-    .optional(),
-});
-
-async function readClaudeAccount(home: string) {
-  try {
-    const parsed = ClaudeAccountFile.safeParse(
-      JSON.parse(await readFile(join(home, ".claude.json"), "utf8")),
-    );
-    return parsed.success ? parsed.data.oauthAccount : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 const ClaudeCredentialsFile = z.looseObject({
   claudeAiOauth: z.looseObject({ expiresAt: z.number().optional() }).optional(),
 });
@@ -150,26 +125,50 @@ async function claudeSignInExpiresAt(home: string): Promise<number | undefined> 
   }
 }
 
+/** Anthropic's profile of the account a Claude sign-in token belongs to, as the CLI itself reads it. */
+export const CLAUDE_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
+const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
+
+const ClaudeTokenFile = z.looseObject({
+  claudeAiOauth: z.looseObject({ accessToken: z.string().min(1) }),
+});
+
+const ClaudeProfile = z.looseObject({
+  account: z.looseObject({ uuid: z.string().min(1), email: z.string().optional() }),
+  organization: z.looseObject({ name: z.string().optional() }).nullish(),
+});
+
 /**
- * Who the sign-in belongs to. `auth status` is no answer: it reports the email from `.claude.json`, which the
- * token does not change, so a swapped `.credentials.json` would still read as its old owner (checked on Claude
- * Code 2.1.284). What follows the token is the profile the CLI fetches with it when a session starts and writes
- * to `oauthAccount` with `profileFetchedAt`. So this opens a session (no prompt, no tokens) and reads that
- * file, and only believes it when `profileFetchedAt` moved: an old record means the fetch did not happen.
+ * Who the sign-in belongs to, asked of Anthropic with the sign-in's own token, so the answer follows the token and
+ * not a file an agent could write. `auth status` is no answer: it reports the email from `.claude.json`, which a
+ * swapped `.credentials.json` does not change. Nor is the profile the CLI writes at a session's start: it fetches
+ * one only when its copy is old, so after a refresh it often writes none. Spends no model tokens.
  */
 async function readClaudeIdentity(ctx: UsageContext): Promise<AccountIdentity> {
-  const before = (await readClaudeAccount(ctx.account.home))?.profileFetchedAt;
-  await readSessionOptions(ctx.options, ctx.account, ctx.adapter, ctx.env, ctx.timeoutMs);
-  const account = await readClaudeAccount(ctx.account.home);
-  const fetched = account?.profileFetchedAt;
-  if (fetched === undefined || (before !== undefined && fetched <= before)) {
-    throw new Error("Claude did not read the profile of this sign-in");
+  let token: string;
+  try {
+    const file = await readFile(join(ctx.account.home, ".credentials.json"), "utf8");
+    token = ClaudeTokenFile.parse(JSON.parse(file)).claudeAiOauth.accessToken;
+  } catch {
+    throw new Error("This sign-in has no Claude token majhi can read");
   }
-  const id = account?.accountUuid ?? account?.emailAddress;
-  if (id === undefined) throw new Error("Claude reported no account for this sign-in");
-  const email = account?.emailAddress;
-  const label = [email, account?.organizationName].filter((p) => p !== undefined).join(", ");
-  return { id, label: label === "" ? id : label };
+  const get = ctx.options.claudeProfile?.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await get(ctx.options.claudeProfile?.url ?? CLAUDE_PROFILE_URL, {
+      headers: { authorization: `Bearer ${token}`, "anthropic-beta": CLAUDE_OAUTH_BETA },
+      signal: AbortSignal.timeout(ctx.timeoutMs),
+    });
+  } catch {
+    throw new Error("Could not reach Anthropic to read who this sign-in belongs to");
+  }
+  if (res.status === 401 || res.status === 403) throw new Error("Anthropic refused this sign-in's token");
+  if (!res.ok) throw new Error(`Anthropic answered ${res.status} when asked who this sign-in belongs to`);
+  const profile = ClaudeProfile.safeParse(await res.json().catch(() => undefined));
+  if (!profile.success) throw new Error("Anthropic described this sign-in in a shape majhi does not know");
+  const { account, organization } = profile.data;
+  const label = [account.email, organization?.name ?? undefined].filter((p) => p !== undefined).join(", ");
+  return { id: account.uuid, label: label === "" ? account.uuid : label };
 }
 
 /**

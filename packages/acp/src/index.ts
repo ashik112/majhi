@@ -47,6 +47,8 @@ export interface RuntimeOptions {
    * Production leaves it empty; tests serve a key set of their own.
    */
   jwks?: { url?: string; fetch?: typeof fetch };
+  /** Where Claude's sign-in profile is read (`url`, and `fetch` to answer it). Production leaves it empty; tests answer it. */
+  claudeProfile?: { url?: string; fetch?: typeof fetch };
   /** Per-step timeout for probes. Default 20 s. */
   timeoutMs?: number;
   /**
