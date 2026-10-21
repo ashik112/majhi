@@ -10,7 +10,8 @@
 #
 # MAJHI_HOST_LABEL and MAJHI_LAUNCH_AGENTS_DIR change the LaunchAgent label
 # and folder, and MAJHI_SYSTEMD_USER_DIR the folder of the units, so tests
-# never touch the real ones.
+# never touch the real ones. MAJHI_HOST_IMAGE names the image the helper is
+# copied out of, for the same reason.
 set -eu
 
 . "$(dirname -- "$0")/lib.sh"
@@ -28,7 +29,7 @@ BIN="$MAJHI_DIR/bin/majhi-host"
 OLD_BUNDLE="$MAJHI_DIR/bin/majhi-host.mjs"
 LOG_DIR="$MAJHI_DIR/logs"
 RUN_DIR="$MAJHI_DIR/run"
-IMAGE="majhi-server:dev"
+IMAGE="${MAJHI_HOST_IMAGE:-majhi-server:dev}"
 REPO_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 # Remounts and updates run `docker compose` the way `make up` did, so the helper keeps these settings,
 # among them the agent socket and Laya's GPU that `make up` picked (decisions 1 and 9 of the Linux
