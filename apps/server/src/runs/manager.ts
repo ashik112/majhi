@@ -39,7 +39,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import { noticeText, sameRun, splitCurrent } from "../processes/notices.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
-import type { RoomAccess, ToolCaller } from "../rooms/access.ts";
+import type { HookBinding, RoomAccess } from "../rooms/access.ts";
 import { handoffPrompt } from "../rooms/handoff.ts";
 import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -974,11 +974,11 @@ export class RunManager {
 
   /** What Codex's PreToolUse hook is told about one tool call of a session: the same decision as an ACP permission request. */
   askCodexHook(
-    caller: ToolCaller,
+    binding: HookBinding,
     payload: CodexHookPayload,
     signal?: AbortSignal,
   ): Promise<CodexHookVerdict | undefined> {
-    return this.codexHook.decide(caller, payload, signal);
+    return this.codexHook.decide(binding, payload, signal);
   }
 
   /** The concurrency limits changed: starts that wait may fit now. */
