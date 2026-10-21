@@ -55,6 +55,36 @@ func EnsureAskpass(majhiHome string) (string, error) {
 	return file, nil
 }
 
+// RemoveStaleJobs removes the token folders (`<MAJHI_HOME>/host/job-*`) a helper that was stopped in
+// the middle of a job left behind. Call it at start, before any job runs.
+func RemoveStaleJobs(majhiHome string) error {
+	dir := HelperDir(majhiHome)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && len(e.Name()) > len("job-") && e.Name()[:len("job-")] == "job-" {
+			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+				return fmt.Errorf("remove %s: %w", e.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
+// PrepareHelperDir clears what a stopped helper left in the helper's private folder and writes the
+// askpass script, and returns its path.
+func PrepareHelperDir(majhiHome string) (string, error) {
+	if err := RemoveStaleJobs(majhiHome); err != nil {
+		return "", err
+	}
+	return EnsureAskpass(majhiHome)
+}
+
 // AuthEnv is how to run git for one job.
 type AuthEnv struct {
 	// Env is the environment for the git child, with no token in it.

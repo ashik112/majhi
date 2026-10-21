@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -23,7 +24,8 @@ const MaxOutput = 64 * 1024
 type Options struct {
 	// Env is the program's whole environment. Nothing of the helper's is added.
 	Env map[string]string
-	// Timeout ends the program (and its process group) when it runs longer. Zero means no limit.
+	// Timeout ends the program (and its process group) when it runs longer. It is required: zero or
+	// less is a mistake, and the program is not started.
 	Timeout time.Duration
 	// Input is written to stdin, then stdin is closed. Empty: stdin is closed at once.
 	Input string
@@ -53,6 +55,9 @@ type Func func(file string, args []string, options Options) Result
 
 // Exec is the real Func.
 func Exec(file string, args []string, options Options) Result {
+	if options.Timeout <= 0 {
+		return Result{Code: NoCode, Stderr: "run: a timeout is required"}
+	}
 	var mu sync.Mutex
 	limit := options.MaxOutput
 	if limit <= 0 {
@@ -87,21 +92,17 @@ func Exec(file string, args []string, options Options) Result {
 	}
 	code := NoCode
 	timedOut := false
-	if options.Timeout <= 0 {
+	select {
+	case <-proc.Done():
 		code = proc.Wait()
-	} else {
+	case <-time.After(options.Timeout):
+		timedOut = true
+		// Its own process group, so what it started goes too: a test run is a tree.
+		proc.Kill()
+		// A program that escaped its group may hold the pipes open. Give up on it after a moment.
 		select {
 		case <-proc.Done():
-			code = proc.Wait()
-		case <-time.After(options.Timeout):
-			timedOut = true
-			// Its own process group, so what it started goes too: a test run is a tree.
-			proc.Kill()
-			// A program that escaped its group may hold the pipes open. Give up on it after a moment.
-			select {
-			case <-proc.Done():
-			case <-time.After(2 * time.Second):
-			}
+		case <-time.After(2 * time.Second):
 		}
 	}
 	mu.Lock()
@@ -145,6 +146,26 @@ type SpawnOptions struct {
 	Stdin    bool
 	OnStdout func([]byte)
 	OnStderr func([]byte)
+}
+
+// live holds every program that is running, so the helper can end them all before it exits.
+var (
+	liveMu sync.Mutex
+	live   = map[*Proc]bool{}
+)
+
+// KillAll ends every running program and what it started (each is a process group of its own). The
+// helper calls it before it exits, so a clone, a sign-in or a build never outlives it.
+func KillAll() {
+	liveMu.Lock()
+	procs := make([]*Proc, 0, len(live))
+	for p := range live {
+		procs = append(procs, p)
+	}
+	liveMu.Unlock()
+	for _, p := range procs {
+		p.Kill()
+	}
 }
 
 // Proc is a running program.
@@ -206,7 +227,15 @@ func Spawn(o SpawnOptions) *Proc {
 		return p
 	}
 	p.cmd = cmd
+	liveMu.Lock()
+	live[p] = true
+	liveMu.Unlock()
 	go func() {
+		defer func() {
+			liveMu.Lock()
+			delete(live, p)
+			liveMu.Unlock()
+		}()
 		readers.Wait()
 		err := cmd.Wait()
 		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
@@ -248,6 +277,19 @@ func (p *Proc) Kill() { p.signal(true) }
 // Terminate asks the program and anything it started to end.
 func (p *Proc) Terminate() { p.signal(false) }
 
+// TerminateThenKill asks the program to end and, when it has not after grace, ends it at once. It
+// does not wait.
+func (p *Proc) TerminateThenKill(grace time.Duration) {
+	p.Terminate()
+	go func() {
+		select {
+		case <-p.Done():
+		case <-time.After(grace):
+			p.Kill()
+		}
+	}()
+}
+
 func (p *Proc) signal(hard bool) {
 	if p.cmd != nil && p.cmd.Process != nil {
 		killGroup(p.cmd, hard)
@@ -277,8 +319,9 @@ func Resolve(file, pathEnv string) (string, bool) {
 		pathEnv = "/usr/bin:/bin"
 	}
 	for _, dir := range strings.Split(pathEnv, ":") {
-		if dir == "" {
-			dir = "."
+		// An empty or relative entry means the current folder, which a program must never be found in.
+		if dir == "" || !filepath.IsAbs(dir) {
+			continue
 		}
 		candidate := dir + string(os.PathSeparator) + file
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {

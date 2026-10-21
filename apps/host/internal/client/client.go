@@ -58,11 +58,15 @@ type Link struct {
 	Sleep func(ctx context.Context, d time.Duration)
 }
 
+// client never follows a redirect: the Bearer token must not go to another address, port or scheme
+// than the one the helper was told. A redirect answer is just a status the poll loop reports.
 func (l *Link) client() *http.Client {
+	c := http.Client{}
 	if l.HTTP != nil {
-		return l.HTTP
+		c = *l.HTTP
 	}
-	return http.DefaultClient
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
 }
 
 func (l *Link) sleep(ctx context.Context, d time.Duration) {

@@ -472,12 +472,21 @@ func reportRecoveredUpdate(o Options, committed bool) error {
 // RecoverUpdate runs before accepting host jobs. Recovery remains on disk until every rollback step succeeds.
 func RecoverUpdate(o Options, say func(string)) error {
 	journal, err := ReadJournal(o.MajhiHome)
+	var bad *InvalidJournalError
+	if errors.As(err, &bad) {
+		return refuseJournal(o, bad.Reason)
+	}
 	if err != nil {
 		return err
 	}
 	if journal == nil {
 		_, err := checkout.RecoverPackage(o.Git.Repo)
 		return err
+	}
+	if journal.Mounts != nil {
+		if reason := CheckMounts(*journal.Mounts, o.Remount.Env["HOME"], currentSources(o.Remount.Repo)); reason != "" {
+			return refuseJournal(o, reason)
+		}
 	}
 	step := DockerStep(o.Remount, "update recovery")
 	if journal.Phase == PhaseCommitted {
@@ -524,6 +533,20 @@ func RecoverUpdate(o Options, say func(string)) error {
 	if say == nil {
 		return reportRecoveredUpdate(o, false)
 	}
+	return nil
+}
+
+// refuseJournal moves a journal that fails its checks aside and logs why. Nothing in it is acted on.
+func refuseJournal(o Options, reason string) error {
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
+	where, err := QuarantineJournal(o.MajhiHome, now())
+	if err != nil {
+		return fmt.Errorf("the update journal was refused (%s) and could not be moved aside: %w", reason, err)
+	}
+	o.Log(fmt.Sprintf("update recovery: refused the journal (%s); it is kept as %s and nothing was done", reason, filepath.Base(where)))
 	return nil
 }
 
@@ -682,6 +705,9 @@ func cleanAfterUpdate(step simpleStep, say func(string), majhiHome string, tags 
 // goBack puts the previous images and mounts back and starts majhi on them.
 func goBack(step Step, repo string, previous []kept, mounts *string, restart bool) error {
 	for _, k := range previous {
+		if !IsImageID(k.ID) {
+			return errors.New("an image id of the journal is not a sha256 id")
+		}
 		if _, err := step("go back to the previous image", []string{"tag", k.ID, k.Image}, keyTimeout, nil); err != nil {
 			return err
 		}

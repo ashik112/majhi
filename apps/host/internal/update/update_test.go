@@ -19,6 +19,16 @@ import (
 
 const head = "0123456789abcdef0123456789abcdef01234567"
 
+// Image ids as Docker prints them.
+// The override the update replaces: what gen-override makes, with a root inside the owner's home ("/h").
+const oldMounts = "services:\n  server:\n    volumes:\n      - /h/Work:/h/Work\n"
+
+var (
+	server = "sha256:" + strings.Repeat("a", 64)
+	runner = "sha256:" + strings.Repeat("b", 64)
+	laya   = "sha256:" + strings.Repeat("c", 64)
+)
+
 type fakeDocker struct {
 	mu    sync.Mutex
 	calls []string
@@ -61,11 +71,11 @@ func (f *fakeDocker) run(file string, args []string, o run.Options) run.Result {
 		}
 		switch {
 		case strings.HasSuffix(line, "majhi-laya:dev"):
-			return run.Result{Stdout: "sha256:oldlaya\n"}
+			return run.Result{Stdout: laya + "\n"}
 		case strings.HasSuffix(line, "majhi-runner:dev"):
-			return run.Result{Stdout: "sha256:oldrunner\n"}
+			return run.Result{Stdout: runner + "\n"}
 		}
-		return run.Result{Stdout: "sha256:old\n"}
+		return run.Result{Stdout: server + "\n"}
 	case strings.HasPrefix(line, "container inspect"):
 		return fail("No such container")
 	case strings.HasPrefix(line, "compose logs"):
@@ -171,7 +181,7 @@ func TestUpdateGoesBackWhenTheNewMajhiDoesNotStart(t *testing.T) {
 	docker := &fakeDocker{failOnce: "compose up"}
 	s := newSetup(t, docker)
 	s.options.SelfPath = s.options.Bundle
-	if err := os.WriteFile(filepath.Join(s.repo, OverrideFile), []byte("old mounts\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(s.repo, OverrideFile), []byte(oldMounts), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	status := s.runUpdate(t)
@@ -188,7 +198,7 @@ func TestUpdateGoesBackWhenTheNewMajhiDoesNotStart(t *testing.T) {
 		}
 	}
 	calls := docker.docker()
-	tagBack := index(calls, "tag sha256:old majhi-server:dev")
+	tagBack := index(calls, "tag "+server+" majhi-server:dev")
 	firstUp := index(calls, "compose up -d --wait")
 	if firstUp < 0 || tagBack < firstUp {
 		t.Fatalf("the image was not tagged back after the failed start: %v", calls)
@@ -196,7 +206,7 @@ func TestUpdateGoesBackWhenTheNewMajhiDoesNotStart(t *testing.T) {
 	if lastIndex(calls, "compose up -d --wait") < tagBack {
 		t.Fatalf("the previous majhi was not started: %v", calls)
 	}
-	if got, _ := os.ReadFile(filepath.Join(s.repo, OverrideFile)); string(got) != "old mounts\n" {
+	if got, _ := os.ReadFile(filepath.Join(s.repo, OverrideFile)); string(got) != oldMounts {
 		t.Fatalf("mounts %q", got)
 	}
 	if index(calls, "create majhi-server:dev") >= 0 {
@@ -265,10 +275,10 @@ func TestAnInterruptedUpdateIsRecoveredAtStart(t *testing.T) {
 		t.Run(c.phase, func(t *testing.T) {
 			docker := &fakeDocker{}
 			s := newSetup(t, docker)
-			mounts := "old mounts\n"
+			mounts := oldMounts
 			if err := WriteJournal(s.home, Journal{
 				Version: 1, Phase: c.phase, Mounts: &mounts,
-				Previous: []KeptImage{{Image: ServerImage, ID: "sha256:old"}},
+				Previous: []KeptImage{{Image: ServerImage, ID: server}},
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -298,7 +308,7 @@ func TestAnInterruptedUpdateIsRecoveredAtStart(t *testing.T) {
 				t.Fatalf("database restore: %v", calls)
 			}
 			if c.phase != PhaseCommitted {
-				if !has("tag sha256:old majhi-server:dev") {
+				if !has("tag " + server + " majhi-server:dev") {
 					t.Fatalf("the previous image was not put back: %v", calls)
 				}
 				if got, _ := os.ReadFile(filepath.Join(s.repo, OverrideFile)); string(got) != mounts {
@@ -322,7 +332,7 @@ func TestAnInterruptedUpdateIsRecoveredAtStart(t *testing.T) {
 func TestAFailedRecoveryKeepsTheJournal(t *testing.T) {
 	docker := &fakeDocker{failOnce: "compose stop"}
 	s := newSetup(t, docker)
-	if err := WriteJournal(s.home, Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: "sha256:old"}}}); err != nil {
+	if err := WriteJournal(s.home, Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RecoverUpdate(s.options, nil); err == nil {
@@ -338,4 +348,99 @@ func TestAFailedRecoveryKeepsTheJournal(t *testing.T) {
 		t.Fatal("the journal was left")
 	}
 	_ = errors.New
+}
+
+// A journal on disk is acted on (images tagged, a checkout moved, a compose file written), so one that
+// names a git option, an image id that is not a sha256 id, or a mount of the computer's root is kept
+// aside and nothing runs.
+func TestAPlantedJournalIsRefusedAndNothingRuns(t *testing.T) {
+	mounts := func(source string) *string {
+		text := "services:\n  server:\n    volumes:\n      - " + source + ":" + source + "\n"
+		return &text
+	}
+	moved := func(head string) *checkout.Moved {
+		return &checkout.Moved{From: "v1.0.0", To: "v1.1.0", Head: head, Dotenv: "MAJHI_VERSION=v1.0.0\n"}
+	}
+	cases := []struct {
+		name string
+		raw  func(home string) string
+	}{
+		{"a head that is a git option", func(string) string {
+			return `{"version":1,"phase":"prepared","previous":[],"moved":{"from":"v1.0.0","to":"v1.1.0","head":"--upload-pack=x","dotenv":"a"}}`
+		}},
+		{"an image id that is not a sha256 id", func(string) string {
+			return `{"version":1,"phase":"starting","previous":[{"image":"majhi-server:dev","id":"evil:latest"}]}`
+		}},
+		{"a moved release without a field", func(string) string {
+			return `{"version":1,"phase":"prepared","previous":[],"moved":{"from":"","to":"v1.1.0","head":"` + head + `","dotenv":"a"}}`
+		}},
+		{"a mount of the computer's root", func(home string) string {
+			data, _ := json.Marshal(Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: mounts("/")})
+			return string(data)
+		}},
+		{"a mount of the Docker socket", func(home string) string {
+			data, _ := json.Marshal(Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: mounts("/var/run/docker.sock")})
+			return string(data)
+		}},
+		{"a mount outside the home", func(home string) string {
+			data, _ := json.Marshal(Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: mounts("/opt/secrets")})
+			return string(data)
+		}},
+		{"a mount that climbs out of the home", func(home string) string {
+			data, _ := json.Marshal(Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: mounts(home + "/Work/../../etc")})
+			return string(data)
+		}},
+		{"a privileged service in the saved mounts", func(home string) string {
+			text := "services:\n  server:\n    privileged: true\n"
+			data, _ := json.Marshal(Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: &text})
+			return string(data)
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			docker := &fakeDocker{}
+			s := newSetup(t, docker)
+			s.options.Remount.Env["HOME"] = filepath.Join(s.dir, "owner")
+			s.options.Now = func() time.Time { return time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC) }
+			if err := os.WriteFile(filepath.Join(s.home, journalFile), []byte(c.raw(s.options.Remount.Env["HOME"])), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			override := filepath.Join(s.repo, OverrideFile)
+			if err := os.WriteFile(override, []byte("current\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := RecoverUpdate(s.options, nil); err != nil {
+				t.Fatal(err)
+			}
+			if calls := docker.docker(); len(calls) != 0 {
+				t.Fatalf("something ran: %v", calls)
+			}
+			if got, _ := os.ReadFile(override); string(got) != "current\n" {
+				t.Fatalf("the mounts were written: %q", got)
+			}
+			if journal, err := ReadJournal(s.home); journal != nil || err != nil {
+				t.Fatalf("the journal is still in place: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(s.home, journalFile+".bad-20261021T120000Z")); err != nil {
+				t.Fatalf("the journal was not kept aside: %v", err)
+			}
+		})
+	}
+	// A good journal with mounts in the home is still acted on.
+	docker := &fakeDocker{}
+	s := newSetup(t, docker)
+	owner := filepath.Join(s.dir, "owner")
+	s.options.Remount.Env["HOME"] = owner
+	if err := WriteJournal(s.home, Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: server}}, Mounts: mounts(owner + "/Work"), Moved: moved(head)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverUpdate(s.options, nil); err != nil {
+		t.Fatal(err)
+	}
+	if index(docker.docker(), "tag "+server+" majhi-server:dev") < 0 {
+		t.Fatalf("a good journal was not acted on: %v", docker.docker())
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.repo, OverrideFile)); !strings.Contains(string(got), owner+"/Work") {
+		t.Fatalf("mounts %q", got)
+	}
 }

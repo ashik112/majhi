@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"majhi/host/internal/download"
 	"majhi/host/internal/durable"
 	"majhi/host/internal/git"
 	"majhi/host/internal/protocol"
@@ -35,14 +36,16 @@ type LatestFn func(url string) (string, error)
 
 // ReadLatest is the real LatestFn. The pointer answers GitHub's release object, of which only the tag counts.
 func ReadLatest(url string) (string, error) {
+	if err := download.CheckURL(url); err != nil {
+		return "", fmt.Errorf("MAJHI_LATEST_URL: %w", err)
+	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "majhi-host")
-	client := &http.Client{Timeout: latestTimeout}
-	res, err := client.Do(req)
+	res, err := download.Client(latestTimeout).Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -243,6 +246,14 @@ func MoveToLatest(ctx Context, head string, say func(string), latest LatestFn) (
 	if !ok {
 		return nil, nil
 	}
+	for name, value := range map[string]string{"MAJHI_LATEST_URL": release.LatestURL, "MAJHI_DOWNLOAD_URL": release.DownloadURL} {
+		if value == "" {
+			continue
+		}
+		if err := download.CheckURL(value); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+	}
 	if release.LatestURL == "" {
 		say(".env names no MAJHI_LATEST_URL, so majhi stays on " + release.Version)
 		return nil, nil
@@ -302,6 +313,10 @@ func MoveBack(ctx Context, moved Moved) error {
 }
 
 func checkoutRef(ctx Context, ref string) error {
+	// A ref comes from a journal on disk: a full commit id, or a release tag, never an option.
+	if tag, isTag := strings.CutPrefix(ref, "refs/tags/"); !(isTag && IsReleaseTag(tag)) && !isFullCommit(ref) {
+		return errors.New("The release to go back to is not a commit or a release tag.")
+	}
 	_, err := ctx.Guarded([]string{"-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", ref}, true, checkoutTimeout)
 	return err
 }

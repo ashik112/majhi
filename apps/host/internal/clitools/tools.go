@@ -115,6 +115,8 @@ const (
 	ToolTimeout  = 15 * time.Minute
 	checkTimeout = 30 * time.Second
 	maxOutput    = 64 * 1024
+	// killGrace is how long a tool gets to end after it is asked to, before it is killed.
+	killGrace = 5 * time.Second
 )
 
 // ToolDeps are what the CLI tool sign-ins need.
@@ -142,7 +144,7 @@ func (r *running) cancel() {
 	r.mu.Lock()
 	r.cancelled = true
 	r.mu.Unlock()
-	r.proc.Terminate()
+	r.proc.TerminateThenKill(killGrace)
 }
 
 func (r *running) wasCancelled() bool {
@@ -338,7 +340,7 @@ func (t *ToolLogins) runLogin(file string, def Tool, params protocol.CliLoginPar
 		code = proc.Wait()
 	case <-time.After(timeout):
 		timedOut = true
-		proc.Terminate()
+		proc.TerminateThenKill(killGrace)
 		code = proc.Wait()
 	}
 	t.mu.Lock()
@@ -408,7 +410,7 @@ func capture(file string, args []string, env map[string]string, cwd string, time
 		defer mu.Unlock()
 		return captured{code: proc.Wait(), stdout: stdout}
 	case <-time.After(timeout):
-		proc.Terminate()
+		proc.TerminateThenKill(killGrace)
 		proc.Wait()
 		return captured{code: run.NoCode, timedOut: true}
 	}

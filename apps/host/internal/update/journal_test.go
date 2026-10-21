@@ -3,19 +3,20 @@ package update
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // A journal cut short is an error, never a half-read transaction that would send an update the wrong way.
 func TestAHalfWrittenJournalIsNeverRead(t *testing.T) {
 	home := t.TempDir()
-	mounts := "old mounts\n"
-	journal := Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: "sha256:old"}}, Mounts: &mounts}
+	mounts := "services: {}\n"
+	journal := Journal{Version: 1, Phase: PhaseStarting, Previous: []KeptImage{{Image: ServerImage, ID: "sha256:" + strings.Repeat("a", 64)}}, Mounts: &mounts}
 	if err := WriteJournal(home, journal); err != nil {
 		t.Fatal(err)
 	}
 	read, err := ReadJournal(home)
-	if err != nil || read == nil || read.Phase != PhaseStarting || read.Previous[0].ID != "sha256:old" || *read.Mounts != mounts {
+	if err != nil || read == nil || read.Phase != PhaseStarting || read.Previous[0].ID != "sha256:"+strings.Repeat("a", 64) || *read.Mounts != mounts {
 		t.Fatalf("%+v %v", read, err)
 	}
 	file := filepath.Join(home, journalFile)

@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"majhi/host/internal/download"
 	"majhi/host/internal/durable"
 	"majhi/host/internal/run"
 )
@@ -112,8 +112,10 @@ func ReadPublishedPackage(base, version string) (ReleasePackage, error) {
 	if !IsReleaseTag(version) {
 		return ReleasePackage{}, errors.New("The release version is not valid")
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	res, err := client.Get(strings.TrimSuffix(base, "/") + "/" + version + "/release.json")
+	if err := download.CheckURL(base); err != nil {
+		return ReleasePackage{}, fmt.Errorf("MAJHI_DOWNLOAD_URL: %w", err)
+	}
+	res, err := download.Client(15 * time.Second).Get(strings.TrimSuffix(base, "/") + "/" + version + "/release.json")
 	if err != nil {
 		return ReleasePackage{}, err
 	}
@@ -229,6 +231,9 @@ func CommitPackage(repo string) error { return durable.Remove(filepath.Join(repo
 // ReplacePackage downloads and validates the target release before changing any installed file, and
 // keeps the old files for an update rollback.
 func ReplacePackage(ctx Context, target ReleasePackage, downloadURL string) (map[string]string, error) {
+	if err := download.CheckURL(downloadURL); err != nil {
+		return nil, fmt.Errorf("MAJHI_DOWNLOAD_URL: %w", err)
+	}
 	if _, err := RecoverPackage(ctx.Repo); err != nil {
 		return nil, err
 	}

@@ -632,6 +632,6 @@ func (p *realProc) Kill() {
 	proc := p.proc
 	p.mu.Unlock()
 	if proc != nil {
-		proc.Terminate()
+		proc.TerminateThenKill(5 * time.Second)
 	}
 }

@@ -119,6 +119,11 @@ func Push(deps PushDeps, params protocol.GitPushParams) error {
 	if token && deps.AuthEnv == nil {
 		return errors.New("This host helper cannot push with a workspace's token.")
 	}
+	if key, err := RepoNetworkSetting(deps.Run, params.Path, baseEnv(deps)); err != nil {
+		return err
+	} else if key != "" {
+		return NetworkSettingError(key)
+	}
 	guard, err := PushGuard(deps.Run, params.Path, baseEnv(deps), remote, !token)
 	if err != nil {
 		return err
@@ -135,6 +140,8 @@ func Push(deps PushDeps, params protocol.GitPushParams) error {
 	env := baseEnv(deps)
 	config := GuardConfig
 	cleanup := func() {}
+	// The token's folder goes whatever happens below, a panic included.
+	defer func() { cleanup() }()
 	if token {
 		auth, err := deps.AuthEnv(*params.Auth)
 		if err != nil {
@@ -142,6 +149,8 @@ func Push(deps PushDeps, params protocol.GitPushParams) error {
 		}
 		env, config, cleanup = auth.Env, auth.Config, auth.Cleanup
 	}
+	// Whatever the repo says, a push never reaches into submodules.
+	config = append(append([]string{}, config...), "-c", "push.recurseSubmodules=no")
 	pushEnv := make(map[string]string, len(env)+len(guard.Env))
 	for k, v := range env {
 		pushEnv[k] = v

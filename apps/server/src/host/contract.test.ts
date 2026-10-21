@@ -45,7 +45,7 @@ case "$1" in
       *" ps "*) echo abc ;;
       *logs*) echo "server-1  | listening" ;;
     esac ;;
-  image) [ "$2" = inspect ] && echo sha256:old ;;
+  image) [ "$2" = inspect ] && echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
   create) echo cid1 ;;
   cp) echo helper > "$3" ;;
   container) exit 1 ;;

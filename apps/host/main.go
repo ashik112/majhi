@@ -95,7 +95,11 @@ func start() error {
 	instance, err := app.New(app.Options{
 		Config: cfg, Platform: plat, Deps: deps, SelfPath: self,
 		UID: os.Getuid(), GID: os.Getgid(),
-		Exit:      func(code int) { os.Exit(code) },
+		Exit: func(code int) {
+			// Whatever a job started (a clone, a sign-in, a build) goes with the helper.
+			run.KillAll()
+			os.Exit(code)
+		},
 		OSRelease: kernelRelease(deps), GOOS: runtime.GOOS, Arch: runtime.GOARCH,
 		ImagePath:  imagePath(),
 		SignBinary: signer(deps),
@@ -111,6 +115,7 @@ func start() error {
 		sig := <-signals
 		log(fmt.Sprintf("stopping (%s)", signalName(sig)))
 		cancel()
+		run.KillAll()
 	}()
 	instance.Run(ctx)
 	return nil

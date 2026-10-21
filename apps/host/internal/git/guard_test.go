@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"majhi/host/internal/run"
 )
@@ -158,18 +159,18 @@ func TestGuardsHoldAgainstARealRepo(t *testing.T) {
 	for k, v := range GuardEnv() {
 		env[k] = v
 	}
-	listed := run.Exec("git", append(append([]string{"-C", repo}, GuardConfig...), ListFilters...), run.Options{Env: env})
+	listed := run.Exec("git", append(append([]string{"-C", repo}, GuardConfig...), ListFilters...), run.Options{Env: env, Timeout: time.Minute})
 	filtered := WithConfig(env, FiltersOff(listed.Stdout))
-	run1 := run.Exec("git", append(append([]string{"-C", repo, "-c", "user.name=T", "-c", "user.email=t@acme.test"}, GuardConfig...), "add", "a.txt"), run.Options{Env: filtered})
+	run1 := run.Exec("git", append(append([]string{"-C", repo, "-c", "user.name=T", "-c", "user.email=t@acme.test"}, GuardConfig...), "add", "a.txt"), run.Options{Env: filtered, Timeout: time.Minute})
 	if run1.Code != 0 {
 		t.Fatalf("add: %s", run1.Stderr)
 	}
 	commit := run.Exec("git", append(append([]string{"-C", repo, "-c", "user.name=T", "-c", "user.email=t@acme.test"}, GuardConfig...),
-		"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "x"), run.Options{Env: filtered})
+		"-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "x"), run.Options{Env: filtered, Timeout: time.Minute})
 	if commit.Code != 0 {
 		t.Fatalf("commit: %s", commit.Stderr)
 	}
-	if res := run.Exec("git", append(append([]string{"-C", repo}, GuardConfig...), "status", "--porcelain"), run.Options{Env: filtered}); res.Code != 0 {
+	if res := run.Exec("git", append(append([]string{"-C", repo}, GuardConfig...), "status", "--porcelain"), run.Options{Env: filtered, Timeout: time.Minute}); res.Code != 0 {
 		t.Fatalf("status: %s", res.Stderr)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -195,7 +196,7 @@ func TestGuardsHoldAgainstARealRepo(t *testing.T) {
 	for k, v := range guard.Env {
 		pushEnv[k] = v
 	}
-	res := run.Exec("git", []string{"-C", repo, "ls-remote", "--get-url", guard.URL}, run.Options{Env: pushEnv})
+	res := run.Exec("git", []string{"-C", repo, "ls-remote", "--get-url", guard.URL}, run.Options{Env: pushEnv, Timeout: time.Minute})
 	if got := strings.TrimSpace(res.Stdout); got != url {
 		t.Fatalf("the push address became %q", got)
 	}

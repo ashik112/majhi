@@ -15,6 +15,7 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ func GuardEnv() map[string]string {
 const UploadPack = "--upload-pack=git-upload-pack"
 
 // pushKeys is every key PushGuard reads, as git's own regexp (git matches it, not this program).
-const pushKeys = `^(credential\.(.+\.)?helper|core\.(askpass|alternaterefscommand)|url\..+\.(insteadof|pushinsteadof))$`
+const pushKeys = `^(credential\.(.+\.)?helper|core\.(askpass|alternaterefscommand)|url\..+\.(insteadof|pushinsteadof)|http\.proxy)$`
 
 // ListFilters are `git config` arguments that list every filter command, read without running anything.
 var ListFilters = []string{"config", "-z", "--show-scope", "--get-regexp", `^filter\..+\.(clean|smudge|process)$`}
@@ -184,6 +185,47 @@ func contains(list []string, s string) bool {
 	return false
 }
 
+// RepoNetworkSetting is the first key in the repo's own git config that would change where a push
+// goes or what is sent with it: any `http.` setting (a proxy, `sslVerify`, certificates, extra
+// headers, a cookie file), a remote's `proxy`, `pushurl` or `receivepack`, and `push.recurseSubmodules`
+// anything but `no`. A proxy named there could read the login or token a push carries, so such a
+// repo is not pushed from this computer. It reads the config with `git config`, which runs nothing,
+// and counts what the repo's local and worktree files say, includes too. "" when there is none.
+func RepoNetworkSetting(runFn run.Func, path string, env map[string]string) (string, error) {
+	read := runFn("git", []string{"-C", path, "config", "--list", "-z", "--show-scope"}, run.Options{Env: env, Timeout: timeout20s})
+	if read.Code != 0 {
+		return "", errors.New("majhi could not read this repo's git settings, so it did not push.")
+	}
+	for _, e := range parseConfig(read.Stdout) {
+		if !fromRepo(e) {
+			continue
+		}
+		if networkKey(e) {
+			return e.key, nil
+		}
+	}
+	return "", nil
+}
+
+func networkKey(e configEntry) bool {
+	section, _, _ := strings.Cut(e.key, ".")
+	switch section {
+	case "http":
+		return true
+	case "remote":
+		last := e.key[strings.LastIndex(e.key, ".")+1:]
+		return last == "proxy" || last == "pushurl" || last == "receivepack"
+	case "push":
+		return e.key == "push.recursesubmodules" && (!e.has || e.value != "no")
+	}
+	return false
+}
+
+// NetworkSettingError is the sentence for a repo whose config names a network setting.
+func NetworkSettingError(key string) error {
+	return fmt.Errorf("This repo's git settings set %s; majhi does not push through network settings a repo sets.", key)
+}
+
 // PushGuardResult is what a push runs with, on top of GuardConfig and GuardEnv.
 type PushGuardResult struct {
 	// URL is the address to push to: the one asked for, or it with a closing slash when a rewrite of the repo's equals it.
@@ -252,6 +294,14 @@ func PushGuard(runFn run.Func, path string, env map[string]string, url string, o
 		}
 		settings = append(settings, Setting{e.key, own})
 	}
+	// The repo's own proxy never applies: the owner's, if they have one, else none.
+	ownProxy := ""
+	for _, e := range owners {
+		if e.key == "http.proxy" && e.has {
+			ownProxy = e.value
+		}
+	}
+	settings = append(settings, Setting{"http.proxy", ownProxy})
 	if ownLogin {
 		plantedHelper := false
 		for _, e := range planted {

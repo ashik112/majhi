@@ -278,7 +278,7 @@ func (l *Logins) run(file string, params protocol.GitCliLoginParams, configDir, 
 		code = proc.Wait()
 	case <-time.After(timeout):
 		timedOut = true
-		proc.Terminate()
+		proc.TerminateThenKill(killGrace)
 		code = proc.Wait()
 	}
 	l.mu.Lock()

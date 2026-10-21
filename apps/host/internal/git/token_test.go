@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"majhi/host/internal/protocol"
 	"majhi/host/internal/run"
@@ -19,7 +20,7 @@ func realGit(t *testing.T, cwd string, args ...string) string {
 		Env: map[string]string{
 			"PATH": os.Getenv("PATH"), "HOME": t.TempDir(), "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
 		},
-		Cwd: cwd,
+		Cwd: cwd, Timeout: time.Minute,
 	})
 	if res.Code != 0 {
 		t.Fatalf("git %v: %s", args, res.Stderr)

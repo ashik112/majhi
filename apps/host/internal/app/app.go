@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -257,7 +258,7 @@ func New(o Options) (*App, error) {
 		Socket: func() string { return plat.SSHAgent().Socket() }, Find: deps.Find, SSH: sshBin,
 	}
 	// majhi's own askpass for clones and pushes with a workspace's token (see git/auth.go).
-	askpass, err := git.EnsureAskpass(cfg.MajhiHome)
+	askpass, err := git.PrepareHelperDir(cfg.MajhiHome)
 	if err != nil {
 		return nil, err
 	}
@@ -359,11 +360,23 @@ func New(o Options) (*App, error) {
 		LayaInstall: a.laya.Install,
 		LayaDecide:  a.laya.Decide,
 	}
+	if cfg.Isolated {
+		// A helper next to a test server must never reach the owner's Keychain or logins, not even
+		// through the credential helper of git or `gh`.
+		h.GitCredential = func(protocol.GitCredentialParams) (string, error) { return "", errIsolated }
+		h.GitToken = func(protocol.GitTokenParams) (string, error) { return "", errIsolated }
+		h.SecretsKeyRestore = func(protocol.SecretsKeyRestoreParams) (protocol.SecretsKeyRestore, func(), error) {
+			return protocol.SecretsKeyRestore{}, nil, errIsolated
+		}
+	}
 	a.handlers = h
 	a.findDocker = findDocker
 	a.compose = compose != nil
 	return a, nil
 }
+
+// errIsolated answers the jobs an isolated helper (MAJHI_HOST_ISOLATED=1) never does.
+var errIsolated = errors.New("Not available in isolated mode")
 
 func (a *App) currentDocker() *dockerState {
 	a.mu.Lock()

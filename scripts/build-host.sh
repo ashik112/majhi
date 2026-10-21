@@ -45,7 +45,7 @@ for target in "$@"; do
   arch=${target#*/}
   ext=""
   if [ "$os" = windows ]; then ext=.exe; fi
-  docker run --rm \
+  docker run --rm --cpus 2 \
     -v "$REPO_DIR/apps/host":/src -v majhi-gocache:/go \
     -e GOCACHE=/go/.cache -e CGO_ENABLED=0 -e GOOS="$os" -e GOARCH="$arch" -e GOFLAGS=-buildvcs=false \
     -w /src "$GO_IMAGE" \
