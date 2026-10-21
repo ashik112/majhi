@@ -26,6 +26,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../apps/server/src/secrets/store.ts";
+import { hostBinary as hostBinaryFor } from "../apps/server/src/testing/hostBinary.ts";
 import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
 import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FILE } from "./paths.ts";
 
@@ -137,7 +138,10 @@ Object.assign(process.env, gitEnv, {
 // before the assignments above.
 await import("../apps/server/src/main.ts");
 
-// The helper runs under tsx like this script: the same node binary with the same loader flags.
+// The helper is the Go binary of this computer's OS and CPU (apps/host/dist), built when it is missing or older than
+// its sources (scripts/build-host.sh runs Go in a container). `MAJHI_HOST_BIN` names another.
+const hostBinary = (): string => process.env.MAJHI_HOST_BIN ?? hostBinaryFor("helper");
+
 const helperEnv: NodeJS.ProcessEnv = {
   ...process.env,
   HOME: HOST_HOME,
@@ -146,11 +150,9 @@ const helperEnv: NodeJS.ProcessEnv = {
   MAJHI_HOST_VERSION: "e2e",
   // Its notifications are about test tasks (ACM-1): never on the owner's desktop.
   MAJHI_HOST_NOTIFY: "off",
+  // Nor does it touch the owner's Keychain or SSH agent: it keeps its own in memory.
+  MAJHI_HOST_ISOLATED: "1",
 };
 delete helperEnv.MAJHI_REPO;
-const helper = spawn(
-  process.execPath,
-  [...process.execArgv, fileURLToPath(new URL("../apps/host/src/main.ts", import.meta.url))],
-  { env: helperEnv, stdio: ["ignore", "inherit", "inherit"] },
-);
+const helper = spawn(hostBinary(), [], { env: helperEnv, stdio: ["ignore", "inherit", "inherit"] });
 process.once("exit", () => helper.kill());

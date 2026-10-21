@@ -15,6 +15,8 @@ ARG NODE_IMAGE=node:22-bookworm-slim
 ARG PNPM_VERSION=11.21.0
 ARG UV_VERSION=0.12.21
 ARG DOCKER_CLI_VERSION=29.8.1
+# The Go toolchain that builds the host helper (`apps/host`). scripts/build-host.sh reads this line.
+ARG GO_IMAGE=golang:1.27.3-bookworm
 ARG PLAYWRIGHT_MCP_VERSION=0.0.83
 
 # Images that only hand over a static binary.
@@ -36,7 +38,6 @@ WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts/fix-node-pty.mjs scripts/
-COPY apps/host/package.json apps/host/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
@@ -45,7 +46,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --froze
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps apps
-RUN pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm --filter @majhi/host build
+RUN pnpm --filter @majhi/web build && pnpm --filter @majhi/server build
 # esbuild cannot bundle a .node file, so the server build leaves node-pty, better-sqlite3, sqlite-vec and
 # @huggingface/transformers (onnxruntime-node) external.
 # node-pty: only what Linux loads (its JavaScript and the binary compiled above), not the macOS and
@@ -85,6 +86,25 @@ RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit 
   && rm -rf /app/node_modules/onnxruntime-web \
   && npm cache clean --force \
   && rm -rf /root/.npm
+
+# The host helper (`apps/host`, Go): one static binary per OS and CPU, no runtime to install. It runs on the
+# owner's computer, not here; `make up` and an update copy the right one out of the image. Windows builds
+# are made now so the targets stay honest, though nothing runs them yet (docs/DECISIONS.md). Only the Go
+# sources are copied, so a change to the web app or the server never rebuilds it. It runs on the builder's own CPU
+# and cross-compiles every target, so a multi-platform build never runs Go under emulation.
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS host-build
+WORKDIR /src
+COPY apps/host/go.mod apps/host/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY apps/host/main.go ./
+COPY apps/host/internal internal
+COPY apps/host/py py
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+  set -eu; mkdir /out; \
+  for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/arm64 windows/amd64; do \
+    os=${target%/*}; arch=${target#*/}; ext=""; if [ "$os" = windows ]; then ext=.exe; fi; \
+    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "/out/majhi-host-$os-$arch$ext" .; \
+  done
 
 # One download stage for the pinned static tools below: curl once, not in each.
 FROM debian:bookworm-slim AS fetch
@@ -386,8 +406,12 @@ RUN node -e "const D=require('/app/node_modules/better-sqlite3'),v=require('/app
 # What changes with every commit comes last, so an update adds only these layers.
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /src/apps/web/dist ./web
-# The host helper runs on the owner's machine, not here. `make up` copies it out of the image.
-COPY --from=build /src/apps/host/dist/majhi-host.mjs ./host/majhi-host.mjs
+# The host helper runs on the owner's machine, not here. `make up` and an update copy the binary for that
+# machine's OS and CPU out of the image.
+COPY --from=host-build /out ./host
+# The transition shim: what an install still on the Node helper copies out and runs once, to switch to
+# the binary above by itself (apps/host/transition, docs/DECISIONS.md).
+COPY apps/host/transition/majhi-host.mjs ./host/majhi-host.mjs
 # The git commit this image was built from, so majhi can tell when newer code is on disk. It comes last
 # so a new commit does not invalidate the layers above. `dev` means the build did not say.
 ARG MAJHI_COMMIT=dev

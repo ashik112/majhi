@@ -105,13 +105,6 @@ check_warnings() {
     warn "git is not installed, so majhi cannot update itself. Install git to turn updates on."
   fi
 
-  if ! find_node >/dev/null; then
-    case $OS in
-      linux | wsl) warn "Node 20 or newer is not installed, so the host helper is off: $HELPER_OFF, and majhi has no SSH agent for git. Install Node 20 or newer, then run $MAJHI_RERUN again." ;;
-      *) warn "Node 20 or newer is not installed, so the host helper is off: $HELPER_OFF. Install Node 20 or newer, then run $MAJHI_RERUN again." ;;
-    esac
-  fi
-
   case $OS in
     linux | wsl) ;;
     *) return 0 ;;

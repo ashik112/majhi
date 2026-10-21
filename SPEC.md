@@ -193,8 +193,8 @@ docker compose
                NVIDIA GPU), behind a compose profile; used on Linux, Windows
                and Intel Macs, and as the fallback on Apple silicon; see 5.12
 
-host helper   `apps/host`, a small Node process on the owner's computer (not
-              in Docker), installed by `make up` as a login service: a macOS
+host helper   `apps/host`, one small Go program on the owner's computer (not
+              in Docker, no runtime to install), installed by `make up` as a login service: a macOS
               LaunchAgent, or systemd user units on Linux and WSL2 (the table
               below has what differs per OS). It opens no port: it long-polls
               the server over the published 127.0.0.1 port with a token from
@@ -226,8 +226,8 @@ host helper   `apps/host`, a small Node process on the owner's computer (not
               `make up` (HOST_UID, HOST_GID, HOME, MAJHI_COMMIT from `git
               rev-parse HEAD`, and the agent socket and Laya GPU `make up`
               picked), create the secrets key if missing, regenerate the
-              override, `up -d --wait`, copy the helper bundle out of the new
-              image over `~/.majhi/bin`, then exit so the login service starts
+              override, `up -d --wait`, copy the helper binary for this OS and CPU out of the new
+              image over `~/.majhi/bin/majhi-host`, then exit so the login service starts
               the new helper. Progress goes to `~/.majhi/update.json` (the
               server that would relay it is replaced part-way); the UI reads
               it through `system.version` and reloads when `/health` reports

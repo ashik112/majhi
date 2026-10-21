@@ -118,7 +118,7 @@ It checks the computer first and stops with the step to take when something is m
 You need:
 
 - OrbStack or Docker Desktop
-- Node 20 or newer (`brew install node`), plus git and make for the from-source path
+- git and make, for the from-source path
 
 Then run the install line above.
 
@@ -130,7 +130,7 @@ You need:
 
 - [Docker Engine](https://docs.docker.com/engine/install/) running as root, with the Compose plugin. Docker Desktop for Linux and rootless Docker are not supported yet.
 - Your user in the `docker` group: `sudo usermod -aG docker $USER`, then log out and back in
-- Node 20 or newer (and git and make, for the from-source path)
+- git and make, for the from-source path
 - systemd, which most distros run
 - `secret-tool` (`libsecret-tools` on Debian and Ubuntu, `libsecret` on Fedora and Arch) and a keyring such as GNOME Keyring, which keeps a copy of majhi's secrets key. Without one, export the key on majhi's Health page and keep the file safe.
 - `notify-send` (`libnotify-bin` on Debian and Ubuntu) for notifications
@@ -148,7 +148,7 @@ You need:
 - WSL2 with a Linux distro: `wsl --install` in PowerShell sets up Ubuntu
 - Docker Desktop, set to start when you sign in (Settings > General), with WSL integration on for the distro (Settings > Resources > WSL integration)
 - systemd in the distro. Ubuntu from `wsl --install` has it. Otherwise add `systemd=true` under `[boot]` in `/etc/wsl.conf`, then run `wsl --shutdown` in Windows.
-- Node 20 or newer in the distro (and git and make, for the from-source path)
+- git and make in the distro, for the from-source path
 
 Run the line in the distro's terminal. Keep your repos in the distro (for example under `~/code`), not under `/mnt/c`, which is much slower to reach from Linux.
 
