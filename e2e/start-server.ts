@@ -145,9 +145,13 @@ function hostBinary(): string {
   const arch = process.arch === "arm64" ? "arm64" : "amd64";
   const file = fileURLToPath(new URL(`../apps/host/dist/majhi-host-${os}-${arch}`, import.meta.url));
   if (!existsSync(file)) {
-    execFileSync("sh", [fileURLToPath(new URL("../scripts/build-host.sh", import.meta.url)), `${os}/${arch}`], {
-      stdio: "inherit",
-    });
+    execFileSync(
+      "sh",
+      [fileURLToPath(new URL("../scripts/build-host.sh", import.meta.url)), `${os}/${arch}`],
+      {
+        stdio: "inherit",
+      },
+    );
   }
   return file;
 }

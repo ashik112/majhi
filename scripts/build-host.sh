@@ -3,7 +3,11 @@
 # majhi-host-<os>-<arch> (.exe on Windows). With no arguments it builds for this computer. The image
 # build does the same for every target (Dockerfile, stage host-build).
 #
-#   sh scripts/build-host.sh [os/arch ...]      for example: sh scripts/build-host.sh darwin/arm64 linux/amd64
+#   sh scripts/build-host.sh [--contract] [os/arch ...]
+#   for example: sh scripts/build-host.sh darwin/arm64 linux/amd64
+#
+# --contract builds the helper over a fake platform instead (cmd/contract, dist/contract-<os>-<arch>),
+# which the contract test runs (apps/server/src/host/contract.test.ts). It is never shipped.
 #
 # Go runs in a container (the image named by GO_IMAGE in the Dockerfile), so nothing but Docker is
 # needed. A module cache volume (majhi-gocache) keeps repeated builds quick.
@@ -26,6 +30,13 @@ host_target() {
   printf '%s/%s' "$os" "$arch"
 }
 
+package=.
+name=majhi-host
+if [ "${1:-}" = "--contract" ]; then
+  package=./cmd/contract
+  name=contract
+  shift
+fi
 if [ "$#" -eq 0 ]; then set -- "$(host_target)"; fi
 mkdir -p "$REPO_DIR/apps/host/dist"
 
@@ -38,6 +49,6 @@ for target in "$@"; do
     -v "$REPO_DIR/apps/host":/src -v majhi-gocache:/go \
     -e GOCACHE=/go/.cache -e CGO_ENABLED=0 -e GOOS="$os" -e GOARCH="$arch" -e GOFLAGS=-buildvcs=false \
     -w /src "$GO_IMAGE" \
-    go build -trimpath -ldflags="-s -w" -o "dist/majhi-host-$os-$arch$ext" .
-  echo "built apps/host/dist/majhi-host-$os-$arch$ext"
+    go build -trimpath -ldflags="-s -w" -o "dist/$name-$os-$arch$ext" "$package"
+  echo "built apps/host/dist/$name-$os-$arch$ext"
 done
