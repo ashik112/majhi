@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PermissionAsk } from "@majhi/acp";
 import { connectionType, IdSchema, textValue } from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -12,6 +13,7 @@ import { CONNECTIONS_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
 import type { RunManager } from "../runs/manager.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { Store } from "../store/index.ts";
+import type { DeferredResults } from "./deferred.ts";
 import { classifyRemote } from "./gate.ts";
 import { redactSecrets } from "./redact.ts";
 import { type RemoteRunFn, runRemote } from "./remote.ts";
@@ -46,7 +48,7 @@ const TOOLS = [
   {
     name: "ssh",
     description:
-      "Run a command on the host of an ssh connection this run holds, from majhi. A command that only reads (cat, ls, tail, grep, systemctl status, docker logs) runs now and returns its output. Anything else waits for the owner: majhi wakes you with the output once they answer.",
+      "Run a command on the host of an ssh connection this run holds, from majhi. A command that only reads (cat, ls, tail, grep, systemctl status, docker logs) runs now and returns its output. Anything else waits for the owner: the output, or the refusal or error, reaches you with your next majhi-connections call, or in a message when your turn ends.",
     input: SshInput,
   },
 ] as const;
@@ -72,6 +74,8 @@ export interface ConnectionsMcpDeps {
   /** Whose ~/.ssh/config holds the aliases. */
   hostHome: string;
   remote?: RemoteRunFn | undefined;
+  /** Results of commands the owner answered, for the agent's next call or wake. One for the whole server. */
+  deferred: DeferredResults;
   now?: () => Date;
 }
 
@@ -80,25 +84,41 @@ export function connectionsServer(caller: ToolCaller, deps: ConnectionsMcpDeps):
   const server = new Server({ name: CONNECTIONS_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed() }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
-    try {
-      switch (request.params.name) {
-        case "list":
-          return await list(caller, deps);
-        case "attach": {
-          const args = parse(AttachInput, request.params.arguments);
-          return typeof args === "string" ? fail(args) : await attach(caller, deps, args);
-        }
-        case "ssh": {
-          const args = parse(SshInput, request.params.arguments);
-          return typeof args === "string" ? fail(args) : await ssh(caller, deps, args);
-        }
-      }
-      return fail(`There is no tool ${request.params.name}.`);
-    } catch (err) {
-      return fail(errorMessage(err));
-    }
+    // What the owner answered since the agent's last call comes first, so a busy agent reads it at once.
+    const answered = deps.deferred.take(caller.task, caller.agent);
+    const result = await callTool(caller, deps, request.params.name, request.params.arguments);
+    if (answered.length === 0) return result;
+    return {
+      ...result,
+      content: [...answered.map((text) => ({ type: "text" as const, text })), ...result.content],
+    };
   });
   return server;
+}
+
+async function callTool(
+  caller: ToolCaller,
+  deps: ConnectionsMcpDeps,
+  name: string,
+  raw: unknown,
+): Promise<Result> {
+  try {
+    switch (name) {
+      case "list":
+        return await list(caller, deps);
+      case "attach": {
+        const args = parse(AttachInput, raw);
+        return typeof args === "string" ? fail(args) : await attach(caller, deps, args);
+      }
+      case "ssh": {
+        const args = parse(SshInput, raw);
+        return typeof args === "string" ? fail(args) : await ssh(caller, deps, args);
+      }
+    }
+    return fail(`There is no tool ${name}.`);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
 }
 
 async function isRoot(deps: ConnectionsMcpDeps, agent: string): Promise<boolean> {
@@ -212,10 +232,13 @@ async function ssh(
         : result.code === null
           ? "no exit: it did not finish"
           : `exit ${result.code}`;
-    return `${args.connection}: ${args.command} (${status})\n${output === "" ? "(no output)" : output}`;
+    return {
+      text: `${args.connection}: ${args.command} (${status})\n${output === "" ? "(no output)" : output}`,
+      failed: result.code !== 0,
+    };
   };
   const verdict = classifyRemote(args.command, gate);
-  if (verdict.kind !== "write") return ok(await run());
+  if (verdict.kind !== "write") return ok((await run()).text);
   const ask: PermissionAsk = {
     title: `ssh ${alias} ${args.command}`,
     kind: "execute",
@@ -228,18 +251,82 @@ async function ssh(
   if (answer === undefined) return fail("Your session is not open, so majhi cannot ask the owner.");
   if (verdict.writes.every((w) => w.allowed)) {
     await answer;
-    return ok(await run());
+    return ok((await run()).text);
   }
-  void answer.then(async (option) => {
-    const text =
-      option === "allow"
-        ? `The owner allowed it. ${await run()}`
-        : `The owner did not allow \`${args.command}\` on ${args.connection}.`;
-    deps.runs.notify(caller.task, caller.agent, text);
-  });
+  // Attached in the same step that made the card, so an answer that comes at once is never missed.
+  void answer
+    .then((option) => settle(caller, deps, args, alias, option, run))
+    .catch((err) => {
+      // The answer must never vanish: the room and the agent hear what went wrong.
+      deferredNote(
+        caller,
+        deps,
+        `\`${args.command}\` on ${args.connection}: majhi could not finish it (${errorMessage(err)}). It may not have run.`,
+        "error",
+      );
+    });
   return ok(
-    `\`${args.command}\` may change ${args.connection}, so it waits for the owner. majhi wakes you with the output once they answer. You can end your turn now.`,
+    `\`${args.command}\` may change ${args.connection}, so it waits for the owner. The result reaches you as soon as they answer: with your next majhi-connections call (list is enough), or in a message when your turn ends. Keep working on something else meanwhile.`,
   );
+}
+
+/** What the owner's answer means for the command: it runs on Allow, and the agent hears every other outcome too. */
+async function settle(
+  caller: ToolCaller,
+  deps: ConnectionsMcpDeps,
+  args: z.infer<typeof SshInput>,
+  alias: string,
+  option: string | undefined,
+  run: () => Promise<{ text: string; failed: boolean }>,
+): Promise<void> {
+  const what = `\`${args.command}\` on ${args.connection}`;
+  if (option === undefined) {
+    deferredNote(
+      caller,
+      deps,
+      `Your request to run ${what} was withdrawn before the owner answered, so it did not run. Ask again if you still need it.`,
+      "info",
+    );
+    return;
+  }
+  if (option !== "allow") {
+    deferredNote(caller, deps, `The owner did not allow ${what}. It did not run.`, "info");
+    return;
+  }
+  let output: { text: string; failed: boolean };
+  try {
+    output = await run();
+  } catch (err) {
+    deferredNote(
+      caller,
+      deps,
+      `The owner allowed ${what}, but it could not run on ${alias}: ${errorMessage(err)}`,
+      "error",
+    );
+    return;
+  }
+  deferredNote(caller, deps, `The owner allowed it. ${output.text}`, output.failed ? "error" : "info");
+}
+
+/**
+ * Gives the agent the result of a command it was waiting on, and says it in the room when it went wrong.
+ * The agent gets it with its next majhi-connections call or in a message of its own, whichever comes first.
+ */
+function deferredNote(
+  caller: ToolCaller,
+  deps: ConnectionsMcpDeps,
+  text: string,
+  level: "info" | "error",
+): void {
+  if (level === "error") {
+    deps.room.post(caller.task, `ssh:${randomUUID()}`, {
+      type: "system",
+      level: "error",
+      text: `@${caller.agent}: ${text.split("\n", 1)[0] ?? text}`,
+    });
+  }
+  const held = deps.deferred.add(caller.task, caller.agent, text);
+  deps.runs.notify(caller.task, caller.agent, text, held.claim);
 }
 
 function parse<T extends z.ZodType>(schema: T, raw: unknown): z.infer<T> | string {

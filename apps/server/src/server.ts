@@ -5,6 +5,7 @@ import { WAITING_TEXT } from "./admin/service.ts";
 import { destinationOf } from "./backup/state.ts";
 import { createDispatcher } from "./commands/dispatch.ts";
 import { createHandlers, requestRemount } from "./commands/handlers.ts";
+import { DeferredResults } from "./connections/deferred.ts";
 import type { ServerEnv } from "./env.ts";
 import { UserError } from "./errors.ts";
 import { topicsFor } from "./events/hub.ts";
@@ -178,6 +179,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         agents: services.agentStore,
         refreshBriefs: (task) => services.tasks.refreshBriefs([task]),
         hostHome: config.paths.hostHome,
+        deferred: new DeferredResults(),
         ...(options.connectionsRemote === undefined ? {} : { remote: options.connectionsRemote }),
       },
     },

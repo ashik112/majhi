@@ -685,11 +685,12 @@ export class RunManager {
 
   /**
    * Wakes an agent with a message from majhi, like a background process that ended (5.15): sent
-   * now when it is idle, else on its next turn. Starts its session if needed.
+   * now when it is idle, else on its next turn. Starts its session if needed. `claim` is asked
+   * before the notice goes out: false means the agent read the text another way, so it is dropped.
    */
-  notify(task: string, agent: string, text: string): void {
+  notify(task: string, agent: string, text: string, claim?: () => boolean): void {
     const run = this.runFor(task, agent);
-    run.queue.push({ kind: "notice", text });
+    run.queue.push({ kind: "notice", text, ...(claim === undefined ? {} : { claim }) });
     this.letRunTake(run);
   }
 
@@ -1351,6 +1352,13 @@ export class RunManager {
 
   private async runLoop(run: AgentRun): Promise<void> {
     while (run.queue.length > 0 && !run.held && !run.closing && run.paused === undefined) {
+      // A notice the agent read another way meanwhile goes before anything starts for it.
+      const first = run.queue[0];
+      if (first?.kind === "notice" && first.claim?.() === false) {
+        run.queue.shift();
+        this.live.refreshQueued(run);
+        continue;
+      }
       this.releaseHeld(run);
       run.merged = [];
       run.toDeliver = [];
