@@ -140,6 +140,14 @@ export interface HandoffPorts {
   diff(id: string): Promise<DiffFacts>;
   /** Whether a worktree lacks the packages its project installs (no `node_modules`, no virtualenv). Absent: never. */
   needsInstall?(cwd: string): Promise<boolean>;
+  /**
+   * The task's project environments (installed dependencies). The install step makes them current instead of
+   * running a project's install command into a read-only folder. Absent: the install command runs.
+   */
+  projectEnv?: {
+    ensure(task: string): Promise<{ has: boolean; done: Promise<{ card: string } | undefined> }>;
+    facts(task: string): Promise<{ project: string }[]>;
+  };
   /** Saves one step's whole output as a file in the task folder (`logPath(run, step)`). Rejects when it cannot. */
   saveLog?(task: string, run: string, step: HandoffStepId, text: string): Promise<void>;
   /**
@@ -878,8 +886,20 @@ export class HandoffService {
     }
     const runs: Run[] = [];
     const skipped: string[] = [];
+    // A project with an environment: the install step makes it current (a changed requirements file builds a new
+    // one), and the project's own install command, which would write into a read-only folder, does not run.
+    const inEnvironment = new Set<string>();
+    if (kind === "install" && this.ports.projectEnv !== undefined) {
+      const gate = await this.ports.projectEnv.ensure(task.id).catch(() => undefined);
+      if (gate?.has === true) {
+        const failure = await gate.done;
+        if (failure !== undefined) return step(kind, { status: "fail", detail: failure.card, owner: true });
+        for (const f of await this.ports.projectEnv.facts(task.id)) inEnvironment.add(f.project);
+      }
+    }
     for (const r of task.repos) {
       if (r.worktree === undefined) continue;
+      if (kind === "install" && inEnvironment.has(r.project)) continue;
       const spec = await this.specOf(task, r, kind);
       if (spec === undefined || spec.command.trim() === "") continue;
       let where: string;

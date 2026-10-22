@@ -67,8 +67,8 @@ export type BuildExec = (
 
 export interface ProjectEnvDeps {
   majhiHome: string;
-  /** Names the runner image: an update that changes it makes every environment build again. */
-  runnerKey: string;
+  /** Names the runner image the environment is built in: a new runner image makes every environment build again. */
+  runnerKey: () => Promise<string>;
   task: (id: string) => Task | undefined;
   files: (worktree: string) => PlanFiles;
   ci: (worktree: string) => Promise<CiCommand[]>;
@@ -165,8 +165,8 @@ export class ProjectEnvs {
     return isId(org) && isId(project) ? join(this.deps.majhiHome, "envs", org, project) : undefined;
   }
 
-  private keyOf(plan: PythonPlan): string {
-    const text = JSON.stringify({ v: PLAN_VERSION, runner: this.deps.runnerKey, plan });
+  private keyOf(plan: PythonPlan, runner: string): string {
+    const text = JSON.stringify({ v: PLAN_VERSION, runner, plan });
     return createHash("sha256").update(text).digest("hex").slice(0, 16);
   }
 
@@ -190,7 +190,7 @@ export class ProjectEnvs {
         },
       });
       if (plan === undefined) continue;
-      const key = this.keyOf(plan);
+      const key = this.keyOf(plan, await this.deps.runnerKey());
       out.push({ project: repo.project, worktree, plan, dir: join(root, key), key });
     }
     return out;

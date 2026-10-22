@@ -46,6 +46,8 @@ export interface HandoffWiring {
   dockerShim?: ExecDeps["dockerShim"];
   /** The project environment a check runs in, as a task's run does: see `ExecDeps.environment`. */
   projectEnv?: ExecDeps["environment"];
+  /** The install step makes the task's project environments current: see `HandoffPorts.projectEnv`. */
+  projectEnvGate?: HandoffPorts["projectEnv"];
   /** The ship decision leaves the merge of this task to the captain: only then does it have a lead resolve a conflict. */
   mergeDecides: (task: string) => Promise<boolean>;
   /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
@@ -221,6 +223,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       };
     },
     needsInstall: dependenciesMissing,
+    ...(w.projectEnvGate === undefined ? {} : { projectEnv: w.projectEnvGate }),
     saveLog: async (id, run, step, text) => {
       const folder = w.store.tasks.get(id)?.folder;
       if (folder === undefined) throw new Error("the task is gone");

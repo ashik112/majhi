@@ -1317,7 +1317,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // The project environment: the checks of a project say whether it needs one, its own install files say what is in it.
   projectEnvRef.current = new ProjectEnvs({
     majhiHome: env.majhiHome,
-    runnerKey: `${env.commit}|${env.runner.image}`,
+    // The runner image's own id, so an update that leaves the image as it was keeps every environment; without docker, majhi's commit and the image name.
+    runnerKey: (() => {
+      let kept: { at: number; value: string } | undefined;
+      return async () => {
+        if (kept !== undefined && Date.now() - kept.at < 5 * 60_000) return kept.value;
+        const fallback = `${env.commit}|${env.runner.image}`;
+        const id = await containerDocker
+          ?.exec(["image", "inspect", "--format", "{{.Id}}", env.runner.image])
+          .then((out) => out.stdout.trim())
+          .catch(() => "");
+        kept = { at: Date.now(), value: id === undefined || id === "" ? fallback : id };
+        return kept.value;
+      };
+    })(),
     task: (id) => store.tasks.get(id),
     files: (worktree) => planFilesOf(worktree),
     ci: (worktree) => readCiCommands(fsRepoFiles(worktree)),
@@ -2426,6 +2439,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     repoMounts: (task) => repoMounts(task),
     packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
     tools: (task) => toolsFolder(env.majhiHome, task).catch(() => undefined),
+    projectEnvGate: projectEnv,
     // A check runs in the project's environment, as the task's own run does.
     projectEnv: async (task) => {
       const facts = await projectEnv.facts(task);
