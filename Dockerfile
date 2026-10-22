@@ -322,6 +322,10 @@ COPY --from=doctl /out/doctl /usr/local/bin/doctl
 # gh and glab for `git` connections (SPEC 5.14) come from `base`: the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 # setuid and setgid bits again, for what the packages above brought (`base` did the rest).
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+# uv (one static binary, from the stage above): majhi builds a Python project's environment with it (apps/server/src/projectenv/):
+# a virtual environment with pip, the project's packages from its own requirements, and, when the project asks for a Python
+# the image has not, that Python. It runs as the owner's uid in a throwaway run, never as root.
+COPY --from=uv /uv /usr/local/bin/uv
 # `docker` for scripts in a run (a repo's hand-off check, tests): a shim that sends the call to majhi,
 # which runs the task's own containers (apps/server/src/containers/task-docker.ts). No Docker, no socket.
 COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker

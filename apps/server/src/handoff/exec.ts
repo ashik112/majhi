@@ -33,6 +33,10 @@ export interface ExecDeps {
   dockerShim?:
     | ((task: string) => { env: Record<string, string>; release: () => void } | undefined)
     | undefined;
+  /** The task's project environments (installed dependencies): mounted and put first on PATH, as a run has them. Absent: none. */
+  environment?:
+    | ((task: string) => Promise<{ mounts: RunMount[]; env: Record<string, string> } | undefined>)
+    | undefined;
 }
 
 /** Names a check's environment may not set: they decide where the check runs or who it runs as. */
@@ -78,6 +82,8 @@ export function execInTask(deps: ExecDeps) {
     timeoutMs: number,
     limits?: ExecLimits,
     env?: Record<string, string>,
+    /** More folders to mount, like an environment being built. */
+    extraMounts: readonly RunMount[] = [],
   ): Promise<ExecResult> => {
     const started = Date.now();
     const task = deps.task(taskId);
@@ -88,12 +94,14 @@ export function execInTask(deps: ExecDeps) {
     try {
       const store = await deps.packages?.(task);
       const tools = await deps.tools?.(task);
+      const project = await deps.environment?.(taskId);
       spawned = await deps.spawner({
         command: { command: "/bin/sh", args: ["-c", command] },
         env: await withExcludes(
           withToolsPath({
             ...store?.env,
             ...tools?.env,
+            ...project?.env,
             ...taskTerminalEnv(deps.base, store?.home),
             ...shim?.env,
             ...allowedEnv(env),
@@ -116,6 +124,8 @@ export function execInTask(deps: ExecDeps) {
           ...(await deps.repoMounts(task)),
           ...(store?.mounts ?? []),
           ...(tools?.mounts ?? []),
+          ...(project?.mounts ?? []),
+          ...extraMounts,
         ],
       });
     } catch (err) {

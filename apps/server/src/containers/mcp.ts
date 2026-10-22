@@ -60,7 +60,7 @@ const TOOLS = [
   {
     name: "list",
     description:
-      "List this task's containers with their addresses: previews, services, and the containers its scripts started with docker run or docker compose. All of them are on the task's one network and reach each other by name. `docker` works for this task's own containers, through majhi (run, build, exec, logs, ps, rm, stop, and `docker compose` up, down, ps, logs, exec for the repo's own compose files). Nothing is published on the computer, so reach a service as `name:port`. Containers have the public internet and nothing private. A refusal prints `docker: [code] message`.",
+      "List this task's containers with their addresses: previews, services, and the containers its scripts started with docker run or docker compose. All of them are on the task's one network and reach each other by name. `docker` works for this task's own containers, through majhi (run, build, exec, logs, ps, rm, stop, and `docker compose` up, down, ps, logs, exec for the repo's own compose files, and config to read them). Nothing is published on the computer, so reach a service as `name:port`. Containers have the public internet and nothing private. A refusal prints `docker: [code] message`.",
     input: ContainerListInputSchema,
   },
   {

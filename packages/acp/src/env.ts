@@ -125,9 +125,17 @@ export function withGitConfig(
   return out;
 }
 
-/** Puts the workspace's tools folder (`MAJHI_TOOLS`, when the run has one) first on PATH. */
+/**
+ * Puts the workspace's tools folder (`MAJHI_TOOLS`, when the run has one) first on PATH, and before it the
+ * folders of the project's environment (`MAJHI_ENV_PATH`, a `:` list: its interpreter's `bin` first).
+ */
 export function withToolsPath(env: Record<string, string>): Record<string, string> {
   const tools = env.MAJHI_TOOLS;
-  if (tools === undefined || tools === "") return env;
-  return { ...env, PATH: `${tools}/bin:${env.PATH ?? ""}` };
+  const project = env.MAJHI_ENV_PATH;
+  const front = [
+    ...(project === undefined || project === "" ? [] : [project]),
+    ...(tools === undefined || tools === "" ? [] : [`${tools}/bin`]),
+  ];
+  if (front.length === 0) return env;
+  return { ...env, PATH: `${front.join(":")}:${env.PATH ?? ""}` };
 }

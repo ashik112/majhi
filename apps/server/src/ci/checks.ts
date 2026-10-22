@@ -1,4 +1,4 @@
-import { type CiCheck, ciChecks } from "./jobs.ts";
+import { type CiCheck, type CiCommand, ciChecks, ciCommands } from "./jobs.ts";
 import { type CiSource, readCiFiles } from "./read.ts";
 
 /**
@@ -9,6 +9,11 @@ import { type CiSource, readCiFiles } from "./read.ts";
 const TTL_MS = 60_000;
 const MAX_KEPT = 200;
 const kept = new Map<string, { at: number; value: Promise<CiCheck[]> }>();
+
+/** Every command of the repo's CI jobs, read now: for the install steps and system packages of a project's environment. */
+export async function readCiCommands(files: CiSource): Promise<CiCommand[]> {
+  return ciCommands(await readCiFiles(files));
+}
 
 /** For tests. */
 export function forgetCiChecks(): void {

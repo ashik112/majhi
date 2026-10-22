@@ -2,7 +2,7 @@ import { refuse, shown } from "./args.ts";
 import { flag, has, parseFlagsOf, single, type UserTable, values } from "./user-flags.ts";
 
 /** The compose commands a task may run. */
-export const COMPOSE_VERBS = ["up", "down", "ps", "logs", "exec"] as const;
+export const COMPOSE_VERBS = ["up", "down", "ps", "logs", "exec", "config"] as const;
 export type ComposeVerb = (typeof COMPOSE_VERBS)[number];
 
 /** What a script typed after `docker compose`, read but not yet checked against a compose file. */
@@ -39,6 +39,13 @@ export interface ComposeInvocation {
   env: string[];
   workdir?: string | undefined;
   command: string[];
+  // config
+  /** `-p`, as typed: the name `config` prints. Nothing else reads it, a task has one compose project. */
+  projectName?: string | undefined;
+  format: "yaml" | "json";
+  /** Print only this list (`--services`, `--volumes`, `--images`, `--profiles`), one name per line. */
+  list?: "services" | "volumes" | "images" | "profiles" | undefined;
+  noInterpolate: boolean;
 }
 
 const unsupportedFlag = (name: string): never =>
@@ -119,7 +126,29 @@ const EXEC: UserTable = {
   "--index": flag("ignored", true),
 };
 
-const TABLES: Record<ComposeVerb, UserTable> = { up: UP, down: DOWN, ps: PS, logs: LOGS, exec: EXEC };
+const CONFIG: UserTable = {
+  "-q": flag("quiet"),
+  "--quiet": flag("quiet"),
+  "--format": flag("format", true),
+  "--services": flag("list-services"),
+  "--volumes": flag("list-volumes"),
+  "--images": flag("list-images"),
+  "--profiles": flag("list-profiles"),
+  "--no-interpolate": flag("no-interpolate"),
+  "--no-consistency": flag("ignored"),
+  "--no-normalize": flag("ignored"),
+  "--no-path-resolution": flag("ignored"),
+  "--no-env-resolution": flag("ignored"),
+};
+
+const TABLES: Record<ComposeVerb, UserTable> = {
+  up: UP,
+  down: DOWN,
+  ps: PS,
+  logs: LOGS,
+  exec: EXEC,
+  config: CONFIG,
+};
 
 const isVerb = (word: string): word is ComposeVerb => (COMPOSE_VERBS as readonly string[]).includes(word);
 
@@ -137,7 +166,8 @@ export function parseCompose(argv: readonly string[], cwd: string): ComposeInvoc
   }
   const own = parseFlagsOf(afterVerb, TABLES[verb], unsupportedFlag);
   const notes: string[] = [];
-  if (has(global, "project")) notes.push("-p is ignored: the compose project is this task.");
+  if (has(global, "project") && verb !== "config")
+    notes.push("-p is ignored: the compose project is this task.");
   const files = values(global, "file");
   if (files.includes("-"))
     return refuse("A compose file is read from the task folder, not from stdin.", "compose_unsupported_flag");
@@ -152,6 +182,11 @@ export function parseCompose(argv: readonly string[], cwd: string): ComposeInvoc
       "compose_unsupported_flag",
     );
   }
+  const format = single(own, "format") ?? "yaml";
+  if (format !== "yaml" && format !== "json")
+    return refuse(`docker compose config --format ${shown(format)} is not available: yaml or json.`);
+  const lists = (["services", "volumes", "images", "profiles"] as const).filter((l) => has(own, `list-${l}`));
+  if (lists.length > 1) return refuse("docker compose config prints one list at a time.");
   return {
     verb,
     cwd,
@@ -174,5 +209,9 @@ export function parseCompose(argv: readonly string[], cwd: string): ComposeInvoc
     env: values(own, "env"),
     workdir: single(own, "workdir"),
     command: verb === "exec" ? services.slice(1) : [],
+    projectName: single(global, "project"),
+    format,
+    list: lists[0],
+    noInterpolate: has(own, "no-interpolate"),
   };
 }

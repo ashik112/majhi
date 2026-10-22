@@ -50,6 +50,8 @@ export interface HarnessOptions {
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents. */
   containerDocker?: ContainerDocker;
+  /** Replaces the runner that builds a project's environment. */
+  projectEnvExec?: NonNullable<ServiceOptions["projectEnvExec"]>;
   /** Replaces ssh for majhi-connections. */
   connectionsRemote?: RemoteRunFn;
   /** How long after a turn ends a silent room is looked at. */
@@ -109,6 +111,7 @@ function build(
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(mrHosts === undefined ? {} : { mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
+    ...(options.projectEnvExec === undefined ? {} : { projectEnvExec: options.projectEnvExec }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),

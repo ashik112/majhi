@@ -36,6 +36,8 @@ export interface WorldOptions {
   runClock?: () => Date;
   mrHosts?: MrHostOptions;
   containerDocker?: ContainerDocker;
+  /** Replaces the runner that builds a project's environment, so no package is installed. */
+  projectEnvExec?: HarnessOptions["projectEnvExec"];
   connectionsRemote?: RemoteRunFn;
   idleWatchMs?: number;
   /** Write the card of `acme-api` in the background, as registering the project does. */
@@ -121,6 +123,7 @@ function harnessOptionsOf(options: WorldOptions): HarnessOptions {
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
+    ...(options.projectEnvExec === undefined ? {} : { projectEnvExec: options.projectEnvExec }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),

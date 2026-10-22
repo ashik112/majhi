@@ -44,6 +44,7 @@ import {
 import { BranchLedger, branchName } from "./branch-db.ts";
 import { type DockerfileSnapshot, snapshotDockerfile } from "./build-snapshot.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
+import { shellVariables } from "./compose-config.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { dockerfileImages } from "./dockerfile-images.ts";
@@ -1076,7 +1077,7 @@ export class ContainerService {
       const needsEnv =
         plan.kind === "run" ||
         plan.kind === "build" ||
-        plan.kind === "compose" ||
+        (plan.kind === "compose" && plan.invocation.verb !== "config") ||
         (plan.kind === "call" && plan.args[0] === "start");
       if (needsEnv) await this.holdEnv(task, options.signal);
       switch (plan.kind) {
@@ -1103,7 +1104,10 @@ export class ContainerService {
             : { ...out, stderr: `${plan.notes.map((n) => `docker: ${n}\n`).join("")}${out.stderr}` };
         }
         case "compose": {
-          const host = this.composeHost(docker, safety, settings, request.cwd, options, task);
+          const host = {
+            ...this.composeHost(docker, safety, settings, request.cwd, options, task),
+            shell: shellVariables(request.env),
+          };
           const out = await composeCall(host, plan.invocation);
           this.rememberStack(task, plan.invocation, out.code === 0);
           return out;

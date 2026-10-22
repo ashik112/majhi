@@ -96,6 +96,14 @@ const CACHE_ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** Command-line tools agents install, `<majhiHome>/tools/<org>`. Same rule as the package store. */
 export const MAJHI_TOOLS_DIR = "tools";
 
+/**
+ * A project's environment (its installed dependencies), `<majhiHome>/envs/<org>/<project>/<key>`: a run mounts
+ * only the one folder of its own workspace and project, read-only. The build of it mounts it writable.
+ */
+export const MAJHI_ENVS_DIR = "envs";
+const isEnvKey = (name: string): boolean =>
+  name.length === 16 && [...name].every((c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f"));
+
 function inside(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
@@ -165,6 +173,13 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const toolsDirs = majhiHomes.map((h) => resolve(h, MAJHI_TOOLS_DIR));
   const isTools = (path: string, m: RunMount) =>
     m.readOnly !== true && toolsDirs.includes(dirname(path)) && CACHE_ORG.test(basename(path));
+  // One environment of one project of one workspace: `envs/<org>/<project>/<key>`, with ids that cannot climb out.
+  const envsDirs = majhiHomes.map((h) => resolve(h, MAJHI_ENVS_DIR));
+  const isEnv = (path: string) =>
+    isEnvKey(basename(path)) &&
+    envsDirs.includes(dirname(dirname(dirname(path)))) &&
+    CACHE_ORG.test(basename(dirname(dirname(path)))) &&
+    CACHE_ORG.test(basename(dirname(path)));
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
     if (
@@ -185,7 +200,8 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
           isRunFolder(path, m) ||
           isProfile(path) ||
           isCache(path, m) ||
-          isTools(path, m);
+          isTools(path, m) ||
+          isEnv(path);
         if (inside(path, p) && !(majhiHomes.includes(p) && allowed)) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }

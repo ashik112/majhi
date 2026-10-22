@@ -21,6 +21,7 @@ export const GITIGNORE = [
   "*.db",
   "*.db-*",
   "cache/",
+  "envs/",
   "backups/",
   "backup-settings.json",
   "backup-state.json",

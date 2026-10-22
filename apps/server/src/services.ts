@@ -82,6 +82,7 @@ import type { ClientChat } from "./chat/service.ts";
 import { SlackAdapter } from "./chat/slack/adapter.ts";
 import { TelegramAdapter } from "./chat/telegram/adapter.ts";
 import { type ClientChatParts, createClientChat } from "./chat/wire.ts";
+import { readCiChecks, readCiCommands } from "./ci/checks.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { connectionScopes } from "./config/sections.ts";
@@ -141,6 +142,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { effectiveCommands } from "./handoff/commands.ts";
+import { execInTask } from "./handoff/exec.ts";
 import { HomeChecks } from "./handoff/home-checks.ts";
 import { defaultHandoffCpus, defaultHandoffMemory, maxHandoffMemory } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
@@ -202,9 +204,12 @@ import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { fsRepoFiles } from "./projectcard/files.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
+import { planFilesOf } from "./projectenv/files.ts";
+import { type BuildExec, combineFacts, ProjectEnvs } from "./projectenv/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { GraphRunner } from "./reader/run.ts";
 import { CodeGraphTools } from "./reader/tools.ts";
@@ -317,6 +322,8 @@ export interface ServiceOptions {
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents, so tests never start a real container. */
   containerDocker?: ContainerDocker;
+  /** Replaces the runner that builds a project's environment, so tests never install a real package. */
+  projectEnvExec?: BuildExec;
   /** Replaces ssh for majhi-connections, so tests never reach a host. */
   connectionsRemote?: RemoteRunFn;
   /** Replaces the network, ssh, Vercel's address and the waits of deploys, so tests and proofs reach only fakes. */
@@ -936,6 +943,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           config,
           connectionFiles,
           containerRunner: env.runner.mode === "container",
+          rooms: roomAccess,
+          projectEnv,
         },
         task,
         agent,
@@ -1016,8 +1025,23 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   pruneSweep.unref();
   // The captain is built after the runs; a finished turn reaches it through this.
   const captainRef: { current: CaptainService | undefined } = { current: undefined };
+  // A code task's agent starts when the project's dependencies are installed. Bound below, after the project cards and checks.
+  const projectEnvRef: { current: ProjectEnvs | undefined } = { current: undefined };
+  const projectEnv: Pick<ProjectEnvs, "ensure" | "facts" | "lines"> = {
+    ensure: async (id) =>
+      projectEnvRef.current?.ensure(id) ?? {
+        has: false,
+        waiting: false,
+        known: [],
+        done: Promise.resolve([]),
+      },
+    facts: async (id) => projectEnvRef.current?.facts(id) ?? [],
+    lines: async (id) => projectEnvRef.current?.lines(id) ?? {},
+  };
   const runs = new RunManager({
     store,
+    projectEnv,
+    onEnvReady: (task) => tasks.refreshBriefs([task]),
     limited: limitedRun,
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
@@ -1296,6 +1320,61 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       (c) => c !== undefined && c.trim() !== "",
     );
   };
+  // The project environment: the checks of a project say whether it needs one, its own install files say what is in it.
+  projectEnvRef.current = new ProjectEnvs({
+    majhiHome: env.majhiHome,
+    // The runner image's own id, so an update that leaves the image as it was keeps every environment; without docker, majhi's commit and the image name.
+    runnerKey: (() => {
+      let kept: { at: number; value: string } | undefined;
+      return async () => {
+        if (kept !== undefined && Date.now() - kept.at < 5 * 60_000) return kept.value;
+        const fallback = `${env.commit}|${env.runner.image}`;
+        const id = await containerDocker
+          ?.exec(["image", "inspect", "--format", "{{.Id}}", env.runner.image])
+          .then((out) => out.stdout.trim())
+          .catch(() => "");
+        kept = { at: Date.now(), value: id === undefined || id === "" ? fallback : id };
+        return kept.value;
+      };
+    })(),
+    task: (id) => store.tasks.get(id),
+    files: (worktree) => planFilesOf(worktree),
+    ci: (worktree) => readCiCommands(fsRepoFiles(worktree)),
+    project: async (project, worktree) => {
+      const commands = effectiveCommands(
+        cards.get(project)?.commands,
+        (await config.sections()).projects[project]?.handoff,
+      );
+      const found = await readCiChecks(fsRepoFiles(worktree), { key: worktree }).catch(() => []);
+      const own = [commands.test, commands.build, commands.lint, commands.typecheck].some(
+        (c) => c !== undefined && c.trim() !== "",
+      );
+      return {
+        checks: own || found.length > 0,
+        // The test check's folder first: that is where the project's Python files are.
+        dirs: found
+          .toSorted((a, b) => (a.kind === "test" ? -1 : b.kind === "test" ? 1 : 0))
+          .map((c) => c.workdir ?? ""),
+        installLine: commands.install,
+      };
+    },
+    exec:
+      options.projectEnvExec ??
+      (() => {
+        const run = execInTask({
+          spawner: sessionOptions.spawner ?? localSpawner,
+          base: sessionOptions.base,
+          task: (id) => store.tasks.get(id),
+          repoMounts: (task) => repoMounts(task),
+          packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
+          tools: (task) => toolsFolder(env.majhiHome, task).catch(() => undefined),
+        });
+        return async (task, cwd, script, timeoutMs, mounts) => {
+          const done = await run(task, cwd, script, timeoutMs, undefined, undefined, mounts);
+          return { code: done.code, timedOut: done.timedOut, output: done.output, error: done.error };
+        };
+      })(),
+  });
   // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
   const mergeGate = new MergeGate({
     handoff: () => handoffService,
@@ -1311,6 +1390,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const tidyFolders: { run?: (ended: string | undefined) => Promise<void> } = {};
   const tasks = new TaskService({
     mergeGate,
+    // Where the task's interpreter is, for TASK.md, once its project's environment is ready.
+    environmentLines: (task) => projectEnv.lines(task.id),
     wikiNotes: (task) =>
       wikiLines(
         task.org,
@@ -2363,6 +2444,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     repoMounts: (task) => repoMounts(task),
     packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
     tools: (task) => toolsFolder(env.majhiHome, task).catch(() => undefined),
+    projectEnvGate: projectEnv,
+    // A check runs in the project's environment, as the task's own run does.
+    projectEnv: async (task) => {
+      const facts = await projectEnv.facts(task);
+      return facts.length === 0 ? undefined : combineFacts(facts);
+    },
     // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
     dockerShim: (task) => {
       const caller = { task, agent: store.tasks.get(task)?.team[0] ?? "handoff" };
