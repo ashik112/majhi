@@ -267,8 +267,9 @@ export function ConsoleScreen() {
     !data.loading,
   );
 
-  const total = data.counts.needYou + needs.captain.length;
-  const clear = !data.loading && total === 0;
+  // The count is the one the top bar shows. What the captain did by itself is listed but never counted.
+  const total = data.counts.needYou;
+  const clear = !data.loading && total + needs.captain.length === 0;
   // A pane is a 44px rail when the owner folded it, and Needs you also when nothing is in it.
   const { minimized } = useLook();
   const needsFolded = minimized.includes("needs");

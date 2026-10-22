@@ -29,13 +29,28 @@ export function useUrgent(): Urgent[] {
         out.push({ key: `i:${row.id}`, what: "Incident", line: row.name, to: { id: d.id } });
     }
     for (const row of needs.decide) {
+      // A pause of the captain's own thread: its decision opens the captain, whether or not the list holds that thread.
       const d = row.decisions.find(
-        (x) => x.kind === "paused" && x.task !== undefined && tasks.get(x.task)?.lane === true,
+        (x) =>
+          x.kind === "paused" &&
+          (x.link.kind === "captain" || (x.task !== undefined && tasks.get(x.task)?.lane === true)),
       );
       if (d !== undefined)
         out.push({ key: `p:${row.id}`, what: "Captain paused", line: row.name, to: { id: d.id } });
     }
+    // A client message nobody answered waits as a decision ("Handled"), and as unread in its chat.
+    const counted = new Set<string>();
+    for (const row of needs.decide) {
+      for (const d of row.decisions) {
+        if (d.kind !== "reply" || d.link.kind !== "chat" || !d.options.some((o) => o.id === "handled"))
+          continue;
+        if (counted.has(d.link.id)) continue;
+        counted.add(d.link.id);
+        out.push({ key: `c:${d.link.id}`, what: "Client message", line: d.title, to: { chat: d.link.id } });
+      }
+    }
     for (const c of conversations ?? []) {
+      if (counted.has(c.id)) continue;
       if (c.kind === "client" && c.unread > 0 && c.archived !== true && c.unlinked !== true) {
         out.push({ key: `c:${c.id}`, what: "Client message", line: c.title, to: { chat: c.id } });
       }

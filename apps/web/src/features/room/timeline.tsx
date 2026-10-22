@@ -76,13 +76,16 @@ export function Timeline({
     if (jumpSignal > 0) jumping.current = true;
   }, [jumpSignal]);
 
+  const status = owner?.task.status;
   const plans = useMemo(() => pinnedPlans(state.items), [state.items]);
   const list = useRef<HTMLOListElement>(null);
   // Pinned plans are drawn above the log, not in it. What an agent did between two messages folds into one row.
   const rows = useMemo(() => {
     const pinnedIds = new Set(plans.map((p) => p.id));
-    return foldTurns(rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id))));
-  }, [state.items, plans]);
+    return foldTurns(
+      rowsOf(state.items.filter((item) => !waitsForOwner(item, status) && !pinnedIds.has(item.id))),
+    );
+  }, [state.items, plans, status]);
   // The turn that is running: the newest run of steps, when an agent works and no message came after it.
   const working = state.agents.some((a) => isWorking(a));
   const runningRow = useMemo(() => {
@@ -169,6 +172,7 @@ export function Timeline({
   );
   // A queued message shows what its agent is doing, so only queued rows follow the live state.
   const lead = owner?.task.team[0];
+  const taskDone = owner?.task.status === "done";
   const rowProps = (item: RoomItem) => ({
     liveModel: item.type === "agent" ? modelOf.get(item.agent) : undefined,
     waitingOn:
@@ -184,8 +188,9 @@ export function Timeline({
       onPermission,
       answering,
       task: { id: task.id, folder: task.folder, onLoad: onMediaLoad },
+      taskDone,
     }),
-    [pinnedKey, onPermission, answering, task.id, task.folder, onMediaLoad],
+    [pinnedKey, onPermission, answering, task.id, task.folder, taskDone, onMediaLoad],
   );
   // The rows of the turn that runs can stop it.
   const liveCtx = useMemo<ItemContext>(() => ({ ...ctx, onStop }), [ctx, onStop]);

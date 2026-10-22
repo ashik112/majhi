@@ -19,7 +19,9 @@ export function dockItems(
         ? status === undefined || (status !== "done" && (i.choices.length > 0 || status !== "review"))
         : true;
   // An incident ships from its row in Needs you: the task page shows no second "Ready to ship".
-  const waiting = items.filter((i) => waitsForOwner(i) && draws(i) && !(incident && i.type === "review"));
+  const waiting = items.filter(
+    (i) => waitsForOwner(i, status) && draws(i) && !(incident && i.type === "review"),
+  );
   const asked = waiting.some(
     (i) => ANSWERS.has(i.type) || (i.type === "owner-question" && i.choices.length > 0),
   );
@@ -37,12 +39,14 @@ export function dockItems(
 const ANSWERS: ReadonlySet<RoomItem["type"]> = new Set(["ask", "choice", "approval", "permission"]);
 
 /** Items that wait for the owner's answer: shown in the "Needs you" dock, not in the log. */
-export function waitsForOwner(item: RoomItem): boolean {
+export function waitsForOwner(item: RoomItem, status?: string): boolean {
   switch (item.type) {
-    case "permission":
-    case "approval":
+    // A question left open in a done task waits for nobody: the log shows it as not answered.
     case "ask":
     case "choice":
+      return item.state === "pending" && status !== "done";
+    case "permission":
+    case "approval":
     case "review":
     case "paused":
     case "owner-question":

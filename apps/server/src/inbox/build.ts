@@ -170,9 +170,11 @@ function draftOf(
   // from before (a review card of a task that moved on, a merge approval of a paused task) is no decision.
   const status = subject.status;
   const acting = status === undefined || status === "running" || status === "review";
+  // A done task waits for nobody: a question left pending in it is not a decision.
+  const finished = status === "done";
   switch (item.type) {
     case "ask": {
-      if (item.state !== "pending") return undefined;
+      if (item.state !== "pending" || finished) return undefined;
       const first = item.questions[0];
       const asker = askerOf(item.agent, subject);
       const title = `${asker} asks: ${oneLine(first?.question ?? "a question")}`;
@@ -195,7 +197,7 @@ function draftOf(
       };
     }
     case "choice":
-      return item.state === "pending"
+      return item.state === "pending" && !finished
         ? {
             kind: "question",
             title: oneLine(item.question),
@@ -204,7 +206,7 @@ function draftOf(
           }
         : undefined;
     case "owner-question":
-      return item.state === "pending"
+      return item.state === "pending" && !finished
         ? {
             kind: "question",
             title: oneLine(item.text ?? `${askerOf(item.agent, subject)} is asking you something`),

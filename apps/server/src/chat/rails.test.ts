@@ -130,3 +130,15 @@ describe("a reply to a client", () => {
     await run();
   });
 });
+
+describe("a reply's link to a message", () => {
+  it("is dropped when the id is not a message of this chat, and the reply still goes", async () => {
+    const t = await ready({ tell: "decide", holds: { firstContact: false } });
+    const send = (replyTo: string) =>
+      t.w.replies.captain({ room: t.room, text: "It is fixed.", flags: t.w.flags(), to: "u1", replyTo });
+    // A user id, as the captain once passed it, is not a message id.
+    expect(await send("6673817128")).toMatchObject({ state: "sent" });
+    expect(await send("9")).toMatchObject({ state: "sent" });
+    expect(t.w.sent.map((s) => s.replyTo)).toEqual([undefined, "9"]);
+  });
+});

@@ -71,6 +71,8 @@ export interface ItemContext {
   answering: string | undefined;
   /** The task, so agent text can link to its files. */
   task: TaskFiles;
+  /** The task is done: nothing waits on its cards any more. */
+  taskDone: boolean;
   /** Stops the agent's run, while one is going: the row in progress offers it. */
   onStop?: (() => void) | undefined;
 }
@@ -306,9 +308,9 @@ function ItemBody({
     case "secret-request":
       return <SecretRequestCard item={item} />;
     case "ask":
-      return <AskCard item={item} />;
+      return <AskCard item={item} closed={ctx.taskDone} />;
     case "choice":
-      return <ChoiceCard item={item} />;
+      return <ChoiceCard item={item} closed={ctx.taskDone} />;
     case "system":
       return <SystemLine item={item} repeat={repeat} />;
     case "context":
@@ -794,13 +796,14 @@ function Permission({
 }
 
 /** A real trade-off for the owner, with the choices spelled out. Settled: one quiet line. */
-function ChoiceCard({ item }: { item: Of<"choice"> }) {
+/** `closed`: the task is done, so nothing waits on this card any more, whatever its state says. */
+function ChoiceCard({ item, closed }: { item: Of<"choice">; closed: boolean }) {
   const toast = useToast();
   const choose = useMutation<unknown, ApiRequestError, string>({
     mutationFn: (option) => cmd("room.choose", { task: item.task, item: item.id, option }),
     onError: (error) => toast("Could not answer", { detail: error.message, tone: "error" }),
   });
-  if (item.state !== "pending") {
+  if (item.state !== "pending" || closed) {
     const label = item.options.find((o) => o.id === item.chosen)?.label;
     return (
       <QuietLine
@@ -838,8 +841,8 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
   );
 }
 
-function AskCard({ item }: { item: Of<"ask"> }) {
-  if (item.state !== "pending") {
+function AskCard({ item, closed }: { item: Of<"ask">; closed: boolean }) {
+  if (item.state !== "pending" || closed) {
     return (
       <div className="flex flex-col gap-0.5">
         {item.questions.map((q) => {

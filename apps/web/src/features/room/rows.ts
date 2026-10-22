@@ -148,7 +148,11 @@ export function rowsOf(items: readonly RoomItem[]): Row[] {
     flush();
     const last = rows[rows.length - 1];
     if (last?.kind === "item" && sameLine(last.item, item)) last.repeat += 1;
-    else rows.push({ kind: "item", key: item.id, item, repeat: 1 });
+    // One agent's moves in a row (each with its own token count) are one line: the latest, counted.
+    else if (last?.kind === "item" && sameRun(last.item, item)) {
+      last.item = item;
+      last.repeat += 1;
+    } else rows.push({ kind: "item", key: item.id, item, repeat: 1 });
   }
   flush();
   return rows;
@@ -159,6 +163,11 @@ function lineText(item: RoomItem): string | undefined {
   if (item.type === "context") return contextLine(item);
   if (item.type === "system") return `${item.level}:${item.text}`;
   return undefined;
+}
+
+/** Two context lines in a row of one agent and one kind of move, whatever their token counts. */
+function sameRun(a: RoomItem, b: RoomItem): boolean {
+  return a.type === "context" && b.type === "context" && a.agent === b.agent && a.method === b.method;
 }
 
 /** Two lines in a row with the same text, like the same move to a fresh session posted again and again. */

@@ -151,6 +151,7 @@ import {
   renderTaskMd,
 } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
+import { isClientFacing } from "./client-facing.ts";
 import { type DownAccount, downText, hasRoomForWorker } from "./crew.ts";
 import { Crew } from "./crew-run.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
@@ -3691,12 +3692,23 @@ export class TaskService {
 
   /**
    * Closes a parent once every subtask is done. A parent with work of its own not shipped stays open
-   * (said once) and goes to review when nobody works on it, so the owner ships it or closes it.
+   * (said once) and goes to review when nobody works on it, so the owner ships it or closes it. An incident
+   * or case, or any task a client chat is linked to, is never closed this way.
    */
   private async finishParentIfDone(parent: string): Promise<void> {
     const { store } = this.deps;
     const task = store.tasks.get(parent);
     if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
+    // An incident or case is closed by a person or by its own flow, never by its subtasks: closing it tells the
+    // client and sends the report. Its room says once that the subtasks are done.
+    if (isClientFacing(task)) {
+      const text = `Every subtask of ${parent} is done. It stays open: close it when the client has been told it is fixed.`;
+      if (!this.waitNoted.has(`${parent} ${text}`)) {
+        this.waitNoted.add(`${parent} ${text}`);
+        this.note(parent, text);
+      }
+      return;
+    }
     const unshipped = await unshippedWork(task.repos, this.taskBranchesIn);
     if (unshipped.length > 0) {
       const text = `Every subtask is done, but ${parent} stays open: ${unshippedText(unshipped)} Ship it, or close it from the review card.`;
