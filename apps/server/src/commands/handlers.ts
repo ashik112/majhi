@@ -864,12 +864,16 @@ export function createHandlers({
       }
       return {
         mrs: services.store.tasks.openMrs(),
-        doing: services.room.workingNow().map(({ task, live }) => ({
-          task,
-          agent: live.agent,
-          ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
-          ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
-        })),
+        doing: services.room.workingNow().map(({ task, live }) => {
+          const tool = live.nowDoing === undefined ? undefined : services.store.room.runningTool(task);
+          return {
+            task,
+            agent: live.agent,
+            ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
+            ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
+            ...(tool === undefined ? {} : { toolSince: tool.at }),
+          };
+        }),
         checks,
         background,
         deploys: await services.deploy.board(),

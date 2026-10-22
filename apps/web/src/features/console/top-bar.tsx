@@ -8,6 +8,7 @@ import { useFeedLost } from "@/lib/feed-status";
 import { MOD_KEY } from "@/lib/format";
 import { useOrgFilter } from "@/lib/org-filter";
 import { AutonomousSwitch } from "./autonomous-switch";
+import { NotificationBell } from "./bell";
 import { useConsole } from "./data-context";
 import { ConsoleLamp, Kbd, wsStyle } from "./parts";
 
@@ -147,16 +148,21 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
       <div className="cs-tele">
         {counts.incidents > 0 && (
           <>
-            <span className="cs-inc cs-on">
+            <Link to="/" search={{ pane: "needs" }} className="cs-inc cs-on" title="Open Needs you">
               <b>{counts.incidents}</b>
               {counts.incidents === 1 ? "incident" : "incidents"}
-            </span>
+            </Link>
             <i />
           </>
         )}
-        <span className={counts.needYou > 0 ? "cs-on" : undefined}>
+        <Link
+          to="/"
+          search={{ pane: "needs" }}
+          className={counts.needYou > 0 ? "cs-on" : undefined}
+          title="Open Needs you"
+        >
           <b>{counts.needYou}</b>need you
-        </span>
+        </Link>
       </div>
       <AutonomousSwitch />
       <button type="button" className="cs-search" onClick={onSearch} aria-label="Search or ask">
@@ -166,6 +172,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
           {MOD_KEY}K
         </span>
       </button>
+      <NotificationBell />
       <Link
         to={PAGE_PATH.setup}
         className="cs-iconbtn"

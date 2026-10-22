@@ -1,7 +1,7 @@
 import { type QueueGroup, type TaskSummary, taskLabel } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { cmd } from "@/lib/api";
@@ -9,6 +9,8 @@ import { lastAnsweredAt, useDecisionDetail } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
 import { type FoldablePane, togglePane, useLook } from "@/lib/look";
 import { queryKeys } from "@/lib/queries";
+import { useProjects } from "@/lib/task-queries";
+import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import { type NeedsDeps, needsActions, workActions, workWhat } from "./action-defs";
 import { later as laterStore, say, undoLast } from "./actions";
@@ -17,9 +19,14 @@ import { useConsole } from "./data-context";
 import { blockersOf, type ChatChip, type WorkState } from "./model";
 import { type Needs, type NeedsRow, splitRow } from "./needs-model";
 import { initialShown, NeedsPane, needsItems, showMore } from "./needs-pane";
-import { PaneRail } from "./parts";
+import { NeedsRail, PaneRail } from "./parts";
 import { useConsoleActions } from "./use-actions";
-import { entryKey, type RailId, selectableEntries, WorkPane, workItems } from "./work-pane";
+import { type Doing, entryKey, type RailId, selectableEntries, WorkPane, workItems } from "./work-pane";
+
+// The dialog of step 2 loads when Home asks for it.
+const AddProjectDialog = lazy(() =>
+  import("@/onboarding/projects-pick").then((m) => ({ default: m.AddProjectDialog })),
+);
 
 type PaneIndex = 0 | 1 | 2;
 
@@ -92,6 +99,11 @@ export function ConsoleScreen() {
   const [openRails, setOpenRails] = useState<ReadonlySet<RailId>>(new Set());
   const [unmerged, setUnmerged] = useState<ReadonlySet<string>>(new Set());
   const [replying, setReplying] = useState<{ row: string; option: string }>();
+  // Below 1300 px Needs you is a rail, and a click slides the whole list over Work. Chat stays in view.
+  const narrow = useMedia("(max-width: 1299px)");
+  const [needsOver, setNeedsOver] = useState(false);
+  const [addingProject, setAddingProject] = useState(false);
+  const projects = useProjects().data;
   const lastNeeds = useRef(0);
   const lastWork = useRef(0);
   const chatPane = useRef<HTMLElement | null>(null);
@@ -171,10 +183,14 @@ export function ConsoleScreen() {
       if (hit !== undefined) {
         setNeedsSel(hit.id);
         setPane(0);
+        setNeedsOver(true);
       }
     }
     if (linkChat !== undefined) openChat(linkChat);
-    if (linkPane === "needs") setPane(0);
+    if (linkPane === "needs") {
+      setPane(0);
+      setNeedsOver(true);
+    }
     if (linkPane === "work") setPane(1);
     void navigate({
       to: "/",
@@ -257,9 +273,10 @@ export function ConsoleScreen() {
   const { minimized } = useLook();
   const needsFolded = minimized.includes("needs");
   const workFolded = minimized.includes("work");
-  const needsRail = clear || needsFolded;
+  const needsRail = !narrow && (clear || needsFolded);
+  const needsShown = narrow ? needsOver : !needsRail;
   const visiblePanes: PaneIndex[] = [
-    ...(needsRail ? [] : ([0] as const)),
+    ...(needsShown ? ([0] as const) : []),
     ...(workFolded ? [] : ([1] as const)),
     2,
   ];
@@ -421,6 +438,7 @@ export function ConsoleScreen() {
         window.setTimeout(() => chatPane.current?.querySelector<HTMLElement>("textarea")?.focus(), 30);
       } else if (k === "Escape") {
         if (s.replying !== undefined) setReplying(undefined);
+        setNeedsOver(false);
         setChatOpen(false);
         if (s.pane === 2) setPane(s.visiblePanes[0] ?? 2);
       } else return;
@@ -484,6 +502,32 @@ export function ConsoleScreen() {
     },
     [client, toast],
   );
+  const doingOf = useCallback(
+    (task: TaskSummary): Doing | undefined => {
+      const d = data.doing.get(task.id);
+      return d === undefined
+        ? undefined
+        : { agent: d.agent, text: d.text, since: d.since, toolSince: d.toolSince };
+    },
+    [data.doing],
+  );
+  /** The buttons a card carries: answers when it waits for the owner, Stop while it works, Resume when it paused. */
+  const buttonsOf = useCallback(
+    (e: (typeof entries)[number]) => {
+      if (e.rail !== undefined) return undefined;
+      const row = needs.incident
+        .concat(needs.decide, needs.review)
+        .find((r) => r.decisions.some((d) => d.task === e.task.id));
+      if (row !== undefined) {
+        const answers = needsActionsOf(row, undefined).filter(
+          (a) => a.ghost !== true && a.id !== "later" && a.id !== "open",
+        );
+        if (answers.length > 0) return answers.slice(0, 3);
+      }
+      return workActions(e, workDeps).filter((a) => a.ghost !== true && a.id !== "unblock");
+    },
+    [needs, needsActionsOf, workDeps],
+  );
   const nowLineOf = useCallback(
     (task: TaskSummary) => task.now ?? data.doing.get(task.id)?.text,
     [data.doing],
@@ -498,6 +542,54 @@ export function ConsoleScreen() {
     data.work.reduce((n, g) => n + g.projects.reduce((m, p) => m + p.rows.length + p.folded.length, 0), 0) +
     data.rails.queued.length;
 
+  const needsPane = (
+    <NeedsPane
+      needs={needs}
+      shown={shown}
+      closed={closed}
+      selectedId={needsId}
+      focus={pane === 0}
+      total={data.counts.needYou}
+      loading={data.loading}
+      now={now}
+      hues={data.hues}
+      offline={lost}
+      arrived={arrived}
+      selectedActions={selectedNeedsActions}
+      detail={detail}
+      replyingId={replying?.row}
+      oldestFirst
+      lastAnswered={lastText}
+      onSelect={selectNeeds}
+      onQuick={quick}
+      onToggle={(g) =>
+        setClosed((prev) => {
+          const next = new Set(prev);
+          if (next.has(g)) next.delete(g);
+          else next.add(g);
+          return next;
+        })
+      }
+      onMore={(g) => setShown((s) => showMore(s, g))}
+      onReplySend={(text) => {
+        const row = replying === undefined ? undefined : needsRows.find((r) => r.id === replying.row);
+        const decision = row?.decisions[0];
+        if (row !== undefined && decision !== undefined && replying !== undefined) {
+          acts.answerOne(
+            decision,
+            replying.option,
+            `${row.prefix === undefined ? "" : `${row.prefix} · `}${row.name}`,
+            text,
+          );
+        }
+        setReplying(undefined);
+      }}
+      onReplyCancel={() => setReplying(undefined)}
+      onFocus={() => setPane(0)}
+      onMinimize={() => foldPane("needs")}
+    />
+  );
+
   return (
     <main
       className="cs-console"
@@ -506,12 +598,23 @@ export function ConsoleScreen() {
       data-needs-rail={needsRail || undefined}
       data-work-rail={workFolded || undefined}
       data-chat-main={(needsRail && workFolded) || undefined}
+      data-narrow={narrow || undefined}
       aria-label="Console"
       ref={(el) => {
         chatPane.current = el?.querySelector<HTMLElement>('[data-pane="chat"]') ?? null;
       }}
     >
-      {needsRail ? (
+      {narrow ? (
+        <NeedsRail
+          count={total}
+          incidents={data.counts.incidents}
+          open={needsOver}
+          onClick={() => {
+            setNeedsOver((v) => !v);
+            setPane(0);
+          }}
+        />
+      ) : needsRail ? (
         <PaneRail
           pane="needs"
           name="Needs you"
@@ -522,52 +625,9 @@ export function ConsoleScreen() {
           onOpen={clear ? undefined : () => foldPane("needs")}
         />
       ) : (
-        <NeedsPane
-          needs={needs}
-          shown={shown}
-          closed={closed}
-          selectedId={needsId}
-          focus={pane === 0}
-          total={data.counts.needYou}
-          loading={data.loading}
-          now={now}
-          hues={data.hues}
-          offline={lost}
-          arrived={arrived}
-          selectedActions={selectedNeedsActions}
-          detail={detail}
-          replyingId={replying?.row}
-          oldestFirst
-          lastAnswered={lastText}
-          onSelect={selectNeeds}
-          onQuick={quick}
-          onToggle={(g) =>
-            setClosed((prev) => {
-              const next = new Set(prev);
-              if (next.has(g)) next.delete(g);
-              else next.add(g);
-              return next;
-            })
-          }
-          onMore={(g) => setShown((s) => showMore(s, g))}
-          onReplySend={(text) => {
-            const row = replying === undefined ? undefined : needsRows.find((r) => r.id === replying.row);
-            const decision = row?.decisions[0];
-            if (row !== undefined && decision !== undefined && replying !== undefined) {
-              acts.answerOne(
-                decision,
-                replying.option,
-                `${row.prefix === undefined ? "" : `${row.prefix} · `}${row.name}`,
-                text,
-              );
-            }
-            setReplying(undefined);
-          }}
-          onReplyCancel={() => setReplying(undefined)}
-          onFocus={() => setPane(0)}
-          onMinimize={() => foldPane("needs")}
-        />
+        needsPane
       )}
+      {narrow && needsOver && <div className="cs-needs-over">{needsPane}</div>}
       {workFolded ? (
         <PaneRail
           pane="work"
@@ -591,6 +651,10 @@ export function ConsoleScreen() {
           nowLineOf={nowLineOf}
           waitsOnOf={waitsOnOf}
           askOf={(task) => data.askOf.get(task.id)}
+          doingOf={doingOf}
+          buttonsOf={buttonsOf}
+          noProject={projects !== undefined && projects.length === 0}
+          onAddProject={() => setAddingProject(true)}
           onMakeTask={makeTaskOfFollowUp}
           actions={workActionsOf}
           onSelect={selectWork}
@@ -616,6 +680,11 @@ export function ConsoleScreen() {
           onMinimize={() => foldPane("work")}
         />
       )}
+      {addingProject && (
+        <Suspense fallback={null}>
+          <AddProjectDialog onClose={() => setAddingProject(false)} />
+        </Suspense>
+      )}
       <ChatPane
         chips={chips}
         selected={chatId}
@@ -624,7 +693,7 @@ export function ConsoleScreen() {
         hues={data.hues}
         orgs={data.orgs}
         focus={pane === 2}
-        open={chatOpen}
+        open={chatOpen || narrow}
         onPick={(id) => {
           setChatPick(id);
           setPane(2);

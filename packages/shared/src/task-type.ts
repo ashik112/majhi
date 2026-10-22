@@ -198,6 +198,9 @@ export const CaseRecordSchema = z.object({
   checks: z.array(CaseCheckSchema).max(30),
   /** Messages told to the client about it. */
   told: z.number().int().min(0),
+  /** When the client was last told, and what they read: the line under the case in Work. */
+  toldAt: z.string().optional(),
+  toldText: z.string().max(300).optional(),
   followUps: z.array(CaseFollowUpSchema).max(10),
   /** It ran out of calls or time, or the captain gave up: the one card says what it needs. */
   stopped: z.object({ at: z.string(), why: z.string().max(300) }).optional(),
@@ -229,6 +232,8 @@ export function caseViewOf(record: CaseRecord): CaseView {
     followUps: record.followUps,
     stopped: record.stopped !== undefined,
     openedAt: record.openedAt,
+    ...(record.toldAt === undefined ? {} : { toldAt: record.toldAt }),
+    ...(record.toldText === undefined ? {} : { toldText: record.toldText }),
   };
 }
 
@@ -241,6 +246,8 @@ export const CaseViewSchema = z.object({
   followUps: z.array(CaseFollowUpSchema),
   stopped: z.boolean(),
   openedAt: z.string(),
+  toldAt: z.string().optional(),
+  toldText: z.string().optional(),
 });
 export type CaseView = z.infer<typeof CaseViewSchema>;
 

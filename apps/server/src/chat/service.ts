@@ -87,7 +87,7 @@ export interface ChatCases {
   /** The case this chat has open today, with the level its replies go at; refused past the reply limit. */
   replyGate(room: string): Promise<{ task: string; level: AuthorityLevel } | undefined>;
   /** A reply about the case went out or was held: it counts. */
-  told(task: string): void;
+  told(task: string, text: string): void;
   /** The lane's turn is about this case from now. */
   opened(lane: string, task: string): void;
 }
@@ -440,7 +440,7 @@ export class ClientChat {
       note: `Replied in ${room.chat.title}`,
     });
     this.deps.captain.replied(room, out);
-    if (gate !== undefined && out.state !== "failed") cases?.told(gate.task);
+    if (gate !== undefined && out.state !== "failed") cases?.told(gate.task, input.text);
     if (out.state === "sent") return { state: "sent" };
     if (out.state === "failed") return { state: "failed", why: out.why };
     return { state: "held", why: REPLY_HOLD_LABEL[out.why] };

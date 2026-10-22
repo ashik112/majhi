@@ -134,6 +134,8 @@ export function ChatChips(props: Shared & { tools: ReactNode }) {
   const visible = shown === undefined ? undefined : new Set(shown.split("\n"));
   const shownChips = visible === undefined ? chips : chips.filter((c) => visible.has(c.id));
   const hiddenCount = chips.length - shownChips.length;
+  // What the hidden chats hold unread, so "+N more" never hides a message.
+  const hiddenUnread = chips.filter((c) => !shownChips.includes(c)).reduce((sum, c) => sum + c.unread, 0);
   const chipProps = (chip: ChatChip) => ({
     chip,
     pressed: chip.id === selected,
@@ -148,7 +150,7 @@ export function ChatChips(props: Shared & { tools: ReactNode }) {
         {shownChips.map((chip) => (
           <Chip key={chip.id} {...chipProps(chip)} />
         ))}
-        {hiddenCount > 0 && <MoreChip count={hiddenCount} {...props} />}
+        {hiddenCount > 0 && <MoreChip count={hiddenCount} unread={hiddenUnread} {...props} />}
       </div>
       {props.tools}
       <div ref={copy} className="cs-measure" aria-hidden="true" inert>
@@ -158,7 +160,9 @@ export function ChatChips(props: Shared & { tools: ReactNode }) {
           </span>
         ))}
         <span data-more>
-          <span className="cs-chip">+{chips.length} more</span>
+          <span className="cs-chip">
+            +{chips.length} more<span className="cs-unread">00</span>
+          </span>
         </span>
       </div>
     </div>
@@ -166,7 +170,7 @@ export function ChatChips(props: Shared & { tools: ReactNode }) {
 }
 
 /** "+N more": opens a floating list of every chat, with a search box. */
-function MoreChip(props: Shared & { count: number }) {
+function MoreChip(props: Shared & { count: number; unread: number }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -190,6 +194,7 @@ function MoreChip(props: Shared & { count: number }) {
         onClick={() => setOpen((v) => !v)}
       >
         +{props.count} more
+        {props.unread > 0 && <span className="cs-unread">{props.unread}</span>}
       </button>
       {open &&
         createPortal(

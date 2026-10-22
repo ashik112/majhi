@@ -2243,6 +2243,8 @@ export const commands = {
           text: z.string().optional(),
           /** When the turn started (UTC ISO). */
           since: z.string().optional(),
+          /** When the tool call in progress began (UTC ISO): the line in Work counts its time. */
+          toolSince: z.string().optional(),
         }),
       ),
       /** The merge gate's verdict and the hand-off's state of every task in review. */
