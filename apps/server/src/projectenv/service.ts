@@ -148,7 +148,7 @@ export class ProjectEnvs {
   /** The one build that runs at a time. */
   private chain: Promise<unknown> = Promise.resolve();
   /** The environment each task started on, by `task/project`: its edits to a requirements file do not move it. */
-  private readonly bound = new Map<string, string>();
+  private readonly bound = new Map<string, { task: string; key: string }>();
 
   constructor(private readonly deps: ProjectEnvDeps) {}
 
@@ -216,7 +216,7 @@ export class ProjectEnvs {
     const planned = await this.planned(task);
     const waits: Promise<EnvFailure | undefined>[] = [];
     for (const p of planned) {
-      this.bound.set(`${taskId}/${p.project}`, p.key);
+      this.bound.set(`${taskId}/${p.project}`, { task: taskId, key: p.key });
       if ((await this.readReady(p.dir)) !== undefined) continue;
       waits.push(
         this.build(p, taskId).then((outcome) => (outcome.ok ? undefined : failureOf(p.project, outcome))),
@@ -239,7 +239,7 @@ export class ProjectEnvs {
     for (const repo of task.repos) {
       const root = this.projectRoot(this.orgOf(task), repo.project);
       if (root === undefined) continue;
-      const key = this.bound.get(`${taskId}/${repo.project}`);
+      const key = this.bound.get(`${taskId}/${repo.project}`)?.key;
       const found =
         key === undefined ? await this.newest(root) : await this.withKey(root, key).catch(() => undefined);
       if (found === undefined) continue;
@@ -357,7 +357,10 @@ export class ProjectEnvs {
   /** Removes the older environments of the project: the newest `KEPT` stay, and so does any a task started on. */
   private async prune(dir: string): Promise<void> {
     const root = join(dir, "..");
-    const inUse = new Set(this.bound.values());
+    // A task that is done no longer holds its environment.
+    const inUse = new Set(
+      [...this.bound.values()].filter((b) => this.deps.task(b.task)?.status !== "done").map((b) => b.key),
+    );
     const names = new Set(await readdir(root).catch(() => [] as string[]));
     const ready = (await this.readyIn(root)).toSorted((a, b) => b.ready.at.localeCompare(a.ready.at));
     const keep = new Set(ready.slice(0, KEPT).map((r) => r.ready.key));
