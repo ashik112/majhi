@@ -226,7 +226,7 @@ export function caseViewOf(record: CaseRecord): CaseView {
     client: record.client,
     symptom: record.symptom,
     ...(record.summary === undefined ? {} : { summary: record.summary }),
-    followUps: record.followUps.length,
+    followUps: record.followUps,
     stopped: record.stopped !== undefined,
     openedAt: record.openedAt,
   };
@@ -238,7 +238,7 @@ export const CaseViewSchema = z.object({
   client: z.string(),
   symptom: z.string(),
   summary: z.string().optional(),
-  followUps: z.number().int().min(0),
+  followUps: z.array(CaseFollowUpSchema),
   stopped: z.boolean(),
   openedAt: z.string(),
 });

@@ -1,10 +1,14 @@
 import { type QueueGroup, type TaskSummary, taskLabel } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useToast } from "@/components/ui/toast";
 import { useNewTask } from "@/features/new-task/new-task-context";
+import { cmd } from "@/lib/api";
 import { lastAnsweredAt, useDecisionDetail } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
 import { type FoldablePane, togglePane, useLook } from "@/lib/look";
+import { queryKeys } from "@/lib/queries";
 import { useNow } from "@/lib/use-now";
 import { type NeedsDeps, needsActions, workActions, workWhat } from "./action-defs";
 import { later as laterStore, say, undoLast } from "./actions";
@@ -464,6 +468,22 @@ export function ConsoleScreen() {
     },
     [data.tasks],
   );
+  const client = useQueryClient();
+  const toast = useToast();
+  /** Make it a task, on a follow-up of a case: the one way a case's follow-up becomes a task. */
+  const makeTaskOfFollowUp = useCallback(
+    (task: string, followUp: string) => {
+      void cmd("case.makeTask", { case: task, followUp }, { reason: "Owner made a task of a follow-up" })
+        .then(() => client.invalidateQueries({ queryKey: queryKeys.tasks }))
+        .catch((err: unknown) =>
+          toast("Could not make it a task", {
+            detail: err instanceof Error ? err.message : "Try again.",
+            tone: "error",
+          }),
+        );
+    },
+    [client, toast],
+  );
   const nowLineOf = useCallback(
     (task: TaskSummary) => task.now ?? data.doing.get(task.id)?.text,
     [data.doing],
@@ -570,6 +590,8 @@ export function ConsoleScreen() {
           unreadOf={(id) => unreadById.get(id) ?? 0}
           nowLineOf={nowLineOf}
           waitsOnOf={waitsOnOf}
+          askOf={(task) => data.askOf.get(task.id)}
+          onMakeTask={makeTaskOfFollowUp}
           actions={workActionsOf}
           onSelect={selectWork}
           onToggleOrg={(org) =>

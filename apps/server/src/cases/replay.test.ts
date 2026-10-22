@@ -203,7 +203,10 @@ describe("the case replay", () => {
     expect(r.sent).toHaveLength(2);
     expect((await owner(r)).decisions).toEqual([]);
     const fields = all.find((t) => t.typing?.type === "incident")?.case;
-    expect(fields).toMatchObject({ followUps: 1, stopped: false });
+    expect(fields).toMatchObject({
+      followUps: [{ text: "Stop the courier status sweep from filling every slot" }],
+      stopped: false,
+    });
     expect(fields?.summary?.split("\n")).toHaveLength(5);
   });
 });

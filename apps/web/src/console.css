@@ -550,6 +550,35 @@
 .cs-row[aria-selected="true"] .cs-age {
   display: none;
 }
+/* A case under its line: what it does now, and the one card that waits for the owner. */
+.cs-case {
+  grid-column: 2 / 4;
+  min-width: 0;
+  padding: 0 0 6px;
+  display: grid;
+  gap: 1px;
+}
+.cs-case-line {
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--c-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-case-line[data-needs="true"] {
+  color: var(--c-fg);
+}
+.cs-case-line .cs-lbl {
+  color: var(--c-fg-faint);
+  margin-right: 8px;
+}
+.cs-row[aria-selected="true"] .cs-case {
+  display: none;
+}
+.cs-age[data-always="true"] {
+  display: inline;
+}
 .cs-st {
   font-size: 12px;
   white-space: nowrap;
