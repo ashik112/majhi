@@ -24,7 +24,7 @@ const TOOLS = [
   {
     name: "start",
     description:
-      "Start a command in the background, in the task folder or a folder inside it. Returns at once. With wait (default), majhi wakes you with the exit code and the last output when it ends, and the task keeps running meanwhile: end your turn instead of waiting. Use wait: false for dev servers and watchers. At most 5 run per task.",
+      "Start a command in the background, in the task folder or a folder inside it. Returns at once. With wait (default), majhi wakes you with the exit code and the last output when it ends, and the task keeps running meanwhile: end your turn instead of waiting. Use wait: false for dev servers and watchers. At most 5 run per task. Run anything slow or long (test suites, builds, servers) here, never in your own background shell: nothing wakes you for that.",
     input: ProcessStartInputSchema,
   },
   {
@@ -50,13 +50,13 @@ const TOOLS = [
   {
     name: "handoff",
     description:
-      "The majhi hand-off check of this task: how each step (install, tests, build, lint, type check) ended on the latest commit, the first failure, and the log file of every step in the task folder. The check is run by majhi, not by you; this reads it. Only this task's.",
+      "The majhi hand-off check of this task: how each step (install, tests, build, lint, type check) ended on the latest commit, the first failure, and the log file of every step in the task folder. The check is run by majhi, not by you; this reads it. Only this task's. When you finish, majhi runs each project's install, lint, type check, build and tests, taking each command, its environment and its folder from the project's own CI file when it has one. They run in a throwaway copy of your latest commit with the write flags (`--fix`, `--write`) turned off, and whatever they change is discarded. Only failures your task adds block it: a check that already fails on the commit you branched from shows as already failing. Never remove, revert or rewrite commits or files to get around a check, and do not run lint with `--fix` over code you did not write. If the check ran out of memory or time, say so in your last message: the owner raises the limit in the project's Check before ship.",
     input: z.object({}),
   },
   {
     name: "handoff_rerun",
     description:
-      "Run this task's hand-off check again, one step (install, lint, typecheck, build or tests) or all of them, on the latest commit. It runs in the background through the same queue and limits as majhi's own check, one at a time per task, and the lead is told how it ended. End your turn instead of waiting; read the result with handoff.",
+      "Run this task's hand-off check again, one step (install, lint, typecheck, build or tests) or all of them, on the latest commit. It runs in the background through the same queue and limits as majhi's own check, one at a time per task, and the lead is told how it ended. End your turn instead of waiting; read the result with handoff. Use it for one failed step (for example step: \"tests\") instead of running a whole suite of your own.",
     input: HandoffToolRerunSchema,
   },
 ] as const;

@@ -33,7 +33,10 @@ const EXTRA_PROPERTIES = {
     type: "boolean",
     description: "true only if the owner asked for this in the conversation",
   },
-  reason: { type: "string", description: "Why you are calling this, in one plain sentence" },
+  reason: {
+    type: "string",
+    description: "Why you are calling this, in one plain sentence: it is the line the owner reads in the log",
+  },
 } as const;
 
 /**
@@ -148,7 +151,7 @@ export function adminTools(place?: CaptainPlace): AdminTool[] {
     command: undefined,
     risk: undefined,
     description:
-      "Ask the owner for a secret (an API key or token). The owner pastes it into a secure field, not the chat. You get only its reference, secret:<name>. Never ask for secrets in chat.",
+      "Ask the owner for a secret (an API key or token). The owner pastes it into a secure field, not the chat. You get only its reference, secret:<name>. Never ask for secrets in chat. Try to get it yourself through the workspace's connections first (a DigitalOcean connection with doctl can list database clusters and create a read-only user or fetch its connection URI; GitHub and GitLab tokens come from their connections), and ask only when no connection can produce it: say in the label what you tried.",
     inputSchema: {
       type: "object",
       properties: {
@@ -164,7 +167,7 @@ export function adminTools(place?: CaptainPlace): AdminTool[] {
       command: undefined,
       risk: undefined,
       description:
-        "The captain in its lane only. Fetch a secret through the workspace's connections without the value passing through chat: runs a short read-only script in the runner with the named connections (like doctl with the DigitalOcean connection) and saves what it prints straight into the secret store. A script that only builds a value from the connection variables (a URL, a connection string) sets network to off and runs with no network, so it is never taken for a call. Programs installed with majhi_toolbox_install are on its PATH. You get only the reference secret:<name>, never the value. Pass task and item to answer a pending secret request (saved under its name, the asking agent is told), or name to save a new one. The script is shown to the owner in the room.",
+        "The captain in its lane only. Fetch a secret through the workspace's connections without the value passing through chat: runs a short read-only script in the runner with the named connections (like doctl with the DigitalOcean connection) and saves what it prints straight into the secret store. A script that only builds a value from the connection variables (a URL, a connection string) sets network to off and runs with no network, so it is never taken for a call. Programs installed with majhi_toolbox_install are on its PATH. You get only the reference secret:<name>, never the value. Pass task and item to answer a pending secret request (saved under its name, the asking agent is told), or name to save a new one. The script is shown to the owner in the room. Do this for the pending secret requests of your workspace, agents' too, before leaving them to the owner.",
       inputSchema: {
         type: "object",
         properties: {
@@ -191,7 +194,7 @@ export function adminTools(place?: CaptainPlace): AdminTool[] {
       command: undefined,
       risk: undefined,
       description:
-        "The captain in its main chat or a workspace lane, and only when the owner asked for it in the conversation. Put a value on the owner's own clipboard on their computer, so they can paste it without it appearing in chat: the value of a saved secret (secret), or one line of a file in this workspace's projects (file and line, with part value to take what follows the = or : of a KEY=value line). The value is read by majhi and goes only to the clipboard: you never get it back, and it is not put in the room. Say what you copied by its name or its file and line, never by its value.",
+        "The captain in its main chat or a workspace lane, and only when the owner asked for it in the conversation. Put a value on the owner's own clipboard on their computer, so they can paste it without it appearing in chat: the value of a saved secret (secret), or one line of a file in this workspace's projects (file and line, with part value to take what follows the = or : of a KEY=value line). The value is read by majhi and goes only to the clipboard: you never get it back, and it is not put in the room. Say what you copied by its name or its file and line, never by its value. Never read such a value yourself to paste it into a reply.",
       inputSchema: {
         type: "object",
         properties: {

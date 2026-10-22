@@ -38,7 +38,7 @@ const TOOLS = [
   {
     name: "list",
     description:
-      "The connections this run holds: name, type, description and how to use each (variables, the kubectl context, the MCP server). Never a value. A root agent also sees the ones it can attach.",
+      "The connections this run holds: name, type, description and how to use each (variables, the kubectl context, the MCP server). Never a value. A root agent also sees the ones it can attach. Your container cannot reach the owner's computer (localhost, host.docker.internal and *.orb.local all time out): a service running there is reachable only through a \"Service on this computer\" connection, as <name>.host on the ports it lists. When none fits, ask the owner with the ask tool to add one on the Connections page, naming the ports.",
     input: ListInput,
   },
   {
@@ -50,7 +50,7 @@ const TOOLS = [
   {
     name: "ssh",
     description:
-      "Run a command on the host of an ssh connection this run holds, from majhi. A command that only reads (cat, ls, tail, grep, systemctl status, docker logs) runs now and returns its output. Anything else waits for the owner: the output, or the refusal or error, reaches you with your next majhi-connections call, or in a message when your turn ends.",
+      "Run a command on the host of an ssh connection this run holds, from majhi. A command that only reads (cat, ls, tail, grep, systemctl status, docker logs, docker ps, docker inspect with --format, read-only database queries, status endpoints) runs now and returns its output. In a client case a restart or recreate of one service or container on the same image and config also runs now, once per case (a stuck queue is cleared by restarting its worker), and the same command is not run twice unless something changed since. A command that would print env or secret files (docker inspect without --format, docker compose config, .env files) is not a read: it waits for the owner. Anything else waits for the owner: the output, or the refusal or error, reaches you with your next majhi-connections call, or in a message when your turn ends.",
     input: SshInput,
   },
 ] as const;

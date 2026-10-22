@@ -21,14 +21,13 @@ import type {
   SlotCapacity,
   Task,
 } from "@majhi/shared";
-import { type CodexHookPayload, type CodexHookVerdict, durationMs, isAutonomyChat } from "@majhi/shared";
+import { type CodexHookPayload, type CodexHookVerdict, durationMs } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
 import { limitFor } from "../accounts/status.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
-import { AUTONOMY_PREAMBLE } from "../autonomy/preamble.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { type HeldSecret, redactSecrets } from "../connections/redact.ts";
@@ -2147,19 +2146,14 @@ export class RunManager {
   }
 
   /**
-   * Puts the admin preamble before a session's first prompt, and in the autonomy chat autonomous
-   * mode's after it. Slash commands stay whole and keep it waiting.
+   * Puts the admin preamble (the captain's text) before a session's first prompt. Slash commands stay whole and
+   * keep it waiting.
    */
   private withPreamble(run: AgentRun, blocks: PromptBlock[]): PromptBlock[] {
     const first = blocks[0];
     if (!run.preambleDue || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
     run.preambleDue = false;
-    const task = this.deps.store.tasks.get(run.task);
-    const autonomy = task !== undefined && isAutonomyChat(task);
-    return [
-      { type: "text", text: autonomy ? `${ADMIN_PREAMBLE}\n${AUTONOMY_PREAMBLE}` : ADMIN_PREAMBLE },
-      ...blocks,
-    ];
+    return [{ type: "text", text: ADMIN_PREAMBLE }, ...blocks];
   }
 
   /**

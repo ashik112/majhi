@@ -999,7 +999,7 @@ export const commands = {
   "decisions.recommend": {
     risk: "change",
     summary:
-      "The captain's tool: record which option of a decision you recommend, with a one-line reason. The owner sees it on the decision. Captain only, in its lane's workspace",
+      "The captain's tool: record which option of a decision you recommend, with a one-line reason. The owner sees it on the decision. Captain only, in its lane's workspace. Use it instead of writing \"I would choose X\" in chat. It works whether Autonomous is on or off, and it answers nothing: the owner decides",
     input: DecisionRecommendInputSchema,
     output: z.object({ id: z.string(), option: z.string() }),
   },
@@ -1193,7 +1193,7 @@ export const commands = {
   "ops.ack": {
     risk: "change",
     summary:
-      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. Agents acknowledge their own workspace's incidents through the owner's approval",
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. Agents acknowledge their own workspace's incidents through the owner's approval. When the owner hands you an incident, look into it and fix what you can first, then acknowledge it",
     input: OpsAckInputSchema,
     output: OpsIncidentSchema,
   },
@@ -1266,14 +1266,15 @@ export const commands = {
   },
   "watch.test": {
     risk: "read",
-    summary: "Run a watch's check once, without saving it",
+    summary:
+      "Run a watch's check once, without saving it. Never tell the owner majhi cannot read a number before you tried it here: to read one from any service, write a script watch and run it once with this tool. Use curl or the service's CLI with the connection's token ($<ID>_TOKEN, or its own variable like DIGITALOCEAN_ACCESS_TOKEN; a CLI reads its variable itself, and curl gets the header from stdin with `printf 'Authorization: Bearer %s\\n' \"$VAR\" | curl -H @- ...`, never as an argument, because arguments show in the process list), and parse JSON with jq or Prometheus text with awk or grep. Many services publish metrics over HTTP: a REST monitoring API, or a /metrics address whose login an API call returns. Say why a check fails, with its error, only after a test shows it",
     input: WatchTestInputSchema,
     output: WatchTestResultSchema,
   },
   "watch.save": {
     risk: "change",
     summary:
-      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). Agents may save watches that only alert, look into it or draft a status note; a fix, an action, steps to follow or a phone page are the owner's",
+      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). Agents may save watches that only alert, look into it or draft a status note; a fix, an action, steps to follow or a phone page are the owner's: propose those with one ask card. Watches run on majhi's own clock, without a model. Use a plain kind (website, database, server, metric on a connection's tool, and the rest). When none can read the signal, write a script watch: a short read-only script (curl, jq, python3, kubectl, glab, gh) with the connections it needs, test it once, then save it. Keep custom for what no script can check. When a plain watch fails, report the exact error; do not switch to custom to get around it, and do not claim a setting changed unless you read it back. After an incident, read watch_overview first and tighten or extend a watch that already covers the signal: never add a second one for the same thing",
     input: WatchSaveInputSchema,
     output: WatchViewSchema,
   },
@@ -1669,7 +1670,7 @@ export const commands = {
     // `read` on purpose, like chat.reply: the Start row and the chat rules decide whether it starts or waits for the owner.
     risk: "read",
     summary:
-      "The captain, in its workspace lane, makes a task from a client chat's message (origin: the client) and starts it when the owner's Start row allows; otherwise it waits as a card for the owner. When the task is ready you are woken here to tell the client. Set readOnly for a question that needs a look, not a change",
+      "The captain, in its workspace lane, makes a task from a client chat's message (origin: the client) and starts it when the owner's Start row allows; otherwise it waits as a card for the owner. When the task is ready you are woken here to tell the client. Set readOnly for a question that needs a look, not a change. A question that only needs an answer is not a task: find the answer and reply. When you start a task, say so in your reply",
     input: ChatStartTaskInputSchema,
     output: ChatStartTaskResultSchema,
   },
@@ -2069,7 +2070,8 @@ export const commands = {
   },
   "projects.register": {
     risk: "change",
-    summary: "Register a repo as a project of an org, with aliases for the task box",
+    summary:
+      "Register a repo as a project of an org, with aliases for the task box. The captain may register a repo that sits in its workspace's folder as upkeep",
     input: z.object({ id: IdSchema }).extend(
       ProjectConfigSchema.pick({
         org: true,
@@ -2842,7 +2844,7 @@ export const commands = {
   "tasks.look": {
     risk: "read",
     summary:
-      "Read a task's working folder without changing anything: for each repo its branch and `git status` (uncommitted changes), and the files. Give path (from the repo root) to read one file or list one folder; with more than one repo, give project too",
+      "Read a task's working folder without changing anything: for each repo its branch and `git status` (uncommitted changes), and the files. Give path (from the repo root) to read one file or list one folder; with more than one repo, give project too. To show the owner a task's output, link it as /api/tasks/<task-id>/files/<relative-path>, not a path relative to your own chat. The task folders and every registered project are mounted read-only in your runs, at the same path as on the owner's machine: read them directly (cat, grep, ls), and never create a task just to look at code",
     input: z.object({
       id: TaskIdSchema,
       project: IdSchema.optional(),
@@ -3473,7 +3475,7 @@ export const commands = {
   "toolbox.install": {
     risk: "change",
     summary:
-      "Install a command-line tool (a release binary, no sudo) into the workspace's tools folder, where later runs, watch scripts and secret fetches find it on PATH. majhi downloads it itself over https and installs it only when its SHA-256 matches the vendor's: pass sha256, or checksumUrl for the vendor's checksums file. Use {arch} (amd64 or arm64) or {machine} (x86_64 or aarch64) in the url to match the runner's CPU. archive is binary, tar.gz or zip, and path is the program inside it. Prefer this to downloading a binary inside a run",
+      "Install a command-line tool (a release binary, no sudo) into the workspace's tools folder, where later runs, watch scripts and secret fetches find it on PATH. majhi downloads it itself over https and installs it only when its SHA-256 matches the vendor's: pass sha256, or checksumUrl for the vendor's checksums file. Use {arch} (amd64 or arm64) or {machine} (x86_64 or aarch64) in the url to match the runner's CPU. archive is binary, tar.gz or zip, and path is the program inside it. Prefer this to downloading a binary inside a run: do not download binaries by hand, and there is no sudo or apt. A script that only builds a URL or connection string from variables (no call out) runs with the network off",
     input: ToolInstallInputSchema,
     output: InstalledToolSchema,
   },
@@ -4321,7 +4323,7 @@ export const commands = {
   "captain.reportBug": {
     risk: "change",
     summary:
-      "File a fix task on majhi's own project in the Private workspace for a bug in majhi itself (an error that starts with 'majhi problem:', a check majhi runs wrong, a refusal that contradicts an approval). Works from any workspace's thread. Write the exact error, what you did and what you expected; nothing else of the workspace",
+      "File a fix task on majhi's own project in the Private workspace for a bug in majhi itself (an error that starts with 'majhi problem:', a check majhi runs wrong, a refusal that contradicts an approval, a missing program on its server, a tool it routes wrong). Works from any workspace's thread, and never from a client case: a case files no bugs. Do not work around such an error and do not ask the owner to fix it by hand: file it here, then tell the owner in one line with the task id. Write the exact error, what you did and what you expected; nothing else of the workspace",
     input: z.object({
       title: z.string().trim().min(1).max(120),
       details: z.string().trim().min(1).max(4000),
@@ -4366,7 +4368,7 @@ export const commands = {
   "autonomy.plan": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the captain: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time",
+      "Autonomous mode only, for the captain: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time. Record it after each wake",
     input: AutonomyPlanInputSchema,
     output: z.object({ queue: z.number().int().nonnegative() }),
   },
