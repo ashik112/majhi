@@ -182,10 +182,17 @@ function RepoRow({
         {failure && <span className="text-sm text-red">{failure}</span>}
       </div>
       {repo.registered && <span className="text-sm text-green">Added</span>}
-      {host && host !== "other" && <HostGlyph host={host} className="size-4" />}
+      {host && host !== "other" && (
+        <span className="flex items-center gap-1.5 text-sm text-fg-muted">
+          <HostGlyph host={host} className="size-3.5" />
+          {HOST_NAME[host] ?? host}
+        </span>
+      )}
     </li>
   );
 }
+
+const HOST_NAME: Record<string, string> = { github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" };
 
 function RowsLoading() {
   return (

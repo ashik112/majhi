@@ -229,7 +229,7 @@ export function SignInStep({ onNext }: { onNext: () => void }) {
               disabled={tool === undefined || busy}
               onClick={() => tool && void begin(tool)}
             >
-              {busy ? "Starting" : `Sign in with ${tool?.name ?? (id === "claude" ? "Claude" : "Codex")}`}
+              {busy ? "Starting" : `Sign in with ${id === "claude" ? "Claude" : "Codex"}`}
             </Button>
           );
         })}
