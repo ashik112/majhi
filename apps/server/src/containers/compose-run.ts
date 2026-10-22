@@ -2,6 +2,7 @@ import type { TaskDockerErrorCode, TaskDockerResult } from "@majhi/shared";
 import { ContainerRefused, type Safety, shown } from "./args.ts";
 import { type ComposeProject, type ComposeService, loadCompose } from "./compose.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
+import { composeConfigText } from "./compose-config.ts";
 import { containerNames, select } from "./names.ts";
 import {
   ANONYMOUS_VOLUME_PREFIX,
@@ -27,6 +28,8 @@ export interface ComposeHost {
   perTask: number;
   /** Where the script ran. */
   cwd: string;
+  /** The variables of the script's own environment that a `config` may interpolate from (never majhi's). */
+  shell?: ReadonlyMap<string, string> | undefined;
   /** The checked context for a call from `dir`: allowed images, images built so far. */
   context(dir: string): Promise<TaskDockerContext>;
   /** Throws `ContainerRefused` (`limit_reached`) unless the task may run `extra` more containers. */
@@ -407,5 +410,7 @@ export async function composeCall(host: ComposeHost, inv: ComposeInvocation): Pr
       return logs(host, inv);
     case "exec":
       return exec(host, inv);
+    case "config":
+      return ok(await composeConfigText(inv, await host.context(inv.cwd), host.shell ?? new Map()));
   }
 }

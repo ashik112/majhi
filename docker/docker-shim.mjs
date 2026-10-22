@@ -24,7 +24,7 @@ if (url === undefined || token === undefined) {
 }
 if (argv.length === 0) {
   process.stderr.write(
-    "Usage: docker run | build | exec | logs | ps | rm | stop | start | wait | inspect | compose up|down|ps|logs|exec\n",
+    "Usage: docker run | build | exec | logs | ps | rm | stop | start | wait | inspect | compose up|down|ps|logs|exec|config\n",
   );
   process.exit(1);
 }
@@ -58,8 +58,21 @@ function post(target, body) {
   });
 }
 
+// `docker compose config` fills the compose file's ${VAR} from the caller's own variables, as compose does.
+// No other call needs them. Capped as the server's schema is (512 names, 8 KB a value); the server drops MAJHI_* itself.
+function configEnv() {
+  if (argv[0] !== "compose" || !argv.includes("config")) return undefined;
+  const env = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined || name.length > 64 || value.length > 8192) continue;
+    if (Object.keys(env).length >= 512) break;
+    env[name] = value;
+  }
+  return env;
+}
+
 try {
-  const res = await post(url, JSON.stringify({ argv, cwd: process.cwd() }));
+  const res = await post(url, JSON.stringify({ argv, cwd: process.cwd(), env: configEnv() }));
   if (res.status < 200 || res.status > 299) {
     process.stderr.write(`docker: majhi answered ${res.status}. This run may not use docker now.\n`);
     process.exit(1);

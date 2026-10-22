@@ -248,6 +248,11 @@ export const ContainerLogsInputSchema = z.object({
 export const TaskDockerRequestSchema = z.strictObject({
   argv: z.array(z.string().max(4_000).refine(noNul, "No NUL character")).min(1).max(200),
   cwd: z.string().max(1_000).refine(noNul, "No NUL character"),
+  /**
+   * The script's own variables, sent for `docker compose config` only: the compose file's `${VAR}` reads them
+   * as compose reads the caller's environment. Names starting `MAJHI_` are dropped by the server.
+   */
+  env: z.record(z.string().max(64), z.string().max(8_192)).optional(),
 });
 export type TaskDockerRequest = z.infer<typeof TaskDockerRequestSchema>;
 

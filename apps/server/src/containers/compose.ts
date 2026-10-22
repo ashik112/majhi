@@ -824,6 +824,30 @@ export async function loadCompose(inv: ComposeInvocation, ctx: TaskDockerContext
   return { dir, files, services: chosen, volumes: [...declared], notes };
 }
 
+/**
+ * The merged compose files of the invocation as a document, for `docker compose config`, which only prints.
+ * Nothing is checked against the allow list here because nothing starts; every file is still read through
+ * the task's own safe readers, and `${VAR}` reads the `.env` file, `--env-file` and the caller's own
+ * variables (`shell`, from the script's environment), never majhi's.
+ */
+export async function loadComposeDocument(
+  inv: ComposeInvocation,
+  ctx: TaskDockerContext,
+  shell: ReadonlyMap<string, string>,
+): Promise<{ dir: string; files: string[]; document: Record<string, unknown>; vars: Map<string, string> }> {
+  const { files, dir } = composeFiles(inv, ctx);
+  assertReadable(dir, ctx.safety, "project directory", "compose_mount_outside");
+  // The script's own variables win over the file, as in compose.
+  const vars = new Map([...(await variables(inv, dir, ctx)), ...shell]);
+  let merged: unknown;
+  for (const file of files) {
+    const raw = await readYaml(file, ctx);
+    merged = mergeCompose(merged, inv.noInterpolate ? raw : interpolateAll(raw, vars));
+  }
+  if (!isRecord(merged)) return refuse("The compose file has no services.", "compose_invalid");
+  return { dir, files, document: merged, vars };
+}
+
 async function serviceOf(
   name: string,
   file: ServiceFile,
