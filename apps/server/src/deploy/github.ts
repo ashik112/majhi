@@ -1,6 +1,6 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { call, HostUnreachable, num, str } from "../gitConnect/http.ts";
-import { titleIsFor } from "./recipe.ts";
+import { inputsFromTitle, titleIsFor } from "./recipe.ts";
 import {
   apiScheme,
   type DeployContext,
@@ -198,6 +198,33 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
         if (found !== undefined) return found;
       }
       return undefined;
+    },
+
+    // The build is given its version as an input and shows it in its title: the versions of its recent runs are taken.
+    async builtVersions(ctx, source, input) {
+      const a = await access(
+        ctx,
+        { kind: "github-workflow", remote: source.remote, workflow: source.workflow, ref: "base" },
+        deps,
+      );
+      const listed = await api(
+        deps,
+        a,
+        `/repos/${a.slug}/actions/workflows/${segment(source.workflow)}/runs?per_page=50`,
+      );
+      if (listed.status !== 200) return [];
+      const out: { version: string; commit?: string }[] = [];
+      for (const run of runsOf(listed.body)) {
+        const got = inputsFromTitle(source.parts, run.display_title);
+        const version = got?.[input];
+        if (version === undefined || version === "") continue;
+        // The commit it was built from: the ref the title names when that is a whole commit, else the head of the run.
+        const named = source.ref === undefined ? undefined : got?.[source.ref];
+        const whole =
+          named?.length === 40 && [...named].every((c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f"));
+        out.push({ version, commit: whole ? named : run.head_sha });
+      }
+      return out;
     },
 
     async redeploy(ctx, step, previous: PreviousDeploy): Promise<RunHandle> {

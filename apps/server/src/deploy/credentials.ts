@@ -14,6 +14,8 @@ export interface CredentialDeps {
   connections: {
     find(id: string): Promise<{ org: string; connection: ConnectionConfig } | undefined>;
   };
+  /** The `ssh` connections of a workspace, by id. */
+  sshOf(org: string): Promise<{ id: string; connection: ConnectionConfig }[]>;
   secrets: { get(name: string): Promise<string | undefined> };
   /** The workspace's own sign-in to a git host, renewed when it ends soon. */
   gitToken: NonNullable<PlanDeps["gitToken"]>;
@@ -50,6 +52,17 @@ export function createDeployCredentials(deps: CredentialDeps): DeployCredentials
         return value === undefined ? { problem: `${name} of ${id} is not saved yet.` } : { value };
       }
       return { problem: `${name} of ${id} is not a value a deploy can use.` };
+    },
+
+    async sshHosts(org) {
+      const out: Awaited<ReturnType<DeployCredentials["sshHosts"]>> = [];
+      for (const { id, connection } of await deps.sshOf(org)) {
+        const alias = textValue(connection, "alias");
+        if (alias === undefined) continue;
+        const key = textValue(connection, "key");
+        out.push({ id, name: connection.name, alias, ...(key === undefined ? {} : { key }) });
+      }
+      return out;
     },
 
     async ssh(org, id) {

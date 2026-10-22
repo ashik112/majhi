@@ -35,6 +35,7 @@ function bindingValue(binding: InputBinding, facts: BindFacts): string | undefin
     case "commit":
       return facts.commit;
     case "built-version":
+    case "next-version":
       return facts.built;
     case "previous-version":
       return facts.previous?.version;
@@ -94,7 +95,8 @@ export function versionPutLive(
   for (const [i, step] of steps.entries()) {
     if (step.kind !== "github-workflow" || step.bind === undefined) continue;
     for (const [name, binding] of Object.entries(step.bind)) {
-      if (binding !== "built-version" && binding !== "previous-version") continue;
+      if (binding !== "built-version" && binding !== "previous-version" && binding !== "next-version")
+        continue;
       const value = sent[i]?.[name];
       if (value !== undefined) return value;
     }
@@ -119,17 +121,20 @@ export function inputsFromTitle(
       continue;
     }
     const next = parts[i + 1];
+    let value: string;
     if (next === undefined) {
-      out[part.name] = title.slice(at);
+      value = title.slice(at);
       at = title.length;
     } else if (next.kind === "text" && next.text !== "") {
       const end = title.indexOf(next.text, at);
       if (end < 0) return undefined;
-      out[part.name] = title.slice(at, end);
+      value = title.slice(at, end);
       at = end;
     } else {
       return undefined;
     }
+    // What the title says for an empty input is not a value.
+    if (value !== part.fallback) out[part.name] = value;
   }
   return at === title.length ? out : undefined;
 }
@@ -192,4 +197,75 @@ export function commitOfVersion(recipe: DeployRecipe, version: string): string |
   if (parts.slice(0, -1).some((p) => p.kind !== "text") || !version.startsWith(prefix)) return undefined;
   const rest = version.slice(prefix.length);
   return rest.length === 40 ? rest : undefined;
+}
+
+/** `1.4.7` as numbers; undefined for anything that is not exactly three numbers (a tag, a commit, `1.4`). */
+export function parseVersion(version: string): [number, number, number] | undefined {
+  const pieces = version.split(".");
+  if (pieces.length !== 3) return undefined;
+  const nums = pieces.map((p) =>
+    p !== "" && [...p].every((c) => c >= "0" && c <= "9") ? Number(p) : Number.NaN,
+  );
+  const [major, minor, patch] = nums;
+  if (major === undefined || minor === undefined || patch === undefined) return undefined;
+  return Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)
+    ? undefined
+    : [major, minor, patch];
+}
+
+/** The next patch after the highest `X.Y.Z` among the versions. Undefined when none is one. */
+export function nextPatch(
+  versions: readonly (string | undefined)[],
+): { version: string; after: string } | undefined {
+  let best: { at: [number, number, number]; text: string } | undefined;
+  for (const text of versions) {
+    const at = text === undefined ? undefined : parseVersion(text);
+    if (text === undefined || at === undefined) continue;
+    const higher =
+      best === undefined ||
+      at[0] > best.at[0] ||
+      (at[0] === best.at[0] && (at[1] > best.at[1] || (at[1] === best.at[1] && at[2] > best.at[2])));
+    if (higher) best = { at, text };
+  }
+  return best === undefined
+    ? undefined
+    : { version: `${best.at[0]}.${best.at[1]}.${best.at[2] + 1}`, after: best.text };
+}
+
+/**
+ * The tags of the running containers whose image is the build's: `docker ps --format '{{.Image}}'` lines, matched by the
+ * image name (the whole name, or its last part when the workflow only names it by an expression).
+ */
+export function tagsOfRunning(
+  running: NonNullable<DeployRecipe["running"]>,
+  lines: readonly string[],
+): string[] {
+  const tags = new Set<string>();
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const noDigest = line.split("@")[0] ?? line;
+    const slash = noDigest.lastIndexOf("/");
+    const colon = noDigest.lastIndexOf(":");
+    if (colon <= slash) continue;
+    const repo = noDigest.slice(0, colon);
+    const last = repo.split("/").at(-1);
+    if (running.whole ? repo === running.repo : last === running.repo) tags.add(noDigest.slice(colon + 1));
+  }
+  return [...tags];
+}
+
+/** The lowercase letters and digits of a text, as words. */
+export function wordsOf(text: string): Set<string> {
+  const words = new Set<string>();
+  let word = "";
+  for (const c of text.toLowerCase()) {
+    if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) word += c;
+    else if (word !== "") {
+      words.add(word);
+      word = "";
+    }
+  }
+  if (word !== "") words.add(word);
+  return words;
 }

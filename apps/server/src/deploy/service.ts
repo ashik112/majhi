@@ -19,13 +19,23 @@ import {
   type RemoteConfig,
 } from "@majhi/shared";
 import type { z } from "zod";
+import { classifyRemoteCommand } from "../connections/remote-command.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { DeployRepo } from "../store/deploys.ts";
 import { type DeployGit, envKeys } from "./git.ts";
 import { gitlabVariableKeys } from "./gitlab.ts";
 import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
-import { bindRuns, bindsOf, commitOfVersion, tagOf, versionPutLive } from "./recipe.ts";
+import {
+  bindRuns,
+  bindsOf,
+  commitOfVersion,
+  nextPatch,
+  tagOf,
+  tagsOfRunning,
+  versionPutLive,
+  wordsOf,
+} from "./recipe.ts";
 import {
   type DeployContext,
   DeployProblem,
@@ -696,40 +706,152 @@ export class DeployService {
 
   /**
    * What an environment runs now: majhi's own last deploy of it (or what the last rolled-back one replaced), then the
-   * host's own answer when the recipe says where to look. Absent where neither knows.
+   * host's own answer when the recipe says where to look (the CI's run title, a GitLab environment), then the image
+   * its running containers use. Absent where none of them knows.
    */
-  async current(projectId: string, envName: string): Promise<DeployReplaces | undefined> {
+  async current(
+    projectId: string,
+    envName: string,
+    opts: { connection?: string | undefined; version?: string | undefined } = {},
+  ): Promise<DeployReplaces | undefined> {
     const project = await this.deps.projects.get(projectId);
     const env = project.environments.find((e) => e.env === envName);
     const mine = this.deps.repo.latestSettled(projectId, envName);
-    let known: DeployReplaces | undefined;
+    let found: DeployReplaces | undefined;
+    if (opts.version !== undefined) {
+      // The owner said which version it runs: the commit it was built from is read, not asked.
+      const commit =
+        env?.recipe === undefined
+          ? undefined
+          : (commitOfVersion(env.recipe, opts.version) ??
+            (await this.builtCommit(project, env, env.recipe, opts.version)));
+      return { version: opts.version, ...(commit === undefined ? {} : { commit }), from: "owner" };
+    }
     if (mine?.state === "live") {
-      known = {
+      found = {
         ...(mine.version === undefined ? {} : { version: mine.version }),
         commit: mine.commit,
         from: "record",
       };
     } else if (mine?.state === "rolled-back" && mine.replaces !== undefined) {
-      known = { ...mine.replaces, from: "record" };
+      found = { ...mine.replaces, from: "record" };
     }
     const recipe = env?.recipe;
-    if (recipe === undefined) return known;
-    if (known !== undefined && goesBackBy(recipe, known) === undefined) return known;
+    if (recipe === undefined || env === undefined) return found;
+    if (found !== undefined && goesBackBy(recipe, found) === undefined) return found;
     const source = recipe.live;
-    if (source === undefined || env === undefined || project.base === undefined) return known;
-    const provider = this.deps.providers[source.kind === "run-name" ? "github-workflow" : "gitlab-job"];
-    const ctx = this.contextFor(project, env, known?.commit ?? "unknown", project.base);
-    const said = await provider.liveVersion?.(ctx, source);
-    if (said === undefined) return known;
-    const version = known?.version ?? said.version;
-    const commit =
-      known?.commit ?? said.commit ?? (version === undefined ? undefined : commitOfVersion(recipe, version));
-    return {
-      ...(version === undefined ? {} : { version }),
-      ...(commit === undefined ? {} : { commit }),
-      ...(said.job === undefined ? {} : { job: said.job }),
-      from: known === undefined ? "ci" : "record",
-    };
+    if (source !== undefined && project.base !== undefined) {
+      const provider = this.deps.providers[source.kind === "run-name" ? "github-workflow" : "gitlab-job"];
+      const ctx = this.contextFor(project, env, found?.commit ?? "unknown", project.base);
+      const said = await provider.liveVersion?.(ctx, source);
+      if (said !== undefined) {
+        const version = found?.version ?? said.version;
+        const commit =
+          found?.commit ??
+          said.commit ??
+          (version === undefined ? undefined : commitOfVersion(recipe, version));
+        found = {
+          ...(version === undefined ? {} : { version }),
+          ...(commit === undefined ? {} : { commit }),
+          ...(said.job === undefined ? {} : { job: said.job }),
+          from: found === undefined ? "ci" : "record",
+        };
+      }
+    }
+    if (found?.version === undefined && recipe.running !== undefined) {
+      const tag = await this.runningTag(projectId, env, recipe.running, opts.connection);
+      if (tag !== undefined) {
+        const commit = found?.commit ?? commitOfVersion(recipe, tag);
+        found = { ...found, version: tag, ...(commit === undefined ? {} : { commit }), from: "host" };
+      }
+    }
+    // A version whose commit is not known yet: the build that made it was run from one.
+    if (found?.version !== undefined && found.commit === undefined) {
+      const commit = await this.builtCommit(project, env, recipe, found.version);
+      if (commit !== undefined) found = { ...found, commit };
+    }
+    return found;
+  }
+
+  /** The commit a version was built from, read from the titles of the build's recent runs. */
+  private async builtCommit(
+    project: DeployProject,
+    env: DeployEnvironment,
+    recipe: DeployRecipe,
+    version: string,
+  ): Promise<string | undefined> {
+    const pick = recipe.pick;
+    if (pick?.runs === undefined || project.base === undefined) return undefined;
+    const ctx = this.contextFor(project, env, "unknown", project.base);
+    const built = await this.deps.providers["github-workflow"]
+      .builtVersions?.(ctx, pick.runs, pick.input)
+      .catch(() => undefined);
+    return built?.find((b) => b.version === version)?.commit;
+  }
+
+  /**
+   * The ssh connections that could be the environment's host: the one the owner named (kept on the recipe), else
+   * those whose id, name or host holds every word of the environment's name. More than one means asking.
+   */
+  async hostChoices(
+    projectId: string,
+    envName: string,
+    connection?: string,
+  ): Promise<{ id: string; alias: string; key?: string | undefined }[]> {
+    const project = await this.deps.projects.get(projectId);
+    const env = project.environments.find((e) => e.env === envName);
+    const hosts = await this.deps.providerDeps.credentials.sshHosts(project.org);
+    const named = connection ?? env?.recipe?.answers.connection;
+    const chosen = named === undefined ? undefined : hosts.find((h) => h.id === named);
+    if (chosen !== undefined) return [chosen];
+    const wanted = [...wordsOf(envName.split("/").join(" ").split("-").join(" "))];
+    return hosts.filter((h) => {
+      const words = wordsOf(`${h.id} ${h.name} ${h.alias}`);
+      return wanted.length > 0 && wanted.every((w) => words.has(w));
+    });
+  }
+
+  /** The one tag the running containers of the build's image carry on the environment's host. Several tags: none. */
+  private async runningTag(
+    projectId: string,
+    env: DeployEnvironment,
+    running: NonNullable<DeployRecipe["running"]>,
+    connection: string | undefined,
+  ): Promise<string | undefined> {
+    const choices = await this.hostChoices(projectId, env.env, connection).catch(() => []);
+    const [host] = choices;
+    if (choices.length !== 1 || host === undefined) return undefined;
+    // The same gate every host command of a case passes: only a read runs.
+    const command = "docker ps --format '{{.Image}}'";
+    if (classifyRemoteCommand(command).kind !== "read") return undefined;
+    const done = await this.deps.providerDeps.remote(host.alias, command, host.key);
+    if (done.code !== 0) return undefined;
+    const tags = tagsOfRunning(running, done.output.split("\n"));
+    const [only] = tags;
+    return tags.length === 1 ? only : undefined;
+  }
+
+  /**
+   * The version the build is given when majhi picks it: the next patch after the highest it knows, from its own
+   * deploy records, what the environment runs now and the titles of the build's recent runs.
+   */
+  async nextVersion(
+    projectId: string,
+    envName: string,
+  ): Promise<{ version: string; after: string } | undefined> {
+    const project = await this.deps.projects.get(projectId);
+    const env = project.environments.find((e) => e.env === envName);
+    const pick = env?.recipe?.pick;
+    if (env === undefined || pick === undefined) return undefined;
+    const known: (string | undefined)[] = [];
+    for (const r of this.deps.repo.ofProject(projectId, 200)) known.push(r.version, r.replaces?.version);
+    known.push((await this.current(projectId, envName).catch(() => undefined))?.version);
+    if (pick.runs !== undefined && project.base !== undefined) {
+      const ctx = this.contextFor(project, env, "unknown", project.base);
+      const built = await this.deps.providers["github-workflow"].builtVersions?.(ctx, pick.runs, pick.input);
+      known.push(...(built ?? []).map((b) => b.version));
+    }
+    return nextPatch(known);
   }
 
   /**
@@ -745,49 +867,88 @@ export class DeployService {
       return this.fail(record, "The deploy has no runs to start.", { rollback: false });
     }
     const handles = [...record.handles];
+    const recipe = ctx.env.recipe;
+    // The version the build makes: its tag by the commit, else the one majhi picked (kept in the run it was sent to).
+    let built =
+      recipe?.build !== undefined
+        ? tagOf(recipe.build, ctx.commit)
+        : recipe?.pick === undefined
+          ? undefined
+          : handles.map((h) => h?.inputs?.[recipe.pick?.input ?? ""]).find((v) => v !== undefined);
+    if (built === undefined && recipe?.pick !== undefined && !resumed) {
+      built = (await this.nextVersion(record.project, record.env).catch(() => undefined))?.version;
+      if (built === undefined) {
+        return this.fail(
+          record,
+          "majhi does not know which versions the build made, so it cannot pick the next one",
+          { rollback: false },
+        );
+      }
+    }
     for (const [i, planned] of record.runs.entries()) {
       let step = planned;
       const provider = this.deps.providers[step.kind];
       let handle: RunHandle | undefined = handles[i];
       if (handle?.ended === true) continue;
-      let outcome: RunHandle["outcome"];
-      if (handle === undefined) {
-        if (resumed) {
-          return this.fail(record, "majhi restarted before the run was known, so what it did is not known", {
-            rollback: true,
-          });
-        }
-        try {
-          // The inputs only known now (the commit, the version the build made) are filled in just before the dispatch.
-          const bound = bindRuns([planned], factsOf(record, ctx));
-          if (bound.missing.length > 0) {
-            return this.fail(record, `majhi cannot fill ${bound.missing.join(", ")}`, { rollback: i > 0 });
+      // A build that takes the version majhi picked may be refused because the version exists: once more, one patch up.
+      let retried = false;
+      let canStart = !resumed;
+      const picks =
+        step.kind === "github-workflow" && Object.values(step.bind ?? {}).includes("next-version");
+      // Failing the first of several runs is failing the build: nothing was deployed, so nothing goes back.
+      const goBack = !(recipe !== undefined && i === 0 && record.runs.length > 1);
+      for (;;) {
+        let outcome: RunHandle["outcome"];
+        if (handle === undefined) {
+          if (!canStart) {
+            return this.fail(
+              record,
+              "majhi restarted before the run was known, so what it did is not known",
+              { rollback: true },
+            );
           }
-          step = bound.runs[0] ?? planned;
-          const refused = await provider.preflight(ctx, step);
-          // Nothing was deployed yet when the first run is refused or does not start, so there is nothing to roll back.
-          if (refused !== undefined) return this.fail(record, refused, { rollback: i > 0 });
-          const started = await provider.start(ctx, step);
-          outcome = started.outcome;
-          const { outcome: _over, ...made } = started;
-          const run =
-            step.kind === "github-workflow" && step.inputs !== undefined
-              ? { ...made, inputs: step.inputs }
-              : made;
-          handle = run;
-          handles[i] = run;
-          this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
-          this.changed();
-        } catch (err) {
-          return this.fail(record, reasonOf(err), { rollback: i > 0 });
+          try {
+            // The inputs only known now (the commit, the version the build made) are filled in just before the dispatch.
+            const bound = bindRuns([planned], { ...factsOf(record, ctx), built });
+            if (bound.missing.length > 0) {
+              return this.fail(record, `majhi cannot fill ${bound.missing.join(", ")}`, { rollback: i > 0 });
+            }
+            step = bound.runs[0] ?? planned;
+            const refused = await provider.preflight(ctx, step);
+            // Nothing was deployed yet when the first run is refused or does not start, so there is nothing to roll back.
+            if (refused !== undefined) return this.fail(record, refused, { rollback: i > 0 });
+            const started = await provider.start(ctx, step);
+            outcome = started.outcome;
+            const { outcome: _over, ...made } = started;
+            const run =
+              step.kind === "github-workflow" && step.inputs !== undefined
+                ? { ...made, inputs: step.inputs }
+                : made;
+            handle = run;
+            handles[i] = run;
+            this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
+            this.changed();
+          } catch (err) {
+            return this.fail(record, reasonOf(err), { rollback: i > 0 });
+          }
         }
+        const ended =
+          outcome === undefined ? await this.waitFor(provider, ctx, step, handle) : progressOf(outcome);
+        if (!ended.ok) {
+          const again = picks && !retried && built !== undefined ? nextPatch([built]) : undefined;
+          if (again === undefined) return this.fail(record, ended.detail, { rollback: goBack });
+          retried = true;
+          canStart = true;
+          built = again.version;
+          handle = undefined;
+          delete handles[i];
+          continue;
+        }
+        handles[i] = { ...handle, ended: true };
+        this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
+        this.changed();
+        break;
       }
-      const ended =
-        outcome === undefined ? await this.waitFor(provider, ctx, step, handle) : progressOf(outcome);
-      if (!ended.ok) return this.fail(record, ended.detail, { rollback: true });
-      handles[i] = { ...handle, ended: true };
-      this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
-      this.changed();
     }
     // What the environment runs now is the version the recipe's inputs carried.
     const aligned = alignedRecipe(ctx.env.recipe, record.runs);
@@ -1114,7 +1275,6 @@ function factsOf(record: DeployRecord, ctx: DeployContext) {
   const recipe = ctx.env.recipe;
   return {
     commit: ctx.commit,
-    built: recipe?.build === undefined ? undefined : tagOf(recipe.build, ctx.commit),
     previous: record.replaces,
     components: recipe?.components?.all,
   };

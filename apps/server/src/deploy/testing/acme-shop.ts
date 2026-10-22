@@ -6,12 +6,15 @@ import { type CiFiles, type CiSource, readCiFiles } from "../../ci/read.ts";
  * `initech`), and a rollback that puts an earlier tag back. Generic names only; used by the discovery and deploy tests.
  */
 
-const BUILD = `name: Build image
+/** The build takes the version it makes as an input (`X.Y.Z`, not built yet), and shows it in its title. */
+const BUILD = `name: Build backend
+run-name: Build backend \${{ inputs.version || 'next version' }} from \${{ inputs.source_ref || 'main' }}
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
+      version:
+        description: Image tag, X.Y.Z. Must not exist yet. Empty takes the next patch
+        required: false
       source_ref:
         description: Branch, tag or SHA to build
         required: false
@@ -23,21 +26,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: \${{ inputs.source_ref }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: registry.acme.example/acme-shop/backend:\${{ inputs.version }}
+`;
+
+/** A build that names its image by the commit alone: the version is known without asking. */
+export const BUILD_BY_COMMIT = `name: Build image
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        required: false
+        default: main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/acme/acme-shop-backend
           tags: |
             type=sha,format=long
-      - uses: docker/build-push-action@v6
-        with:
-          context: backend
-          push: true
-          tags: \${{ steps.meta.outputs.tags }}
 `;
 
 const RELEASE = `name: Release
-run-name: Release \${{ inputs.target }} \${{ inputs.backend_version }}
+run-name: Deploy \${{ inputs.target }} \${{ inputs.components }} from \${{ inputs.source_ref }}
 on:
   workflow_dispatch:
     inputs:

@@ -20,7 +20,9 @@ describe("a case deploy", () => {
         environments: async () => r.project.environments,
         discover: async () => [],
         remember: async () => undefined,
-        current: (project, env) => r.service.current(project, env),
+        current: (project, env, opts) => r.service.current(project, env, opts),
+        hostChoices: (project, env, connection) => r.service.hostChoices(project, env, connection),
+        nextVersion: (project, env) => r.service.nextVersion(project, env),
         changedPaths: async () => undefined,
         latestLive: (project, env) => r.store.deploys.latestLive(project, env),
         repeatable: (runs) => r.service.repeatable(runs),
@@ -126,7 +128,9 @@ function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): Ca
     environments: async () => r.project.environments,
     discover: async () => [],
     remember: async () => undefined,
-    current: (project, env) => r.service.current(project, env),
+    current: (project, env, opts) => r.service.current(project, env, opts),
+    hostChoices: (project, env, connection) => r.service.hostChoices(project, env, connection),
+    nextVersion: (project, env) => r.service.nextVersion(project, env),
     changedPaths: async () => paths,
     latestLive: (project, env) => r.store.deploys.latestLive(project, env),
     repeatable: (runs) => r.service.repeatable(runs),
@@ -147,8 +151,6 @@ function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): Ca
 }
 
 const fix = { task: "ACM-1", project: "storefront", branch: "fix/slips" };
-const V1 = `sha-${C1}`;
-const V2 = `sha-${C2}`;
 
 /** The workflow dispatches the fake GitHub saw, in order: which workflow, and what it was sent. */
 const dispatches = (r: Rig) =>
@@ -156,36 +158,53 @@ const dispatches = (r: Rig) =>
     .filter((c) => c.method === "POST")
     .map((c) => [c.path.split("/workflows/")[1], c.body] as const);
 
+/** The commands run on the workspace's hosts, each once: which host, and what. */
+const askedHosts = (r: Rig) => [...new Set(r.remote.map((c) => `${c.alias} ${c.command}`))];
+
 describe("a case deploy through the recipe of the project's CI", () => {
-  it("reads the version it replaces first, builds, then releases the built tag at the commit, and goes back once", async () => {
+  /** What the sample project's workflows say in their run titles, and the images its containers run. */
+  function titles(r: Rig) {
+    r.hosts.runNames.set(
+      "build-image.yml",
+      (i) => `Build backend ${i.version || "next version"} from ${i.source_ref || "main"}`,
+    );
+    r.hosts.runNames.set("release.yml", (i) => `Deploy ${i.target} ${i.components} from ${i.source_ref}`);
+  }
+  const slug = "acme/storefront";
+
+  it("picks the next version, reads what runs from the host, builds, releases the built tag, and goes back once", async () => {
     const r = await rig(await shop());
     try {
-      r.hosts.runNames.set("release.yml", (i) => `Release ${i.target} ${i.backend_version}`);
-      // The owner released acme at the version the build made for C1; globex was released after it, at another one.
-      const slug = "acme/storefront";
+      titles(r);
+      // The registry has 1.4.2 and 1.4.7 (the build's titles); acme's containers run 1.4.7, with the frontend beside them.
+      r.hosts.seedRun({ slug, workflow: "build-image.yml", sha: C1, inputs: { version: "1.4.2" } });
       r.hosts.seedRun({
         slug,
-        workflow: "release.yml",
+        workflow: "build-image.yml",
         sha: C1,
-        inputs: { target: "acme", backend_version: V1 },
+        inputs: { version: "1.4.7", source_ref: C1 },
       });
-      r.hosts.seedRun({
-        slug,
-        workflow: "release.yml",
-        sha: C1,
-        inputs: { target: "globex", backend_version: `sha-${C1.replaceAll("1", "9")}` },
-      });
+      r.hosts.seedRun({ slug, workflow: "build-image.yml", sha: C1, inputs: {} });
+      r.remoteRun.output = [
+        "registry.acme.example/acme-shop/backend:1.4.7",
+        "registry.acme.example/acme-shop/frontend:3.1.0",
+        "postgres:16",
+      ].join("\n");
       pushTo(r, C1);
+      // The first build is refused, because that version exists in the registry: majhi takes the next patch once more.
+      r.hosts.outcomeQueue.push("failure");
       const landed: string[] = [];
       const ports = portsOf(r, ["backend/app/slips.py"], landed);
       const deployer = new CaseDeployer(ports);
 
       const path = await deployer.prepare({ ...fix, env: "acme" });
       if (!path.ok) throw new Error(path.why);
-      // What acme runs now is known before anything moves, and the change touched only the backend.
-      expect(path.replaces).toEqual({ version: V1, commit: C1, from: "ci" });
+      // What acme runs is read from the host with a read command, and its commit from the build that made it.
+      expect(askedHosts(r)).toEqual(["deploy@203.0.113.7 docker ps --format '{{.Image}}'"]);
+      expect(path.replaces).toEqual({ version: "1.4.7", commit: C1, from: "host" });
       expect(path.notes).toContain("Deploys acme the way .github/workflows/release.yml:6 says.");
       expect(path.notes).toContain("Components: backend, because only backend files changed.");
+      expect(path.notes).toContain("Build version: 1.4.8, the next patch after 1.4.7.");
       expect(dispatches(r)).toEqual([]);
 
       const record = await deployer.run({
@@ -199,21 +218,22 @@ describe("a case deploy through the recipe of the project's CI", () => {
       expect(record).toMatchObject({
         state: "live",
         commit: C2,
-        version: V2,
-        replaces: { version: V1, commit: C1 },
+        version: "1.4.9",
+        replaces: { version: "1.4.7", commit: C1 },
       });
-      // The read of the live version came before the first dispatch; then the build, then the release with its tag.
+      // What runs now was read before the first dispatch; then the build (refused once), then the release with its tag.
       const calls = r.hosts.calls.map((c) => `${c.method} ${c.path.split("/workflows/")[1] ?? ""}`);
-      expect(calls.findIndex((c) => c.startsWith("GET release.yml/runs?status=success"))).toBeLessThan(
+      expect(calls.findIndex((c) => c.startsWith("GET build-image.yml/runs"))).toBeLessThan(
         calls.findIndex((c) => c.startsWith("POST")),
       );
       expect(dispatches(r)).toEqual([
-        ["build-image.yml/dispatches", { ref: "main", inputs: { source_ref: C2 } }],
+        ["build-image.yml/dispatches", { ref: "main", inputs: { version: "1.4.8", source_ref: C2 } }],
+        ["build-image.yml/dispatches", { ref: "main", inputs: { version: "1.4.9", source_ref: C2 } }],
         [
           "release.yml/dispatches",
           {
             ref: "main",
-            inputs: { target: "acme", components: "backend", source_ref: C2, backend_version: V2 },
+            inputs: { target: "acme", components: "backend", source_ref: C2, backend_version: "1.4.9" },
           },
         ],
       ]);
@@ -221,17 +241,17 @@ describe("a case deploy through the recipe of the project's CI", () => {
       // The rollback workflow goes out once, with the version and commit recorded before the deploy.
       const back = await deployer.rollback(record.id);
       expect(back).toMatchObject({ state: "rolled-back", rollback: { ok: true, commit: C1 } });
-      expect(dispatches(r).slice(2)).toEqual([
+      expect(dispatches(r).slice(3)).toEqual([
         [
           "rollback.yml/dispatches",
           {
             ref: "main",
-            inputs: { target: "acme", components: "backend", backend_version: V1, source_ref: C1 },
+            inputs: { target: "acme", components: "backend", backend_version: "1.4.7", source_ref: C1 },
           },
         ],
       ]);
       expect((await ports.rollback(record.id, "captain")).repeat).toBe(true);
-      expect(dispatches(r)).toHaveLength(3);
+      expect(dispatches(r)).toHaveLength(4);
     } finally {
       await r.service.idle();
       await r.hosts.close();
@@ -239,29 +259,54 @@ describe("a case deploy through the recipe of the project's CI", () => {
     }
   });
 
-  it("asks once, and starts nothing, when the version the environment runs cannot be read", async () => {
+  it("asks once, and starts nothing, when what an environment runs cannot be read or several hosts could be it", async () => {
     const r = await rig(await shop());
     try {
-      r.hosts.runNames.set("release.yml", (i) => `Release ${i.target} ${i.backend_version}`);
+      titles(r);
+      r.hosts.seedRun({
+        slug,
+        workflow: "build-image.yml",
+        sha: C1,
+        inputs: { version: "1.4.7", source_ref: C1 },
+      });
+      r.remoteRun.output = "registry.acme.example/acme-shop/backend:1.4.7";
       pushTo(r, C1);
       const deployer = new CaseDeployer(portsOf(r, ["backend/app/slips.py"]));
 
-      // initech was never released through majhi or by a run the CI titles: one card, with the one question.
+      // No connection of the workspace is named for initech: one question, and nothing was dispatched.
       const asked = await deployer.prepare({ ...fix, env: "initech" });
       expect(asked).toMatchObject({ ok: false, ask: [{ id: "previous-version", options: [] }] });
       expect(dispatches(r)).toEqual([]);
 
-      // With the owner's answer it goes: the commit is the one the version names, and nothing asks again.
+      // With the owner's version it goes: the commit is read from the build that made it, and nothing asks again.
       const answered = await deployer.prepare({
         ...fix,
         env: "initech",
-        answers: { "previous-version": V1 },
+        answers: { "previous-version": "1.4.7" },
       });
       expect(answered).toMatchObject({
         ok: true,
-        previous: V1,
-        replaces: { version: V1, commit: C1, from: "owner" },
+        previous: "1.4.7",
+        replaces: { version: "1.4.7", commit: C1, from: "owner" },
       });
+
+      // Two hosts could be acme's: one card asks which, and nothing was run on either.
+      r.sshHosts.push({ id: "acme-eu", name: "Acme EU", alias: "deploy@203.0.113.9" });
+      r.remote.length = 0;
+      const which = await deployer.prepare({ ...fix, env: "acme" });
+      expect(which).toMatchObject({
+        ok: false,
+        ask: [{ id: "connection", options: ["acme-host", "acme-eu"] }],
+      });
+      expect(r.remote).toEqual([]);
+      // The owner's pick is read from that host, and kept on the recipe for the next deploy.
+      const picked = await deployer.prepare({ ...fix, env: "acme", answers: { connection: "acme-eu" } });
+      expect(picked).toMatchObject({
+        ok: true,
+        replaces: { version: "1.4.7", from: "host" },
+        remember: { connection: "acme-eu" },
+      });
+      expect(askedHosts(r)).toEqual(["deploy@203.0.113.9 docker ps --format '{{.Image}}'"]);
     } finally {
       await r.service.idle();
       await r.hosts.close();

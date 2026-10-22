@@ -8,7 +8,14 @@ import {
   deployRunLine,
   deployRunStates,
 } from "@majhi/shared";
-import { bindRuns, bindsOf, commitOfVersion, componentsFor, recipeSource } from "../deploy/recipe.ts";
+import {
+  bindRuns,
+  bindsOf,
+  commitOfVersion,
+  componentsFor,
+  recipeSource,
+  wordsOf,
+} from "../deploy/recipe.ts";
 import type { DeployHint } from "../deploy/service.ts";
 import { goesBackBy } from "../deploy/service.ts";
 import { UserError } from "../errors.ts";
@@ -29,8 +36,16 @@ export interface CaseDeployPorts {
   discover(project: string): Promise<string[]>;
   /** Keeps what the owner answered about an environment's inputs, so its next deploy does not ask again. */
   remember(project: string, env: string, answers: Readonly<Record<string, string>>): Promise<void>;
-  /** What an environment runs now: majhi's own last deploy, else what the host says. Absent where neither knows. */
-  current(project: string, env: string): Promise<DeployReplaces | undefined>;
+  /** What an environment runs now: majhi's own last deploy, else what its CI or its host says. Absent where none knows. */
+  current(
+    project: string,
+    env: string,
+    opts?: { connection?: string | undefined; version?: string | undefined },
+  ): Promise<DeployReplaces | undefined>;
+  /** The ssh connections that could be the environment's host (the one the owner named, else by the environment's name). */
+  hostChoices(project: string, env: string, connection?: string): Promise<{ id: string }[]>;
+  /** The version the build is given when majhi picks it: the next patch after the highest it knows. */
+  nextVersion(project: string, env: string): Promise<{ version: string; after: string } | undefined>;
   /** The files the case's branch changed against the project's base; undefined when git cannot say. */
   changedPaths(project: string, branch: string): Promise<string[] | undefined>;
   /** The newest live deploy of an environment, with the runs that made it. */
@@ -85,21 +100,6 @@ export type DeployPath =
 
 const NO_PATH = (project: string): string =>
   `${project} has no deploy majhi can repeat: its CI files show no deploy it can start, and no environment of it went live through a run the captain may start and put back. Ask the owner once with case_ask how to deploy it.`;
-
-/** The lowercase letters and digits of a text, as words. */
-function wordsOf(text: string): Set<string> {
-  const words = new Set<string>();
-  let word = "";
-  for (const c of text.toLowerCase()) {
-    if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) word += c;
-    else if (word !== "") {
-      words.add(word);
-      word = "";
-    }
-  }
-  if (word !== "") words.add(word);
-  return words;
-}
 
 interface Candidate {
   env: DeployEnvironment;
@@ -266,21 +266,44 @@ export class CaseDeployer {
       else filled[ask.key] = said;
     }
 
-    // The version the environment runs now, read before anything moves: where a rollback goes.
-    let replaces = await this.ports.current(input.project, env.env).catch(() => undefined);
-    const owner = answers["previous-version"];
-    const ownerCommit = answers["previous-commit"];
-    if (owner !== undefined || ownerCommit !== undefined) {
-      const commit = ownerCommit ?? (owner === undefined ? undefined : commitOfVersion(recipe, owner));
-      replaces = {
-        ...replaces,
-        ...(owner === undefined ? {} : { version: owner }),
-        ...(commit === undefined ? {} : { commit }),
-        from: "owner",
-      };
+    // The version the build makes: majhi picks the next patch when the build takes its version as an input.
+    const builtAnswer = answers["input:build-version"];
+    if (recipe.pick !== undefined) {
+      if (builtAnswer !== undefined) notes.push(`Build version: ${builtAnswer}, as the owner said.`);
+      else {
+        const next = await this.ports.nextVersion(input.project, env.env).catch(() => undefined);
+        if (next === undefined) {
+          asks.push({
+            id: "input:build-version",
+            question: `Which version should the build make for this fix (X.Y.Z, not built yet)? majhi could not find the versions already built.`,
+            options: [],
+          });
+        } else notes.push(`Build version: ${next.version}, the next patch after ${next.after}.`);
+      }
     }
+
+    // The version the environment runs now, read before anything moves: where a rollback goes.
+    let replaces = await this.ports
+      .current(input.project, env.env, {
+        connection: answers.connection,
+        version: answers["previous-version"],
+      })
+      .catch(() => undefined);
+    const ownerCommit = answers["previous-commit"];
+    if (ownerCommit !== undefined) replaces = { ...replaces, commit: ownerCommit, from: "owner" };
     const lack = goesBackBy(recipe, replaces);
-    if (lack !== undefined) {
+    // Several hosts could be this environment's: which one is asked before the version is.
+    const hosts =
+      lack !== undefined && recipe.running !== undefined
+        ? await this.ports.hostChoices(input.project, env.env, answers.connection).catch(() => [])
+        : [];
+    if (lack !== undefined && hosts.length > 1) {
+      asks.push({
+        id: "connection",
+        question: `Which host runs ${env.env}? majhi reads the image its containers use there.`,
+        options: hosts.slice(0, 8).map((h) => h.id),
+      });
+    } else if (lack !== undefined) {
       if (
         replaces?.version === undefined &&
         bindsOf(recipe.rollback?.runs ?? [], "previous-version").length > 0
@@ -309,7 +332,7 @@ export class CaseDeployer {
     // An input of the workflow with no value of its own is the same for every deploy of the environment: kept.
     const remember = Object.fromEntries(
       Object.entries(input.answers ?? {}).filter(
-        ([key]) => key.startsWith("input:") && key !== "input:build-version",
+        ([key]) => (key.startsWith("input:") && key !== "input:build-version") || key === "connection",
       ),
     );
     const filledInputs = recipe.deploy.map((step) => {
@@ -323,7 +346,7 @@ export class CaseDeployer {
     });
     const bound = bindRuns(filledInputs, {
       components,
-      built: filled["input:build-version"],
+      built: builtAnswer,
     });
     const previous = replaces?.version ?? replaces?.commit ?? "";
     notes.push(`${env.env} runs ${shortVersion(previous === "" ? "an unknown version" : previous)} now.`);

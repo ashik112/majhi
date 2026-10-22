@@ -687,10 +687,10 @@ describe("the case replay when the project's deploy needs an answer", () => {
     expect(done.map((d) => d.isError)).toEqual([true, true]);
     expect(done[0]?.text).toContain("previous-version");
 
-    // One card with the one question, no deploy started, the case still open and nothing in the way of a task.
+    // One card (the build version and the version acme runs now), no deploy started, the case still open and nothing in the way of a task.
     const cards = (await owner(r)).decisions;
     expect(cards).toHaveLength(1);
-    expect(cards[0]?.title).toContain("Which version does acme run now?");
+    expect(cards[0]?.title).toContain("Which version should the build make");
     expect(deploy).not.toHaveBeenCalled();
     expect((await work(r)).map((t) => [t.typing?.type, t.status])).toEqual([["incident", "running"]]);
   });

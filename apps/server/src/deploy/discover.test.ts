@@ -1,7 +1,7 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
-import { ACME_SHOP_FILES, acmeShopCi } from "./testing/acme-shop.ts";
+import { ACME_SHOP_FILES, acmeShopCi, BUILD_BY_COMMIT } from "./testing/acme-shop.ts";
 
 /**
  * How a project deploys, read from its own CI files (docs/DECISIONS.md, "deploy from CI"): the sample `acme-shop` has a
@@ -26,7 +26,7 @@ const build: DeployRunStep = {
   remote: "origin",
   workflow: "build-image.yml",
   ref: "base",
-  bind: { source_ref: "commit" },
+  bind: { version: "next-version", source_ref: "commit" },
 };
 
 describe("finding how a project deploys from its CI files", () => {
@@ -70,25 +70,23 @@ describe("finding how a project deploys from its CI files", () => {
           },
         ],
       },
-      // The build names its image by the commit, so the version is known before it runs.
-      build: [
-        { kind: "text", text: "sha-" },
-        { kind: "commit", length: 40 },
-      ],
-      // The release's title holds the target and the version: that is how the live version is read back.
-      live: {
-        kind: "run-name",
-        remote: "origin",
-        workflow: "release.yml",
-        parts: [
-          { kind: "text", text: "Release " },
-          { kind: "input", name: "target" },
-          { kind: "text", text: " " },
-          { kind: "input", name: "backend_version" },
-        ],
-        match: { target: "globex" },
-        version: "backend_version",
+      // The build takes its version as an input, so majhi picks it; the titles of its runs hold the versions built.
+      pick: {
+        input: "version",
+        runs: {
+          remote: "origin",
+          workflow: "build-image.yml",
+          parts: [
+            { kind: "text", text: "Build backend " },
+            { kind: "input", name: "version", fallback: "next version" },
+            { kind: "text", text: " from " },
+            { kind: "input", name: "source_ref", fallback: "main" },
+          ],
+          ref: "source_ref",
+        },
       },
+      // The release's title has no version, so what runs now is read from the image of the running containers.
+      running: { repo: "registry.acme.example/acme-shop/backend", whole: true },
       // Both parts have a folder of their own, so a change picks backend, frontend or both by its files.
       components: {
         all: "both",
@@ -100,6 +98,20 @@ describe("finding how a project deploys from its CI files", () => {
       asks: [],
       answers: {},
     });
+
+    // A build that names its image by the commit alone needs no version picked, and asks nothing.
+    const byCommit = await discover(
+      {},
+      { ...ACME_SHOP_FILES, ".github/workflows/build-image.yml": BUILD_BY_COMMIT },
+    );
+    expect(byCommit.environments[0]?.recipe).toMatchObject({
+      build: [
+        { kind: "text", text: "sha-" },
+        { kind: "commit", length: 40 },
+      ],
+      asks: [],
+    });
+    expect(byCommit.environments[0]?.recipe?.pick).toBeUndefined();
 
     // Parts with no folder are asked, and with no rollback workflow the release itself goes back.
     const files = { ...ACME_SHOP_FILES };

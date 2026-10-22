@@ -23,6 +23,8 @@ export interface FakeHosts {
   tokens: { github: string; gitlab: string; vercel: string };
   /** Branch tips by `<provider>:<slug>:<branch>`. */
   branches: Map<string, string>;
+  /** How the next GitHub runs end, one each, before `outcome` applies again. */
+  outcomeQueue: ("success" | "failure")[];
   /** How the next runs end. */
   outcome: { github: "success" | "failure"; gitlab: "success" | "failed"; vercel: "READY" | "ERROR" };
   /** Looks at a run before it reads as finished. */
@@ -86,6 +88,7 @@ export async function startFakeHosts(
     url: "",
     tokens,
     branches: new Map(),
+    outcomeQueue: [],
     outcome: { github: "success", gitlab: "success", vercel: "READY" },
     pollsToFinish: init.pollsToFinish ?? 1,
     health: new Map(),
@@ -171,7 +174,7 @@ export async function startFakeHosts(
           finished: false,
           workflow: decodeURIComponent(dispatch[1] ?? ""),
           inputs: sent,
-          result: state.outcome.github,
+          result: state.outcomeQueue.shift() ?? state.outcome.github,
         };
         runs.set(run.id, run);
         return send(res, 204);

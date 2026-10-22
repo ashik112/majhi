@@ -47,6 +47,8 @@ export interface Rig {
   /** False: the workspace is not signed in to the host. */
   signedIn: { value: boolean };
   remoteRun: { code: number | null; output: string };
+  /** The workspace's ssh connections. */
+  sshHosts: { id: string; name: string; alias: string }[];
 }
 
 export async function rig(
@@ -62,6 +64,9 @@ export async function rig(
   const incidents: Rig["incidents"] = [];
   const remote: Rig["remote"] = [];
   const remoteRun = { code: 0 as number | null, output: "" };
+  const sshHosts: { id: string; name: string; alias: string }[] = [
+    { id: "acme-host", name: "Acme host", alias: "deploy@203.0.113.7" },
+  ];
   const project: DeployProject = {
     id: "storefront",
     org: "acme",
@@ -79,10 +84,13 @@ export async function rig(
       org === "acme" && connection === "acme-vercel"
         ? { value: hosts.tokens.vercel }
         : { problem: `${org} has no connection ${connection}` },
-    ssh: async (org, connection) =>
-      org === "acme" && connection === "acme-host"
-        ? { alias: "deploy@203.0.113.7" }
-        : { problem: `${org} has no connection ${connection}` },
+    sshHosts: async (org) => (org === "acme" ? sshHosts : []),
+    ssh: async (org, connection) => {
+      const found = org === "acme" ? sshHosts.find((h) => h.id === connection) : undefined;
+      return found === undefined
+        ? { problem: `${org} has no connection ${connection}` }
+        : { alias: found.alias };
+    },
   };
   const run: RemoteRunFn = async (alias, command) => {
     remote.push({ alias, command });
@@ -158,6 +166,7 @@ export async function rig(
     checks,
     signedIn,
     remoteRun,
+    sshHosts,
   };
 }
 

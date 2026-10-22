@@ -2481,6 +2481,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     nothing: nothingDeploys,
     credentials: {
       connections: { find: (id) => connections.find(id) },
+      sshOf: async (org) =>
+        Object.entries((await config.sections()).orgs[org]?.connections ?? {})
+          .filter(([, connection]) => connection.type === "ssh")
+          .map(([id, connection]) => ({ id, connection })),
       secrets,
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
@@ -3121,7 +3125,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           reason: "majhi kept the owner's answer about how the environment deploys",
         });
       },
-      current: (project, env) => deployWorld.service.current(project, env),
+      current: (project, env, opts) => deployWorld.service.current(project, env, opts),
+      hostChoices: (project, env, connection) => deployWorld.service.hostChoices(project, env, connection),
+      nextVersion: (project, env) => deployWorld.service.nextVersion(project, env),
       changedPaths: async (project, branch) => {
         const info = await projects.get(project).catch(() => undefined);
         if (info?.base === undefined) return undefined;

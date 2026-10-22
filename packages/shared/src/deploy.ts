@@ -54,11 +54,13 @@ const RemoteNameSchema = z.string().trim().min(1).max(100);
 
 /**
  * Where a workflow input gets its value when the run starts. `commit`: the commit being deployed. `built-version`: the
- * version the project's build makes for that commit. `previous-version` and `previous-commit`: what the environment
+ * version the project's build makes for that commit. `next-version`: the version input of a build that majhi fills itself
+ * with the next patch after the highest version it knows (the build makes the tag it is given). `previous-version` and `previous-commit`: what the environment
  * ran before, read before anything is deployed. `components`: the parts of the project the change touches.
  */
 export const InputBindingSchema = z.enum([
   "commit",
+  "next-version",
   "built-version",
   "previous-version",
   "previous-commit",
@@ -148,7 +150,12 @@ export type TagPart = z.infer<typeof TagPartSchema>;
 /** One piece of a workflow's `run-name`: fixed text, or the value of one input. */
 export const RunNamePartSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string().max(200) }),
-  z.object({ kind: z.literal("input"), name: z.string().trim().min(1).max(100) }),
+  z.object({
+    kind: z.literal("input"),
+    name: z.string().trim().min(1).max(100),
+    /** What the title says when the input is empty (`inputs.version || 'next version'`). */
+    fallback: z.string().max(100).optional(),
+  }),
 ]);
 export type RunNamePart = z.infer<typeof RunNamePartSchema>;
 
@@ -204,6 +211,29 @@ export const DeployRecipeSchema = z.object({
   /** The version tag the build makes for a commit, when the CI says it by the commit alone. */
   build: z.array(TagPartSchema).min(1).max(10).optional(),
   live: LiveSourceSchema.optional(),
+  /**
+   * The build makes the version it is given in `input`, so majhi picks it: the next patch after the highest version it
+   * knows. `runs` says how the build's run titles hold the version, to read the versions already built.
+   */
+  pick: z
+    .object({
+      input: z.string().trim().min(1).max(100),
+      runs: z
+        .object({
+          remote: RemoteNameSchema,
+          workflow: FileName,
+          parts: z.array(RunNamePartSchema).min(1).max(20),
+          /** The input that holds the commit or branch the build ran from, when the title has it. */
+          ref: z.string().trim().min(1).max(100).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  /**
+   * The image the build makes, so what an environment runs now is read from its host: the tag of the running container
+   * whose image is this one. `whole`: `repo` is the whole image name; else only its last part is known.
+   */
+  running: z.object({ repo: z.string().trim().min(1).max(300), whole: z.boolean() }).optional(),
   /** The parts of the project a `components` input chooses between, and the folder each one is. */
   components: z
     .object({
@@ -393,8 +423,8 @@ export const DeployReplacesSchema = z.object({
   commit: z.string().min(7).max(64).optional(),
   /** The host's run that put it there (a GitLab job), when a rollback can run it again. */
   job: z.string().max(200).optional(),
-  /** `record`: majhi's own last deploy of it. `ci`: the project's CI says so. `owner`: the owner told majhi. */
-  from: z.enum(["record", "ci", "owner"]),
+  /** `record`: majhi's own last deploy of it. `ci`: the project's CI says so. `host`: the running containers say so. `owner`: the owner told majhi. */
+  from: z.enum(["record", "ci", "host", "owner"]),
 });
 export type DeployReplaces = z.infer<typeof DeployReplacesSchema>;
 

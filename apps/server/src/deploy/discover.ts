@@ -145,9 +145,19 @@ export function runNameParts(raw: unknown): RunNamePart[] | undefined {
     if (open > 0) parts.push({ kind: "text", text: rest.slice(0, open) });
     const close = rest.indexOf("}}", open);
     if (close < 0) return undefined;
-    const name = inputOf(rest.slice(open + 3, close).trim());
-    if (name === undefined) return undefined;
-    parts.push({ kind: "input", name });
+    const expression = rest.slice(open + 3, close).trim();
+    // `inputs.version || 'next version'`: the input, and what the title says when it is empty.
+    const [left, right, more] = expression.split("||").map((side) => side.trim());
+    const name = left === undefined ? undefined : inputOf(left);
+    if (name === undefined || more !== undefined) return undefined;
+    const fallback =
+      right === undefined
+        ? undefined
+        : right.length >= 2 && right.startsWith("'") && right.endsWith("'")
+          ? right.slice(1, -1)
+          : null;
+    if (fallback === null) return undefined;
+    parts.push({ kind: "input", name, ...(fallback === undefined ? {} : { fallback }) });
     rest = rest.slice(close + 2);
   }
   return parts.length === 0 ? undefined : parts;
@@ -262,6 +272,86 @@ function buildTag(flow: Flow): TagPart[] | undefined {
   return found[0];
 }
 
+/** Words in a version input's description that say it sets the tag the build makes. */
+const TAG_WORDS = ["tag", "x.y.z"];
+
+/**
+ * A build with a version input that sets the tag it makes (`version`, X.Y.Z, must not exist yet): majhi fills it with
+ * the next patch itself, and reads the versions already built from the titles of the build's runs.
+ */
+function pickOf(flow: Flow, remote: string): DeployRecipe["pick"] {
+  if (!flow.dispatch) return undefined;
+  const spec = flow.inputs.find(
+    (i) =>
+      (i.name === "version" || i.name.endsWith("_version")) &&
+      TAG_WORDS.some((w) => (i.description ?? "").toLowerCase().includes(w)),
+  );
+  if (spec === undefined) return undefined;
+  const names = new Set(flow.runName?.flatMap((p) => (p.kind === "input" ? [p.name] : [])));
+  const ref = rolesOf(flow).refs.find((r) => names.has(r));
+  return {
+    input: spec.name,
+    ...(flow.runName !== undefined && names.has(spec.name)
+      ? {
+          runs: {
+            remote,
+            workflow: flow.base,
+            parts: flow.runName,
+            ...(ref === undefined ? {} : { ref }),
+          },
+        }
+      : {}),
+  };
+}
+
+/** An image reference without its tag: `ghcr.io/acme/shop:1.2.3` is `ghcr.io/acme/shop`, `host:5000/shop` is itself. */
+function withoutTag(reference: string): string {
+  let depth = 0;
+  let colon = -1;
+  let slash = -1;
+  for (let i = 0; i < reference.length; i++) {
+    if (reference.startsWith("${{", i)) depth++;
+    else if (reference.startsWith("}}", i)) depth = Math.max(0, depth - 1);
+    else if (depth === 0 && reference[i] === ":") colon = i;
+    else if (depth === 0 && reference[i] === "/") slash = i;
+  }
+  return colon > slash ? reference.slice(0, colon) : reference;
+}
+
+/** The image a build makes, from the `images:` and `tags:` of its steps and the image names in its environment. */
+function imageOf(flow: Flow): DeployRecipe["running"] {
+  const found: string[] = [];
+  const add = (value: unknown, tagged: boolean) => {
+    for (const raw of (text(value) ?? "").split("\n")) {
+      const line = raw.trim();
+      if (line === "" || line.startsWith("type=")) continue;
+      found.push(tagged ? withoutTag(line) : line);
+    }
+  };
+  const environment = (value: unknown) => {
+    for (const [name, v] of Object.entries(rec(value))) {
+      const upper = name.toUpperCase();
+      if (upper.includes("IMAGE") || upper.includes("REPOSITORY")) add(v, false);
+    }
+  };
+  const data = rec(flow.file.located.data);
+  environment(data.env);
+  for (const job of Object.values(rec(data.jobs))) {
+    environment(rec(job).env);
+    for (const step of Array.isArray(rec(job).steps) ? (rec(job).steps as unknown[]) : []) {
+      environment(rec(step).env);
+      add(rec(rec(step).with).images, false);
+      add(rec(rec(step).with).tags, true);
+    }
+  }
+  for (const reference of found) {
+    if (!reference.includes("${{")) return { repo: reference, whole: true };
+    const last = reference.split("/").at(-1) ?? "";
+    if (last !== "" && !last.includes("${{")) return { repo: last, whole: false };
+  }
+  return undefined;
+}
+
 // The runs of a recipe.
 
 interface Roles {
@@ -298,6 +388,7 @@ function dispatchStep(
   remote: string,
   fixed: Record<string, string>,
   mode: "deploy" | "rollback",
+  pickInput?: string,
 ): Built {
   const inputs: Record<string, string> = { ...fixed };
   const bind: Record<string, InputBinding> = {};
@@ -306,7 +397,8 @@ function dispatchStep(
   const [version] = own.versions;
   for (const spec of flow.inputs) {
     if (spec.name in fixed) continue;
-    if (own.refs.includes(spec.name)) bind[spec.name] = mode === "deploy" ? "commit" : "previous-commit";
+    if (spec.name === pickInput) bind[spec.name] = "next-version";
+    else if (own.refs.includes(spec.name)) bind[spec.name] = mode === "deploy" ? "commit" : "previous-commit";
     else if (own.versions.length === 1 && spec.name === version) {
       bind[spec.name] = mode === "deploy" ? "built-version" : "previous-version";
     } else if (spec.name === own.components?.name) bind[spec.name] = "components";
@@ -347,7 +439,10 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
   const rollback = flows.find((f) => f.kind === "rollback" && f.dispatch);
   const build = flows.find((f) => f.kind === "build");
   const roles = rolesOf(release);
-  const tag = build === undefined ? undefined : buildTag(build);
+  const pick = build === undefined ? undefined : pickOf(build, input.remote);
+  const running = build === undefined ? undefined : imageOf(build);
+  // A build that takes its version as an input names its tag by that, not by the commit.
+  const tag = build === undefined || pick !== undefined ? undefined : buildTag(build);
   const targets =
     roles.target === undefined ? [] : (release.inputs.find((i) => i.name === roles.target)?.options ?? []);
   const options = targets.length > 0 ? targets : [undefined];
@@ -365,7 +460,7 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
     // Deploy: the build for the commit, when there is one to run, then the release.
     const deploy: DeployRunStep[] = [];
     if (build !== undefined && build.dispatch && roles.versions.length > 0) {
-      const built = dispatchStep(build, input.remote, {}, "deploy");
+      const built = dispatchStep(build, input.remote, {}, "deploy", pick?.input);
       deploy.push(built.step);
       asks.push(...built.asks);
     } else if (build !== undefined && roles.versions.length > 0 && tag !== undefined) {
@@ -374,7 +469,7 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
     const released = dispatchStep(release, input.remote, fixed, "deploy");
     deploy.push(released.step);
     asks.push(...released.asks);
-    if (roles.versions.length > 0 && tag === undefined) {
+    if (roles.versions.length > 0 && tag === undefined && pick === undefined) {
       asks.push({
         key: "input:build-version",
         question: `${build?.base ?? "The build"} does not name its version by the commit alone. What version should ${release.base} deploy for ${env}?`,
@@ -408,6 +503,8 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
       rollback: { runs: [back.step], at: "deployed" },
       ...(tag === undefined ? {} : { build: tag }),
       ...(live === undefined ? {} : { live }),
+      ...(pick === undefined ? {} : { pick }),
+      ...(running === undefined ? {} : { running }),
       ...(components === undefined || components === "asks" ? {} : { components }),
       asks: dedupeAsks(asks),
       answers: {},
