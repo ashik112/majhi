@@ -8,6 +8,8 @@ export interface DeployGit {
   whyNoTip(path: string, base: string): Promise<string>;
   /** A file at a commit, or undefined when the commit has none. */
   file(path: string, commit: string, name: string): Promise<string | undefined>;
+  /** The entries of a folder at a commit (`""` is the root); empty when it has none. Symlinks are left out. */
+  list(path: string, commit: string, dir: string): Promise<{ name: string; dir: boolean }[]>;
 }
 
 /** A letter, digit or `_`: what an environment variable's name is made of. */
@@ -35,6 +37,26 @@ const PLAIN = "majhi could not read the project's base branch.";
 export const deployGit: DeployGit = {
   async file(path, commit, name) {
     return git(path, ["show", `${commit}:${name}`]).catch(() => undefined);
+  },
+  async list(path, commit, dir) {
+    try {
+      const out = await git(path, dir === "" ? ["ls-tree", commit] : ["ls-tree", commit, `${dir}/`]);
+      const entries: { name: string; dir: boolean }[] = [];
+      for (const line of out.split("\n")) {
+        const tab = line.indexOf("\t");
+        if (tab < 0) continue;
+        const [mode, type] = line.slice(0, tab).split(" ");
+        if (mode === "120000") continue;
+        const name = line
+          .slice(tab + 1)
+          .split("/")
+          .at(-1);
+        if (name !== undefined && name !== "") entries.push({ name, dir: type === "tree" });
+      }
+      return entries;
+    } catch {
+      return [];
+    }
   },
   async tip(path, base) {
     try {

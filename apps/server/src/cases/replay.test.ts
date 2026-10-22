@@ -4,6 +4,8 @@ import type { ChatEnvelope, DeployRunStep, OwnerDecision, RoomItem, TaskSummary 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONN, envelope } from "../chat/testing/world.ts";
 import type { RemoteRunFn } from "../connections/remote.ts";
+import { discoverEnvironments } from "../deploy/discover.ts";
+import { acmeShopCi } from "../deploy/testing/acme-shop.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
 
@@ -622,5 +624,74 @@ describe("the case replay when the fix needs code", () => {
     expect(kase?.summary?.split("\n").at(-1)).toBe(
       `Deployed ${branch} to acme-api production (replaced 1111111).`,
     );
+  });
+});
+
+describe("the case replay when the project's deploy needs an answer", () => {
+  it("refuses the deploy, asks the owner once with one card, deploys nothing, and keeps the case open", async () => {
+    const r = await replayWorld(codeBugHost({ value: false }));
+    const { services } = r;
+    // The project deploys from its CI, and nothing says which version the environment runs now.
+    const found = discoverEnvironments({
+      files: await acmeShopCi(),
+      base: "main",
+      provider: "github",
+      remote: "origin",
+      folders: ["backend", "frontend"],
+    });
+    const acme = found.environments.find((e) => e.env === "acme");
+    expect(
+      (await r.h.cmd("projects.setEnvironments", { project: "acme-api", environments: [acme] })).status,
+    ).toBe(200);
+    const deploy = vi.spyOn(services.deploy.service, "deploy");
+
+    await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", new Date());
+    await writeFile(
+      join(r.lane.folder, "CAPTAIN_SCRIPT.json"),
+      JSON.stringify({
+        rules: [
+          {
+            when: "Client chat",
+            flags: "",
+            steps: [
+              step("majhi_chat_openIncident", { room: r.room.id, found: "The courier sweep fails in code." }),
+              step("majhi_case_help", { project: "acme-api", job: "run: sleep 2" }),
+            ],
+          },
+        ],
+      }),
+    );
+    await wakeAndWait(r, 2);
+    const caseId = (await work(r))[0]?.id ?? "";
+    const branch = services.cases.recordOf(caseId)?.helper?.branch ?? "";
+    const worktree = services.store.tasks.get(caseId)?.repos[0]?.worktree ?? "";
+    await writeFile(join(worktree, "sweep-fix.txt"), "skip a missing carrier\n");
+    await git(worktree, "add", "-A");
+    await git(worktree, "commit", "-m", "fix(courier): skip a missing carrier");
+    await writeFile(
+      join(r.lane.folder, "CAPTAIN_SCRIPT.json"),
+      JSON.stringify({
+        rules: [
+          {
+            when: "reported back on case",
+            flags: "",
+            // A second call is refused too, and writes no second card.
+            steps: [step("majhi_case_deploy", { branch }), step("majhi_case_deploy", { branch })],
+          },
+        ],
+      }),
+    );
+    await w?.until(async () => (await lines(r)).length >= 4, "the captain's turn after the helper");
+    await services.runs.idle(r.lane.id);
+    const done = (await lines(r)).slice(2);
+    expect(done.map((d) => d.isError)).toEqual([true, true]);
+    expect(done[0]?.text).toContain("previous-version");
+
+    // One card (the build version and the version acme runs now), no deploy started, the case still open and nothing in the way of a task.
+    const cards = (await owner(r)).decisions;
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.title).toContain("Which version should the build make");
+    expect(deploy).not.toHaveBeenCalled();
+    expect((await work(r)).map((t) => [t.typing?.type, t.status])).toEqual([["incident", "running"]]);
   });
 });

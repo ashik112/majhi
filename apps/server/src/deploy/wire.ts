@@ -19,6 +19,7 @@ import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { createBitbucketProvider } from "./bitbucket.ts";
 import { type CredentialDeps, createDeployCredentials } from "./credentials.ts";
+import { DeployDiscovery } from "./discovery.ts";
 import { deployGit } from "./git.ts";
 import { createGitHubProvider } from "./github.ts";
 import { createGitLabProvider } from "./gitlab.ts";
@@ -59,6 +60,8 @@ export interface DeployWorldDeps {
   credentials: CredentialDeps;
   checksConfigured: (project: string) => boolean | Promise<boolean>;
   tellOwner: (key: string, text: string, org?: string) => void;
+  /** One line for the workspace's log: what majhi found about how a project deploys. */
+  said?: ((org: string, text: string) => void) | undefined;
   /** Opens or joins the incident of a failed deploy (the incident engine). Absent: the task is made here. */
   incident?:
     | ((input: {
@@ -84,6 +87,8 @@ export interface DeployWorldDeps {
 export interface DeployWorld {
   service: DeployService;
   planner: DeployPlanner;
+  /** Reads a project's CI files and saves the environments it deploys through. */
+  discovery: DeployDiscovery;
   /** What the captain's ship chore reads and does. */
   ports: DeployPorts;
   /** The project's page: environments and history. */
@@ -289,7 +294,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
           project: repo.project,
           environments: envs.map(
             (e) =>
-              `${e.env} (${e.tier}${e.branch === undefined ? "" : `, deploys when ${e.branch} is pushed or merged: plan a gitlab-merge run into ${e.branch}`})`,
+              `${e.env} (${e.tier}${e.branch === undefined ? "" : `, deploys when ${e.branch} is pushed or merged: plan a gitlab-merge run into ${e.branch}`}${e.recipe === undefined ? "" : `, majhi read its deploy from ${e.recipe.from.file}: leave runs out of the step to use it`})`,
           ),
         });
       }
@@ -341,5 +346,13 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     return value;
   };
 
-  return { service, planner, ports, view, board: boardNow };
+  const discovery = new DeployDiscovery({
+    projects: deps.projects,
+    git: deployGit,
+    repoRef: (p, remote) => repoRef(projectOf(p), remote),
+    remoteOf: (p) => mrRemoteName(p.remotes),
+    said: (org, text) => deps.said?.(org, text),
+  });
+
+  return { service, planner, discovery, ports, view, board: boardNow };
 }

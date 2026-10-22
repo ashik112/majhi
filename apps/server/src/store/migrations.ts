@@ -2147,6 +2147,16 @@ CREATE TABLE weekly_reports (
 );
 `,
   },
+  {
+    // Deploys from the project's CI: a record keeps the version it put live and the version it replaced (JSON, checked
+    // by zod on read), so a rollback goes back to a tag the record names.
+    id: 200,
+    name: "deploy versions",
+    sql: `
+ALTER TABLE deploys ADD COLUMN version TEXT;
+ALTER TABLE deploys ADD COLUMN replaces TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -23,12 +23,18 @@ export interface FakeHosts {
   tokens: { github: string; gitlab: string; vercel: string };
   /** Branch tips by `<provider>:<slug>:<branch>`. */
   branches: Map<string, string>;
+  /** How the next GitHub runs end, one each, before `outcome` applies again. */
+  outcomeQueue: ("success" | "failure")[];
   /** How the next runs end. */
   outcome: { github: "success" | "failure"; gitlab: "success" | "failed"; vercel: "READY" | "ERROR" };
   /** Looks at a run before it reads as finished. */
   pollsToFinish: number;
   /** What `GET /health/<name>` answers, by name. Absent: 200. */
   health: Map<string, number>;
+  /** The title a workflow's runs have, from its inputs: what its `run-name` makes. Absent: the file name. */
+  runNames: Map<string, (inputs: Record<string, string>) => string>;
+  /** A run that ended before the test began: what the last release of an environment was. */
+  seedRun(run: { slug: string; workflow: string; sha: string; inputs: Record<string, string> }): number;
   calls: FakeCall[];
   close(): Promise<void>;
 }
@@ -41,6 +47,11 @@ interface Run {
   attempt: number;
   provider: "github" | "gitlab" | "vercel";
   finished: boolean;
+  /** The workflow file of a GitHub run and the inputs it was dispatched with. */
+  workflow?: string;
+  inputs?: Record<string, string>;
+  /** Ended before the test began. */
+  done?: boolean;
   /** How this run ends, fixed when it was made: a run made to succeed succeeds again when it is run again. */
   result: string;
 }
@@ -77,9 +88,28 @@ export async function startFakeHosts(
     url: "",
     tokens,
     branches: new Map(),
+    outcomeQueue: [],
     outcome: { github: "success", gitlab: "success", vercel: "READY" },
     pollsToFinish: init.pollsToFinish ?? 1,
     health: new Map(),
+    runNames: new Map(),
+    seedRun: (seed) => {
+      const run: Run = {
+        id: nextRun++,
+        sha: seed.sha,
+        slug: seed.slug,
+        polls: 0,
+        attempt: 1,
+        provider: "github",
+        finished: true,
+        workflow: seed.workflow,
+        inputs: seed.inputs,
+        done: true,
+        result: "success",
+      };
+      runs.set(run.id, run);
+      return run.id;
+    },
     calls: [],
     close: async () => undefined,
   };
@@ -103,6 +133,7 @@ export async function startFakeHosts(
       return false;
     };
     const finished = (run: Run): boolean => {
+      if (run.done === true) return true;
       run.polls += 1;
       return run.polls > state.pollsToFinish;
     };
@@ -132,6 +163,7 @@ export async function startFakeHosts(
         const ref = (body as { ref?: string } | undefined)?.ref ?? "";
         const sha = state.branches.get(`github:${slug}:${ref}`);
         if (sha === undefined) return send(res, 422, { message: "No ref found" });
+        const sent = (body as { inputs?: Record<string, string> } | undefined)?.inputs ?? {};
         const run: Run = {
           id: nextRun++,
           sha,
@@ -140,20 +172,31 @@ export async function startFakeHosts(
           attempt: 1,
           provider: "github",
           finished: false,
-          result: state.outcome.github,
+          workflow: decodeURIComponent(dispatch[1] ?? ""),
+          inputs: sent,
+          result: state.outcomeQueue.shift() ?? state.outcome.github,
         };
         runs.set(run.id, run);
         return send(res, 204);
       }
       const list = /^actions\/workflows\/([^/]+)\/runs$/.exec(rest);
       if (method === "GET" && list !== null) {
-        const mine = [...runs.values()].filter((r) => r.provider === "github" && r.slug === slug);
+        const file = decodeURIComponent(list[1] ?? "");
+        const onlyDone = url.searchParams.get("status") === "success";
+        const mine = [...runs.values()].filter(
+          (r) =>
+            r.provider === "github" &&
+            r.slug === slug &&
+            (r.workflow === undefined || r.workflow === file) &&
+            (!onlyDone || (r.done === true && r.result === "success")),
+        );
         return send(res, 200, {
           workflow_runs: mine.map((r) => ({
             id: r.id,
             head_sha: r.sha,
             created_at: new Date().toISOString(),
             html_url: `http://${state.host}/${slug}/actions/runs/${r.id}`,
+            display_title: state.runNames.get(r.workflow ?? "")?.(r.inputs ?? {}) ?? r.workflow ?? "",
           })),
         });
       }

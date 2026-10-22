@@ -23,6 +23,8 @@ interface Row {
   env: string;
   commit_sha: string;
   previous: string | null;
+  version: string | null;
+  replaces: string | null;
   state: string;
   task: string | null;
   by: string;
@@ -47,6 +49,7 @@ export interface NewDeploy {
   env: string;
   commit: string;
   previous?: string | undefined;
+  replaces?: DeployRecord["replaces"] | undefined;
   state: Extract<DeployState, "planned" | "held" | "queued">;
   runs?: readonly DeployRunStep[] | undefined;
   seq?: number | undefined;
@@ -71,6 +74,8 @@ export interface DeployPatch {
   rollback?: DeployRecord["rollback"] | undefined;
   incident?: string | undefined;
   previous?: string | undefined;
+  version?: string | undefined;
+  replaces?: DeployRecord["replaces"] | undefined;
   by?: DeployRecord["by"] | undefined;
   task?: string | undefined;
   unchecked?: boolean | undefined;
@@ -84,8 +89,8 @@ export class DeployRepo {
   create(input: NewDeploy): DeployRecord | undefined {
     const done = this.sqlite
       .prepare(
-        `INSERT INTO deploys (org, project, env, commit_sha, previous, state, task, by, reason, unchecked, runs, seq, note, attempt, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `INSERT INTO deploys (org, project, env, commit_sha, previous, replaces, state, task, by, reason, unchecked, runs, seq, note, attempt, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
          ON CONFLICT (project, env, commit_sha) DO NOTHING`,
       )
       .run(
@@ -94,6 +99,7 @@ export class DeployRepo {
         input.env,
         input.commit,
         input.previous ?? null,
+        input.replaces === undefined ? null : JSON.stringify(input.replaces),
         input.state,
         input.task ?? null,
         input.by,
@@ -201,6 +207,15 @@ export class DeployRepo {
     )[0];
   }
 
+  /** The newest deploy of a target that is live, or rolled back (then the target runs what it replaced). */
+  latestSettled(project: string, env: string): DeployRecord | undefined {
+    return this.rows(
+      "SELECT * FROM deploys WHERE project = ? AND env = ? AND state IN ('live', 'rolled-back') ORDER BY id DESC LIMIT 1",
+      project,
+      env,
+    )[0];
+  }
+
   /** The commits every environment of a project is live at now, newest per environment. */
   liveOf(project: string): DeployRecord[] {
     return this.rows(
@@ -292,6 +307,8 @@ function record(row: Row): DeployRecord | undefined {
     env: row.env,
     commit: row.commit_sha,
     ...(row.previous === null ? {} : { previous: row.previous }),
+    ...(row.version === null ? {} : { version: row.version }),
+    ...(row.replaces === null ? {} : { replaces: json(row.replaces) }),
     state: row.state,
     ...(row.task === null ? {} : { task: row.task }),
     by: row.by,
@@ -329,6 +346,8 @@ function setsOf(patch: DeployPatch, at: string): { sets: string[]; values: (stri
   if (patch.rollback !== undefined) set("rollback", JSON.stringify(patch.rollback));
   if (patch.incident !== undefined) set("incident", patch.incident);
   if (patch.previous !== undefined) set("previous", patch.previous);
+  if (patch.version !== undefined) set("version", patch.version);
+  if (patch.replaces !== undefined) set("replaces", JSON.stringify(patch.replaces));
   if (patch.by !== undefined) set("by", patch.by);
   if (patch.task !== undefined) set("task", patch.task);
   if (patch.unchecked !== undefined) set("unchecked", patch.unchecked ? 1 : 0);

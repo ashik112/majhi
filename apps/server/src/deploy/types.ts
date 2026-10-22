@@ -1,4 +1,4 @@
-import type { DeployEnvironment, DeployKind, DeployRunStep } from "@majhi/shared";
+import type { DeployEnvironment, DeployKind, DeployRunStep, LiveSource, RunNamePart } from "@majhi/shared";
 import type { RemoteRunFn } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 
@@ -48,6 +48,13 @@ export interface PreviousDeploy {
   run: RunHandle | undefined;
 }
 
+/** What an environment runs now, as its host says: the version, the commit, and the run that put it there. */
+export interface LiveVersion {
+  version?: string | undefined;
+  commit?: string | undefined;
+  job?: string | undefined;
+}
+
 export interface DeployProvider {
   /** A sentence when the host does not have the commit where the run would start from, else undefined. */
   preflight(ctx: DeployContext, step: DeployRunStep): Promise<string | undefined>;
@@ -55,6 +62,14 @@ export interface DeployProvider {
   poll(ctx: DeployContext, step: DeployRunStep, run: RunHandle): Promise<RunProgress>;
   /** Starts the run that deployed `previous` again. Absent: this kind of run cannot go back to an earlier commit. */
   redeploy?(ctx: DeployContext, step: DeployRunStep, previous: PreviousDeploy): Promise<RunHandle>;
+  /** What the environment runs now, read from the host, when the recipe says where to look. Absent: this host cannot say. */
+  liveVersion?(ctx: DeployContext, source: LiveSource): Promise<LiveVersion | undefined>;
+  /** The versions the build's recent runs were given, read from their titles. Absent: this host cannot say. */
+  builtVersions?(
+    ctx: DeployContext,
+    source: { remote: string; workflow: string; parts: readonly RunNamePart[]; ref?: string | undefined },
+    input: string,
+  ): Promise<{ version: string; commit?: string | undefined }[]>;
 }
 
 export type Providers = Record<DeployKind, DeployProvider>;
@@ -69,6 +84,8 @@ export interface DeployCredentials {
   ): Promise<{ token: string } | { problem: string }>;
   /** One variable of one of its `env` connections. */
   variable(org: string, connection: string, name: string): Promise<{ value: string } | { problem: string }>;
+  /** Its `ssh` connections: the id, the name and the host of each. */
+  sshHosts(org: string): Promise<{ id: string; name: string; alias: string; key?: string | undefined }[]>;
   /** The host of one of its `ssh` connections. */
   ssh(
     org: string,

@@ -71,6 +71,8 @@ export interface ProjectInfo {
   handoff: HandoffCommands | undefined;
   /** The project's deploy environments. */
   deploy: DeployEnvironment[];
+  /** Environments found in the CI that were removed: discovery does not add them again. */
+  deployDismissed: string[];
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -122,6 +124,7 @@ export class ProjectService {
           branchPattern: project.branch_pattern ?? sections.orgs[project.org]?.branch_pattern,
           handoff: project.handoff,
           deploy: project.deploy ?? [],
+          deployDismissed: project.deploy_dismissed ?? [],
         };
         return info;
       }),
@@ -237,6 +240,14 @@ export class ProjectService {
     const project: ProjectConfig = { ...current };
     if (environments.length === 0) delete project.deploy;
     else project.deploy = [...environments];
+    // An environment found in the CI and taken away is not found again; one added back is not dismissed any more.
+    const kept = new Set(environments.map((e) => e.env));
+    const removed = (current.deploy ?? []).filter((e) => e.recipe !== undefined && !kept.has(e.env));
+    const dismissed = [
+      ...new Set([...(current.deploy_dismissed ?? []), ...removed.map((e) => e.env)]),
+    ].filter((name) => !kept.has(name));
+    if (dismissed.length === 0) delete project.deploy_dismissed;
+    else project.deploy_dismissed = dismissed;
     // The suggestions of deploys before v2 are gone with the form that hid them.
     delete (project as Record<string, unknown>).deploy_hidden;
     await this.config.change({ command, meta, summary: `changed where ${id} is deployed` }, () =>

@@ -7,7 +7,7 @@ import {
   ExternalKeySchema,
   ReplyHoldSchema,
 } from "./chat.ts";
-import { DeployEnvironmentsSchema } from "./deploy.ts";
+import { DeployEnvironmentsSchema, EnvNameSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
 import { TaskIdSchema } from "./ids.ts";
@@ -103,6 +103,11 @@ export const ProjectConfigSchema = z.looseObject({
   handoff: HandoffCommandsSchema.optional(),
   /** The environments this project is deployed to. Set once, here, and nowhere else. How it deploys is in its wiki. */
   deploy: DeployEnvironmentsSchema.optional(),
+  /**
+   * Environments majhi found in the project's CI that the owner removed: they are not added again. An environment
+   * leaves this list when someone adds it back.
+   */
+  deploy_dismissed: z.array(EnvNameSchema).max(40).optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 

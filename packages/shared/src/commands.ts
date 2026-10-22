@@ -1673,7 +1673,7 @@ export const commands = {
   "case.deploy": {
     risk: "read",
     summary:
-      "The captain deploys the fix a helper wrote, at Routine or Full (at Ask me a deploy asks the owner with case_ask). It goes only through the project's own deploy, the way majhi deployed it before, and only when the branch's checks passed. majhi notes the version it replaces. It answers once the environment's own check says live or failed. Then check the client's symptom with a read. Refused when the project has no known deploy to repeat: ask the owner once with case_ask",
+      "The captain deploys the fix a helper wrote, at Routine or Full (at Ask me a deploy asks the owner with case_ask). It goes only through the project's own deploy: the one majhi read from the project's CI files (a workflow you can start with inputs, a job with an environment), or the way it deployed before, and only when the branch's checks passed. majhi notes the version it replaces first, picks the parts the change touches from its files, and says so in the case. When the project has several environments, name the one the client is on with env. What majhi cannot fill with certainty is one card for the owner: call case_deploy again with answers, as the owner's answer woke you with. It answers once the environment's own check says live or failed. Then check the client's symptom with a read. Refused when the project has no deploy path majhi can find: ask the owner once with case_ask",
     input: CaseDeployInputSchema,
     output: CaseDeployResultSchema,
   },
@@ -2149,14 +2149,14 @@ export const commands = {
   "projects.setEnvironments": {
     risk: "change",
     summary:
-      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; a staging tier or removing a production environment is the owner's: your call for it becomes a proposal the owner applies with one click. How the project deploys goes in its wiki, not here",
+      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; a staging tier or removing a production environment is the owner's: your call for it becomes a proposal the owner applies with one click. How the project deploys goes in its wiki, not here. An environment's recipe is read from the project's CI files by majhi: send it back unchanged, never write one",
     input: SetEnvironmentsInputSchema,
     output: ProjectDeployViewSchema,
   },
   "projects.planDeploy": {
     risk: "change",
     summary:
-      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch; leave the runs out for an environment whose deploy majhi read from the project's CI files, and its recipe runs), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
     input: PlanDeployInputSchema,
     output: PlanDeployResultSchema,
   },
