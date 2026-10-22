@@ -54,6 +54,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.holder",
   "chat.send",
   "chat.makeTask",
+  "case.makeTask",
   "chat.retryReply",
   "chat.editReply",
   "chat.samePerson",

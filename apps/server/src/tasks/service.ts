@@ -13,6 +13,7 @@ import {
   CHAT_BRIEF,
   type CoordinationMode,
   canWorkIn,
+  caseOf,
   chatTitleFrom,
   connectionType,
   DEFAULT_CHAT_TITLES,
@@ -216,6 +217,11 @@ export interface TaskDeps {
   onOwnerResumed?: (task: string) => void;
   /** The captain answered a card of this task (the loop guard counts it). Never awaited. */
   onCaptainAnswer?: (task: string) => void;
+  /**
+   * The owner answered the ask card of a case. A case has no agent to message, so the captain's lane is woken with
+   * the answer instead. True when the task is a case and the answer was taken.
+   */
+  onCaseAnswer?: (task: string, item: string, said: string, pick: Record<string, string>) => Promise<boolean>;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -1568,6 +1574,19 @@ export class TaskService {
     const out = await this.lifecycle.apply(id, event, { ctx, skip });
     if (wasRefused(out)) throw new UserError(out.text, 409);
     return lifted;
+  }
+
+  /**
+   * A case is worked by the captain from its lane and has no run of its own: it goes to running with no agent
+   * started and no worktree made, and stays there until its case closes.
+   */
+  async beginCase(id: string): Promise<void> {
+    const out = await this.lifecycle.apply(
+      id,
+      { type: "start", by: "majhi" },
+      { ctx: { by: "majhi" }, skip: ["runs.start", "ensureWorktrees"] },
+    );
+    if (wasRefused(out)) throw new UserError(out.text, 409);
   }
 
   /** The lifecycle's one door, for callers outside this service (merge requests). */
@@ -3281,6 +3300,15 @@ export class TaskService {
       }
     }
     const said = started.length === 0 ? message : `${message}\n${started.join("\n")}.`;
+    // A case has no agent to message: the captain's lane hears the answer.
+    if (captain === undefined && (await this.deps.onCaseAnswer?.(task, item, said, validated)) === true) {
+      return (
+        this.deps.room.get(task, item) ??
+        (() => {
+          throw new Error("The ask card was not stored");
+        })()
+      );
+    }
     // The captain's answer is no owner message: the card says who answered.
     if (captain !== undefined)
       await this.tellAgent({ task, agent, text: said, settled: "The captain answered", by: captain });
@@ -4132,6 +4160,8 @@ export class TaskService {
   async lostByRestart(id: string, why: string): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "paused") return;
+    // A case has no run to lose: the captain's lane picks it up again.
+    if (caseOf(task) !== undefined) return;
     if (task.status === "running") {
       this.dropPendingShip(id, "the agent stopped with an error");
       await this.lifecycle.apply(

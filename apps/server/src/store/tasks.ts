@@ -11,6 +11,8 @@ import {
   CLIENT_CHAT_BRIEF,
   type CoordinationMode,
   CoordinationModeSchema,
+  caseOf,
+  caseViewOf,
   DaySchema,
   deployStepOfRecord,
   FINDING_SOURCE_LABEL,
@@ -584,6 +586,8 @@ export class TaskRepo {
         if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
         Object.assign(summary, priorityAndDue(row));
         if (autonomous.has(row.id)) summary.autonomous = true;
+        const record = caseOf({ fields: fieldsOf(row, typing) });
+        if (record !== undefined) summary.case = caseViewOf(record);
         return summary;
       },
     );
