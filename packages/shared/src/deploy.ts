@@ -32,67 +32,6 @@ export function deployStepOf(tier: DeployTier): Extract<ShipStep, "deployStaging
   return tier === "staging" ? "deployStaging" : "deployProduction";
 }
 
-/**
- * One environment of a project. `branch`: pushing or merging to it deploys (the host's CI does it).
- * `check`: answers 2xx when the environment is up. A tier that is not named is production.
- * `envVariable`: the GitLab CI/CD variable that holds the environment's .env file: a planned deploy
- * names the keys of the release's `.env.example` it lacks (names only, never a value).
- */
-export const DeployEnvironmentSchema = z.object({
-  env: EnvNameSchema,
-  tier: DeployTierSchema.default("production"),
-  branch: LocalBranchSchema.optional(),
-  envVariable: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255)
-    .refine(
-      (v) =>
-        [...v].every(
-          (c) => (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "_",
-        ),
-      "Letters, digits and _ only",
-    )
-    .optional(),
-  check: z
-    .url({ protocol: /^https?$/ })
-    .max(500)
-    .optional(),
-});
-export type DeployEnvironment = z.infer<typeof DeployEnvironmentSchema>;
-
-/**
- * Environments written before deploys v2 were targets with a route, a check and a rollback. The name and the
- * health address carry over; the tier is production unless the name is exactly `staging`. Anything else is dropped.
- */
-function fromTargets(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  return value.map((item: unknown) => {
-    if (typeof item !== "object" || item === null) return item;
-    const old = item as { env?: unknown; via?: unknown; verify?: unknown; rollback?: unknown };
-    if (old.via === undefined && old.verify === undefined && old.rollback === undefined) return item;
-    const verify = old.verify;
-    const health =
-      typeof verify === "object" && verify !== null ? (verify as { health?: unknown }).health : undefined;
-    return {
-      env: old.env,
-      tier: old.env === "staging" ? "staging" : "production",
-      ...(typeof health === "string" ? { check: health } : {}),
-    };
-  });
-}
-
-/** A list of environments, each listed once. */
-export const DeployEnvironmentListSchema = z
-  .array(DeployEnvironmentSchema)
-  .max(20)
-  .refine((list) => new Set(list.map((e) => e.env)).size === list.length, {
-    message: "Each environment is listed once",
-  });
-
-/** A project's environments, in the order they usually go live. Reads the older target form too. */
-export const DeployEnvironmentsSchema = z.preprocess(fromTargets, DeployEnvironmentListSchema);
 
 const FileName = z
   .string()
@@ -115,6 +54,20 @@ const InputsSchema = z.record(z.string().trim().min(1).max(100), z.string().max(
 const RemoteNameSchema = z.string().trim().min(1).max(100);
 
 /**
+ * Where a workflow input gets its value when the run starts. `commit`: the commit being deployed. `built-version`: the
+ * version the project's build makes for that commit. `previous-version` and `previous-commit`: what the environment
+ * ran before, read before anything is deployed. `components`: the parts of the project the change touches.
+ */
+export const InputBindingSchema = z.enum([
+  "commit",
+  "built-version",
+  "previous-version",
+  "previous-commit",
+  "components",
+]);
+export type InputBinding = z.infer<typeof InputBindingSchema>;
+
+/**
  * One run on a host. A step has up to 8, in the order they must go (a build, then the deploy job).
  * A run is repeatable when the host can start it again for an earlier commit: that is what a rollback does.
  */
@@ -126,6 +79,11 @@ export const DeployRunStepSchema = z.discriminatedUnion("kind", [
     workflow: FileName,
     ref: z.union([z.literal("base"), RefSchema]).default("base"),
     inputs: InputsSchema.optional(),
+    /**
+     * Inputs whose value is only known when the run starts, by input name: the commit, the version a build made, the
+     * version the environment ran before. They are filled in just before the dispatch and win over `inputs`.
+     */
+    bind: z.record(z.string().trim().min(1).max(100), InputBindingSchema).optional(),
   }),
   z.object({
     kind: z.literal("gitlab-job"),
@@ -177,6 +135,153 @@ export type DeployRunStep = z.infer<typeof DeployRunStepSchema>;
 export type DeployKind = DeployRunStep["kind"];
 
 export const DeployRunsSchema = z.array(DeployRunStepSchema).min(1).max(8);
+
+// ---------------------------------------------------------------------------
+// Recipes: how a project's own CI deploys and rolls back one environment
+
+/** One piece of the version tag the project's build makes for a commit: fixed text, or the first `length` letters of the commit. */
+export const TagPartSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("text"), text: z.string().max(60) }),
+  z.object({ kind: z.literal("commit"), length: z.number().int().min(4).max(40) }),
+]);
+export type TagPart = z.infer<typeof TagPartSchema>;
+
+/** One piece of a workflow's `run-name`: fixed text, or the value of one input. */
+export const RunNamePartSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("text"), text: z.string().max(200) }),
+  z.object({ kind: z.literal("input"), name: z.string().trim().min(1).max(100) }),
+]);
+export type RunNamePart = z.infer<typeof RunNamePartSchema>;
+
+/**
+ * How the version an environment runs now is read, before a deploy replaces it. GitHub's API does not return the
+ * inputs of a dispatched run, so the one thing it does return is the run's title: a workflow whose `run-name` holds
+ * its inputs tells them back. A GitLab environment keeps the commit of its last deployment.
+ */
+export const LiveSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("run-name"),
+    remote: RemoteNameSchema,
+    workflow: FileName,
+    parts: z.array(RunNamePartSchema).min(1).max(20),
+    /** Inputs that must hold these values for a run to count: the run is for this environment. */
+    match: InputsSchema,
+    /** The input that holds the version. */
+    version: z.string().trim().min(1).max(100),
+    /** The input that holds the commit, when the title has one. */
+    commit: z.string().trim().min(1).max(100).optional(),
+  }),
+  z.object({
+    kind: z.literal("gitlab-environment"),
+    remote: RemoteNameSchema,
+    name: z.string().trim().min(1).max(200),
+  }),
+]);
+export type LiveSource = z.infer<typeof LiveSourceSchema>;
+
+/** Something majhi cannot fill with certainty, so the first deploy asks the owner once. `options` empty: a free answer. */
+export const RecipeAskSchema = z.object({
+  /** `components`, `previous-version`, or `input:<name>`. */
+  key: z.string().trim().min(1).max(120),
+  question: z.string().trim().min(1).max(300),
+  options: z.array(z.string().trim().min(1).max(100)).max(8).default([]),
+});
+export type RecipeAsk = z.infer<typeof RecipeAskSchema>;
+
+/**
+ * How one environment is deployed and put back, read from the project's CI files. `deploy` and `rollback` are
+ * ordinary runs; the inputs only known when they start are `bind`s. `from` says which file and line it was read from.
+ */
+export const DeployRecipeSchema = z.object({
+  from: z.object({ file: z.string().trim().min(1).max(200), line: z.number().int().positive().optional() }),
+  deploy: DeployRunsSchema,
+  rollback: z
+    .object({
+      runs: DeployRunsSchema,
+      /** `previous`: the runs start at the commit the environment ran before (a GitLab job); `deployed`: at the commit just deployed. */
+      at: z.enum(["deployed", "previous"]).default("deployed"),
+    })
+    .optional(),
+  /** The version tag the build makes for a commit, when the CI says it by the commit alone. */
+  build: z.array(TagPartSchema).min(1).max(10).optional(),
+  live: LiveSourceSchema.optional(),
+  /** The parts of the project a `components` input chooses between, and the folder each one is. */
+  components: z
+    .object({
+      /** The option that deploys every part. */
+      all: z.string().trim().min(1).max(100),
+      parts: z
+        .array(z.object({ option: z.string().trim().min(1).max(100), folder: z.string().max(200) }))
+        .max(8),
+    })
+    .optional(),
+  asks: z.array(RecipeAskSchema).max(6).default([]),
+});
+export type DeployRecipe = z.infer<typeof DeployRecipeSchema>;
+
+/**
+ * One environment of a project. `branch`: pushing or merging to it deploys (the host's CI does it).
+ * `check`: answers 2xx when the environment is up. A tier that is not named is production.
+ * `envVariable`: the GitLab CI/CD variable that holds the environment's .env file: a planned deploy
+ * names the keys of the release's `.env.example` it lacks (names only, never a value).
+ */
+export const DeployEnvironmentSchema = z.object({
+  env: EnvNameSchema,
+  tier: DeployTierSchema.default("production"),
+  branch: LocalBranchSchema.optional(),
+  envVariable: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine(
+      (v) =>
+        [...v].every(
+          (c) => (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "_",
+        ),
+      "Letters, digits and _ only",
+    )
+    .optional(),
+  check: z
+    .url({ protocol: /^https?$/ })
+    .max(500)
+    .optional(),
+  /** How the project's CI deploys it: found by majhi in the CI files, never written by the captain. */
+  recipe: DeployRecipeSchema.optional(),
+});
+export type DeployEnvironment =z.infer<typeof DeployEnvironmentSchema>;
+
+/**
+ * Environments written before deploys v2 were targets with a route, a check and a rollback. The name and the
+ * health address carry over; the tier is production unless the name is exactly `staging`. Anything else is dropped.
+ */
+function fromTargets(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((item: unknown) => {
+    if (typeof item !== "object" || item === null) return item;
+    const old = item as { env?: unknown; via?: unknown; verify?: unknown; rollback?: unknown };
+    if (old.via === undefined && old.verify === undefined && old.rollback === undefined) return item;
+    const verify = old.verify;
+    const health =
+      typeof verify === "object" && verify !== null ? (verify as { health?: unknown }).health : undefined;
+    return {
+      env: old.env,
+      tier: old.env === "staging" ? "staging" : "production",
+      ...(typeof health === "string" ? { check: health } : {}),
+    };
+  });
+}
+
+/** A list of environments, each listed once. */
+export const DeployEnvironmentListSchema = z
+  .array(DeployEnvironmentSchema)
+  .max(20)
+  .refine((list) => new Set(list.map((e) => e.env)).size === list.length, {
+    message: "Each environment is listed once",
+  });
+
+/** A project's environments, in the order they usually go live. Reads the older target form too. */
+export const DeployEnvironmentsSchema = z.preprocess(fromTargets, DeployEnvironmentListSchema);
 
 export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
   "github-workflow": "GitHub workflow",
@@ -263,6 +368,8 @@ export const DeployRunSchema = z.object({
   url: z.string().max(500).optional(),
   attempt: z.number().int().positive().optional(),
   ended: z.boolean().optional(),
+  /** The inputs a workflow run was dispatched with, once the bound ones were filled in. Never a secret. */
+  inputs: InputsSchema.optional(),
 });
 export type DeployRun = z.infer<typeof DeployRunSchema>;
 
@@ -279,6 +386,17 @@ export function deployHasCommit(record: Pick<DeployRecord, "commit">): boolean {
   return !record.commit.startsWith("planned-");
 }
 
+/** What a deploy replaces: the version and the commit the environment ran, and where majhi read them. */
+export const DeployReplacesSchema = z.object({
+  version: z.string().max(200).optional(),
+  commit: z.string().min(7).max(64).optional(),
+  /** The host's run that put it there (a GitLab job), when a rollback can run it again. */
+  job: z.string().max(200).optional(),
+  /** `record`: majhi's own last deploy of it. `ci`: the project's CI says so. `owner`: the owner told majhi. */
+  from: z.enum(["record", "ci", "owner"]),
+});
+export type DeployReplaces = z.infer<typeof DeployReplacesSchema>;
+
 export const DeployRecordSchema = z.object({
   id: z.number().int().positive(),
   org: IdSchema,
@@ -288,6 +406,10 @@ export const DeployRecordSchema = z.object({
   commit: z.string().min(7).max(64),
   /** The commit the target ran before: where a rollback goes. Absent for the first deploy. */
   previous: z.string().min(7).max(64).optional(),
+  /** The version this deploy put live, when the project has versions (an image tag). */
+  version: z.string().max(200).optional(),
+  /** What the environment ran before, read before anything was deployed: where a rollback goes. */
+  replaces: DeployReplacesSchema.optional(),
   state: DeployStateSchema,
   /** The task whose merge this ships. Absent for a deploy the owner started from the project page. */
   task: TaskIdSchema.optional(),
@@ -568,7 +690,8 @@ export const SetEnvironmentsInputSchema = z.object({
 export const DeployPlanStepSchema = z.object({
   project: IdSchema,
   env: EnvNameSchema,
-  runs: DeployRunsSchema,
+  /** Left out: the environment's recipe deploys it. */
+  runs: DeployRunsSchema.optional(),
   hold: z.literal("migration").optional(),
   note: z.string().trim().max(500).optional(),
 });
