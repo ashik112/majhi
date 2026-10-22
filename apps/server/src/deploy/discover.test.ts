@@ -30,7 +30,7 @@ const build: DeployRunStep = {
 };
 
 describe("finding how a project deploys from its CI files", () => {
-  it("reads one environment per target, with the runs that deploy it and the runs that put it back", async () => {
+  it("reads one environment per target with the runs that deploy and put it back, asks instead of guessing, and reads a GitLab job", async () => {
     const { environments } = await discover();
     expect(environments.map((e) => [e.env, e.tier])).toEqual([
       ["acme", "production"],
@@ -100,13 +100,12 @@ describe("finding how a project deploys from its CI files", () => {
       asks: [],
       answers: {},
     });
-  });
 
-  it("asks instead of guessing: parts with no folder, and no rollback workflow means the release goes back", async () => {
+    // Parts with no folder are asked, and with no rollback workflow the release itself goes back.
     const files = { ...ACME_SHOP_FILES };
     delete files[".github/workflows/rollback.yml"];
-    const { environments } = await discover({ folders: ["docs"] }, files);
-    const acme = environments[0]?.recipe;
+    const bare = await discover({ folders: ["docs"] }, files);
+    const acme = bare.environments[0]?.recipe;
     expect(acme?.asks.map((a) => [a.key, a.options])).toEqual([
       ["components", ["both", "backend", "frontend"]],
     ]);
@@ -126,11 +125,10 @@ describe("finding how a project deploys from its CI files", () => {
         },
       },
     ]);
-  });
 
-  it("reads a GitLab job with an environment: a manual one is a job to play, a branch one is a merge", async () => {
-    const { environments } = await discover({ provider: "gitlab" });
-    expect(environments.map((e) => [e.env, e.tier, e.branch, e.recipe?.deploy])).toEqual([
+    // A GitLab job with an environment: a manual one is a job to play, a branch one is a merge.
+    const gitlab = await discover({ provider: "gitlab" });
+    expect(gitlab.environments.map((e) => [e.env, e.tier, e.branch, e.recipe?.deploy])).toEqual([
       [
         "production",
         "production",
@@ -140,7 +138,7 @@ describe("finding how a project deploys from its CI files", () => {
       ["staging", "staging", "stg", [{ kind: "gitlab-merge", remote: "origin", branch: "stg" }]],
     ]);
     // A manual job goes back by running the job that deployed the commit before it again.
-    expect(environments[0]?.recipe?.rollback).toMatchObject({ at: "previous" });
-    expect(environments[0]?.recipe?.from).toEqual({ file: ".gitlab-ci.yml", line: 5 });
+    expect(gitlab.environments[0]?.recipe?.rollback).toMatchObject({ at: "previous" });
+    expect(gitlab.environments[0]?.recipe?.from).toEqual({ file: ".gitlab-ci.yml", line: 5 });
   });
 });
