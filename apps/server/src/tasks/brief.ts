@@ -78,6 +78,8 @@ export function renderTaskMd(
   commits?: CommitGuide,
   /** How the task's project works (the wiki), one line each. Empty: no section. */
   wiki: readonly string[] = [],
+  /** A fact per project whose environment is ready (where its interpreter is, that nothing is to be installed), under its repo line. */
+  environments: Readonly<Record<string, string>> = {},
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -108,6 +110,8 @@ export function renderTaskMd(
       lines.push(
         `- ${r.project}: worktree \`${worktree}\`, branch \`${r.branch}\` ${r.createdBranch ? "(new, from" : "(existing; base"} \`${r.base}\`)${startedFrom(r)}`,
       );
+      const environment = environments[r.project];
+      if (environment !== undefined) lines.push(`  ${environment}`);
     }
   }
   if (commits !== undefined && task.repos.length > 0) lines.push("", commitLine(commits));

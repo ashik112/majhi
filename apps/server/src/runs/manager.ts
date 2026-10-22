@@ -37,6 +37,7 @@ import { readDecisionSettings } from "../decisions/settings.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { noticeText, sameRun, splitCurrent } from "../processes/notices.ts";
 import { runningLine } from "../processes/text.ts";
+import { type ProjectEnvs, preparingLine } from "../projectenv/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { HookBinding, RoomAccess } from "../rooms/access.ts";
 import { handoffPrompt } from "../rooms/handoff.ts";
@@ -94,6 +95,8 @@ export const BRIEF_ITEM_ID = "brief";
 const RESUME_RETRY_MS = 1_000;
 /** `activeAt` goes out at most this often while an agent streams. */
 const ACTIVE_EVERY_MS = 5_000;
+/** How often the line of a task that waits for its environment gets its clock. */
+const ENV_LINE_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 /** The first prompt of the fresh session a turn limit moved the agent to (PRV-96). */
 /** How work moves to another agent: `step` a worker's step goes to a teammate, `lead` the worker with the most headroom leads, `fallback` the agent's own fallback takes its place. */
@@ -222,6 +225,13 @@ export interface RunDeps {
    */
   /** `account`: the account the run was on, for a signed-out pause (a lane runs on its workspace's account, not its agent's). */
   onPaused?: (task: string, reason: PauseReason, why?: string, account?: string) => void;
+  /**
+   * The project's environment (installed dependencies): a code task whose project has a check starts its agent
+   * only when it is ready. Absent: no run waits for one.
+   */
+  projectEnv?: Pick<ProjectEnvs, "ensure" | "facts"> | undefined;
+  /** The environment of the task is ready: TASK.md says so, where its interpreter is. */
+  onEnvReady?: ((task: string) => Promise<void>) | undefined;
   /**
    * The account `agent` runs on in this task when a limit error holds it now, with the mark. Asked
    * between turns, before a start.
@@ -2228,6 +2238,8 @@ export class RunManager {
     run.startFailure = undefined;
     this.setLive(run, { status: "starting", nowDoing: undefined, couldNotStart: undefined });
     try {
+      // The project's dependencies are installed before the agent starts, once for every task of the project.
+      if (!(await this.awaitEnvironment(run))) return false;
       // The owner's model and effort for this task win over the agent file (5.1).
       const swap = await deps.accountFor?.(run.task, run.agent);
       if (swap?.refuse !== undefined) throw new UserError(swap.refuse, 409);
@@ -2371,6 +2383,55 @@ export class RunManager {
       this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined, couldNotStart: true });
       return false;
     }
+  }
+
+  /**
+   * Waits for the task's project environments. The line says so with a clock, and the agent is not started or
+   * woken. A build that failed stops the start with one line in the room and the card of the paused task, which
+   * carries the end of the log; the start tries again when the owner resumes it. False when the run must not start.
+   */
+  private async awaitEnvironment(run: AgentRun): Promise<boolean> {
+    const envs = this.deps.projectEnv;
+    if (envs === undefined) return true;
+    let gate: Awaited<ReturnType<typeof envs.ensure>>;
+    try {
+      gate = await envs.ensure(run.task);
+    } catch (err) {
+      // Majhi could not read the project: that must not hold the agent back.
+      this.live.system(run, "warn", `Could not check the project's environment: ${errorMessage(err)}`);
+      return true;
+    }
+    if (!gate.waiting) {
+      if (gate.has) await this.deps.onEnvReady?.(run.task).catch(() => undefined);
+      return true;
+    }
+    const since = this.now().getTime();
+    const abort = new AbortController();
+    run.envWait = abort;
+    const show = () =>
+      this.setLive(run, { status: "starting", nowDoing: preparingLine(since, this.now().getTime()) });
+    show();
+    const tick = setInterval(show, ENV_LINE_MS);
+    const stopped = new Promise<"stopped">((done) =>
+      abort.signal.addEventListener("abort", () => done("stopped"), { once: true }),
+    );
+    let result: Awaited<typeof gate.done> | "stopped";
+    try {
+      result = await Promise.race([gate.done, stopped]);
+    } finally {
+      clearInterval(tick);
+      if (run.envWait === abort) run.envWait = undefined;
+    }
+    if (result === "stopped" || run.closing) return false;
+    this.setLive(run, { nowDoing: undefined });
+    if (result === undefined) {
+      await this.deps.onEnvReady?.(run.task).catch(() => undefined);
+      return true;
+    }
+    this.live.system(run, "error", result.line);
+    run.startFailure = { kind: "environment", text: result.card };
+    this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined, couldNotStart: true });
+    return false;
   }
 
   /** Asks the account for its state first: the tools word a sign-in or a limit in many ways. */

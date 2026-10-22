@@ -44,6 +44,8 @@ export interface HandoffWiring {
   tools?: ExecDeps["tools"];
   /** The check's `docker` shim: see `ExecDeps.dockerShim`. */
   dockerShim?: ExecDeps["dockerShim"];
+  /** The project environment a check runs in, as a task's run does: see `ExecDeps.environment`. */
+  projectEnv?: ExecDeps["environment"];
   /** The ship decision leaves the merge of this task to the captain: only then does it have a lead resolve a conflict. */
   mergeDecides: (task: string) => Promise<boolean>;
   /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
@@ -237,6 +239,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         packages: w.packages,
         tools: w.tools,
         dockerShim: w.dockerShim,
+        environment: w.projectEnv,
       }),
     review: async (task, prompt) => {
       const job = w.reacting?.(task.id) === true ? "reacting" : "backlog";

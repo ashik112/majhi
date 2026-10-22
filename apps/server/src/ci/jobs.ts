@@ -345,6 +345,49 @@ function commandsOf(
   return out;
 }
 
+/** One command of a CI job, as it runs: the program and its words, the variables set in front of it, and the folder it ran in. */
+export interface CiCommand {
+  argv: string[];
+  env: Record<string, string>;
+  workdir?: string | undefined;
+  /** Where it came from: "from .github/workflows/ci.yml job test". */
+  from: string;
+}
+
+/**
+ * Every command of the repo's CI jobs that are not shipping ones, in the order they run, each with the
+ * folder `cd` or the step left it in. The same reading as the checks (a line majhi cannot read, or one that
+ * uses a value only the CI knows, is left out), for what the checks do not name: the install steps and the
+ * system packages a job sets up before them.
+ */
+export function ciCommands(files: CiFiles): CiCommand[] {
+  const jobs = [...githubJobs(files), ...gitlabJobs(files), ...bitbucketJobs(files)];
+  const out: CiCommand[] = [];
+  for (const job of jobs) {
+    if (wordsOf(job.name).some((w) => SHIPPING.has(w))) continue;
+    let dir: string | undefined;
+    for (const line of job.lines) {
+      if (line.text.includes("${{")) continue;
+      const parsed = parseShell(line.text);
+      if (!parsed.ok) continue;
+      for (const seg of parsed.segments) {
+        if (seg.argv[0] === "cd" && seg.argv[1] !== undefined) {
+          dir = seg.argv[1];
+          continue;
+        }
+        const workdir = line.workdir ?? dir;
+        out.push({
+          argv: seg.argv,
+          env: safeEnv({ ...line.env, ...seg.env }),
+          ...(workdir === undefined ? {} : { workdir }),
+          from: `from ${job.file} job ${job.name}`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /** Every check the repo's CI runs, the first of each kind. */
 export function ciChecks(files: CiFiles): CiCheck[] {
   const jobs = [...githubJobs(files), ...gitlabJobs(files), ...bitbucketJobs(files)];

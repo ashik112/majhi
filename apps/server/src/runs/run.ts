@@ -205,6 +205,8 @@ export class AgentRun {
   queuedNoted = false;
   /** Aborts a wait for another agent's worktree lock (5.3). */
   lockWait: AbortController | undefined;
+  /** Aborts the wait for the project's environment: the run is stopping, so it must not start. */
+  envWait: AbortController | undefined;
   /** The worktree lock this loop took for the prompt it is about to send, until the turn ends. */
   lockHeld: (() => void) | undefined;
   /** The next lock wait is skipped: the owner pressed Send now, so the agent is told without the worktree. */
@@ -262,5 +264,6 @@ export class AgentRun {
     this.idleTimer = undefined;
     this.retryTimer = undefined;
     this.limitTimer = undefined;
+    this.envWait?.abort();
   }
 }
