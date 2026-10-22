@@ -92,8 +92,8 @@ describe("the captain's account in a workspace's step", () => {
       fallback: true,
     });
     // With every allowed account at its limit Needs you gets the typed reason and the reset time.
-    expect(
-      await lanes({}, { ...both, "claude-acme": { status: "at-limit" } }).account("acme"),
-    ).toMatchObject({ why: "at-limit", until: "2026-10-21T14:00:00.000Z" });
+    expect(await lanes({}, { ...both, "claude-acme": { status: "at-limit" } }).account("acme")).toMatchObject(
+      { why: "at-limit", until: "2026-10-21T14:00:00.000Z" },
+    );
   });
 });

@@ -178,7 +178,9 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   const usage: NonNullable<RuntimeOptions["usage"]> = {};
   if (env.MAJHI_USAGE_CLAUDE !== undefined) usage.claude = env.MAJHI_USAGE_CLAUDE;
   const claudeProfile =
-    env.MAJHI_CLAUDE_PROFILE_URL === undefined ? {} : { claudeProfile: { url: env.MAJHI_CLAUDE_PROFILE_URL } };
+    env.MAJHI_CLAUDE_PROFILE_URL === undefined
+      ? {}
+      : { claudeProfile: { url: env.MAJHI_CLAUDE_PROFILE_URL } };
   return {
     host: env.MAJHI_HOST,
     port: env.MAJHI_PORT,
