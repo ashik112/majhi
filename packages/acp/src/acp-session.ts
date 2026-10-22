@@ -8,6 +8,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import type { OptionValue } from "@majhi/shared";
 import type { AccountRuntime, Command, RuntimeOptions } from "./index.ts";
+import { ExitCause } from "./exit-cause.ts";
 import { startTool, type ToolProcess } from "./tool-process.ts";
 
 export interface SessionOptions {
@@ -54,16 +55,14 @@ export async function readSessionOptions(
     tool = await startTool(options, account, adapter, env);
     const proc = tool.child;
     const cwd = tool.cwd;
-    let stderr = "";
-    proc.stderr?.on("data", (d: Buffer) => {
-      if (stderr.length < 4096) stderr += d.toString();
-    });
+    const cause = new ExitCause();
+    proc.stderr?.on("data", (d: Buffer) => cause.push(d.toString()));
     const died = new Promise<never>((_, reject) => {
       proc.on("error", (err: NodeJS.ErrnoException) =>
         reject(new Error(err.code === "ENOENT" ? `Command not found: ${adapter.command}` : err.message)),
       );
       proc.on("close", (code) => {
-        const tail = stderr.trim().split("\n").pop();
+        const tail = cause.line();
         reject(new Error(`Agent exited with code ${code}${tail ? `: ${tail}` : ""}`));
       });
     });

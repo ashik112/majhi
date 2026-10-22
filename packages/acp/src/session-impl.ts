@@ -10,6 +10,7 @@ import {
 } from "@agentclientprotocol/sdk";
 import { AcpAuthRequired, extractOptions, isAuthRequired, type SessionOptions } from "./acp-session.ts";
 import { buildEnv, withToolsPath } from "./env.ts";
+import { ExitCause } from "./exit-cause.ts";
 import { prepareHome } from "./home.ts";
 import { mcpValuesToEnv } from "./mcp-env.ts";
 import { type DebugLog, MessageRuns, normalizeUpdate } from "./normalize.ts";
@@ -110,11 +111,8 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
     ...(start.task === undefined ? {} : { task: start.task }),
   });
   const { child, cwd } = spawned;
-  let stderrTail = "";
-  child.stderr.on("data", (d: Buffer) => {
-    const line = d.toString().trim().split("\n").pop();
-    if (line) stderrTail = line;
-  });
+  const cause = new ExitCause();
+  child.stderr.on("data", (d: Buffer) => cause.push(d.toString()));
 
   let closing = false;
   let exited = false;
@@ -142,6 +140,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
     });
     child.once("close", (code, signal) => {
       exited = true;
+      const stderrTail = cause.line();
       const detail = stderrTail ? `: ${stderrTail}` : "";
       const message = `Agent exited with ${signal ? `signal ${signal}` : `code ${code}`}${detail}`;
       if (!closing) {
