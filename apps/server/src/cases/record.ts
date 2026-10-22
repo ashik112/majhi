@@ -168,18 +168,25 @@ export function rollbackTarget(record: CaseRecord): CaseDeploy | undefined {
   return last?.state === "live" && last.record !== undefined ? last : undefined;
 }
 
+/** The version or the commit, short enough to read in a line: a whole commit is cut to seven letters, a tag is not. */
+export function shortVersion(version: string): string {
+  const hex =
+    version.length === 40 && [...version].every((c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f"));
+  return hex ? version.slice(0, 7) : version;
+}
+
 /** What the owner reads about the deploys in the summary: one line each, added by majhi, never left to the captain. */
 export function closingLines(record: CaseRecord): string[] {
   const lines = (record.deploys ?? []).map((d) =>
     d.state === "live"
-      ? `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${d.previous.slice(0, 7)}).`
-      : `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${d.previous.slice(0, 7)}): it did not go live.`,
+      ? `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${shortVersion(d.previous)}).`
+      : `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${shortVersion(d.previous)}): it did not go live.`,
   );
   if (record.rollback !== undefined) {
     lines.push(
       record.rollback.ok
-        ? `Rolled back to ${record.rollback.to.slice(0, 7)}.`
-        : `Tried to roll back to ${record.rollback.to.slice(0, 7)}: it did not work.`,
+        ? `Rolled back to ${shortVersion(record.rollback.to)}.`
+        : `Tried to roll back to ${shortVersion(record.rollback.to)}: it did not work.`,
     );
   }
   return lines;

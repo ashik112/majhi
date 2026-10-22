@@ -14,6 +14,9 @@ export function environmentsProblem(
   if (actor === "owner") return undefined;
   const before = new Map(current.map((e) => [e.env, e]));
   for (const env of next) {
+    if (JSON.stringify(env.recipe) !== JSON.stringify(before.get(env.env)?.recipe)) {
+      return `The runs of ${env.env} are read from the project's CI by majhi: the captain does not write them.`;
+    }
     if (env.tier === "staging" && before.get(env.env)?.tier !== "staging") {
       return `Only the owner sets ${env.env} to staging: a staging environment is deployed under the Deploy staging rule. Add it as production and the owner can change its tier.`;
     }

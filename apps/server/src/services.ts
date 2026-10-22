@@ -1223,12 +1223,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // Bound below: the wiki service needs the autonomy service, which is built after the cards.
   let wikiService: WikiService | undefined;
   let findingsStore: FindingsService | undefined;
+  let discoverDeploys: ((project: string) => Promise<unknown>) | undefined;
   const cards = createCards({
     store,
     projects,
     memory,
     housekeeper,
     log: (message) => console.error(message),
+    // A scan read the CI files: how the project deploys is read from them too, and saved when it is new.
+    onScanned: (project) =>
+      void discoverDeploys?.(project.id).catch((err: unknown) =>
+        console.error(`deploys: ${project.id}: ${String(err)}`),
+      ),
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     wikiOn,
     onBaseMoved: () => wikiService?.tipMoved(),
@@ -2481,6 +2487,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     checksConfigured: (project) => checksConfigured(project),
     tellOwner: (key, text, org) => notifier.captain(key, text, org),
+    said: (org, text) => void autonomy.event({ kind: "decision", text, org }),
     incident: async (input) => {
       const env = (await projects.get(input.project).catch(() => undefined))?.deploy.find(
         (e) => e.env === input.record.env,
@@ -2504,6 +2511,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     vercelApi: options.deploy?.vercelApi,
     timing: options.deploy?.timing,
   });
+  discoverDeploys = (project) => deployWorld.discovery.run(project);
   /** The merge request timer, the lane and the chore merge a task's requests only when this says so. */
   async function captainMerges(task: string): Promise<{ yes: true } | { yes: false; why: string }> {
     const plan = await shipPlanner.plan(task);
@@ -3100,6 +3108,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     deployer: new CaseDeployer({
       environments: async (project) => (await projects.get(project).catch(() => undefined))?.deploy ?? [],
+      discover: async (project) => (await deployWorld.discovery.run(project)).added,
+      current: (project, env) => deployWorld.service.current(project, env),
+      changedPaths: async (project, branch) => {
+        const info = await projects.get(project).catch(() => undefined);
+        if (info?.base === undefined) return undefined;
+        try {
+          const out = await git(info.path, ["diff", "--name-only", `${info.base}...${branch}`]);
+          return out.split("\n").filter((p) => p !== "");
+        } catch {
+          return undefined;
+        }
+      },
       latestLive: (project, env) => store.deploys.latestLive(project, env),
       repeatable: (runs) => deployWorld.service.repeatable(runs),
       onHost: (project) => deployWorld.service.onHost(project),
@@ -3122,7 +3142,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         const failed = landed.results.find((r) => !r.ok && r.skipped !== true);
         if (failed !== undefined) throw new UserError(`${failed.project}: ${failed.detail}`, 409);
       },
-      deploy: (input, actor) => deployWorld.service.deploy(input, actor),
+      deploy: (input, actor, hint) => deployWorld.service.deploy(input, actor, undefined, hint),
       rollback: (id, actor) => deployWorld.service.rollback(id, actor),
       record: (id) => store.deploys.get(id),
       now: () => options.runClock?.() ?? new Date(),

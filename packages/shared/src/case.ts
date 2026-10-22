@@ -83,6 +83,19 @@ export const CaseHelpInputSchema = z.object({
 export const CaseDeployInputSchema = z.object({
   case: CaseRef,
   branch: z.string().trim().min(1).max(200).describe("The helper's branch, as the case's helper reported it"),
+  env: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .optional()
+    .describe("The environment the client is on, when the project has several. Left out, the one the case names"),
+  answers: z
+    .record(z.string().trim().min(1).max(120), z.string().trim().min(1).max(300))
+    .optional()
+    .describe(
+      "What the owner answered on the deploy card, by question id (env, components, previous-version, previous-commit). Only what the owner said",
+    ),
 });
 
 /** Puts the version the last deploy of the case replaced back. Once per case. */

@@ -23,6 +23,8 @@ export interface CardsWiring {
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** Whether a workspace has the wiki on: it owns architecture, so a seeded brief points to it. */
   wikiOn?: ((org: string) => Promise<boolean>) | undefined;
+  /** A project's card was written: its CI files were read, so how it deploys may have changed. */
+  onScanned?: ((project: CardProject) => void) | undefined;
   /** The base branch of a project moved and stood: the wiki's pages may now be behind it. */
   onBaseMoved?: ((project: CardProject, tip: string) => void) | undefined;
   /** Readiness gaps become findings (source setup), one per project and missing item. */
@@ -136,7 +138,8 @@ export function createCards(w: CardsWiring): ProjectCards {
             }
           },
         }),
-    onCard: (_project, card) => {
+    onCard: (project, card) => {
+      w.onScanned?.(project);
       void seedBrief(card).catch((err: unknown) =>
         w.log?.(`cards: ${card.project}: the brief was not filled: ${String(err)}`),
       );
