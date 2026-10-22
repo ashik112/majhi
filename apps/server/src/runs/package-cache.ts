@@ -34,6 +34,7 @@ export function cacheEnv(root: string): Record<string, string> {
     npm_config_cache: join(root, "npm"),
     YARN_CACHE_FOLDER: join(root, "yarn"),
     PIP_CACHE_DIR: join(root, "pip"),
+    UV_CACHE_DIR: join(root, "uv"),
   };
 }
 
