@@ -43,6 +43,8 @@ const LONG_POLL_SECONDS = 25;
 const TROUBLE_AFTER_FAILURES = 3;
 /** The most tries one send gets when Telegram says to wait. */
 const SEND_TRIES = 5;
+/** Telegram message ids are 32-bit: a larger number is a user or chat id, not a message. */
+const TG_MAX_MESSAGE_ID = 2_147_483_647;
 /** People counts are asked once in a while, not on every message. */
 const PEOPLE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -449,7 +451,11 @@ export class TelegramAdapter implements ChatAdapter {
     const base: Record<string, unknown> = {
       chat_id: target.chat,
       ...(target.thread === undefined ? {} : { message_thread_id: Number(target.thread) }),
-      ...(first && replyId !== undefined && Number.isSafeInteger(replyId)
+      ...(first &&
+      replyId !== undefined &&
+      Number.isInteger(replyId) &&
+      replyId > 0 &&
+      replyId <= TG_MAX_MESSAGE_ID
         ? { reply_parameters: { message_id: replyId, allow_sending_without_reply: true } }
         : {}),
     };

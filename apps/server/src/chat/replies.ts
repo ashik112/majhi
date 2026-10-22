@@ -467,13 +467,20 @@ export class ClientReplies {
 
   /**
    * The app's own id of the message a reply answers. The captain may name the room's item (`m:...`) instead of the
-   * app's id; that maps to the message it holds. An id that names nothing is dropped, so the reply is sent unlinked.
+   * app's id; that maps to the message it holds. Only a message id this chat holds counts (a user id or a made-up
+   * number is not one): anything else is dropped, so the reply is sent unlinked instead of failing in the app.
    */
   private appMessage(room: RoomRow, named: string | undefined): string | undefined {
     if (named === undefined) return undefined;
     const item = this.deps.room.get(room.id, named);
     if (item !== undefined) return item.type === "client" ? item.external.message : undefined;
-    return named;
+    const theirs = this.deps.store.room
+      .ofType(room.id, "client")
+      .some((i) => i.type === "client" && i.external.message === named);
+    const ours = this.deps.store.room
+      .ofType(room.id, "client-reply")
+      .some((i) => i.type === "client-reply" && i.external?.message === named);
+    return theirs || ours ? named : undefined;
   }
 
   private post(
