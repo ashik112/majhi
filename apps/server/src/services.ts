@@ -936,6 +936,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           config,
           connectionFiles,
           containerRunner: env.runner.mode === "container",
+          rooms: roomAccess,
         },
         task,
         agent,

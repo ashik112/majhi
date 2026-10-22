@@ -36,7 +36,7 @@ import { isDirectory } from "../fs.ts";
 import { lockWorktree, type RepairResult, repairWorktree, samePath } from "../git/worktrees.ts";
 import type { ProcessLaunch } from "../processes/manager.ts";
 import { CONTAINERS_SERVER_NAME, type RoomAccess, type ToolServer } from "../rooms/access.ts";
-import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
+import { type GatedTool, gateTools, SERENA_SERVER_NAME, turnedOff } from "../rooms/gating.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { SkillStore } from "../skills/store.ts";
@@ -513,6 +513,8 @@ export async function processLaunch(
   > & {
     agents: AgentStore;
     config: ConfigService;
+    /** Gives a process its own `docker` token, like a session's: a test it runs may call `docker`. */
+    rooms?: Pick<RoomAccess, "attachDocker" | "revoke"> | undefined;
   },
   taskId: string,
   agentId: string,
@@ -531,21 +533,33 @@ export async function processLaunch(
   const held = await heldConnections(deps, task, resolved.fm, "process");
   const packages = await packageCache(deps.majhiHome, task).catch(() => undefined);
   const tools = await toolsFolder(deps.majhiHome, task).catch(() => undefined);
+  // A test the process runs may call `docker` (a repo's deploy test): the shim in the runner reaches the task's
+  // own containers through majhi with this token, revoked when the process ends. Not for an agent that has
+  // `-majhi-containers`, as in its session.
+  const docker = turnedOff(resolved.fm.tools).has(CONTAINERS_SERVER_NAME)
+    ? undefined
+    : deps.rooms?.attachDocker({ task: taskId, agent: agentId });
+  const cleanups = [
+    ...(held === undefined ? [] : [() => removeRunFiles(held.dir)]),
+    ...(docker === undefined ? [] : [async () => deps.rooms?.revoke([docker.entry])]),
+  ];
   return {
     folder: task.folder,
     env: withToolsPath({
       ...packages?.env,
       ...held?.env,
       ...tools?.env,
+      ...docker?.env,
       ...buildEnv(account, deps.options.base, attribution.git),
     }),
     account,
     mounts: [...mounts, ...(held?.mounts ?? []), ...(packages?.mounts ?? []), ...(tools?.mounts ?? [])],
     // What a command of this process would do, read the way a command of the agent's own shell is.
     risk: (command) => shellRisk(command, riskScopeOfTask(task)),
-    ...(held === undefined
+    ...(cleanups.length === 0
       ? {}
-      : { cleanup: () => removeRunFiles(held.dir), secrets: held.secrets, gate: held.gate }),
+      : { cleanup: async () => void (await Promise.all(cleanups.map((c) => c()))) }),
+    ...(held === undefined ? {} : { secrets: held.secrets, gate: held.gate }),
   };
 }
 
