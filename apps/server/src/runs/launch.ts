@@ -142,6 +142,11 @@ export interface LaunchDeps {
    * it a run gets a one-line note and `majhi-skills` to look skills up.
    */
   containerRunner?: boolean | undefined;
+  /**
+   * Makes the task's folder again, with the files a task starts with, when it is gone. True when it had to. It runs
+   * before anything mounts or opens the folder: a bind mount of a missing folder fails the whole start.
+   */
+  ensureFolder?: ((task: Task) => Promise<boolean>) | undefined;
 }
 
 export interface Launched {
@@ -182,6 +187,7 @@ export async function launch(
   const { fm, boss } = agent;
   const task = deps.store.tasks.get(run.task);
   if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
+  const folderRemade = (await deps.ensureFolder?.(task)) === true;
   await deps.guardSignIn?.(fm.account);
   const runtimeAccount = await runtimeAccountOf(deps, agent, task);
   await deps.runtime.prepareHome(runtimeAccount);
@@ -243,6 +249,7 @@ export async function launch(
   ];
   // Before the mounts: they read each worktree's entry in its repo.
   const notices: string[] = await repairWorktrees(task);
+  if (folderRemade) notices.push("The task folder was missing, so it was made again.");
   let serena: StdioServerSpec | undefined;
   const firstWorktree = worktrees[0];
   if (on(SERENA_SERVER_NAME) && deps.serena !== undefined && firstWorktree !== undefined) {

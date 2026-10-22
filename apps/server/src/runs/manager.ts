@@ -154,6 +154,8 @@ export interface RunDeps {
   skills?: LaunchDeps["skills"];
   /** Agents run in runner containers (Claude Code then lists the run's skills itself). */
   containerRunner?: boolean;
+  /** Makes a missing task folder again before a session opens it (see `LaunchDeps.ensureFolder`). */
+  ensureFolder?: LaunchDeps["ensureFolder"];
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
