@@ -136,8 +136,113 @@ export const PostFieldsSchema = z.object({
 });
 export type PostFields = z.infer<typeof PostFieldsSchema>;
 
-export const TaskFieldsSchema = z.discriminatedUnion("type", [PostFieldsSchema]);
+// ---------------------------------------------------------------------------
+// A case: an incident a client reported, worked by the captain (docs/briefs/case-flow.md)
+
+/** What the captain may spend on one case before it stops and writes one card for the owner. */
+export const CASE_MAX_CALLS = 20;
+export const CASE_MAX_MS = 30 * 60_000;
+/** Messages the captain may send the client about one open case; the closing message is on top of them. */
+export const CASE_MAX_TOLD = 2;
+
+/** One command the captain ran on a connected host: its key, when, and a hash of what it answered. */
+export const CaseCommandSchema = z.object({
+  /** The connection and the command line. */
+  key: z.string().max(600),
+  at: z.string(),
+  /** How many changes the case had made when it ran: the same command runs again only after another one. */
+  change: z.number().int().min(0),
+  /** A hash of the output. */
+  result: z.string().max(64),
+  ok: z.boolean(),
+});
+export type CaseCommand = z.infer<typeof CaseCommandSchema>;
+
+/** Something worth doing later that the case found. It becomes a task only when the owner presses Make it a task. */
+export const CaseFollowUpSchema = z.object({
+  id: z.string().min(1).max(12),
+  text: z.string().trim().min(1).max(300),
+  at: z.string(),
+  /** The task the owner made of it. */
+  task: z.string().max(40).optional(),
+});
+export type CaseFollowUp = z.infer<typeof CaseFollowUpSchema>;
+
+/** A read that exited 0 after the last change: what the case rests "fixed" on. */
+export const CaseCheckSchema = z.object({
+  at: z.string(),
+  /** How many changes the case had made when the read ran. */
+  change: z.number().int().min(0),
+  what: z.string().max(300),
+});
+
+export const CaseRecordSchema = z.object({
+  /** The client chat that reported it. */
+  room: z.string().min(1).max(100),
+  /** Who reported it, for the line in Work. */
+  client: z.string().max(100),
+  /** When it opened. */
+  openedAt: z.string(),
+  /** The day it opened, `YYYY-MM-DD` in the workspace's time zone. Only a case of today takes a new report. */
+  day: z.string().max(10),
+  /** What the client said, as data. */
+  symptom: z.string().max(600),
+  /** Tool calls the captain made for it, and its time on it in milliseconds. */
+  calls: z.number().int().min(0),
+  ms: z.number().min(0),
+  commands: z.array(CaseCommandSchema).max(100),
+  /** The recoveries done, by action: each runs once per case. */
+  recoveries: z.array(z.string().max(500)).max(20),
+  /** How many recoveries and writes ran in the case. Reads and checks are counted against it. */
+  changes: z.number().int().min(0),
+  checks: z.array(CaseCheckSchema).max(30),
+  /** Messages told to the client about it. */
+  told: z.number().int().min(0),
+  followUps: z.array(CaseFollowUpSchema).max(10),
+  /** It ran out of calls or time, or the captain gave up: the one card says what it needs. */
+  stopped: z.object({ at: z.string(), why: z.string().max(300) }).optional(),
+  /** Three to six lines, written when the case closes: the one thing the owner reads in the morning. */
+  summary: z.string().max(1200).optional(),
+  closedAt: z.string().optional(),
+});
+export type CaseRecord = z.infer<typeof CaseRecordSchema>;
+
+/** The fields of an incident task a client reported. An incident without them is a watch's or a deploy's. */
+export const IncidentFieldsSchema = z.object({ type: z.literal("incident"), case: CaseRecordSchema });
+export type IncidentFields = z.infer<typeof IncidentFieldsSchema>;
+
+export const TaskFieldsSchema = z.discriminatedUnion("type", [PostFieldsSchema, IncidentFieldsSchema]);
 export type TaskFields = z.infer<typeof TaskFieldsSchema>;
+
+/** The case a task holds, or undefined when it is not one. */
+export function caseOf(task: { fields?: TaskFields | undefined }): CaseRecord | undefined {
+  return task.fields?.type === "incident" ? task.fields.case : undefined;
+}
+
+/** The view of a case a task list row carries. */
+export function caseViewOf(record: CaseRecord): CaseView {
+  return {
+    room: record.room,
+    client: record.client,
+    symptom: record.symptom,
+    ...(record.summary === undefined ? {} : { summary: record.summary }),
+    followUps: record.followUps,
+    stopped: record.stopped !== undefined,
+    openedAt: record.openedAt,
+  };
+}
+
+/** What a case shows in the task list: enough for its line in Work and its summary in Done today. */
+export const CaseViewSchema = z.object({
+  room: z.string(),
+  client: z.string(),
+  symptom: z.string(),
+  summary: z.string().optional(),
+  followUps: z.array(CaseFollowUpSchema),
+  stopped: z.boolean(),
+  openedAt: z.string(),
+});
+export type CaseView = z.infer<typeof CaseViewSchema>;
 
 /** Whether `fields` belong to a task of this type: a post's fields on a bug are refused. */
 export function fieldsFit(typing: TaskTyping | undefined, fields: TaskFields): boolean {

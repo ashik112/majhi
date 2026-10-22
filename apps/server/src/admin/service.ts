@@ -239,6 +239,8 @@ export class AdminService {
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
   private proposals: ProposalWorld | undefined;
+  /** The cases: what a captain working one may not call, and when its bound is used up. */
+  private cases: { refusal(lane: string, command: string): string | undefined } | undefined;
   private captainLog: ((entry: AppliedEntry) => void) | undefined;
 
   /** Sandbox actions that went ahead, one row per kind per task per minute. */
@@ -268,6 +270,10 @@ export class AdminService {
   /** The runner a captain's secret fetch uses: built after this service, from the connections. */
   useScript(script: ScriptFetch): void {
     this.script = script;
+  }
+
+  useCases(cases: { refusal(lane: string, command: string): string | undefined }): void {
+    this.cases = cases;
   }
 
   /** What a captain's proposal is measured against: built after this service, from the settings and projects. */
@@ -329,6 +335,9 @@ export class AdminService {
       if (tool === WITHDRAW_SECRET_TOOL) return await this.withdrawRequest(caller, args);
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
+      // A captain working a client case: no plans, hand-offs, new tasks or bug reports, and nothing past its bound.
+      const cut = this.cases?.refusal(caller.task, spec.command);
+      if (cut !== undefined) return error(cut);
       const { ownerAsked, reason, ...rest } = args;
       // Starting a task on priority, or making it urgent, may pause a running one: the command needs to know
       // whether the owner asked for it in the conversation.
@@ -659,6 +668,8 @@ export class AdminService {
     ask: { reason: string; accept?: (error: string) => boolean; accepted?: string },
   ): Promise<ToolResult> {
     const def = commands[command];
+    const cut = this.cases?.refusal(caller.task, command);
+    if (cut !== undefined) return error(cut);
     const checked = def.input.safeParse(input);
     if (!checked.success) {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);

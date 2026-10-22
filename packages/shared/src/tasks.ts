@@ -22,7 +22,7 @@ import { HoldViewSchema } from "./task-hold.ts";
 import { TaskLineSchema, TaskNameSchema } from "./task-name.ts";
 import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
 import { TrailSchema } from "./task-trail.ts";
-import { TaskFieldsSchema, TaskTypingSchema } from "./task-type.ts";
+import { CaseViewSchema, TaskFieldsSchema, TaskTypingSchema } from "./task-type.ts";
 import { DaySchema } from "./usage.ts";
 
 /**
@@ -661,6 +661,8 @@ export const TaskSummarySchema = TaskSchema.pick({
    * The hand-off check joins in the single read (`tasks.detail`).
    */
   trail: TrailSchema,
+  /** Set when the task is a case a client reported: its client, its summary once closed, its open follow-ups. */
+  case: CaseViewSchema.optional(),
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
   /** A workspace thread of the captain (5.18) or the root Captain chat: not a task to the owner. The board, Tree, counts and search leave it out. */

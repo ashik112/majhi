@@ -118,8 +118,11 @@ interface RowProps {
   /** The task's Now line: its own, else what its agent does. */
   nowLine: string | undefined;
   waitsOn: string | undefined;
+  /** The card that waits for the owner on this task, as its question. */
+  ask: string | undefined;
   actions: readonly ActionDef[] | undefined;
   onSelect: (key: string) => void;
+  onMakeTask: (task: string, followUp: string) => void;
 }
 
 function railWord(rail: RailId): string {
@@ -132,15 +135,25 @@ const RowView = memo(function RowView(props: RowProps) {
   const lamp = state === undefined ? (rail === "done" ? "done" : "idle") : WORK_STATE_LAMP[state];
   const word = state === undefined ? railWord(rail ?? "queued") : WORK_STATE_WORD[state];
   const tone = state === undefined ? "idle" : WORK_STATE_TONE[state];
-  const prefix = rail === undefined ? undefined : projectOf(task) || workspaceName(props.orgs, task.org);
+  const kase = task.case;
+  const prefix =
+    kase !== undefined
+      ? kase.client
+      : rail === undefined
+        ? undefined
+        : projectOf(task) || workspaceName(props.orgs, task.org);
+  // A case says its Now and its card under its line, and a closed one its summary: no gist beside the title.
+  const summaryLines = (kase?.summary ?? "").split("\n").filter((l) => l.trim() !== "");
   const gist =
-    nowLine ??
-    (state === "blocked" || rail === "queued" ? props.waitsOn : undefined) ??
-    (rail === "queued"
-      ? "Starts when a slot frees"
-      : rail === "ideas"
-        ? "Waits for you to start it"
-        : undefined);
+    kase !== undefined
+      ? undefined
+      : (nowLine ??
+        (state === "blocked" || rail === "queued" ? props.waitsOn : undefined) ??
+        (rail === "queued"
+          ? "Starts when a slot frees"
+          : rail === "ideas"
+            ? "Waits for you to start it"
+            : undefined));
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the console takes the keys itself (J, K, A, Enter)
     <div
@@ -156,10 +169,17 @@ const RowView = memo(function RowView(props: RowProps) {
       <ConsoleLamp state={lamp} />
       <div className="cs-main-line">
         <RowTitle prefix={prefix} name={nameOf(task)} />
-        <span className="cs-gist">{gist ?? <span className="cs-unset">No status yet</span>}</span>
+        {kase === undefined && (
+          <span className="cs-gist">{gist ?? <span className="cs-unset">No status yet</span>}</span>
+        )}
       </div>
       <div className="cs-end">
         {props.unread > 0 && <span className="cs-unread">{props.unread}</span>}
+        {kase !== undefined && rail !== "done" && (
+          <span className="cs-age" data-always="true">
+            {ageWord(kase.openedAt, now)}
+          </span>
+        )}
         {rail === "done" ? (
           <span className="cs-age">{ageWord(task.updatedAt, now)}</span>
         ) : (
@@ -168,8 +188,46 @@ const RowView = memo(function RowView(props: RowProps) {
           </span>
         )}
       </div>
+      {kase !== undefined && (
+        <div className="cs-case">
+          {rail === "done" ? (
+            <div className="cs-case-line">{summaryLines[0] ?? "Closed"}</div>
+          ) : (
+            <>
+              <div className="cs-case-line">
+                <span className="cs-lbl">Now</span>
+                {nowLine ?? "Looking into it"}
+              </div>
+              {props.ask !== undefined && (
+                <div className="cs-case-line" data-needs="true">
+                  <span className="cs-lbl">Needs you</span>
+                  {props.ask}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {selected && (
         <div className="cs-det">
+          {kase !== undefined && summaryLines.length > 0 && (
+            <div className="cs-q" data-full="true">
+              {kase.summary}
+            </div>
+          )}
+          {kase?.followUps.map((f) => (
+            <div key={f.id} className="cs-q">
+              <span className="cs-lbl">Follow-up</span>
+              {f.text}
+              {f.task === undefined ? (
+                <Btn ghost onClick={() => props.onMakeTask(task.id, f.id)}>
+                  Make it a task
+                </Btn>
+              ) : (
+                <span className="cs-lbl"> made {f.task}</span>
+              )}
+            </div>
+          ))}
           {task.next !== undefined && (
             <div className="cs-q">
               <span className="cs-lbl">Next</span>
@@ -217,6 +275,8 @@ export function WorkPane(props: {
   unreadOf: (id: string) => number;
   nowLineOf: (task: TaskSummary) => string | undefined;
   waitsOnOf: (task: TaskSummary) => string | undefined;
+  askOf: (task: TaskSummary) => string | undefined;
+  onMakeTask: (task: string, followUp: string) => void;
   actions: readonly ActionDef[] | undefined;
   onSelect: (key: string) => void;
   onToggleOrg: (org: string) => void;
@@ -312,8 +372,10 @@ export function WorkPane(props: {
                   orgs={props.orgs}
                   nowLine={props.nowLineOf(item.entry.task)}
                   waitsOn={props.waitsOnOf(item.entry.task)}
+                  ask={props.askOf(item.entry.task)}
                   actions={selected ? props.actions : undefined}
                   onSelect={props.onSelect}
+                  onMakeTask={props.onMakeTask}
                 />
               );
             }

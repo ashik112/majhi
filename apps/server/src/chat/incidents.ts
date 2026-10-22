@@ -1,6 +1,8 @@
 import {
+  type CaseRecord,
   CLIENT_STATUSES,
   type ClientStatus,
+  caseOf,
   clientStatus,
   type IncidentEvent,
   type IncidentRoomView,
@@ -129,11 +131,14 @@ export class ClientIncidents {
       ...new Set([
         ...this.deps.store.tasks
           .allLinks()
-          .filter((l) => l.type === "client")
+          .filter((l) => {
+            const task = l.type === "client" ? this.deps.store.tasks.get(l.task) : undefined;
+            return task !== undefined && caseOf(task) === undefined;
+          })
           .map((l) => l.task),
         ...this.deps.store.tasks
           .list(true)
-          .filter((t) => t.typing?.type === "incident")
+          .filter((t) => t.typing?.type === "incident" && t.case === undefined)
           .map((t) => t.id),
       ]),
     ];
@@ -213,12 +218,47 @@ export class ClientIncidents {
     return parts.join(" · ");
   }
 
+  /**
+   * What a case shows in its incident bar: this case's own facts, never another incident's. It is open or resolved;
+   * what the client was told is how many times the captain wrote, which is all the case counts.
+   */
+  private caseView(task: Task, record: CaseRecord, rooms: RoomRow[]): IncidentView {
+    const closed = record.closedAt !== undefined;
+    const steps: IncidentView["steps"] = CLIENT_STATUSES.map((status) =>
+      status === "investigating"
+        ? { status, at: record.openedAt }
+        : status === "resolved" && record.closedAt !== undefined
+          ? { status, at: record.closedAt }
+          : { status },
+    );
+    // Each room's line already says when that room was told.
+    const line = closed ? (record.summary?.split("\n")[0] ?? "Closed") : (task.now ?? "Looking into it");
+    return {
+      task: task.id as TaskId,
+      status: closed ? "resolved" : "investigating",
+      steps,
+      facts: clip(line, 120),
+      rooms: rooms.map(
+        (room): IncidentRoomView => ({
+          room: room.id as TaskId,
+          title: room.chat.title,
+          app: room.chat.app,
+          ...(record.told === 0
+            ? {}
+            : { sees: closed ? ("resolved" as const) : ("investigating" as const), toldAt: record.openedAt }),
+        }),
+      ),
+    };
+  }
+
   /** What the task page shows. Null for a task no client room is linked to. */
   async view(taskId: string): Promise<IncidentView | null> {
     const task = this.deps.store.tasks.get(taskId);
     const rooms = this.rooms(taskId);
     // An incident no client room is told about still has its status, its quiet reason and its report.
     if (task === undefined || (rooms.length === 0 && task.typing?.type !== "incident")) return null;
+    const record = caseOf(task);
+    if (record !== undefined) return this.caseView(task, record, rooms);
     const read = await this.read(task);
     const result = clientStatus(read.facts);
     const tz = await this.deps.tz(read.org);
@@ -300,30 +340,6 @@ export class ClientIncidents {
     this.deps.store.tasks.putLink({ task: incident, type: "client", other: room });
   }
 
-  /** A message of a client room is about an incident that exists. Reopens it when it was resolved. */
-  async attach(room: RoomRow, choice: string): Promise<{ task: string; reopened: boolean }> {
-    const org = room.org as string;
-    const taskId = choice;
-    const task = this.deps.store.tasks.get(taskId);
-    if (task === undefined || task.org !== org) throw new UserError("That incident is gone.", 404);
-    this.link(taskId, room.id);
-    const result = clientStatus((await this.read(task)).facts);
-    let reopened = false;
-    // Told Resolved, and the client says it is back: the client wins.
-    if (result.status === "resolved" && this.toldResolved(taskId, room.id)) {
-      this.record(
-        taskId,
-        { event: "reopened", room: room.id as TaskId, at: this.at() },
-        `reopened:${room.id}:${this.at()}`,
-      );
-      reopened = true;
-      // A done task goes back to work through the lifecycle, so the board and the card agree.
-      if (task.status === "done") await this.deps.reopen(taskId);
-    }
-    this.deps.changed();
-    return { task: taskId, reopened };
-  }
-
   /** What broke, in words safe to tell a client: the watched service's own title, else a plain phrase. Never the task's title. */
   private whatBroke(read: Read): string {
     if (read.watch !== undefined) return clip(read.watch.title, 120);
@@ -403,13 +419,6 @@ export class ClientIncidents {
     );
   }
 
-  private toldResolved(task: string, room: string): boolean {
-    const told = this.events(task).flatMap((e) =>
-      e.detail.event === "told" && e.detail.room === room ? [e.detail] : [],
-    );
-    return told.some((t) => t.status === "resolved");
-  }
-
   /**
    * Opens the incident for a client's report, or joins the one that is open, and links the chat. The evidence majhi
    * holds (a firing watch, a failed deploy) and what the captain found when it checked are the incident's first facts.
@@ -427,6 +436,7 @@ export class ClientIncidents {
       kind: "client",
       org,
       room: room.id,
+      client: item.sender.name,
       item: item.id,
       ...(finding === undefined ? {} : { finding }),
       project,
@@ -439,22 +449,14 @@ export class ClientIncidents {
   }
 
   /**
-   * The captain checked and a client's problem is real: opens the incident or joins the open one, and links the chat.
-   * A client who says it is back after the incident was told Resolved reopens that incident instead.
+   * The captain checked and a client's problem is real: opens the case or joins the one this chat has open today, and
+   * links the chat. A case that closed is not reopened: a new report is a new case.
    */
   async openFor(
     room: RoomRow,
     item: Extract<RoomItem, { type: "client" }>,
     found: string,
   ): Promise<{ task: string; joined: boolean; reopened: boolean }> {
-    const followed = await this.followed(room.id);
-    if (followed !== undefined && this.toldResolved(followed, room.id)) {
-      const task = this.deps.store.tasks.get(followed);
-      if (task !== undefined && Date.parse(task.updatedAt) > this.now().getTime() - DAY_MS) {
-        const out = await this.attach(room, followed);
-        if (out.reopened) return { task: followed, joined: true, reopened: true };
-      }
-    }
     return { ...(await this.claim(room, item, item.outcome?.finding, found)), reopened: false };
   }
 

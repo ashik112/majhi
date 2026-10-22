@@ -41,6 +41,8 @@ export interface ConsoleData {
   doing: ReadonlyMap<string, { text: string }>;
   /** Decisions waiting per workspace, before the workspace filter. */
   waitingByOrg: ReadonlyMap<string, number>;
+  /** The question of the card that waits on a task, for the line under a case in Work. */
+  askOf: ReadonlyMap<string, string>;
   counts: { incidents: number; needYou: number; working: number; queued: number };
   captainAgent: string | undefined;
   conversations: Conversation[] | undefined;
@@ -96,6 +98,13 @@ export function useConsoleData(now: number): ConsoleData {
   );
 
   const asking = useMemo(() => askingTasks(all ?? []), [all]);
+  const askOf = useMemo(() => {
+    const by = new Map<string, string>();
+    for (const d of all ?? []) {
+      if (d.task !== undefined && !hidden.has(d.id) && !by.has(d.task)) by.set(d.task, d.title);
+    }
+    return by;
+  }, [all, hidden]);
   const orgOrder = useMemo(() => [PRIVATE, ...(orgs ?? []).map((o) => o.id)], [orgs]);
   const work = useMemo(
     () => buildWork(taskList.data ?? [], asking, org, orgOrder),
@@ -146,6 +155,7 @@ export function useConsoleData(now: number): ConsoleData {
     rails,
     doing,
     waitingByOrg,
+    askOf,
     counts,
     captainAgent,
     conversations,

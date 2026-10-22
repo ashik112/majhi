@@ -22,6 +22,7 @@ import {
   NotificationsSettingsSchema,
   OWNER,
   PRIVATE,
+  REPLY_HOLD_LABEL,
   type ServiceEntry,
   type TaskId,
   taskLabel,
@@ -64,7 +65,7 @@ import { TurnContext } from "./captain/context.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
-import { authorityOf, workspaceIds } from "./captain/levels.ts";
+import { authorityOf, levelOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
@@ -72,6 +73,9 @@ import { CaptainService } from "./captain/service.ts";
 import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
+import { LaneWatchdog } from "./captain/watchdog.ts";
+import { CaseService } from "./cases/service.ts";
+import { waitsForCaptain } from "./chat/desk.ts";
 import type { ClientChat } from "./chat/service.ts";
 import { SlackAdapter } from "./chat/slack/adapter.ts";
 import { TelegramAdapter } from "./chat/telegram/adapter.ts";
@@ -269,6 +273,8 @@ import { WikiTools } from "./wiki/tools.ts";
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
 const INCIDENT_SWEEP_MS = 20_000;
+/** The lane watchdog looks once a minute. */
+const WATCHDOG_MS = 60_000;
 /** How often each client chat is cut to its Keep setting. */
 const KEEP_SWEEP_MS = 24 * 3_600_000;
 const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
@@ -462,6 +468,10 @@ export interface Services {
   chat: ClientChat;
   /** The parts behind it, for the tests that drive them. */
   chatParts: ClientChatParts;
+  /** The cases: incidents a client reported, worked by the captain itself. */
+  cases: CaseService;
+  /** Heals the captain's lane when a client message waits, and tells the owner as a last resort. */
+  watchdog: LaneWatchdog;
   /** The incident engine: the one place incidents are opened and joined. */
   incidentEngine: IncidentEngine;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
@@ -1077,6 +1087,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (found === undefined || !(await resilience.handoffOn(found))) return undefined;
       return tasks.crew.successor(task, agent);
     },
+    onToolCall: (task) => cases?.toolCall(task),
     onTurnFailed: (turn) => idleWatch.turnFailed(turn),
     onRunFailed: (task) => autonomy.runFailed(task),
     // Bound below: autonomous mode is built after the task service.
@@ -1085,6 +1096,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onTurnEnd: (turn) => {
       // A client message is read only by a turn that ends normally: the desk learns of it before the lane settles.
       if (turn.refused !== true) clientChat?.desk.turnEnded(turn.task);
+      // A captain working a case: its time on the case is counted, and a case past its bound gets its card.
+      cases?.turnEnded(turn.task);
       // The captain's turn in a lane is over: its last words are stored with their tag, then the lane is about nothing.
       room.flush(turn.task);
       room.setSubject(turn.task, undefined);
@@ -1295,6 +1308,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ),
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
+    onCaseAnswer: async (task, item, said, pick) => (await cases?.answered(task, item, said, pick)) === true,
     // The lead's team facts say when this computer is busy: more workers would slow every run.
     machineBusy: () => busyReason(machine.get()?.host),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -1705,6 +1719,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let outcomesService: OutcomesService | undefined;
   // Bound below, after Connect: the client chats send and settle drafts of the gate's `client` channel.
   let clientChat: ClientChatParts | undefined;
+  let cases: CaseService | undefined;
   const outbound = new OutboundGate({
     db: store.raw,
     knownOrg,
@@ -2870,6 +2885,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const incidentEngineNow = new IncidentEngine({
     blocked: () => autonomy.reactingBlocked(),
+    captain: () => lanes.boss(),
+    tz: async (org) => {
+      const a = (await config.settings()).autonomy;
+      return zoneOr(a.orgs[org]?.tz ?? a.tz);
+    },
     opened: (task) => {
       if (task.org !== undefined) clientChat?.incidents.linkSubscribers(task.id, task.org);
     },
@@ -2897,6 +2917,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       pauseVictim: (id) => tasks.pauseVictim(id),
       close: (id, opts) => tasks.close(id, opts),
       reopen: (id) => tasks.reopen(id),
+      beginCase: (id) => tasks.beginCase(id),
     },
     deploys: { rollback: (id, actor) => deployWorld.service.rollback(id, actor) },
     projects: async (org) =>
@@ -2962,7 +2983,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     intercept: async (connection, envelope) => (await ownerTelegram?.claims(connection, envelope)) === true,
     housekeeper: reactingHousekeeper,
     blocked: () => autonomy.reactingBlocked(),
-    wake: (org, text, settled, job) => lanes.tell(org, text, settled, job),
+    wake: (org, text, settled, job, about) => lanes.tell(org, text, settled, job, about),
+    cases: () => cases,
     findings,
     watch: {
       incident: (id) => opsWatch?.incident(id),
@@ -3050,6 +3072,86 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     log: (line) => console.log(line),
   });
   clientChat = chatParts;
+  cases = new CaseService({
+    store,
+    room,
+    tasks: {
+      setStatusLines: (id, lines) => tasks.setStatusLines(id, lines),
+      close: (id, opts) => tasks.close(id, opts),
+      create: (input) => tasks.create({ ...input, provenance: { kind: "owner" }, gate: "owner" }),
+    },
+    reply: async (input) => {
+      const row = chatParts.rooms.room(input.room);
+      const out = await chatParts.replies.captain({
+        room: input.room,
+        text: input.text,
+        flags: input.flags,
+        to: input.to,
+        replyTo: input.replyTo,
+        note: input.note,
+        about: input.about,
+        caseLevel: input.caseLevel,
+      });
+      chatParts.captain.replied(row, out);
+      return out.state === "failed"
+        ? { state: "failed", why: out.why }
+        : out.state === "held"
+          ? { state: "held", why: REPLY_HOLD_LABEL[out.why] }
+          : { state: "sent" };
+    },
+    wake: (org, text, settled, about) => lanes.tell(org, text, settled, "reacting", about),
+    laneOrg: (chat) => lanes.orgOf(chat),
+    captain: () => lanes.boss(),
+    level: async (org) => levelOf((await config.settings()).autonomy, org),
+    tz: async (org) => {
+      const a = (await config.settings()).autonomy;
+      return zoneOr(a.orgs[org]?.tz ?? a.tz);
+    },
+    history: ({ text, org, task }) =>
+      void autonomy.event({
+        kind: "decision",
+        text,
+        org,
+        ...(task === undefined ? {} : { task: task as TaskId }),
+      }),
+    changed: () => events.emit(["tasks", "findings", "clients", "ops"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  admin.useCases(cases);
+  // The lane watchdog stands apart from the captain, the lanes and the runs: a client message nobody reads is healed.
+  const watchdog = new LaneWatchdog({
+    store,
+    lanes,
+    tasks: { holdOf: (id) => tasks.holdOf(id), start: (id, by) => tasks.start(id, by) },
+    stoppedBecause: (chat) => {
+      const card = store.room.pendingOfType(chat, "paused").at(-1);
+      return card?.type === "paused" && card.why !== undefined && card.why !== "" ? card.why : undefined;
+    },
+    turnRunning: (chat) => runs.working(chat).length > 0,
+    room,
+    caseOf: async (roomId) => (await cases?.openToday(roomId))?.task,
+    waits: (item) => waitsForCaptain(item),
+    retry: () => chatParts.desk.retry(),
+    nudge: (row, item) => chatParts.desk.add(row, item),
+    tellClient: async (row, text) => {
+      const org = row.org as string;
+      const out = await chatParts.replies.captain({
+        room: row.id,
+        text,
+        flags: { promisedTime: false, money: false, security: false, severalClients: false },
+        caseLevel: levelOf((await config.settings()).autonomy, org),
+        note: `Told ${row.chat.title} we are looking into it`,
+      });
+      chatParts.captain.replied(row, out);
+    },
+    tellOwner: async (title, text) => {
+      await ops?.tellOwner(title, text);
+    },
+    changed: () => events.emit(["tasks", "clients"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const watchdogTimer = setInterval(() => background.run(() => watchdog.sweep()), WATCHDOG_MS);
+  watchdogTimer.unref();
   // Each client room hears of an incident when its status changes and at the workspace's cadence.
   const incidentSweep = setInterval(
     () =>
@@ -3605,6 +3707,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     chat: chatParts.chat,
     chatParts,
+    cases,
+    watchdog,
     incidentEngine: incidentEngineNow,
     outcomes,
     handoff,

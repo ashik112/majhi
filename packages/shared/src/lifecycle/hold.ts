@@ -211,7 +211,10 @@ export const HOLD_TABLE: { readonly [C in HoldCause]: HoldRow<C> } = {
   error: {
     lifters: () => ["owner", "captain"],
     autoClears: () => ({ kind: "never" }),
-    sentence: (h) => `It stopped with an error: ${sentenceEnd(h.error)}`,
+    sentence: (h) =>
+      h.error.trim() === ""
+        ? "It stopped with an error."
+        : `It stopped with an error: ${sentenceEnd(h.error)}`,
   },
   "autonomous-stop": {
     lifters: () => ["owner"],

@@ -35,6 +35,7 @@ import { briefHandlers } from "../brief/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { isRootChat } from "../captain/tell.ts";
+import { caseHandlers } from "../cases/handlers.ts";
 import { chatHandlers } from "../chat/handlers.ts";
 import { incidentHandlers } from "../chat/incident-handlers.ts";
 import { resolvePath } from "../config/load.ts";
@@ -327,6 +328,7 @@ export function createHandlers({
     ...conversationsHandlers(services.conversations),
     ...noticesHandlers(services.notices),
     ...chatHandlers(services.chat),
+    ...caseHandlers(services.cases),
     ...incidentHandlers({
       incidents: services.chatParts.incidents,
       lane: async (task) => {

@@ -180,6 +180,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         refreshBriefs: (task) => services.tasks.refreshBriefs([task]),
         hostHome: config.paths.hostHome,
         deferred: new DeferredResults(),
+        cases: services.cases,
         ...(options.connectionsRemote === undefined ? {} : { remote: options.connectionsRemote }),
       },
     },

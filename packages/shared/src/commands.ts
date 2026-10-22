@@ -77,6 +77,16 @@ import {
   SlotCapacitySchema,
 } from "./captain.ts";
 import {
+  CaseAskInputSchema,
+  CaseCloseInputSchema,
+  CaseFollowUpInputSchema,
+  CaseMadeTaskSchema,
+  CaseMakeTaskInputSchema,
+  CaseOkSchema,
+  CaseStatusInputSchema,
+  CaseStopInputSchema,
+} from "./case.ts";
+import {
   ChatChannelIgnoreInputSchema,
   ChatChannelLinkInputSchema,
   ChatChannelsInputSchema,
@@ -1604,12 +1614,56 @@ export const commands = {
     output: ChatHistoryResultSchema,
   },
   "chat.openIncident": {
-    // `read` on purpose, like chat.reply: the incident engine decides, it opens at once and the lead investigates.
+    // `read` on purpose, like chat.reply: the incident engine decides, it opens at once.
     risk: "read",
     summary:
-      "The captain, in its workspace lane, opens an incident for a client chat after checking, or joins the one already open for the workspace. Put what you found when you checked (live checks, watches, recent deploys, logs) in found. The incident starts at once and its lead investigates; the chat is told through you, with chat.reply, as the incident moves",
+      "The captain, in its workspace lane, opens a case for a client's problem report after checking, or joins the case this chat has open today. Put what you found when you checked (live checks, watches, recent deploys, logs) in found. A case has no lead and no plan: you work it yourself, here. Read what is wrong on the connected hosts, recover with one restart if that is what it needs, tell the client at most twice, and close it with case_close once a read shows the symptom is gone. Without a client problem there is no case",
     input: ChatOpenIncidentInputSchema,
     output: ChatOpenIncidentResultSchema,
+  },
+  // A client's case, worked by the captain itself (docs/briefs/case-flow.md) ---------
+  "case.status": {
+    // `read` on purpose, like the case tools below: the case service holds the bound, so no card waits on top of it.
+    risk: "read",
+    summary:
+      "The captain, working a client case, sets the live line the owner reads under the case in Work: what it does now, and what comes next",
+    input: CaseStatusInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.followUp": {
+    risk: "read",
+    summary:
+      "The captain adds a line to a case's follow-ups: a code fix to stop it happening again, a monitor to add. It is only a line. It becomes a task when the owner presses Make it a task on it; you never file tasks or bugs from a case",
+    input: CaseFollowUpInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.ask": {
+    risk: "read",
+    summary:
+      "The captain asks the owner once, with buttons, for what cannot be undone: deploying new code, changing env or config files on a host, writing to a database or deleting data or volumes, spending money. Put one plain question and two to four buttons. The case goes on with whatever does not need the answer, and you are woken here with the owner's pick",
+    input: CaseAskInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.close": {
+    risk: "read",
+    summary:
+      "The captain closes a case once the client's symptom is checked as gone (a read of the thing that failed, after your last change). Write a 3 to 6 line summary: it is the one thing the owner reads in the morning. Give tell to send the client the last message in the same call. Refused when no read since your last change shows it works",
+    input: CaseCloseInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.stop": {
+    risk: "read",
+    summary:
+      "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its 20 tool calls or 30 minutes",
+    input: CaseStopInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.makeTask": {
+    risk: "change",
+    summary:
+      "Make a task of one follow-up of a case: the owner's Make it a task. The task is made in the case's workspace and waits for Start. Owner only",
+    input: CaseMakeTaskInputSchema,
+    output: CaseMadeTaskSchema,
   },
   "chat.startTask": {
     // `read` on purpose, like chat.reply: the Start row and the chat rules decide whether it starts or waits for the owner.

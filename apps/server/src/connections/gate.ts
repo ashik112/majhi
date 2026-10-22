@@ -1,5 +1,6 @@
 import type { ConnectionType, ToolAnnotations } from "@majhi/shared";
 import { cliVerb, firstVerb, KUBECTL_READ_PAIRS, KUBECTL_READS, programReads } from "./read-only.ts";
+import { classifyRemoteCommand } from "./remote-command.ts";
 import { parseLine, ShellParseError, type SimpleCommand } from "./shell.ts";
 
 /**
@@ -44,6 +45,8 @@ export interface GateWrite {
   allowed: boolean;
   /** Set for a call of an MCP tool: the tool's name, which `allow` and `readTools` hold. */
   tool?: string;
+  /** A restart of one service or container on the same image and config: a case lets it through once. */
+  recovery?: { target: string; action: string };
 }
 
 /** Words of a command or tool name that delete or destroy what they act on. */
@@ -168,28 +171,6 @@ const KUBECTL_IDENTITY_FLAGS = new Set([
   "--insecure-skip-tls-verify",
   "--tls-server-name",
 ]);
-
-/** Programs of a remote command that only read. */
-const REMOTE_READ_PROGRAMS = new Set([
-  ...FILTERS,
-  "cat",
-  "ls",
-  "df",
-  "du",
-  "free",
-  "uptime",
-  "ps",
-  "uname",
-  "hostname",
-  "whoami",
-  "id",
-  "date",
-  "pwd",
-  "stat",
-  "which",
-]);
-/** journalctl reads, except with these, which delete or rotate the journal. */
-const JOURNAL_WRITES = /^--(?:vacuum|rotate|flush|relinquish|sync)/;
 
 /**
  * MCP tool names (SPEC 5.14): one with a read verb in it is a read, unless a write verb is in it too.
@@ -337,37 +318,26 @@ export function classifyCommand(line: string, held: readonly GateConnection[]): 
 }
 
 /**
- * How a command an agent wants to run over SSH counts: each command of the line is a read when its
- * program only reads (cat, ls, grep, tail) or its first verb is a read verb (`systemctl status`).
- * Anything else, a redirect into a file included, is a write.
+ * How a command an agent wants to run over SSH counts, read by `remote-command.ts`: a read runs, a recovery
+ * (a restart of one service or container on the same image and config) is a write that carries its `recovery`
+ * so a case can let it through once, and everything else is a write.
  */
 export function classifyRemote(command: string, connection: GateConnection): GateVerdict {
   const action = oneLine(command);
-  const write = (why: string): GateVerdict => ({
-    kind: "write",
-    writes: [gateWrite(connection.id, action, why, connection.allow)],
-  });
-  let parsed: ReturnType<typeof parseLine>;
-  try {
-    parsed = parseLine(command);
-  } catch {
-    return write("majhi cannot read the command line");
+  const verdict = classifyRemoteCommand(command);
+  if (verdict.kind === "read") return { kind: "read", connections: [connection.id] };
+  if (verdict.kind === "recovery") {
+    return {
+      kind: "write",
+      writes: [
+        {
+          ...gateWrite(connection.id, action, `it restarts ${verdict.target}`, connection.allow),
+          recovery: { target: verdict.target, action: verdict.action },
+        },
+      ],
+    };
   }
-  if (parsed.substitutions.length > 0) return write("it runs a command inside the command");
-  if (parsed.commands.length === 0) return write("it is empty");
-  for (const cmd of parsed.commands) {
-    if (cmd.redirects.some(isFileWrite)) return write("it writes to a file");
-    const [program, ...args] = cmd.words;
-    if (program === undefined) continue;
-    const name = basename(program);
-    if (REMOTE_READ_PROGRAMS.has(name)) continue;
-    if (name === "journalctl") {
-      if (args.some((a) => JOURNAL_WRITES.test(a))) return write("it deletes or rotates the journal");
-      continue;
-    }
-    if (cliVerb(args) !== "read") return write(`${name} may change something`);
-  }
-  return { kind: "read", connections: [connection.id] };
+  return { kind: "write", writes: [gateWrite(connection.id, action, verdict.why, connection.allow)] };
 }
 
 class LineResult {

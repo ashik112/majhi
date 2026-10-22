@@ -199,6 +199,12 @@ export class Lanes {
     ) {
       return { account: spare, own: spare === own, fallback: true };
     }
+    // Then any other account that is healthy and allowed in this workspace (the watchdog's last way to keep a client
+    // message from waiting): the workspace's own accounts and the owner's, never another workspace's.
+    for (const id of Object.keys(sections.accounts)) {
+      if (id === main || id === spare || fit(id) !== undefined) continue;
+      if ((await this.held(id)) === undefined) return { account: id, own: id === own, fallback: true };
+    }
     return {
       problem: `${main} ${held.why}`,
       why: held.reason,

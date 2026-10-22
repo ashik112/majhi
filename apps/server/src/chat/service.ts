@@ -1,5 +1,6 @@
 import {
   type AuthorityChoice,
+  type AuthorityLevel,
   type ChatApp,
   type ChatChannels,
   type ChatHistoryInput,
@@ -73,10 +74,22 @@ export interface ClientChatDeps {
   tell: (org: string) => Promise<AuthorityChoice>;
   /** The captain, and the workspace of a task that is its lane. */
   lane: (task: string) => Promise<{ boss: string; org: string } | undefined>;
+  /** The cases (docs/briefs/case-flow.md), bound after the chat parts are built. */
+  cases?: () => ChatCases | undefined;
   /** Removes Telegram's webhook so majhi may read with getUpdates. */
   deleteWebhook: (connection: string) => Promise<void>;
   /** Saves the owner's User OAuth Token on a Slack connection, in secrets.age. */
   saveUserToken: (connection: string, userToken: string, meta: CommandMeta) => Promise<void>;
+}
+
+/** What a client chat needs of the cases: the reply limit of an open one, and which case a lane's turn is about. */
+export interface ChatCases {
+  /** The case this chat has open today, with the level its replies go at; refused past the reply limit. */
+  replyGate(room: string): Promise<{ task: string; level: AuthorityLevel } | undefined>;
+  /** A reply about the case went out or was held: it counts. */
+  told(task: string): void;
+  /** The lane's turn is about this case from now. */
+  opened(lane: string, task: string): void;
 }
 
 /** How long a channel list from the app is reused. */
@@ -409,9 +422,12 @@ export class ClientChat {
     caller: { agent: string; task: string },
   ): Promise<{ state: "sent" | "held" | "failed"; why?: string }> {
     const room = await this.captainRoom(input.room, caller);
+    const cases = this.deps.cases?.();
+    const gate = await cases?.replyGate(input.room);
     const out = await this.deps.replies.captain({
       room: input.room,
       text: input.text,
+      ...(gate === undefined ? {} : { caseLevel: gate.level, about: gate.task }),
       flags: {
         promisedTime: input.promisedTime,
         money: input.money,
@@ -424,6 +440,7 @@ export class ClientChat {
       note: `Replied in ${room.chat.title}`,
     });
     this.deps.captain.replied(room, out);
+    if (gate !== undefined && out.state !== "failed") cases?.told(gate.task);
     if (out.state === "sent") return { state: "sent" };
     if (out.state === "failed") return { state: "failed", why: out.why };
     return { state: "held", why: REPLY_HOLD_LABEL[out.why] };
@@ -437,7 +454,9 @@ export class ClientChat {
   }
 
   async openIncident(input: ChatOpenIncidentInput, caller: { agent: string; task: string }) {
-    return this.deps.captain.openIncident(await this.captainRoom(input.room, caller), input);
+    const made = await this.deps.captain.openIncident(await this.captainRoom(input.room, caller), input);
+    this.deps.cases?.()?.opened(caller.task, made.task);
+    return made;
   }
 
   async startTask(input: ChatStartTaskInput, caller: { agent: string; task: string }) {

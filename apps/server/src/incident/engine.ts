@@ -1,4 +1,6 @@
 import {
+  type CaseRecord,
+  caseOf,
   clientStatus,
   type DeployRecord,
   type DeployTier,
@@ -13,6 +15,7 @@ import {
   type TaskId,
   taskLabel,
 } from "@majhi/shared";
+import { dayOf, newCase } from "../cases/record.ts";
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -49,6 +52,8 @@ export type IncidentSource =
       kind: "client";
       org: string;
       room: string;
+      /** Who wrote it, for the line in Work. */
+      client?: string | undefined;
       item: string;
       finding?: number | undefined;
       /** The project the evidence points to. */
@@ -113,6 +118,8 @@ export interface EngineDeps {
       repos?: { project: string }[] | undefined;
       kind: "code" | "ops";
       readOnly?: boolean | undefined;
+      /** The agent of the task. A case is the captain's own: no lead is picked for it. */
+      agent?: string | undefined;
       provenance: {
         kind: "ref";
         origin: Extract<StoredOrigin, { kind: "watch" | "deploy" | "client" }>;
@@ -135,7 +142,13 @@ export interface EngineDeps {
       opts: { by: string; whenSubtasksOpen: "stay"; whenUnshipped: "stay" | "keep" },
     ): Promise<Task>;
     reopen(id: string): Promise<Task>;
+    /** A case runs without an agent: it goes to running with no run started. */
+    beginCase(id: string): Promise<void>;
   };
+  /** The captain's agent id, who works every case. Undefined: none is set. */
+  captain: () => Promise<string | undefined>;
+  /** The workspace's time zone: a case is of the day it opened in it. */
+  tz: (org: string) => Promise<string>;
   deploys: { rollback(id: number, actor: "owner"): Promise<unknown> };
   projects: (org: string) => Promise<EngineProject[]>;
   /** A short title written from facts, or undefined (no model, a refusal): the facts' own title stands. */
@@ -177,9 +190,13 @@ export function isSeverityOne(source: IncidentSource): boolean {
 
 const FIX_LIVE = "Fix live";
 
-/** An incident task is a task typed `incident`; every incident source types it when it opens it. */
-export function isIncidentTask(t: Pick<Task, "typing">): boolean {
-  return t.typing?.type === "incident";
+/**
+ * An incident task is a task typed `incident` that an agent works: a watch's or a deploy's. A case, the incident a
+ * client reported, is typed the same way but the captain works it itself, so none of the machinery that starts,
+ * ships and closes an incident's lead applies to it.
+ */
+export function isIncidentTask(t: Pick<Task, "typing" | "fields">): boolean {
+  return t.typing?.type === "incident" && caseOf(t) === undefined;
 }
 
 export class IncidentEngine {
@@ -203,16 +220,31 @@ export class IncidentEngine {
   // ---------------------------------------------------------------------------
   // Opening and joining
 
-  /** The incident tasks of a workspace that are not done. */
+  /** The incident tasks of a workspace that are not done and have an agent to work them (not cases). */
   openTasks(org: string): Task[] {
     return this.deps.store.tasks
       .list(false)
-      .filter((t) => t.org === org && t.typing?.type === "incident")
+      .filter((t) => t.org === org && t.typing?.type === "incident" && t.case === undefined)
       .flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
   }
 
+  /** The cases of a workspace that are not closed. */
+  openCases(org: string): { task: Task; record: CaseRecord }[] {
+    return this.deps.store.tasks
+      .list(false)
+      .filter((t) => t.org === org && t.case !== undefined)
+      .flatMap((t) => {
+        const task = this.deps.store.tasks.get(t.id);
+        const record = task === undefined ? undefined : caseOf(task);
+        return task === undefined || record === undefined ? [] : [{ task, record }];
+      });
+  }
+
   /** The open incident a report joins, if there is one. */
-  findOpen(source: IncidentSource, project: string | undefined): Task | undefined {
+  findOpen(
+    source: Exclude<IncidentSource, { kind: "client" }>,
+    project: string | undefined,
+  ): Task | undefined {
     const open = this.openTasks(source.org);
     switch (source.kind) {
       case "watch": {
@@ -241,13 +273,6 @@ export class IncidentEngine {
             t.origin.env === source.record.env,
         );
         return same ?? open.find((t) => t.repos.some((r) => r.project === source.record.project));
-      }
-      case "client": {
-        const linked = open.find((t) => t.links.some((l) => l.type === "client" && l.task === source.room));
-        if (linked !== undefined) return linked;
-        return project === undefined
-          ? undefined
-          : open.find((t) => t.repos.some((r) => r.project === project));
       }
     }
   }
@@ -329,6 +354,7 @@ export class IncidentEngine {
 
   /** Opens the incident of a report, or joins the one that is open. */
   async open(source: IncidentSource): Promise<OpenResult> {
+    if (source.kind === "client") return this.openCase(source);
     const known = this.projectOf(source);
     const projects = await this.deps.projects(source.org);
     // One project in the workspace is the only place the problem can be.
@@ -417,6 +443,78 @@ export class IncidentEngine {
     return { task: task.id, joined: false, started, projectUnknown: project === undefined };
   }
 
+  /**
+   * A client's report opens a case, or joins the case this chat has open today (docs/briefs/case-flow.md). A case is
+   * an incident task the captain works itself: the captain is its agent, no run starts, and it is running from the
+   * first moment, so there is no lead to start and nothing to wait for. A case of an older day is never joined: the
+   * report is a new problem, and the old case keeps its own facts.
+   */
+  private async openCase(source: Extract<IncidentSource, { kind: "client" }>): Promise<OpenResult> {
+    const at = this.at();
+    const day = dayOf(this.now(), await this.deps.tz(source.org));
+    const same = this.openCases(source.org).find(
+      ({ record }) => record.room === source.room && record.day === day && record.closedAt === undefined,
+    );
+    if (same !== undefined) {
+      await this.adopt(same.task.id, source);
+      this.record(same.task.id, { event: "joined", source: "client", at }, `joined:client:${at}`);
+      this.deps.changed();
+      return { task: same.task.id, joined: true, started: true, projectUnknown: false };
+    }
+    const project = source.project;
+    const made = this.factsOf(source);
+    const written = await this.deps.title?.(source.org, made.facts).catch(() => undefined);
+    const title = asTitle(written) ?? oneLine(made.title, 100);
+    const captain = await this.deps.captain();
+    const input = {
+      title,
+      text: made.text,
+      org: source.org,
+      ...(captain === undefined ? {} : { agent: captain }),
+      typing: { type: "incident" as const, by: "captain" as const },
+      byOwner: false as const,
+      attachments: [] as [],
+      start: false as const,
+      provenance: { kind: "ref" as const, origin: this.originOf(source), workspace: source.org },
+    };
+    const task =
+      project === undefined
+        ? await this.deps.tasks.create({ ...input, kind: "ops" })
+        : await this.deps.tasks.create({
+            ...input,
+            kind: "ops",
+            repos: [{ project }],
+            readOnly: true,
+          });
+    this.deps.store.tasks.setFields(task.id, {
+      type: "incident",
+      case: newCase({
+        room: source.room,
+        client: source.client ?? "A client",
+        symptom: source.text,
+        at,
+        day,
+      }),
+    });
+    this.deps.store.tasks.setStatusLines(
+      task.id,
+      {
+        now: "Looking into it",
+        doneWhen: "What the client said fails works again, checked by a read",
+      },
+      at,
+    );
+    this.record(
+      task.id,
+      { event: "opened", source: "client", facts: made.facts.slice(0, 2000), at },
+      `opened:${task.id}`,
+    );
+    await this.adopt(task.id, source);
+    await this.deps.tasks.beginCase(task.id);
+    this.deps.changed();
+    return { task: task.id, joined: false, started: true, projectUnknown: project === undefined };
+  }
+
   private async tryStart(task: string, urgent = false): Promise<boolean> {
     // Reading is never held, except by Stop everything.
     if (this.deps.blocked?.() !== undefined) return false;
@@ -465,7 +563,6 @@ export class IncidentEngine {
         `reopened:watch:${source.incident.id}:${source.incident.flaps}:${at}`,
       );
     }
-    if (source.kind === "client" && task.status === "done") await this.deps.tasks.reopen(task.id);
     // A severity 1 report joining a lesser incident makes it urgent too.
     if (isSeverityOne(source) && task.priority !== "urgent") {
       this.deps.store.tasks.setPlanning(task.id, { priority: "urgent" }, at);
@@ -542,7 +639,7 @@ export class IncidentEngine {
     const out: OwnerDecision[] = [];
     const tasks = this.deps.store.tasks
       .list(false)
-      .filter((t) => t.typing?.type === "incident")
+      .filter((t) => t.typing?.type === "incident" && t.case === undefined)
       .flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
     const since = new Date(this.now().getTime() - DAY_MS).toISOString();
     for (const task of tasks) {

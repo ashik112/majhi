@@ -21,7 +21,7 @@ import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { CaptainChat } from "./captain.ts";
 import { Contacts } from "./contacts.ts";
-import { ChatDesk } from "./desk.ts";
+import { ChatDesk, type DeskCases } from "./desk.ts";
 import { ClientGate } from "./gate.ts";
 import type { ChatHistory } from "./history.ts";
 import { type ChatConnectionInfo, ChatHub, type HubDeps } from "./hub.ts";
@@ -29,7 +29,7 @@ import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
 import { ClientRooms } from "./rooms.ts";
-import { ClientChat, type ClientChatDeps } from "./service.ts";
+import { type ChatCases, ClientChat, type ClientChatDeps } from "./service.ts";
 import { ChatSettings, dayBegins } from "./settings.ts";
 import { ChatWaits } from "./waits.ts";
 import { ChatWork, type WorkDeps } from "./work.ts";
@@ -58,6 +58,8 @@ export interface ClientChatWiring {
   blocked?: (() => string | undefined) | undefined;
   /** Wakes a workspace's captain lane with one text: a reaction, held only by Stop everything. */
   wake: ClientDeskWake;
+  /** The cases, bound after the chat parts are built. */
+  cases?: (() => (ChatCases & DeskCases) | undefined) | undefined;
   findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find" | "ofTask" | "adopt" | "get">;
   /** The ops watch, for the watch incident an incident task is linked to. */
   watch: IncidentsDeps["watch"];
@@ -228,6 +230,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     store: w.store,
     room: w.room,
     wake: w.wake,
+    ...(w.cases === undefined ? {} : { cases: w.cases }),
     changed: w.changed,
     ...(w.log === undefined ? {} : { log: w.log }),
   });
@@ -335,6 +338,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     savedHolds: async (org) => (await w.config.settings()).autonomy.orgs[org]?.holds,
     tell,
     lane: w.lane,
+    ...(w.cases === undefined ? {} : { cases: w.cases }),
     deleteWebhook: w.deleteWebhook,
     saveUserToken: w.saveUserToken,
   });
