@@ -38,7 +38,7 @@ const TOOLS = [
   {
     name: "list",
     description:
-      "The connections this run holds: name, type, description and how to use each (variables, the kubectl context, the MCP server). Never a value. A root agent also sees the ones it can attach. Your container cannot reach the owner's computer (localhost, host.docker.internal and *.orb.local all time out): a service running there is reachable only through a \"Service on this computer\" connection, as <name>.host on the ports it lists. When none fits, ask the owner with the ask tool to add one on the Connections page, naming the ports.",
+      'The connections this run holds: name, type, description and how to use each (variables, the kubectl context, the MCP server). Never a value. A root agent also sees the ones it can attach. Your container cannot reach the owner\'s computer (localhost, host.docker.internal and *.orb.local all time out): a service running there is reachable only through a "Service on this computer" connection, as <name>.host on the ports it lists. When none fits, ask the owner with the ask tool to add one on the Connections page, naming the ports.',
     input: ListInput,
   },
   {

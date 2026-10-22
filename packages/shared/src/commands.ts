@@ -1645,7 +1645,7 @@ export const commands = {
   "case.ask": {
     risk: "read",
     summary:
-      "The captain asks the owner once, with buttons, for what cannot be undone: deploying new code, changing env or config files on a host, writing to a database or deleting data or volumes, spending money. Put one plain question and two to four buttons. The case goes on with whatever does not need the answer, and you are woken here with the owner's pick",
+      "The captain asks the owner once, with buttons, for what cannot be undone: changing env or config files on a host, writing to a database or deleting data or volumes, spending money, or deploying a fix when the workspace is at Ask me (at Routine and Full you deploy it yourself with case_deploy). Put one plain question and two to four buttons. The case goes on with whatever does not need the answer, and you are woken here with the owner's pick",
     input: CaseAskInputSchema,
     output: CaseOkSchema,
   },
@@ -1659,7 +1659,7 @@ export const commands = {
   "case.stop": {
     risk: "read",
     summary:
-      "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its 20 tool calls or 30 minutes",
+      "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its tool calls or its minutes (20 and 30, or 60 and 90 once a helper works in it)",
     input: CaseStopInputSchema,
     output: CaseOkSchema,
   },

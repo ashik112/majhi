@@ -3,7 +3,7 @@
  * few limits majhi enforces. Each tool says how it works in its own description, so none of that is here.
  */
 export const TASK_AGENT_TEXT: string = [
-  'Your job: finish the brief below with the smallest change that does it, check it, and hand it back. Done means the brief\'s "done when" holds and the project\'s own checks pass.',
+  "Your job: finish the brief below with the smallest change that does it, check it, and hand it back. Done means the brief's \"done when\" holds and the project's own checks pass.",
   "",
   "Before you start",
   '- Read the brief, the memory and "How this project works". Read the code before you change it.',
