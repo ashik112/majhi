@@ -2387,8 +2387,10 @@ export class RunManager {
 
   /**
    * Waits for the task's project environments. The line says so with a clock, and the agent is not started or
-   * woken. A build that failed stops the start with one line in the room and the card of the paused task, which
-   * carries the end of the log; the start tries again when the owner resumes it. False when the run must not start.
+   * woken. A build that failed does not hold the agent: one line in the room says which step failed, with the
+   * end of the log, and the agent starts as it did before environments, with none mounted. A build that failed
+   * before with the same inputs is not tried again; the line is said again for this task. False when the run is
+   * stopping.
    */
   private async awaitEnvironment(run: AgentRun): Promise<boolean> {
     const envs = this.deps.projectEnv;
@@ -2401,37 +2403,32 @@ export class RunManager {
       this.live.system(run, "warn", `Could not check the project's environment: ${errorMessage(err)}`);
       return true;
     }
-    if (!gate.waiting) {
-      if (gate.has) await this.deps.onEnvReady?.(run.task).catch(() => undefined);
-      return true;
+    let failures = gate.known;
+    if (gate.waiting) {
+      const since = this.now().getTime();
+      const abort = new AbortController();
+      run.envWait = abort;
+      const show = () =>
+        this.setLive(run, { status: "starting", nowDoing: preparingLine(since, this.now().getTime()) });
+      show();
+      const tick = setInterval(show, ENV_LINE_MS);
+      const stopped = new Promise<"stopped">((done) =>
+        abort.signal.addEventListener("abort", () => done("stopped"), { once: true }),
+      );
+      let result: Awaited<typeof gate.done> | "stopped";
+      try {
+        result = await Promise.race([gate.done, stopped]);
+      } finally {
+        clearInterval(tick);
+        if (run.envWait === abort) run.envWait = undefined;
+      }
+      if (result === "stopped" || run.closing) return false;
+      this.setLive(run, { nowDoing: undefined });
+      failures = [...failures, ...result];
     }
-    const since = this.now().getTime();
-    const abort = new AbortController();
-    run.envWait = abort;
-    const show = () =>
-      this.setLive(run, { status: "starting", nowDoing: preparingLine(since, this.now().getTime()) });
-    show();
-    const tick = setInterval(show, ENV_LINE_MS);
-    const stopped = new Promise<"stopped">((done) =>
-      abort.signal.addEventListener("abort", () => done("stopped"), { once: true }),
-    );
-    let result: Awaited<typeof gate.done> | "stopped";
-    try {
-      result = await Promise.race([gate.done, stopped]);
-    } finally {
-      clearInterval(tick);
-      if (run.envWait === abort) run.envWait = undefined;
-    }
-    if (result === "stopped" || run.closing) return false;
-    this.setLive(run, { nowDoing: undefined });
-    if (result === undefined) {
-      await this.deps.onEnvReady?.(run.task).catch(() => undefined);
-      return true;
-    }
-    this.live.system(run, "error", result.line);
-    run.startFailure = { kind: "environment", text: result.card };
-    this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined, couldNotStart: true });
-    return false;
+    for (const failure of failures) this.live.system(run, "warn", failure.card);
+    if (gate.has) await this.deps.onEnvReady?.(run.task).catch(() => undefined);
+    return true;
   }
 
   /** Asks the account for its state first: the tools word a sign-in or a limit in many ways. */

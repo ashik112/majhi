@@ -145,7 +145,7 @@ export interface HandoffPorts {
    * running a project's install command into a read-only folder. Absent: the install command runs.
    */
   projectEnv?: {
-    ensure(task: string): Promise<{ has: boolean; done: Promise<{ card: string } | undefined> }>;
+    ensure(task: string): Promise<{ has: boolean; done: Promise<unknown> }>;
     facts(task: string): Promise<{ project: string }[]>;
   };
   /** Saves one step's whole output as a file in the task folder (`logPath(run, step)`). Rejects when it cannot. */
@@ -892,8 +892,8 @@ export class HandoffService {
     if (kind === "install" && this.ports.projectEnv !== undefined) {
       const gate = await this.ports.projectEnv.ensure(task.id).catch(() => undefined);
       if (gate?.has === true) {
-        const failure = await gate.done;
-        if (failure !== undefined) return step(kind, { status: "fail", detail: failure.card, owner: true });
+        // A build that failed leaves the project without one: its own install command runs, as it did before.
+        await gate.done;
         for (const f of await this.ports.projectEnv.facts(task.id)) inEnvironment.add(f.project);
       }
     }

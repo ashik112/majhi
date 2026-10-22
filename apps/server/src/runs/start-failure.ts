@@ -3,8 +3,7 @@ import type { AccountStatus } from "@majhi/shared";
 
 /** Why an agent could not start: its account is signed out or at its limit, or something else failed. */
 export interface StartFailure {
-  /** `environment`: the project's environment could not be built, so the agent does not start on a broken one. */
-  kind: "signed-out" | "limit" | "error" | "environment";
+  kind: "signed-out" | "limit" | "error";
   /** One line for the room: what is wrong, and for a sign-in what to do. */
   text: string;
   /** When a failed start's limit lifts (ISO), when the account's usage says. */

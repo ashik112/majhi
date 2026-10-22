@@ -61,7 +61,7 @@ function builds() {
 const items = async (task: string): Promise<RoomItem[]> =>
   (await w.h.cmd("room.items", { task, limit: 500 })).body.items as RoomItem[];
 
-it("keeps the agent from starting until the project environment is ready, and a failed build makes one card", async () => {
+it("keeps the agent from starting until the project environment is ready, and a failed build makes one room line and starts it without", async () => {
   const fake = builds();
   w = await taskWorld({ projectEnvExec: fake.exec });
   await commitPythonProject(w.repo("api"));
@@ -81,33 +81,27 @@ it("keeps the agent from starting until the project environment is ready, and a 
   expect(fake.calls[0]?.script).toContain("libpq-dev");
 
   fake.calls[0]?.finish(BROKEN);
-  await until(async () => (await items("ACM-1")).some((i) => i.type === "paused"));
+  // A failed build holds nothing: the agent starts without the environment, with no card.
+  await until(() => started.length === 1);
   const all = await items("ACM-1");
-  const cards = all.filter((i) => i.type === "paused");
-  expect(cards).toHaveLength(1);
-  expect(cards[0]).toMatchObject({ reason: "error", state: "pending" });
-  const why = cards[0]?.type === "paused" ? (cards[0].why ?? "") : "";
-  expect(why).toContain("could not be built: Installing the packages of the requirements failed");
-  expect(why).toContain("error: failed to build psycopg2");
+  expect(all.filter((i) => i.type === "paused" || i.type === "review")).toEqual([]);
   const lines = all.flatMap((i) =>
     i.type === "system" && i.text.includes("could not be built") ? [i.text] : [],
   );
-  expect(lines).toEqual([
-    "The environment of acme-api could not be built: Installing the packages of the requirements failed.",
-  ]);
-  expect(started).toEqual([]);
-
-  // Resuming builds again, and the agent starts once it is ready.
-  await w.h.cmd("tasks.start", { id: "ACM-1" });
-  await until(() => fake.calls.length === 2);
-  expect(started).toEqual([]);
-  fake.calls[1]?.finish(BUILT);
-  await until(() => started.length === 1);
-  await until(async () =>
-    (await readFile(join(w.taskDir("ACM-1"), "TASK.md"), "utf8")).includes(
-      "Environment ready: Python 3.11.2",
-    ),
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toContain("Installing the packages of the requirements failed");
+  expect(lines[0]).toContain(
+    "```\n==> Installing the packages of the requirements\nerror: failed to build psycopg2",
   );
+  const asked = async (task: string) => readFile(join(w.taskDir(task), "TASK.md"), "utf8");
+  expect(await asked("ACM-1")).toContain(
+    "The project environment failed to build (see the room). Install what you need yourself.",
+  );
+
+  // The next task of the project does not try the same build again.
+  await w.h.cmd("tasks.create", { text: "fix api again", repos: [{ project: "acme-api" }], start: true });
+  await until(() => started.length === 2);
+  expect(fake.calls).toHaveLength(1);
 });
 
 it("gives a second task of the project the same environment, with no second build", async () => {
@@ -124,6 +118,9 @@ it("gives a second task of the project the same environment, with no second buil
   await until(() => fake.calls.length === 1);
   fake.calls[0]?.finish(BUILT);
   await until(() => started.length === 1);
+  expect(await readFile(join(w.taskDir("ACM-1"), "TASK.md"), "utf8")).toContain(
+    "Environment ready: Python 3.11.2",
+  );
 
   await w.h.cmd("tasks.create", { text: "fix api again", repos: [{ project: "acme-api" }], start: true });
   await until(() => started.length === 2);

@@ -1027,10 +1027,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const captainRef: { current: CaptainService | undefined } = { current: undefined };
   // A code task's agent starts when the project's dependencies are installed. Bound below, after the project cards and checks.
   const projectEnvRef: { current: ProjectEnvs | undefined } = { current: undefined };
-  const projectEnv: Pick<ProjectEnvs, "ensure" | "facts"> = {
+  const projectEnv: Pick<ProjectEnvs, "ensure" | "facts" | "lines"> = {
     ensure: async (id) =>
-      projectEnvRef.current?.ensure(id) ?? { has: false, waiting: false, done: Promise.resolve(undefined) },
+      projectEnvRef.current?.ensure(id) ?? {
+        has: false,
+        waiting: false,
+        known: [],
+        done: Promise.resolve([]),
+      },
     facts: async (id) => projectEnvRef.current?.facts(id) ?? [],
+    lines: async (id) => projectEnvRef.current?.lines(id) ?? {},
   };
   const runs = new RunManager({
     store,
@@ -1385,8 +1391,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const tasks = new TaskService({
     mergeGate,
     // Where the task's interpreter is, for TASK.md, once its project's environment is ready.
-    environmentLines: async (task) =>
-      Object.fromEntries((await projectEnv.facts(task.id)).map((f) => [f.project, f.line])),
+    environmentLines: (task) => projectEnv.lines(task.id),
     wikiNotes: (task) =>
       wikiLines(
         task.org,

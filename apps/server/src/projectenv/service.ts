@@ -96,10 +96,17 @@ export interface EnvFacts {
 export interface EnvGate {
   has: boolean;
   waiting: boolean;
-  done: Promise<EnvFailure | undefined>;
+  /** Failures of builds that already failed with these inputs: not tried again. */
+  known: EnvFailure[];
+  /** The builds this call waits for that failed, when they end. */
+  done: Promise<EnvFailure[]>;
 }
 
-/** A build that failed: one line for the room and the text of the card, which carries the end of the log. */
+/** What TASK.md says of a project whose environment failed to build. */
+export const FAILED_LINE =
+  "The project environment failed to build (see the room). Install what you need yourself.";
+
+/** A build that failed: `card` is the one room line, with the failing step and the end of the log in a fence. */
 export interface EnvFailure {
   project: string;
   step: string;
@@ -150,6 +157,8 @@ export class ProjectEnvs {
   private chain: Promise<unknown> = Promise.resolve();
   /** The environment each task started on, by `task/project`: its edits to a requirements file do not move it. */
   private readonly bound = new Map<string, { task: string; key: string }>();
+  /** Builds that failed, by environment folder. The key names the inputs and the runner image, so a changed one is another folder and is tried. */
+  private readonly failed = new Map<string, EnvFailure>();
 
   constructor(private readonly deps: ProjectEnvDeps) {}
 
@@ -206,30 +215,55 @@ export class ProjectEnvs {
   }
 
   /**
-   * Starts what the task's projects still lack and says whether the task must wait. `done` settles when every
-   * environment it needs is ready (undefined) or one failed (the failure). `has` is true when the task has an
-   * environment at all, ready or not. A task whose projects have no check, or no install majhi can read,
-   * waits for nothing and has none.
+   * Starts what the task's projects still lack and says whether the task must wait. `done` settles with the
+   * builds that failed (none: all ready). `known` is the failures of environments a build already failed
+   * for with these same inputs and runner image: they are not built again until an input changes. `has` is true
+   * when the task has an environment at all, ready or not. A task whose projects have no check, or no install
+   * majhi can read, waits for nothing and has none.
    */
   async ensure(taskId: string): Promise<EnvGate> {
     const task = this.deps.task(taskId);
-    if (task === undefined) return { has: false, waiting: false, done: Promise.resolve(undefined) };
+    if (task === undefined) return { has: false, waiting: false, known: [], done: Promise.resolve([]) };
     const planned = await this.planned(task);
     const waits: Promise<EnvFailure | undefined>[] = [];
+    const known: EnvFailure[] = [];
     for (const p of planned) {
       this.bound.set(`${taskId}/${p.project}`, { task: taskId, key: p.key });
       if ((await this.readReady(p.dir)) !== undefined) continue;
+      const failed = this.failed.get(p.dir);
+      if (failed !== undefined && !this.inflight.has(p.dir)) {
+        known.push(failed);
+        continue;
+      }
       waits.push(
-        this.build(p, taskId).then((outcome) => (outcome.ok ? undefined : failureOf(p.project, outcome))),
+        this.build(p, taskId).then((outcome) => {
+          if (outcome.ok) return undefined;
+          const failure = failureOf(p.project, outcome);
+          this.failed.set(p.dir, failure);
+          return failure;
+        }),
       );
     }
     const has = planned.length > 0;
-    if (waits.length === 0) return { has, waiting: false, done: Promise.resolve(undefined) };
-    return {
-      has,
-      waiting: true,
-      done: Promise.all(waits).then((results) => results.find((r) => r !== undefined)),
-    };
+    const done = Promise.all(waits).then((results) => results.flatMap((r) => (r === undefined ? [] : [r])));
+    return { has, waiting: waits.length > 0, known, done };
+  }
+
+  /**
+   * What TASK.md says per project: where the environment is when it is ready, and that it failed to build when
+   * it did (the agent then installs what it needs itself).
+   */
+  async lines(taskId: string): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const f of await this.facts(taskId)) out[f.project] = f.line;
+    const task = this.deps.task(taskId);
+    for (const repo of task?.repos ?? []) {
+      const bound = this.bound.get(`${taskId}/${repo.project}`);
+      const root = this.projectRoot(task ? this.orgOf(task) : PRIVATE, repo.project);
+      if (bound === undefined || root === undefined || out[repo.project] !== undefined) continue;
+      if (this.failed.has(join(root, bound.key))) out[repo.project] = FAILED_LINE;
+    }
+    return out;
   }
 
   /** The environments a run of the task gets: mounts, variables and the line TASK.md says. Empty when none is ready. */
@@ -416,7 +450,7 @@ function failureOf(project: string, outcome: Extract<Outcome, { ok: false }>): E
     project,
     step: outcome.step,
     line,
-    // The card shows this as markdown: the log goes in a fence, so its lines stay lines.
-    card: `${line} The end of the log:\n\n\`\`\`\n${outcome.tail.split("```").join("'''")}\n\`\`\`\n\nResume the task to try again.`,
+    // Shown as markdown: the log goes in a fence, so its lines stay lines.
+    card: `${line} The agent starts without it. The end of the log:\n\n\`\`\`\n${outcome.tail.split("```").join("'''")}\n\`\`\``,
   };
 }
