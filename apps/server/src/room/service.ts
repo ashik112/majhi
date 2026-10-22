@@ -5,6 +5,7 @@ import {
   type AgentLive,
   PRIVATE,
   type ProcessInfo,
+  processItemId,
   type RoomItem,
   type RoomServerMessage,
   type Task,
@@ -368,10 +369,66 @@ export class RoomService {
     return [...(this.live.get(task)?.values() ?? [])];
   }
 
-  /** The task's processes changed (5.15). */
+  /**
+   * The task's processes changed (5.15). Each run is also one room item where it started, written when it
+   * starts and again when what the line shows changes (its port, its end), so output alone costs no write.
+   */
   setProcesses(task: string, processes: ProcessInfo[]): void {
     this.processes.set(task, processes);
     this.send(task, { type: "processes", processes });
+    for (const p of processes) this.recordProcess(task as TaskId, p);
+  }
+
+  /** Writes the run's item when it is new or one of the fields the line shows changed. */
+  private recordProcess(task: TaskId, p: ProcessInfo): void {
+    const id = processItemId(p);
+    const before = this.store.room.get(task, id);
+    const shown = (q: ProcessInfo) =>
+      JSON.stringify([q.status, q.exitCode, q.stoppedBy, q.endedAt, q.port, q.host, q.name]);
+    if (before?.type === "process" && shown(before.process) === shown(p)) return;
+    // A newer report of an ended run never reopens it.
+    if (before?.type === "process" && before.process.status !== "running" && p.status === "running") return;
+    const handled = before?.type === "process" && before.handled === true;
+    this.post(task, id, { type: "process", process: p, ...(handled ? { handled: true as const } : {}) });
+  }
+
+  /** Whether the end of this run was dealt with already (its agent was woken, or nobody had to be). */
+  processHandled(task: TaskId, p: ProcessInfo): boolean {
+    const before = this.store.room.get(task, processItemId(p));
+    return before?.type === "process" && before.handled === true;
+  }
+
+  /** Marks the end of a run as dealt with, so a report of the same end again wakes nobody. */
+  handleProcessEnd(task: TaskId, p: ProcessInfo): void {
+    const id = processItemId(p);
+    const before = this.store.room.get(task, id);
+    this.post(task, id, {
+      type: "process",
+      process: before?.type === "process" && before.process.status !== "running" ? before.process : p,
+      handled: true,
+    });
+  }
+
+  /**
+   * Run once when majhi starts: no process outlives the server, so a run still recorded as running ended with
+   * it. Its item gets its end, and the line stops showing a Stop that does nothing.
+   */
+  closeOrphanedProcesses(now: Date = new Date()): number {
+    const orphans = this.store.room.runningProcesses();
+    for (const item of orphans) {
+      if (item.type !== "process") continue;
+      this.post(item.task as TaskId, item.id, {
+        type: "process",
+        process: {
+          ...item.process,
+          status: "stopped",
+          stoppedBy: "task",
+          endedAt: now.toISOString(),
+        },
+        ...(item.handled === true ? { handled: true as const } : {}),
+      });
+    }
+    return orphans.length;
   }
 
   /** Tells the sockets watching the task that the task itself changed. */

@@ -1,4 +1,4 @@
-import { lifecycle, type RoomItem, type Task, type TaskId } from "@majhi/shared";
+import { LANE_HEAL_MS, lifecycle, type RoomItem, type Task, type TaskId } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
@@ -15,7 +15,7 @@ import type { Lanes } from "./lanes.ts";
 
 /** How long a client message waits before the watchdog looks, and before it tells the owner. */
 export const WATCH_AFTER_MS = 2 * 60_000;
-export const ALERT_AFTER_MS = 10 * 60_000;
+export const ALERT_AFTER_MS = LANE_HEAL_MS;
 /** The wait before the second and the third resume of a lane that stopped with an error. */
 export const RESUME_BACKOFF_MS = [60_000, 180_000, 360_000] as const;
 const MAX_RESUMES = 3;

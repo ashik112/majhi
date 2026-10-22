@@ -1,11 +1,11 @@
-import { isClientRoom, type TrailKind } from "@majhi/shared";
+import { isClientRoom } from "@majhi/shared";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChangesView } from "@/features/changes/changes-view";
-import { hasMemoryTab, TaskMemory } from "@/features/memory/task-memory";
+import { hasMemoryTab } from "@/features/memory/task-memory";
 import { dockItems } from "@/features/room/dock";
 import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
@@ -16,12 +16,11 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useReport, useTask } from "@/lib/task-queries";
 import { useMedia } from "@/lib/use-media";
 import type { AppSearch } from "@/router";
-import { ContextTab } from "./context-tab";
+import { BriefTab } from "./brief-tab";
 import { briefBody } from "./model";
 import { ReportTab } from "./report-tab";
+import { RoomOverlay } from "./room-overlay";
 import { RoomPanel } from "./room-panel";
-import { RoomOverlay, RoomRail } from "./room-rail";
-import { TaskFacts } from "./task-facts";
 import { TaskHeader } from "./task-header";
 import { TAB_PANEL_ID, type TaskTab, TaskTabs, tabId } from "./task-tabs";
 import { TaskTerminal } from "./task-terminal";
@@ -63,13 +62,7 @@ function TaskView({ taskId }: { taskId: string }) {
   }, [navigate]);
   const [tab, setTab] = useState<TaskTab>("room");
   const showChanges = useCallback(() => setTab("changes"), []);
-  const [shipAsk, setShipAsk] = useState(0);
-  // The check and the merge live in the Ship panel, from any tab; the deploy lives in the room.
-  const showStep = useCallback((kind: TrailKind) => {
-    setTab("room");
-    if (kind === "check" || kind === "local-merge" || kind === "ship") setShipAsk((n) => n + 1);
-  }, []);
-  // Narrower than about 1300 px the right column is a rail, and a click opens it over the page.
+  // From 1300 px the side panel is beside the page. Narrower, it is hidden and the menu's Details opens it over the page.
   const wide = useMedia("(min-width: 1300px)");
   const [panelOpen, setPanelOpen] = useState(false);
   const closePanel = useCallback(() => setPanelOpen(false), []);
@@ -131,7 +124,8 @@ function TaskView({ taskId }: { taskId: string }) {
   const memoryTab = hasMemoryTab(data, taskFacts, record.data);
   // A tab that is gone (a task with no facts left) falls back to the room.
   const reportTab = data.kind === "ops" || (report.data ?? null) !== null;
-  const shown = (tab === "memory" && !memoryTab) || (tab === "report" && !reportTab) ? "room" : tab;
+  const shown =
+    (tab === "report" && !reportTab) || (tab === "changes" && data.repos.length === 0) ? "room" : tab;
   const brief = briefBody(data.brief, data.title);
   const yourTurn =
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
@@ -143,10 +137,9 @@ function TaskView({ taskId }: { taskId: string }) {
 
   const tabs: TaskTab[] = [
     "room",
+    "brief",
     ...(data.repos.length > 0 ? (["changes"] as const) : []),
     ...(reportTab ? (["report"] as const) : []),
-    "context",
-    ...(memoryTab ? (["memory"] as const) : []),
     "terminal",
   ];
 
@@ -158,10 +151,9 @@ function TaskView({ taskId }: { taskId: string }) {
             task={data}
             yourTurn={yourTurn}
             cardAsks={cardAsks}
-            brief={brief}
             tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
-            onShowStep={showStep}
-            shipAsk={shipAsk}
+            shipAsk={0}
+            onDetails={wide ? undefined : openPanel}
           />
           <div
             id={TAB_PANEL_ID}
@@ -171,7 +163,6 @@ function TaskView({ taskId }: { taskId: string }) {
           >
             {/* The room stays mounted while another tab shows, so a draft and the scroll place are kept. */}
             <div className={shown === "room" ? "contents" : "hidden"}>
-              {data.kind !== "chat" && <TaskFacts task={data} brief={brief} />}
               <RoomPane
                 task={data}
                 state={room.state}
@@ -189,10 +180,15 @@ function TaskView({ taskId }: { taskId: string }) {
               <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
             )}
             {shown === "report" && <ReportTab task={data} />}
-            {shown === "context" && (
-              <ContextTab task={data} agents={room.state.agents} items={room.state.items} />
+            {shown === "brief" && (
+              <BriefTab
+                task={data}
+                brief={brief}
+                agents={room.state.agents}
+                items={room.state.items}
+                memory={memoryTab}
+              />
             )}
-            {shown === "memory" && <TaskMemory task={data} />}
             {shown === "terminal" && <TaskTerminal task={data} />}
           </div>
         </div>
@@ -201,32 +197,27 @@ function TaskView({ taskId }: { taskId: string }) {
             task={data}
             agents={room.state.agents}
             items={room.state.items}
-            processes={room.state.processes}
             onShowChanges={data.repos.length > 0 ? showChanges : undefined}
           />
         ) : (
-          <>
-            <RoomRail task={data} agents={room.state.agents} onOpen={openPanel} />
-            {panelOpen && (
-              <RoomOverlay onClose={closePanel}>
-                <RoomPanel
-                  className="w-full"
-                  task={data}
-                  agents={room.state.agents}
-                  items={room.state.items}
-                  processes={room.state.processes}
-                  onShowChanges={
-                    data.repos.length > 0
-                      ? () => {
-                          showChanges();
-                          closePanel();
-                        }
-                      : undefined
-                  }
-                />
-              </RoomOverlay>
-            )}
-          </>
+          panelOpen && (
+            <RoomOverlay onClose={closePanel}>
+              <RoomPanel
+                className="w-full"
+                task={data}
+                agents={room.state.agents}
+                items={room.state.items}
+                onShowChanges={
+                  data.repos.length > 0
+                    ? () => {
+                        showChanges();
+                        closePanel();
+                      }
+                    : undefined
+                }
+              />
+            </RoomOverlay>
+          )
         )}
       </div>
       {file !== undefined && fileTask === undefined && (

@@ -269,7 +269,7 @@ export class AccountService {
       throw new UserError(verdict.detail, 409);
     }
     throw new UserError(
-      `Could not confirm who ${id} is signed in as, so no session started: ${verdict.detail}`,
+      `No session started: majhi could not check who ${id} is signed in as. Sign in to ${id} again.`,
       409,
     );
   }

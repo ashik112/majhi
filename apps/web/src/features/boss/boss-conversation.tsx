@@ -23,7 +23,6 @@ export function ChatRoom({ task, takeTyped = false }: { task: Task; takeTyped?: 
       state={room.state}
       dispatch={room.dispatch}
       loadOlder={room.loadOlder}
-      foldSteps
       initialDraft={seed}
     />
   );

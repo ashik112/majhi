@@ -1,4 +1,11 @@
-import { type AgentLive, PRIVATE, PRIVATE_NAME, permissionOptionLabel, type RoomItem } from "@majhi/shared";
+import {
+  type AgentLive,
+  PRIVATE,
+  PRIVATE_NAME,
+  type ProcessInfo,
+  permissionOptionLabel,
+  type RoomItem,
+} from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -39,14 +46,12 @@ import { Markdown } from "./markdown";
 import { MediaView, RoomTaskContext, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionSummary, toolLabel } from "./model";
 import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
+import { ProcessLine } from "./process-line";
 import { type Quiet, valueParts } from "./system-lines";
 import { ToolRow } from "./tool-row";
 
 /** The inset of everything that is not a message: it lines up with the text beside the avatars. */
 export const GUTTER = "pl-[34px]";
-
-/** A message's text column: a readable measure. */
-const MEASURE = "max-w-[72ch]";
 
 export function permissionDomId(itemId: string): string {
   return `perm-${itemId}`;
@@ -66,6 +71,8 @@ export interface ItemContext {
   answering: string | undefined;
   /** The task, so agent text can link to its files. */
   task: TaskFiles;
+  /** Stops the agent's run, while one is going: the row in progress offers it. */
+  onStop?: (() => void) | undefined;
 }
 
 /** Item types that act on the whole task, and so get the owner context. The others never see it, so a change to the task does not redraw them. */
@@ -82,12 +89,15 @@ export const RoomItemView = memo(function RoomItemView({
   liveModel,
   waitingOn,
   owner,
+  liveProcess,
   className,
   inLog = false,
   repeat = 1,
 }: {
   item: RoomItem;
   ctx: ItemContext;
+  /** For a process line only: the process list's newest report of the same run. */
+  liveProcess?: ProcessInfo | undefined;
   /** The model its agent runs, for an agent message. A string, so the row stays as it is while the agent's status changes. */
   liveModel?: string | undefined;
   /** For a queued owner message only: the live state of the agent it waits for. */
@@ -116,6 +126,7 @@ export const RoomItemView = memo(function RoomItemView({
         liveModel={liveModel}
         waitingOn={waitingOn}
         owner={owner}
+        liveProcess={liveProcess}
         repeat={repeat}
       />
     </li>
@@ -248,7 +259,6 @@ export function QuietLine({
         (children ?? (
           <p
             className={cn(
-              MEASURE,
               "mt-1 mb-1 ml-5 rounded-md bg-sunken px-2.5 py-1.5 text-sm leading-[1.6] whitespace-pre-wrap break-words text-fg-muted",
             )}
           >
@@ -265,6 +275,7 @@ function ItemBody({
   liveModel,
   waitingOn,
   owner,
+  liveProcess,
   repeat,
 }: {
   item: RoomItem;
@@ -273,6 +284,7 @@ function ItemBody({
   liveModel: string | undefined;
   waitingOn: AgentLive | undefined;
   owner: OwnerContext | undefined;
+  liveProcess: ProcessInfo | undefined;
 }) {
   switch (item.type) {
     case "owner":
@@ -282,7 +294,9 @@ function ItemBody({
     case "thought":
       return <Thought item={item} />;
     case "tool":
-      return <ToolRow item={item} folder={ctx.task.folder} />;
+      return <ToolRow item={item} folder={ctx.task.folder} onStop={ctx.onStop} />;
+    case "process":
+      return <ProcessLine item={item} live={liveProcess} folder={ctx.task.folder} />;
     case "plan":
       return <PlanSummary item={item} />;
     case "permission":
@@ -334,7 +348,6 @@ function ClientMessage({ item }: { item: Of<"client"> }) {
         </div>
         <div
           className={cn(
-            MEASURE,
             "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
           )}
         >
@@ -366,10 +379,7 @@ function HandoffLine({ item }: { item: Of<"handoff"> }) {
   return (
     <QuietLine quiet={{ short: `${head}: ${first}`, detail: item.text }} at={item.at}>
       <div
-        className={cn(
-          MEASURE,
-          "mt-1 mb-1 ml-5 rounded-md bg-sunken px-3 py-2 text-base leading-[1.6] text-fg-soft",
-        )}
+        className={cn("mt-1 mb-1 ml-5 rounded-md bg-sunken px-3 py-2 text-base leading-[1.6] text-fg-soft")}
       >
         <Markdown text={item.text} />
       </div>
@@ -387,9 +397,7 @@ function TeamPlanLine({ item }: { item: Of<"team-plan"> }) {
       at={item.at}
       icon={<ListChecks className="size-3.5" />}
     >
-      <div
-        className={cn(MEASURE, "mt-1 mb-1 ml-5 flex flex-col gap-1.5 rounded-md bg-sunken px-3 py-2 text-sm")}
-      >
+      <div className={"mt-1 mb-1 ml-5 flex flex-col gap-1.5 rounded-md bg-sunken px-3 py-2 text-sm"}>
         <ol className="m-0 flex list-none flex-col gap-0.5 p-0 text-fg-soft">
           {item.steps.map((step, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: the steps of one plan keep their order
@@ -460,7 +468,6 @@ function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: Agent
         </div>
         <div
           className={cn(
-            MEASURE,
             "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
             item.queued && "opacity-70",
             item.removed === true && "text-fg-faint line-through opacity-60",
@@ -591,15 +598,17 @@ function AgentMessage({
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
-          <span className={cn("shrink-0 text-base font-semibold text-fg", !captain && "font-mono")}>
+          <span
+            title={meta === "" ? undefined : meta}
+            className={cn("shrink-0 text-base font-semibold text-fg", !captain && "font-mono")}
+          >
             {captain ? "Captain" : `@${item.agent}`}
           </span>
           <InWorkspace org={item.org} />
-          {meta && <span className="min-w-0 truncate font-mono text-xs text-fg-faint">{meta}</span>}
           <Stamp at={item.at} />
         </div>
         {item.text !== "" && (
-          <div className={cn(MEASURE, "min-w-0 text-body text-fg")}>
+          <div className="min-w-0 text-body text-fg">
             <Markdown text={task === undefined ? item.text : linkifyPaths(item.text)} task={task} />
           </div>
         )}
@@ -634,7 +643,6 @@ function Thought({ item }: { item: Of<"thought"> }) {
       {open && (
         <p
           className={cn(
-            MEASURE,
             "mt-1 mb-1 rounded-md bg-sunken px-3 py-2 text-base whitespace-pre-wrap break-words text-fg-muted",
           )}
         >

@@ -1,6 +1,7 @@
 import type { RoomItem } from "@majhi/shared";
 import { contextLine } from "./model";
 import { type Quiet, quietGroup, sameMoment } from "./system-lines";
+import { type StepsSummary, summarizeSteps } from "./turn-fold";
 
 type SystemItem = Extract<RoomItem, { type: "system" }>;
 
@@ -13,7 +14,7 @@ export type Row =
       repeat: number;
     }
   | { kind: "notes"; key: string; items: SystemItem[]; quiet: Quiet }
-  | { kind: "steps"; key: string; items: RoomItem[]; count: number };
+  | { kind: "steps"; key: string; items: RoomItem[]; summary: StepsSummary };
 
 /** How a row sits in the rhythm of the log: messages breathe, activity and notes stack tight. */
 export type Beat = "message" | "activity" | "line";
@@ -32,6 +33,7 @@ export function beatOf(row: Row): Beat {
     case "tool":
     case "thought":
     case "plan":
+    case "process":
       return "activity";
     case "system":
     case "context":
@@ -65,7 +67,7 @@ export function gapAbove(before: Beat | undefined, beat: Beat): string {
   return "mt-4";
 }
 
-/** Tool calls, thoughts and settled approvals: what an agent did between its messages. */
+/** Tool calls, thoughts and approvals that no longer wait: what an agent did between its messages. */
 function isStep(item: RoomItem): boolean {
   switch (item.type) {
     case "tool":
@@ -79,23 +81,31 @@ function isStep(item: RoomItem): boolean {
   }
 }
 
+/** A row that goes into a run of steps: a step, or a plain note posted among them ("majhi restarted"). */
+function foldable(row: Row): boolean {
+  return row.kind === "notes" || (row.kind === "item" && isStep(row.item));
+}
+
 /**
- * Folds the steps between messages into one row per run ("12 steps it took"), for rooms read as a
- * conversation. Notes inside a run fold with it. `count` is the tool calls, else the items.
+ * Folds what the agents did between two messages into one row per run: its steps, its rule approvals and
+ * the plain notes among them. A run of notes with no step in it stays as the line it is. Warnings and
+ * errors are never folded: they are rows of their own.
  */
-export function foldSteps(rows: readonly Row[]): Row[] {
+export function foldTurns(rows: readonly Row[]): Row[] {
   const out: Row[] = [];
-  let run: RoomItem[] = [];
+  let run: Row[] = [];
   const flush = () => {
-    const [first] = run;
+    const items = run.flatMap((r): RoomItem[] =>
+      r.kind === "item" ? [r.item] : r.kind === "notes" ? r.items : [],
+    );
+    const first = items[0];
     if (first === undefined) return;
-    const tools = run.filter((i) => i.type === "tool").length;
-    out.push({ kind: "steps", key: `steps:${first.id}`, items: run, count: tools > 0 ? tools : run.length });
+    if (!items.some(isStep)) out.push(...run);
+    else out.push({ kind: "steps", key: `steps:${first.id}`, items, summary: summarizeSteps(items) });
     run = [];
   };
   for (const row of rows) {
-    if (row.kind === "item" && isStep(row.item)) run.push(row.item);
-    else if (row.kind === "notes" && run.length > 0) run.push(...row.items);
+    if (foldable(row)) run.push(row);
     else {
       flush();
       out.push(row);
@@ -103,6 +113,16 @@ export function foldSteps(rows: readonly Row[]): Row[] {
   }
   flush();
   return out;
+}
+
+/** A line an older majhi wrote when a crew step finished ("Step 2 of 4 done by @lead: ..."). The agent's message says it, so it is not shown. */
+function isCrewStepLine(item: RoomItem): boolean {
+  return (
+    item.type === "system" &&
+    item.level === "info" &&
+    item.text.startsWith("Step ") &&
+    item.text.includes(" done by @")
+  );
 }
 
 /** The log's rows: plain system notes posted together fold into one line. */
@@ -118,6 +138,7 @@ export function rowsOf(items: readonly RoomItem[]): Row[] {
   for (const item of items) {
     // Facts of an incident and its report are read in the incident card, not in the log.
     if (item.type === "incident-event" || item.type === "report") continue;
+    if (isCrewStepLine(item)) continue;
     // Warnings and errors keep their own line, in their tone.
     if (item.type === "system" && item.level === "info") {
       if (group.length > 0 && !sameMoment(group, item)) flush();

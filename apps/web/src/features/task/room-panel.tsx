@@ -1,11 +1,4 @@
-import {
-  type AgentLive,
-  collapseHome,
-  type ProcessInfo,
-  type RoomItem,
-  type Task,
-  type TaskRepo,
-} from "@majhi/shared";
+import { type AgentLive, collapseHome, type RoomItem, type Task, type TaskRepo } from "@majhi/shared";
 import { Copy } from "lucide-react";
 import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
@@ -25,24 +18,22 @@ import { ChangesPanel } from "../room/changes-panel";
 import { AgentRow } from "./agent-row";
 import { ChangeAgent } from "./change-agent";
 import { agentState, agentsBusy } from "./model";
-import { ProcessesCard } from "./processes-card";
 import { PendingShipLine } from "./ship";
+import { IncidentPanelCard, TaskCard } from "./side-cards";
 import { SubtasksCard } from "./subtasks-card";
 import { AddAgent, MemberMenu, ModePicker } from "./team-controls";
 
-/** The right column of the task view: who is in the room, the branch, the changes. */
+/** The right column of the task view: the incident and the task, who is in the room, the subtasks, the branch, the changes. */
 export function RoomPanel({
   task,
   agents,
   items,
-  processes,
   onShowChanges,
   className,
 }: {
   task: Task;
   agents: readonly AgentLive[];
   items: readonly RoomItem[];
-  processes: readonly ProcessInfo[];
   /** Opens the Changes tab. */
   onShowChanges?: (() => void) | undefined;
   /** Replaces the column's width, where it sits over the page instead of beside it. */
@@ -53,9 +44,10 @@ export function RoomPanel({
       aria-label="Task details"
       className={cn("flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-6 scroll-fade", className)}
     >
+      <IncidentPanelCard task={task} />
+      <TaskCard task={task} />
       <InRoomCard task={task} agents={agents} />
       <SubtasksCard task={task} />
-      <ProcessesCard task={task} processes={processes} />
       {showsMrCard(task) && <MrCard task={task} />}
       <BranchCard task={task} />
       {/* With a repo the Changes tab is the one place for it; the card is for a task with none. */}

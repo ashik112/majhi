@@ -1272,9 +1272,17 @@
   font-family: var(--font-mono);
   font-size: 0.86em;
   line-height: 1;
-  overflow-wrap: anywhere;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+/* Short code (40 characters or fewer) never breaks across lines. Longer code wraps only at spaces and slashes. */
+.md :not(pre) > code.md-ic-short {
+  white-space: nowrap;
+}
+.md :not(pre) > code.md-ic-long {
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .md-doc :not(pre) > code {
   background: var(--color-raised);

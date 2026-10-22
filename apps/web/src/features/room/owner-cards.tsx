@@ -2,6 +2,7 @@ import {
   type AccountView,
   type CardOutcome,
   type HandoffState,
+  healsItself,
   isCaptainThread,
   plainAuthorityText,
   type RoomItem,
@@ -20,6 +21,7 @@ import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/feature
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
 import { ApiRequestError, cmd } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useHandoff } from "@/lib/handoff-queries";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
@@ -27,7 +29,8 @@ import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useAllTasks, useShipOptions } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { DockBar } from "./dock-bar";
-import { questionLine } from "./question-line";
+import { Markdown } from "./markdown";
+import { isQuestion, questionLine } from "./question-line";
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -313,6 +316,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
 
 /** The task paused: Resume, and the fix when majhi knows the cause. Settled: what happened. */
 export function PausedCard({ item, owner }: { item: Of<"paused">; owner: OwnerContext | undefined }) {
+  const now = useNow(60_000);
   if (item.state === "replaced") return null;
   if (item.state === "settled" && item.outcome) {
     return (
@@ -323,18 +327,16 @@ export function PausedCard({ item, owner }: { item: Of<"paused">; owner: OwnerCo
     );
   }
   if (owner === undefined || owner.task.status !== "paused") return null;
+  // A captain lane that majhi is bringing back by itself is no card until that has failed for ten minutes.
+  if (isCaptainThread(owner.task) && healsItself(item.reason, item.at, now)) return null;
   return <PendingPause item={item} task={owner.task} turning={owner.turning ?? []} />;
 }
 
-function PendingPause({
-  item,
-  task,
-  turning,
-}: {
-  item: Of<"paused">;
-  task: Task;
-  turning: NonNullable<OwnerContext["turning"]>;
-}) {
+/**
+ * What a paused task says and offers, for the card and for the incident line that takes it in: why it stopped
+ * in words for the owner, the text an error left (for the details, as markdown), and the buttons that fix it.
+ */
+export function usePauseView(item: Of<"paused">, task: Task, turning: NonNullable<OwnerContext["turning"]>) {
   const toast = useToast();
   const after = useAfterTaskChange();
   const resume = useMutation<unknown, ApiRequestError>({
@@ -345,11 +347,14 @@ function PendingPause({
   // The hold as the board reads it: its sentence and the one step that ends it.
   const hold = useAllTasks().data?.find((t) => t.id === task.id)?.hold;
   const fix = hold?.fix;
+  // An error's own text is for the details: the line says what stopped and what to do.
+  const raw = item.reason === "error" ? item.why : undefined;
   const why =
-    item.why ??
-    (item.by === "captain" && item.reason === "owner"
+    item.by === "captain" && item.reason === "owner"
       ? "Captain paused it."
-      : (hold?.sentence ?? PAUSE_WHY[item.reason]));
+      : item.reason === "error"
+        ? (hold?.sentence ?? PAUSE_WHY.error)
+        : (item.why ?? hold?.sentence ?? PAUSE_WHY[item.reason]);
   // The fix for a dependency hold: drop the links that hold it, then start the task again. Taking off
   // the last link already lifts the hold.
   const unblock = useMutation<unknown, ApiRequestError, readonly string[]>({
@@ -366,47 +371,72 @@ function PendingPause({
     onSuccess: () => after(),
     onError: (error) => toast("Could not remove the link", { detail: describeError(error), tone: "error" }),
   });
+  const actions = (
+    <>
+      {fix?.kind === "remove-links" && (
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={unblock.isPending}
+          onClick={() => unblock.mutate(fix.tasks)}
+        >
+          {fix.tasks.length === 1 ? "Remove link" : "Remove links"}
+        </Button>
+      )}
+      {fix?.kind === "raise-budget" && (
+        <Button size="sm" variant="primary" asChild>
+          <PageLink page="limits">Raise the budget</PageLink>
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant={fix?.kind === "remove-links" || fix?.kind === "raise-budget" ? "secondary" : "primary"}
+        disabled={resume.isPending}
+        onClick={() => resume.mutate()}
+      >
+        <RotateCw aria-hidden="true" />
+        Resume
+      </Button>
+      {item.reason !== "owner" && item.reason !== "offline" && (
+        <PauseFixes task={task} account={item.account} signedOut={item.reason === "signed-out"} />
+      )}
+    </>
+  );
+  const details = (
+    <>
+      <p className="text-pretty">{why}</p>
+      {raw !== undefined && raw.trim() !== "" && (
+        <div className="min-w-0 text-fg-muted">
+          <Markdown text={raw} />
+        </div>
+      )}
+    </>
+  );
+  const below = turning.map((t) => (
+    <StillWorking key={t.agent} task={task.id} agent={t.agent} queuedItem={t.queuedItem} />
+  ));
+  return { why, details, actions, below };
+}
+
+function PendingPause({
+  item,
+  task,
+  turning,
+}: {
+  item: Of<"paused">;
+  task: Task;
+  turning: NonNullable<OwnerContext["turning"]>;
+}) {
+  const view = usePauseView(item, task, turning);
   return (
     <DockBar
       label="Paused"
       lamp="paused"
       title="Paused"
-      line={why}
-      actions={
-        <>
-          {fix?.kind === "remove-links" && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={unblock.isPending}
-              onClick={() => unblock.mutate(fix.tasks)}
-            >
-              {fix.tasks.length === 1 ? "Remove link" : "Remove links"}
-            </Button>
-          )}
-          {fix?.kind === "raise-budget" && (
-            <Button size="sm" variant="primary" asChild>
-              <PageLink page="limits">Raise the budget</PageLink>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant={fix?.kind === "remove-links" || fix?.kind === "raise-budget" ? "secondary" : "primary"}
-            disabled={resume.isPending}
-            onClick={() => resume.mutate()}
-          >
-            <RotateCw aria-hidden="true" />
-            Resume
-          </Button>
-          {item.reason !== "owner" && item.reason !== "offline" && (
-            <PauseFixes task={task} account={item.account} signedOut={item.reason === "signed-out"} />
-          )}
-        </>
-      }
-      details={<p className="text-pretty">{why}</p>}
-      below={turning.map((t) => (
-        <StillWorking key={t.agent} task={task.id} agent={t.agent} queuedItem={t.queuedItem} />
-      ))}
+      line={view.why}
+      actions={view.actions}
+      details={view.details}
+      below={view.below}
     />
   );
 }
@@ -487,8 +517,8 @@ function PauseFixes({
   return (
     <>
       {signedOut.map((a) => (
-        <Button key={a.id} size="sm" onClick={() => setSignIn(a)}>
-          Sign in to {a.id}
+        <Button key={a.id} size="sm" title={`Sign in to ${a.id}`} onClick={() => setSignIn(a)}>
+          {signedOut.length === 1 ? "Sign in again" : `Sign in ${a.id} again`}
         </Button>
       ))}
       {limited.map((a) => (
@@ -551,6 +581,7 @@ export function QuestionActions({
   owner: OwnerContext | undefined;
 }) {
   const toast = useToast();
+  const captain = useAgentIndex().get(item.agent)?.isBoss === true;
   const pick = useMutation<unknown, ApiRequestError, string>({
     mutationFn: (choice) => cmd("room.answerQuestion", { task: item.task, item: item.id, choice }),
     onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }),
@@ -567,12 +598,14 @@ export function QuestionActions({
   // With no choices, the review card's Ask for changes already offers the same reply.
   if (item.choices.length === 0 && owner.task.status === "review") return null;
   const line = questionLine(item);
+  const asks = isQuestion(item);
+  const who = captain ? "Captain" : line.who;
   return (
     <DockBar
       label={`Answer @${item.agent}`}
       lamp="needs"
-      title={line.text === undefined ? `${line.who} asked for you` : `${line.who} asks`}
-      line={line.text}
+      title={asks ? `${who} asks` : `${who} says`}
+      line={line.text === undefined ? undefined : <FoldedText text={line.text} />}
       actions={
         <>
           {item.choices.map((choice) => (
@@ -586,7 +619,35 @@ export function QuestionActions({
           </Button>
         </>
       }
-      details={line.text === undefined ? undefined : <p className="text-pretty">{line.text}</p>}
     />
+  );
+}
+
+/** Up to this long, a message shows whole in the card. */
+const SHORT_TEXT = 240;
+
+/**
+ * An agent's words in a card, as markdown. A long message shows its start and opens on a click, so it never
+ * pushes the buttons off the screen.
+ */
+function FoldedText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > SHORT_TEXT || text.includes("\n\n");
+  return (
+    <span className="block min-w-0">
+      <span className={cn("block min-w-0", long && !open && "max-h-[3.2em] overflow-hidden")}>
+        <Markdown text={text} />
+      </span>
+      {long && (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="mt-0.5 cursor-pointer text-sm text-fg-muted hover:text-fg"
+        >
+          {open ? "Show less ▴" : "Show all ▸"}
+        </button>
+      )}
+    </span>
   );
 }

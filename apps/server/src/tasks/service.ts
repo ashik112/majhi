@@ -4067,25 +4067,19 @@ export class TaskService {
       if (p.wait && p.stoppedBy !== "task") await this.agentsIdle(p.task);
       return;
     }
-    // Stored under an id of its own: an end reported again (a replay, a restart) wakes nobody.
-    const itemId = endItemId(p);
-    if (this.deps.room.get(task.id, itemId) !== undefined) return;
+    // The run's own room item says its end was handled: an end reported again (a replay, a restart) wakes nobody.
+    // A note an older majhi stored for the end counts too.
+    if (this.deps.room.get(task.id, endItemId(p)) !== undefined) return;
+    if (this.deps.room.processHandled(task.id, p)) return;
     const newer = supersededBy(p, this.deps.processes?.list(task.id) ?? []);
     if (newer !== undefined) {
-      this.deps.room.post(task.id, itemId, {
-        type: "system",
-        level: "info",
-        text: `${p.id} \`${p.name}\` ended, but ${newer.id} is a newer run of it, so nobody is woken.`,
-      });
+      // A newer run of the same thing counts, so nobody is woken for this one.
+      this.deps.room.handleProcessEnd(task.id, p);
       await this.agentsIdle(p.task);
       return;
     }
     if (this.deps.processes?.readAfterEnd(p) === true) {
-      this.deps.room.post(task.id, itemId, {
-        type: "system",
-        level: "info",
-        text: `${p.id} \`${p.name}\` ended; @${p.agent} already read it, so nobody is woken.`,
-      });
+      this.deps.room.handleProcessEnd(task.id, p);
       await this.agentsIdle(p.task);
       return;
     }
@@ -4104,11 +4098,7 @@ export class TaskService {
       await this.containersRunAgain(task.id);
       await this.statusChanged(task.id);
     }
-    this.deps.room.post(task.id, itemId, {
-      type: "system",
-      level: "info",
-      text: `${p.id} \`${p.name}\` ended. Waking @${p.agent}.`,
-    });
+    this.deps.room.handleProcessEnd(task.id, p);
     this.deps.runs.processEnded(p);
   }
 

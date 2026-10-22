@@ -29,6 +29,8 @@ export interface Subject {
   openSubtasks?: number | undefined;
   /** A captain lane or the root Captain chat: it reads as the captain, never by its title or id. */
   lane?: boolean | undefined;
+  /** The captain's agent id: an ask from it reads "Captain asks", the others by their @name. */
+  captain?: string | undefined;
   /** When the newest open subtask was made (ISO): a split approval older than it has been carried out. */
   newestSubtask?: string | undefined;
 }

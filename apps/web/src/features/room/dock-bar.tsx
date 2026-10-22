@@ -4,9 +4,9 @@ import { Lamp, type LampState } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 
 /**
- * One thing that waits for the owner, as a single bar in the Needs you dock: a lamp, what it is, one
- * short line, the buttons, and a chevron that opens the rest. It has no box of its own; the dock is
- * the box. Every card kind in the dock draws through it.
+ * One thing that waits for the owner, as a single bar in the Needs you block: a lamp, what it is in bold, one
+ * plain line, the buttons, and a chevron (or "Details") that opens the rest. It has no box of its own; the block
+ * is the box. Every card kind in the block draws through it.
  */
 export function DockBar({
   label,
@@ -15,13 +15,15 @@ export function DockBar({
   line,
   actions,
   details,
+  detailsLabel,
+  inline = false,
   id,
   below,
 }: {
   /** The section's accessible name. */
   label: string;
   lamp: LampState;
-  /** What it is, in a few words: "Ready to ship", "@acme-builder wants to run a command". */
+  /** What it is, in a few words: "Ready to ship", "Captain asks". */
   title: ReactNode;
   /** The reason, under the title at full width; it wraps. */
   line?: ReactNode;
@@ -29,6 +31,10 @@ export function DockBar({
   actions?: ReactNode;
   /** What the chevron opens: the checks, the input, the long reason. */
   details?: ReactNode;
+  /** A word for the control that opens `details`, in place of the chevron: "Details". */
+  detailsLabel?: string | undefined;
+  /** The line follows the title on the same row (an incident's one line) instead of sitting under it. */
+  inline?: boolean;
   /** DOM id, for the banner's "Show". */
   id?: string;
   /** Always shown under the bar, like a progress note. */
@@ -45,14 +51,29 @@ export function DockBar({
       <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1.5">
         <div className="flex min-w-0 flex-1 basis-[240px] items-start gap-2">
           <Lamp state={lamp} size={8} className="mt-[7px]" />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="text-base font-medium break-words text-fg">{title}</span>
-            {line !== undefined && <span className="text-sm break-words text-fg-muted">{line}</span>}
+          <div
+            className={cn(
+              "flex min-w-0 flex-1",
+              inline ? "flex-row flex-wrap items-baseline gap-x-2.5" : "flex-col",
+            )}
+          >
+            <span className="text-base font-semibold break-words text-fg">{title}</span>
+            {line !== undefined && <span className="text-sm break-words text-fg">{line}</span>}
           </div>
         </div>
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {details !== undefined && detailsLabel !== undefined && (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className="cursor-pointer rounded-sm px-1 text-sm text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              {detailsLabel} {open ? "▴" : "▾"}
+            </button>
+          )}
           {actions}
-          {details !== undefined && (
+          {details !== undefined && detailsLabel === undefined && (
             <button
               type="button"
               aria-expanded={open}
@@ -71,7 +92,7 @@ export function DockBar({
       </div>
       {below}
       {open && details !== undefined && (
-        <div className="flex min-w-0 flex-col gap-2 pl-4 text-sm text-fg-soft">{details}</div>
+        <div className="flex min-w-0 flex-col gap-2 pl-4 text-sm text-fg">{details}</div>
       )}
     </section>
   );

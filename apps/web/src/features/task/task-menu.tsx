@@ -12,8 +12,8 @@ import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/li
 import { SchedulePanel } from "../tasks/schedule-editor";
 import { unshippedBody } from "./unshipped";
 
-/** The task's "..." menu: priority and due date, close it (moves to Done) or remove it with its folder and worktrees. */
-export function TaskMenu({ task }: { task: Task }) {
+/** The task's "..." menu: Details (on a narrow window), priority and due date, close it (moves to Done) or remove it with its folder and worktrees. */
+export function TaskMenu({ task, onDetails }: { task: Task; onDetails?: (() => void) | undefined }) {
   const [confirm, setConfirm] = useState<"close" | "remove" | null>(null);
   const reopen = useReopenTask();
   const toast = useToast();
@@ -28,6 +28,8 @@ export function TaskMenu({ task }: { task: Task }) {
         label="Task menu"
         icon={<EllipsisVertical aria-hidden="true" />}
         items={[
+          // Below 1300 px the side panel is not beside the page: this opens it over it.
+          ...(onDetails === undefined ? [] : [{ label: "Details", onSelect: onDetails }]),
           ...(task.kind === "chat"
             ? []
             : [{ label: "Priority and due", onSelect: () => setScheduling(true) }]),

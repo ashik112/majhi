@@ -1,21 +1,19 @@
-import type { RoomItem } from "@majhi/shared";
+import { type ProcessInfo, processItemId, type RoomItem } from "@majhi/shared";
 import { ArrowDown } from "lucide-react";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTaskDeploys } from "@/features/deploy/use-task-deploys";
-import { cn } from "@/lib/cn";
-import { GLASS } from "@/lib/glass";
 import { useIncident } from "@/lib/incident-queries";
 import { DeployPlanCard, deployPlanOpen } from "./deploy-plan";
 import { dockItems, waitsForOwner } from "./dock";
-import { IncidentCard, incidentCardOpen } from "./incident-card";
 import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
 import { RoomTaskContext } from "./media";
 import type { RoomState } from "./model";
-import { nearBottom, pinnedPlans } from "./model";
+import { isWorking, nearBottom, pinnedPlans } from "./model";
+import { NeedsBlock } from "./needs-block";
 import type { OwnerContext } from "./owner-cards";
-import { beatOf, foldSteps, gapAbove, rowsOf } from "./rows";
-import { StepsRow } from "./steps-row";
+import { beatOf, foldTurns, gapAbove, type Row, rowsOf } from "./rows";
+import { RunningSteps, StepsRow } from "./steps-row";
 
 /** Rows drawn on the first paint of a long room. */
 const FIRST_PAINT_ROWS = 40;
@@ -37,10 +35,10 @@ export function Timeline({
   onLoadNewer,
   onJumpToLatest,
   jumpSignal = 0,
-  foldSteps: fold = false,
+  onStop,
 }: {
-  /** Reads as a conversation: the steps between messages fold into one line per run. */
-  foldSteps?: boolean | undefined;
+  /** Stops the agent's run: the row in progress offers it while a turn runs. */
+  onStop?: (() => void) | undefined;
   state: RoomState;
   onLoadOlder: () => Promise<void>;
   /** Loads the page around a search match in place of the newest one; false when the room has no such item. */
@@ -80,12 +78,28 @@ export function Timeline({
 
   const plans = useMemo(() => pinnedPlans(state.items), [state.items]);
   const list = useRef<HTMLOListElement>(null);
-  // Pinned plans are drawn above the log, not in it.
+  // Pinned plans are drawn above the log, not in it. What an agent did between two messages folds into one row.
   const rows = useMemo(() => {
     const pinnedIds = new Set(plans.map((p) => p.id));
-    const all = rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
-    return fold ? foldSteps(all) : all;
-  }, [state.items, plans, fold]);
+    return foldTurns(rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id))));
+  }, [state.items, plans]);
+  // The turn that is running: the newest run of steps, when an agent works and no message came after it.
+  const working = state.agents.some((a) => isWorking(a));
+  const runningRow = useMemo(() => {
+    if (!working) return undefined;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      if (row === undefined) continue;
+      if (row.kind === "steps") return row.key;
+      if (row.kind === "item" && beatOf(row) === "message") return undefined;
+    }
+    return undefined;
+  }, [rows, working]);
+  // The newest report of each process run: its output moves while it runs.
+  const liveProcess = useMemo(
+    () => new Map(state.processes.map((p: ProcessInfo) => [processItemId(p), p])),
+    [state.processes],
+  );
   const beats = useMemo(() => rows.map(beatOf), [rows]);
 
   // Opening a long room draws the newest rows first and the rest a moment later, so the room is
@@ -162,6 +176,7 @@ export function Timeline({
         ? state.agents.find((a) => a.agent === (item.to ?? lead))
         : undefined,
     owner: OWNER_CARD_TYPES.has(item.type) ? owner : undefined,
+    liveProcess: item.type === "process" ? liveProcess.get(item.id) : undefined,
   });
   const ctx = useMemo<ItemContext>(
     () => ({
@@ -172,6 +187,31 @@ export function Timeline({
     }),
     [pinnedKey, onPermission, answering, task.id, task.folder, onMediaLoad],
   );
+  // The rows of the turn that runs can stop it.
+  const liveCtx = useMemo<ItemContext>(() => ({ ...ctx, onStop }), [ctx, onStop]);
+
+  /** The rows inside a run of steps, drawn compact. */
+  const stepNodes = (row: Extract<Row, { kind: "steps" }>, live: boolean) =>
+    rowsOf(row.items).map((inner) =>
+      inner.kind === "notes" ? (
+        <NotesRow
+          key={inner.key}
+          rowKey={inner.key}
+          quiet={inner.quiet}
+          at={inner.items[0]?.at ?? ""}
+          className="mt-0.5"
+        />
+      ) : inner.kind === "item" ? (
+        <RoomItemView
+          key={inner.key}
+          item={inner.item}
+          ctx={live ? liveCtx : ctx}
+          {...rowProps(inner.item)}
+          repeat={inner.repeat}
+          className="mt-0.5"
+        />
+      ) : null,
+    );
 
   // After every render that changed the items: stay at the bottom, keep the view when older
   // items were added above, or raise the pill when new items arrived below a scrolled-up view.
@@ -279,7 +319,6 @@ export function Timeline({
   const planOpen = deployPlanOpen(deploys);
   // An incident a client room is told about shows what they see, and its report once resolved.
   const incident = useIncident(task.id, owner?.task.typing?.type === "incident").data;
-  const incidentOpen = incidentCardOpen(incident);
 
   return (
     <RoomTaskContext.Provider value={task.id}>
@@ -308,24 +347,31 @@ export function Timeline({
           {state.loaded && state.items.length === 0 && (
             <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
           )}
-          <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
+          <ol ref={list} className="m-0 mt-auto flex w-full flex-col p-0">
             {rows.slice(from).map((row, j) => {
               const i = from + j;
               const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
-              if (row.kind === "steps")
+              if (row.kind === "steps") {
+                if (row.key !== runningRow)
+                  return (
+                    <StepsRow key={row.key} summary={row.summary.text} className={gap}>
+                      {stepNodes(row, false)}
+                    </StepsRow>
+                  );
+                const worker = row.items.findLast((item) => item.type === "tool" || item.type === "thought");
+                const agent =
+                  worker !== undefined && "agent" in worker ? worker.agent : (state.agents[0]?.agent ?? "");
+                const turnAt = state.agents.find((a) => a.agent === agent)?.turnAt;
                 return (
-                  <StepsRow key={row.key} count={row.count} className={gap}>
-                    {row.items.map((item) => (
-                      <RoomItemView
-                        key={item.id}
-                        item={item}
-                        ctx={ctx}
-                        {...rowProps(item)}
-                        className="mt-0.5"
-                      />
-                    ))}
-                  </StepsRow>
+                  <RunningSteps
+                    key={row.key}
+                    agent={agent}
+                    since={turnAt ?? row.items[0]?.at ?? new Date().toISOString()}
+                    rows={stepNodes(row, true)}
+                    className={gap}
+                  />
                 );
+              }
               return row.kind === "notes" ? (
                 <NotesRow
                   key={row.key}
@@ -374,30 +420,20 @@ export function Timeline({
             )
           )}
         </div>
-        {(waiting.length > 0 || planOpen || incidentOpen) && (
-          // Whatever waits for the owner stays here, above the message box, until it is answered,
-          // so new messages never bury it. Answered, it goes back into the log in its place.
-          <section
-            aria-label="Needs you"
-            className={cn(
-              "mt-2 flex max-h-[60%] shrink-0 flex-col overflow-y-auto rounded-xl px-3 py-0.5",
-              GLASS,
-              "border-lamp-needs/30",
-            )}
-          >
-            <ol className="m-0 flex min-h-0 flex-col divide-y divide-line p-0">
-              {waiting.map((item: RoomItem) => (
-                <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
-              ))}
-              {planOpen && (
-                <li className="list-none">
-                  <DeployPlanCard steps={deploys} change={() => owner?.compose("")} />
-                </li>
-              )}
-              {incidentOpen && <IncidentCard view={incident} task={owner?.task} />}
-            </ol>
-          </section>
-        )}
+        <NeedsBlock
+          waiting={waiting}
+          owner={owner}
+          incident={incident}
+          working={working}
+          plan={
+            planOpen ? (
+              <li className="list-none">
+                <DeployPlanCard steps={deploys} change={() => owner?.compose("")} />
+              </li>
+            ) : undefined
+          }
+          render={(item) => <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />}
+        />
       </div>
     </RoomTaskContext.Provider>
   );

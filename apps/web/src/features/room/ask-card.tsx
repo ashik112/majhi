@@ -7,6 +7,7 @@ import { Lamp } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { Markdown } from "./markdown";
 
 type Ask = Extract<RoomItem, { type: "ask" }>;
 type Question = Ask["questions"][number];
@@ -96,12 +97,14 @@ export function PendingAsk({ item }: { item: Ask }) {
     <section aria-label="Question" className="flex w-full min-w-0 flex-col gap-3 py-2">
       {item.questions.map((q, n) => (
         <div key={q.id} className={cn("flex flex-col gap-2", n > 0 && "border-t border-line pt-3")}>
-          <p className="flex items-start gap-2 text-base text-fg">
+          <div className="flex items-start gap-2 text-base text-fg">
             <span className="mt-[7px] shrink-0">
               <Lamp state="needs" size={8} />
             </span>
-            <span className="min-w-0 break-words">{q.question}</span>
-          </p>
+            <div className="min-w-0 flex-1 break-words">
+              <Markdown text={q.question} />
+            </div>
+          </div>
           <fieldset className="flex min-w-0 flex-col gap-1.5 pl-4" aria-label={q.question}>
             {q.options.map((option) => {
               const view = optionView(q, option);
@@ -168,7 +171,7 @@ export function PendingAsk({ item }: { item: Ask }) {
                   className="flex w-full cursor-pointer items-center gap-2 rounded-md border border-dashed border-line-control px-3 py-2 text-left text-sm text-fg-muted transition-colors duration-150 hover:border-line-hover hover:text-fg disabled:opacity-60"
                 >
                   <PencilLine aria-hidden="true" className="size-3.5 shrink-0" />
-                  Something else
+                  Reply
                 </button>
               )
             )}

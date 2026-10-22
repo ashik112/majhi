@@ -7,6 +7,16 @@ export function formatDuration(ms: number): string {
   return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
 }
 
+/** How long something has lasted: "under a minute", "12 min", "3 h", "2 d". */
+export function formatSpan(ms: number): string {
+  const minutes = Math.round(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.round(hours / 24)} d`;
+}
+
 /** "just now", "5 min ago", "2 h ago", then a short date. */
 export function formatAgo(iso: string, now: number): string {
   const then = Date.parse(iso);
