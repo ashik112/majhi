@@ -4,7 +4,7 @@ import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
 import { ACME_SHOP_FILES, acmeShopCi } from "./testing/acme-shop.ts";
 
 /**
- * How a project deploys, read from its own CI files (docs/briefs/deploy-from-ci.md): the sample `acme-shop` has a
+ * How a project deploys, read from its own CI files (docs/DECISIONS.md, "deploy from CI"): the sample `acme-shop` has a
  * build, a release with one target per client environment, a rollback, and a GitLab pipeline left behind.
  */
 

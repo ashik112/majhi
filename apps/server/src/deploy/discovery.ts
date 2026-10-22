@@ -6,7 +6,7 @@ import type { DeployGit } from "./git.ts";
 import type { RepoRef } from "./types.ts";
 
 /**
- * Registers the environments a project's CI deploys (docs/briefs/deploy-from-ci.md). It reads the CI files at the tip
+ * Registers the environments a project's CI deploys (docs/DECISIONS.md, "deploy from CI"). It reads the CI files at the tip
  * of the project's base branch, not the working tree (the checkout may be on another branch), finds the deploy path
  * with `discoverEnvironments`, and saves what is new through the one writer of environments. An environment the owner
  * removed before is not saved again. What it saved is said once, with the file and line it was read from.

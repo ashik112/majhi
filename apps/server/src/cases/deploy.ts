@@ -15,7 +15,7 @@ import { UserError } from "../errors.ts";
 import { shortVersion } from "./record.ts";
 
 /**
- * The captain's deploy of a case's fix (docs/briefs/instructions.md, docs/briefs/deploy-from-ci.md). Nothing here is a
+ * The captain's deploy of a case's fix (docs/briefs/instructions.md, docs/DECISIONS.md, "deploy from CI"). Nothing here is a
  * second way to deploy: the fix lands the way a task's work lands (the merge rule and its hand-off checks), and the
  * deploy is the deploy service's own, with the runs the project's CI says (its environment's recipe) or the runs it
  * already deployed with. What a case adds is how it finds the path, which environment the client is on, what it cannot
