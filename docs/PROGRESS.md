@@ -3219,4 +3219,4 @@ Left and known:
 - Not run for real: a build of a real project in the runner (uv, the rootless apt step and a source build of psycopg2 against the sysroot are untried here), and a `docker compose config` of a real prod file through the shim. The first real build tells whether the sysroot approach holds for the owner's backend; a failing step shows on the card with the end of the log.
 - Only Python projects get an environment. Node, PHP, Ruby and Go projects start as before (the agent installs from the package store). Recorded in DECISIONS (2026-10-22) as a design question: an install in the worktree can edit a lock file.
 - An editable install of the project itself (`-e .`), local paths and index options are left out of the shared environment (named in `ready.json`).
-- The task's agent cannot add packages to the read-only environment: it writes them in the requirements file and the next start builds a new one.
+- The environment is read-only. A package the task adds goes to `<task folder>/.pydeps` (on `PYTHONPATH`; TASK.md says how) and in the requirements file, and the next start builds a new environment from it.

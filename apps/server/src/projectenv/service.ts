@@ -121,6 +121,7 @@ export function combineFacts(list: readonly EnvFacts[]): { mounts: RunMount[]; e
     env.VIRTUAL_ENV ??= f.env.VIRTUAL_ENV ?? "";
     join("MAJHI_ENV_PATH", f.env.MAJHI_ENV_PATH);
     join("LD_LIBRARY_PATH", f.env.LD_LIBRARY_PATH);
+    join("PYTHONPATH", f.env.PYTHONPATH);
   }
   return { mounts: list.flatMap((f) => f.mounts), env };
 }
@@ -243,7 +244,7 @@ export class ProjectEnvs {
       const found =
         key === undefined ? await this.newest(root) : await this.withKey(root, key).catch(() => undefined);
       if (found === undefined) continue;
-      out.push(factsOf(repo.project, found.dir, found.ready));
+      out.push(factsOf(repo.project, found.dir, found.ready, task.folder));
     }
     return out;
   }
@@ -372,10 +373,17 @@ export class ProjectEnvs {
   }
 }
 
-function factsOf(project: string, dir: string, ready: Ready): EnvFacts {
+/**
+ * The environment is read-only and shared, so a package a task adds goes in a folder of its own beside its
+ * repos (never in git), which is on `PYTHONPATH`.
+ */
+const EXTRA_PACKAGES = ".pydeps";
+
+function factsOf(project: string, dir: string, ready: Ready, taskFolder: string): EnvFacts {
   const abs = (rel: string) => join(dir, rel);
   const venv = abs("venv");
   const libs = ready.libs.map(abs);
+  const extra = join(taskFolder, EXTRA_PACKAGES);
   return {
     project,
     dir,
@@ -383,9 +391,10 @@ function factsOf(project: string, dir: string, ready: Ready): EnvFacts {
     env: {
       VIRTUAL_ENV: venv,
       MAJHI_ENV_PATH: ready.bin.map(abs).join(":"),
+      PYTHONPATH: extra,
       ...(libs.length === 0 ? {} : { LD_LIBRARY_PATH: libs.join(":") }),
     },
-    line: `Environment ready: Python ${ready.python} in ${venv} (first on PATH, read-only). The project's dependencies are installed there: do not install them yourself.`,
+    line: `Environment ready: Python ${ready.python} in ${venv} (first on PATH, read-only). The project's dependencies are installed there: do not install them yourself.\n  A package this task adds: \`pip install --target ${extra} <package>\` (already on PYTHONPATH), and write it in the requirements file.`,
   };
 }
 
