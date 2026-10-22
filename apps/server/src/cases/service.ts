@@ -798,6 +798,9 @@ export class CaseService {
             state: live ? "live" : "failed",
           });
     });
+    if (live && path.remember !== undefined) {
+      await this.deps.deployer.remember(repo.project, path.env.env, path.remember).catch(() => undefined);
+    }
     this.line(
       task,
       live

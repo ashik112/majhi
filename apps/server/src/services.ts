@@ -3109,6 +3109,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     deployer: new CaseDeployer({
       environments: async (project) => (await projects.get(project).catch(() => undefined))?.deploy ?? [],
       discover: async (project) => (await deployWorld.discovery.run(project)).added,
+      remember: async (project, env, answers) => {
+        const info = await projects.get(project);
+        const next = info.deploy.map((e) =>
+          e.env === env && e.recipe !== undefined
+            ? { ...e, recipe: { ...e.recipe, answers: { ...e.recipe.answers, ...answers } } }
+            : e,
+        );
+        await projects.setEnvironments(project, next, "projects.setEnvironments", {
+          actor: { kind: "owner" },
+          reason: "majhi kept the owner's answer about how the environment deploys",
+        });
+      },
       current: (project, env) => deployWorld.service.current(project, env),
       changedPaths: async (project, branch) => {
         const info = await projects.get(project).catch(() => undefined);

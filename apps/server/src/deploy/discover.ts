@@ -410,6 +410,7 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
       ...(live === undefined ? {} : { live }),
       ...(components === undefined || components === "asks" ? {} : { components }),
       asks: dedupeAsks(asks),
+      answers: {},
     };
     out.push({ env, tier: tierOf(env), recipe });
   }
@@ -545,6 +546,7 @@ function gitlabEnvironments(input: DiscoverInput): DeployEnvironment[] {
             rollback: { runs: runs as DeployRecipe["deploy"], at: "previous" },
             live,
             asks: [],
+            answers: {},
           },
         });
         continue;
@@ -559,7 +561,7 @@ function gitlabEnvironments(input: DiscoverInput): DeployEnvironment[] {
         env,
         tier: tierOf(env),
         ...(branch === input.base ? {} : { branch }),
-        recipe: { from, deploy: runs as DeployRecipe["deploy"], live, asks: [] },
+        recipe: { from, deploy: runs as DeployRecipe["deploy"], live, asks: [], answers: {} },
       });
     }
   }

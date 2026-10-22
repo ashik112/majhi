@@ -19,6 +19,7 @@ describe("a case deploy", () => {
       const ports: CaseDeployPorts = {
         environments: async () => r.project.environments,
         discover: async () => [],
+        remember: async () => undefined,
         current: (project, env) => r.service.current(project, env),
         changedPaths: async () => undefined,
         latestLive: (project, env) => r.store.deploys.latestLive(project, env),
@@ -124,6 +125,7 @@ function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): Ca
   return {
     environments: async () => r.project.environments,
     discover: async () => [],
+    remember: async () => undefined,
     current: (project, env) => r.service.current(project, env),
     changedPaths: async () => paths,
     latestLive: (project, env) => r.store.deploys.latestLive(project, env),

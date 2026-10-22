@@ -59,6 +59,13 @@ async function foldersOf(git: DiscoveryDeps["git"], path: string, tip: string): 
   return out;
 }
 
+/** Whether two recipes say the same: the answers the owner gave are not part of what the CI says. */
+function sameRecipe(a: DeployEnvironment["recipe"], b: DeployEnvironment["recipe"]): boolean {
+  const bare = (r: DeployEnvironment["recipe"]) =>
+    JSON.stringify(r === undefined ? r : { ...r, answers: {} });
+  return bare(a) === bare(b);
+}
+
 export class DeployDiscovery {
   private readonly running = new Map<string, Promise<DiscoveryResult>>();
 
@@ -111,22 +118,26 @@ export class DeployDiscovery {
       if (have === undefined) {
         next.push(env);
         added.push(env.env);
-      } else if (JSON.stringify(have.recipe) !== JSON.stringify(env.recipe)) {
-        // The recipe is read from the CI, so it follows the CI. What the owner set on the environment stays.
-        next[at] = { ...have, ...(env.recipe === undefined ? {} : { recipe: env.recipe }) };
+      } else if (env.recipe !== undefined && !sameRecipe(have.recipe, env.recipe)) {
+        // The recipe is read from the CI, so it follows the CI. What the owner set on the environment stays, and so
+        // do the answers the owner gave to its questions.
+        next[at] = { ...have, recipe: { ...env.recipe, answers: have.recipe?.answers ?? {} } };
         updated.push(env.env);
       }
     }
     if (added.length === 0 && updated.length === 0) return { ...none, dismissed };
 
     await this.deps.projects.setEnvironments(project.id, next, "projects.setEnvironments", META);
-    const where = found.environments
-      .filter((e) => added.includes(e.env) || updated.includes(e.env))
-      .map(
-        (e) =>
-          `${e.env} (${e.recipe?.from.file}${e.recipe?.from.line === undefined ? "" : `:${e.recipe.from.line}`})`,
-      )
-      .join(", ");
+    // Grouped by the file and line they were read from: "acme, globex from .github/workflows/release.yml:6".
+    const bySource = new Map<string, string[]>();
+    for (const e of found.environments) {
+      if (!added.includes(e.env) && !updated.includes(e.env)) continue;
+      const from = e.recipe?.from;
+      const at =
+        from === undefined ? "the CI" : `${from.file}${from.line === undefined ? "" : `:${from.line}`}`;
+      bySource.set(at, [...(bySource.get(at) ?? []), e.env]);
+    }
+    const where = [...bySource].map(([at, names]) => `${names.join(", ")} from ${at}`).join("; ");
     const asking = found.environments.filter(
       (e) => (added.includes(e.env) || updated.includes(e.env)) && (e.recipe?.asks.length ?? 0) > 0,
     );

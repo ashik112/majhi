@@ -215,6 +215,8 @@ export const DeployRecipeSchema = z.object({
     })
     .optional(),
   asks: z.array(RecipeAskSchema).max(6).default([]),
+  /** What the owner answered to an `input:` question once, so the next deploy does not ask it again. */
+  answers: z.record(z.string(), z.string().max(300)).default({}),
 });
 export type DeployRecipe = z.infer<typeof DeployRecipeSchema>;
 

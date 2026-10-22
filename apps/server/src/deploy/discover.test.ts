@@ -98,6 +98,7 @@ describe("finding how a project deploys from its CI files", () => {
         ],
       },
       asks: [],
+      answers: {},
     });
   });
 

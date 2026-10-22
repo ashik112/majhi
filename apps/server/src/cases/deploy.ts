@@ -27,6 +27,8 @@ export interface CaseDeployPorts {
   environments(project: string): Promise<readonly DeployEnvironment[]>;
   /** Reads the project's CI files and saves the environments it deploys through. The names added. */
   discover(project: string): Promise<string[]>;
+  /** Keeps what the owner answered about an environment's inputs, so its next deploy does not ask again. */
+  remember(project: string, env: string, answers: Readonly<Record<string, string>>): Promise<void>;
   /** What an environment runs now: majhi's own last deploy, else what the host says. Absent where neither knows. */
   current(project: string, env: string): Promise<DeployReplaces | undefined>;
   /** The files the case's branch changed against the project's base; undefined when git cannot say. */
@@ -74,6 +76,8 @@ export type DeployPath =
       /** The version or commit the environment runs now, as the case keeps it. */
       previous: string;
       replaces?: DeployReplaces;
+      /** The owner's answers about the environment's own inputs: kept once the deploy went live. */
+      remember?: Record<string, string>;
       /** What majhi decided and where it read the path from: lines for the case room. */
       notes: string[];
     }
@@ -227,7 +231,7 @@ export class CaseDeployer {
     recipe: DeployRecipe,
     notes: string[],
   ): Promise<DeployPath> {
-    const answers = input.answers ?? {};
+    const answers = { ...recipe.answers, ...input.answers };
     const asks: DeployQuestion[] = [];
     notes.push(`Deploys ${env.env} the way ${recipeSource(env) ?? "the CI"} says.`);
 
@@ -302,6 +306,12 @@ export class CaseDeployer {
       };
     }
 
+    // An input of the workflow with no value of its own is the same for every deploy of the environment: kept.
+    const remember = Object.fromEntries(
+      Object.entries(input.answers ?? {}).filter(
+        ([key]) => key.startsWith("input:") && key !== "input:build-version",
+      ),
+    );
     const filledInputs = recipe.deploy.map((step) => {
       if (step.kind !== "github-workflow") return step;
       const inputs = { ...step.inputs };
@@ -323,8 +333,14 @@ export class CaseDeployer {
       runs: bound.runs,
       previous: previous.slice(0, 64),
       ...(replaces === undefined ? {} : { replaces }),
+      ...(Object.keys(remember).length === 0 ? {} : { remember }),
       notes,
     };
+  }
+
+  /** Keeps the owner's answers about an environment's own inputs. */
+  remember(project: string, env: string, answers: Readonly<Record<string, string>>): Promise<void> {
+    return this.ports.remember(project, env, answers);
   }
 
   /**
