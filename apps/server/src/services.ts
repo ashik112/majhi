@@ -73,7 +73,9 @@ import { CaptainService } from "./captain/service.ts";
 import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
+import { LaneWatchdog } from "./captain/watchdog.ts";
 import { CaseService } from "./cases/service.ts";
+import { waitsForCaptain } from "./chat/desk.ts";
 import type { ClientChat } from "./chat/service.ts";
 import { SlackAdapter } from "./chat/slack/adapter.ts";
 import { TelegramAdapter } from "./chat/telegram/adapter.ts";
@@ -271,6 +273,8 @@ import { WikiTools } from "./wiki/tools.ts";
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
 const INCIDENT_SWEEP_MS = 20_000;
+/** The lane watchdog looks once a minute. */
+const WATCHDOG_MS = 60_000;
 /** How often each client chat is cut to its Keep setting. */
 const KEEP_SWEEP_MS = 24 * 3_600_000;
 const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
@@ -466,6 +470,8 @@ export interface Services {
   chatParts: ClientChatParts;
   /** The cases: incidents a client reported, worked by the captain itself. */
   cases: CaseService;
+  /** Heals the captain's lane when a client message waits, and tells the owner as a last resort. */
+  watchdog: LaneWatchdog;
   /** The incident engine: the one place incidents are opened and joined. */
   incidentEngine: IncidentEngine;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
@@ -3112,6 +3118,36 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   admin.useCases(cases);
+  // The lane watchdog stands apart from the captain, the lanes and the runs: a client message nobody reads is healed.
+  const watchdog = new LaneWatchdog({
+    store,
+    lanes,
+    tasks: { holdOf: (id) => tasks.holdOf(id), start: (id, by) => tasks.start(id, by) },
+    turnRunning: (chat) => runs.working(chat).length > 0,
+    room,
+    caseOf: async (roomId) => (await cases?.openToday(roomId))?.task,
+    waits: (item) => waitsForCaptain(item),
+    retry: () => chatParts.desk.retry(),
+    nudge: (row, item) => chatParts.desk.add(row, item),
+    tellClient: async (row, text) => {
+      const org = row.org as string;
+      const out = await chatParts.replies.captain({
+        room: row.id,
+        text,
+        flags: { promisedTime: false, money: false, security: false, severalClients: false },
+        caseLevel: levelOf((await config.settings()).autonomy, org),
+        note: `Told ${row.chat.title} we are looking into it`,
+      });
+      chatParts.captain.replied(row, out);
+    },
+    tellOwner: async (title, text) => {
+      await ops?.tellOwner(title, text);
+    },
+    changed: () => events.emit(["tasks", "clients"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const watchdogTimer = setInterval(() => background.run(() => watchdog.sweep()), WATCHDOG_MS);
+  watchdogTimer.unref();
   // Each client room hears of an incident when its status changes and at the workspace's cadence.
   const incidentSweep = setInterval(
     () =>
@@ -3668,6 +3704,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     chat: chatParts.chat,
     chatParts,
     cases,
+    watchdog,
     incidentEngine: incidentEngineNow,
     outcomes,
     handoff,

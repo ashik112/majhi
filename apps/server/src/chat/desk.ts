@@ -11,6 +11,18 @@ export const NOT_READING = "The captain is not reading now";
 /** The reason a message waits when the captain was woken but its lane could not run a turn. */
 export const NOT_ANSWERED = "Not answered: the captain could not start";
 
+/**
+ * Whether a client message waits for the captain to read it: a wake is on its way, or none could be sent, or the lane
+ * could not run a turn. A reply held for the owner is not that: the captain did its part.
+ */
+export function waitsForCaptain(item: ClientItem): boolean {
+  const out = item.outcome;
+  if (out?.state === "working") return true;
+  if (out?.state !== "waits") return false;
+  const why = out.why ?? "";
+  return out.decision !== undefined || why.startsWith(NOT_READING) || why.startsWith(NOT_ANSWERED);
+}
+
 /** How far back a message that waited for the captain is woken again. */
 const RETRY_WINDOW_MS = 3 * 86_400_000;
 

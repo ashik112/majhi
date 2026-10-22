@@ -6,7 +6,7 @@
  * The files are the only channel because the agent is a separate process. Erasable TypeScript only.
  */
 import { appendFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 export const SCRIPT_FILE = "CAPTAIN_SCRIPT.json";
@@ -49,12 +49,17 @@ export async function matchRule(
   cwd: string,
   prompt: string,
 ): Promise<{ index: number; rule: ScriptRule } | undefined> {
-  let script: z.infer<typeof ScriptSchema>;
-  try {
-    script = ScriptSchema.parse(JSON.parse(await readFile(join(cwd, SCRIPT_FILE), "utf8")) as unknown);
-  } catch {
-    return undefined;
+  // The task's own folder first, then the folder of all tasks: a folder that was deleted and made again has no script.
+  let script: z.infer<typeof ScriptSchema> | undefined;
+  for (const folder of [cwd, dirname(cwd)]) {
+    try {
+      script = ScriptSchema.parse(JSON.parse(await readFile(join(folder, SCRIPT_FILE), "utf8")) as unknown);
+      break;
+    } catch {
+      // Not there: try the next.
+    }
   }
+  if (script === undefined) return undefined;
   const index = script.rules.findIndex((r) => new RegExp(r.when, r.flags).test(prompt));
   const rule = script.rules[index];
   return rule === undefined ? undefined : { index, rule };

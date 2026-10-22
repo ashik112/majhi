@@ -1,5 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { ChatEnvelope, OwnerDecision, RoomItem, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONN, envelope } from "../chat/testing/world.ts";
@@ -94,9 +94,9 @@ const step = (tool: string, args: Record<string, unknown> = {}, server?: string)
 });
 const ssh = (command: string) => step("ssh", { connection: "acme-host", command }, "majhi-connections");
 
-async function script(r: Replay, steps: ReturnType<typeof step>[]) {
+async function script(r: Replay, steps: ReturnType<typeof step>[], where: "lane" | "all" = "lane") {
   await writeFile(
-    join(r.lane.folder, "CAPTAIN_SCRIPT.json"),
+    join(where === "lane" ? r.lane.folder : dirname(r.lane.folder), "CAPTAIN_SCRIPT.json"),
     JSON.stringify({ rules: [{ when: "Client chat", flags: "", steps }] }),
   );
 }
@@ -144,6 +144,38 @@ const owner = async (r: Replay) => ({
 const REPLY_1 = "We found it: the order worker is jammed. We are fixing it now.";
 const REPLY_2 = "Fixed, please try again.";
 
+/** What the captain does for the outage: read, tell the client, restart the worker once, check, close. */
+function fixSteps(r: Replay) {
+  return [
+    step("majhi_chat_openIncident", {
+      room: r.room.id,
+      found: "Slips fail and the courier call is not made.",
+    }),
+    step("majhi_case_status", { now: "Reading the worker on the host" }),
+    ssh("docker ps"),
+    ssh("docker logs --tail 50 acme-worker"),
+    // What a case never does: a plan, a task, a bug report.
+    step("majhi_tasks_create", { text: "fix the worker", reason: "a try", ownerAsked: false }),
+    step("majhi_captain_reportBug", { title: "a try", details: "a try", reason: "a try" }),
+    step("majhi_chat_reply", { room: r.room.id, text: REPLY_1, ...FLAGS }),
+    step("majhi_case_status", { now: "Restarting the worker" }),
+    ssh("docker restart acme-worker"),
+    ssh("docker ps"),
+    ssh("curl -sf localhost:8000/slips/health"),
+    step("majhi_case_followUp", { text: "Stop the courier status sweep from filling every slot" }),
+    step("majhi_case_close", {
+      summary: [
+        "Slips and courier orders failed.",
+        "The courier status sweep held all 3 slots of the order worker.",
+        "Restarted the worker once; it took new work at once.",
+        "The slips check answers again.",
+        "Follow-up: keep the sweep from filling every slot.",
+      ].join("\n"),
+      tell: { text: REPLY_2, ...FLAGS },
+    }),
+  ];
+}
+
 describe("the case replay", () => {
   it("opens one case for two messages, reads and restarts without a card, checks it works, and closes it", async () => {
     const ran: string[] = [];
@@ -151,34 +183,7 @@ describe("the case replay", () => {
     const now = new Date();
     await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", now);
     await say(r, "still the same: no slips", "2", new Date(now.getTime() + 120_000));
-    await script(r, [
-      step("majhi_chat_openIncident", {
-        room: r.room.id,
-        found: "Slips fail and the courier call is not made.",
-      }),
-      step("majhi_case_status", { now: "Reading the worker on the host" }),
-      ssh("docker ps"),
-      ssh("docker logs --tail 50 acme-worker"),
-      // What a case never does: a plan, a task, a bug report.
-      step("majhi_tasks_create", { text: "fix the worker", reason: "a try", ownerAsked: false }),
-      step("majhi_captain_reportBug", { title: "a try", details: "a try", reason: "a try" }),
-      step("majhi_chat_reply", { room: r.room.id, text: REPLY_1, ...FLAGS }),
-      step("majhi_case_status", { now: "Restarting the worker" }),
-      ssh("docker restart acme-worker"),
-      ssh("docker ps"),
-      ssh("curl -sf localhost:8000/slips/health"),
-      step("majhi_case_followUp", { text: "Stop the courier status sweep from filling every slot" }),
-      step("majhi_case_close", {
-        summary: [
-          "Slips and courier orders failed.",
-          "The courier status sweep held all 3 slots of the order worker.",
-          "Restarted the worker once; it took new work at once.",
-          "The slips check answers again.",
-          "Follow-up: keep the sweep from filling every slot.",
-        ].join("\n"),
-        tell: { text: REPLY_2, ...FLAGS },
-      }),
-    ]);
+    await script(r, fixSteps(r));
     const done = await wakeAndWait(r, 13);
 
     // One case, in the workspace, and nothing else: no task, no bug.
@@ -287,5 +292,105 @@ describe("the case replay when the fix needs a code deploy", () => {
     await w?.until(async () => (await lines(r)).length >= 9, "the answer turn");
     await r.services.runs.idle(r.lane.id);
     expect((await owner(r)).decisions).toEqual([]);
+  });
+});
+
+/** The owner's own path, recorded: the phone push and the Telegram message. */
+function ownerLine(r: Replay): string[] {
+  const told: string[] = [];
+  vi.spyOn(r.services.ops, "tellOwner").mockImplementation(async (title, text) => {
+    told.push(`${title}: ${text}`);
+  });
+  return told;
+}
+
+const MIN = 60_000;
+
+describe("the case replay when the captain's lane is down", () => {
+  it("heals a lane that is paused with a sign-in error and has lost its folder, answers the client, and never tells the owner", async () => {
+    const ran: string[] = [];
+    const r = await replayWorld(stuckHost(ran));
+    const told = ownerLine(r);
+    const t0 = new Date(Date.now() - 3 * MIN);
+    // The lane stopped on a sign-in error, and its folder is gone. The script waits in the folder of all tasks.
+    await r.services.tasks.apply(
+      r.lane.id,
+      {
+        type: "holdPlaced",
+        hold: { cause: "error", at: t0.toISOString(), phase: "start", error: "The sign-in check failed" },
+      },
+      { ctx: { by: "majhi", why: "The sign-in check failed", reason: "error" } },
+    );
+    await rm(r.lane.folder, { recursive: true, force: true });
+    await script(r, fixSteps(r), "all");
+    await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", t0);
+    await say(r, "still the same: no slips", "2", new Date(t0.getTime() + 2 * MIN));
+
+    // The wake never reached the lane. The watchdog looks: the messages waited three minutes and no turn runs.
+    await r.services.watchdog.sweep(new Date());
+    await r.parts.desk.flush(r.room.id);
+    await w?.until(async () => (await lines(r)).length >= 13, "the healed captain's turn");
+    await r.services.runs.idle(r.lane.id);
+
+    const all = (await r.h.cmd("tasks.list", { includeDone: true })).body as TaskSummary[];
+    const work = all.filter((t) => t.lane !== true && t.chat !== true);
+    expect(work.map((t) => [t.typing?.type, t.status])).toEqual([["incident", "done"]]);
+    expect(r.sent).toHaveLength(2);
+    expect(told).toEqual([]);
+    expect((await owner(r)).decisions).toEqual([]);
+    // The room says majhi restarted the captain, with the cause: the case's room once the captain's lines about it
+    // are tagged to it, the lane's room before.
+    const caseId = work[0]?.id ?? "";
+    const items = async (task: string) =>
+      (await r.h.cmd("room.items", { task, limit: 200 })).body.items as RoomItem[];
+    const said = [...(await items(caseId)), ...(await items(r.lane.id))].flatMap((i) =>
+      i.type === "system" && i.text.startsWith("majhi restarted the captain") ? [i.text] : [],
+    );
+    expect(said).toEqual(["majhi restarted the captain: It stopped with an error."]);
+  });
+
+  it("tells the owner once at ten minutes when the heals keep failing, and tells the client we are looking into it", async () => {
+    const r = await replayWorld(stuckHost([]));
+    const told = ownerLine(r);
+    const t0 = new Date(Date.now() - 20 * MIN);
+    const lane = r.lane.id;
+    await r.services.tasks.apply(
+      lane,
+      {
+        type: "holdPlaced",
+        hold: {
+          cause: "error",
+          at: t0.toISOString(),
+          phase: "start",
+          error: "docker refused to start the runner",
+        },
+      },
+      { ctx: { by: "majhi", why: "docker refused", reason: "error" } },
+    );
+    // Every resume fails again at once.
+    const starts: string[] = [];
+    const start = r.services.tasks.start.bind(r.services.tasks);
+    vi.spyOn(r.services.tasks, "start").mockImplementation(async (id, by, options) => {
+      if (id !== lane) return start(id, by, options);
+      starts.push(by ?? "owner");
+      throw new Error("docker refused to start the runner");
+    });
+    await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", t0);
+    await r.parts.desk.flush(r.room.id);
+
+    for (const minute of [2.5, 3.6, 7, 9, 10.5, 11, 14])
+      await r.services.watchdog.sweep(new Date(t0.getTime() + minute * MIN));
+
+    // Three resumes, no more, and one alert that says what was tried.
+    expect(starts.filter((by) => by === "boss")).toHaveLength(3);
+    expect(told).toEqual([
+      expect.stringContaining(
+        "Ana wrote 10 min ago in Orders for Initech; the captain could not start: It stopped with an error",
+      ),
+    ]);
+    expect(told[0]).toContain("tried: resume ×3");
+    // The client has the fixed words, once.
+    expect(r.sent).toHaveLength(1);
+    expect(r.sent[0]).toContain("We're looking into it.");
   });
 });

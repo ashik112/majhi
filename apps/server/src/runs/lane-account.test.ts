@@ -84,9 +84,16 @@ describe("the captain's account in a workspace's step", () => {
       own: false,
       fallback: true,
     });
-    // With both at their limit Needs you gets the typed reason and the reset time.
+    // With both at their limit, any other healthy account allowed in the workspace runs it, and never another workspace's.
+    const both = { ...limited, "claude-spare": { status: "at-limit" } };
+    expect(await lanes({}, both).account("acme")).toEqual({
+      account: "claude-acme",
+      own: false,
+      fallback: true,
+    });
+    // With every allowed account at its limit Needs you gets the typed reason and the reset time.
     expect(
-      await lanes({}, { ...limited, "claude-spare": { status: "at-limit" } }).account("acme"),
+      await lanes({}, { ...both, "claude-acme": { status: "at-limit" } }).account("acme"),
     ).toMatchObject({ why: "at-limit", until: "2026-10-21T14:00:00.000Z" });
   });
 });

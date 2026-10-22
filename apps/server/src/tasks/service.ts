@@ -1589,6 +1589,11 @@ export class TaskService {
     if (wasRefused(out)) throw new UserError(out.text, 409);
   }
 
+  /** The hold that keeps a task from moving, or undefined. */
+  holdOf(id: string): lifecycle.Hold | undefined {
+    return this.lifecycle.state(id)?.hold;
+  }
+
   /** The lifecycle's one door, for callers outside this service (merge requests). */
   apply(id: string, event: lifecycle.LifecycleEvent, options?: ApplyOptions): Promise<Outcome> {
     return this.lifecycle.apply(id, event, options);
