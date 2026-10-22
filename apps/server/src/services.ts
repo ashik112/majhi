@@ -3670,6 +3670,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(chatSweep);
       conversations.stop();
       chatParts.hub.stop();
+      chatParts.desk.stop();
       clearInterval(limitSweep);
       clearInterval(briefSweep);
       clearInterval(reportSweep);
