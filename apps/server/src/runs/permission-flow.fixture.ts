@@ -20,6 +20,10 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
   } as unknown as RoomService;
   const orgOf = (task: string) => (task.startsWith("GLX") ? "globex" : "acme");
   const store = {
+    room: {
+      pendingPermissions: () =>
+        [...items.values()].filter((i) => i.type === "permission" && i.state === "pending"),
+    },
     tasks: {
       get: (task: string) => ({
         org: orgOf(task),

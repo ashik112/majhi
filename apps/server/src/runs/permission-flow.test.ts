@@ -77,3 +77,25 @@ describe("Always", () => {
     expect(message.pending.size).toBe(1);
   });
 });
+
+describe("a card whose prompt is gone", () => {
+  it("closes when the agent's next run starts, and a click on it closes it instead of answering", async () => {
+    const t = flow();
+    const first = t.runOf("ACM-8");
+    void t.permissions.ask(first, t.shell("git push origin main"), signal);
+    await tick();
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending" });
+
+    // A fresh session: a new run of the same agent, with nothing waiting on that card.
+    const next = t.runOf("ACM-8");
+    t.permissions.dropOrphans(next);
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "cancelled" });
+
+    // A card left pending the same way, then clicked: it closes and says so.
+    const other = t.runOf("ACM-9");
+    void t.permissions.ask(other, t.shell("git push origin main"), signal);
+    await tick();
+    const stale = t.runOf("ACM-9");
+    expect(() => t.permissions.answer(stale, "ACM-9", "perm:4:1", "once")).toThrow(/ended/);
+  });
+});

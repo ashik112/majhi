@@ -261,7 +261,12 @@ export class PermissionFlow {
     const pending = run?.pending.get(itemId);
     const item = room.get(task, itemId);
     if (run === undefined || pending === undefined || item === undefined || item.type !== "permission") {
-      throw new UserError("That prompt is not waiting for an answer any more.", 409);
+      // A card left from a run that ended or was replaced: close it, so it does not stay to be clicked again.
+      if (item?.type === "permission" && item.state === "pending") {
+        room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+        this.deps.onCardChange?.();
+      }
+      throw new UserError("That question ended: the agent moved on. The card is closed.", 409);
     }
     // A card is there because the workspace's level does not cover the action: the owner answers it.
     if (captain) throw new UserError("This is above the workspace's level. Only the owner answers it.", 409);
@@ -354,6 +359,22 @@ export class PermissionFlow {
   }
 
   /** Withdraws every prompt of the run that still waits. */
+  /**
+   * Cards of this agent in this task that no prompt of this run waits on: their prompt went with a run that ended
+   * or was replaced (a fresh session). They are closed so the owner never answers a question nobody asks.
+   */
+  dropOrphans(run: AgentRun): void {
+    const { store, room } = this.deps;
+    let dropped = false;
+    for (const item of store.room.pendingPermissions()) {
+      if (item.type !== "permission" || item.task !== run.task || item.agent !== run.agent) continue;
+      if (run.pending.has(item.id)) continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      dropped = true;
+    }
+    if (dropped) this.deps.onCardChange?.();
+  }
+
   cancelAll(run: AgentRun): void {
     for (const id of [...run.pending.keys()]) this.cancelOne(run, id);
   }

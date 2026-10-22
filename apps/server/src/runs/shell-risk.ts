@@ -13,6 +13,18 @@ import { parseLine, ShellParseError, type SimpleCommand } from "../connections/s
 export interface RiskScope extends Pick<ReadScope, "roots" | "cwd"> {
   /** The task's own branches, one per repo it writes. Pushing one of these is `push-branch`. */
   branches: readonly string[];
+  /**
+   * The folder that holds every task's folder (`<root>/.majhi`). Its name is majhi's, but it holds work, not
+   * logins: a path inside it is a secret only for what it names below it.
+   */
+  tasksRoot?: string | undefined;
+}
+
+/** The tasks folder a task folder sits in: the path up to its last `.majhi`. Undefined when there is none. */
+export function tasksRootOf(folder: string): string | undefined {
+  const parts = folder.split("/");
+  const at = parts.lastIndexOf(".majhi");
+  return at <= 0 ? undefined : parts.slice(0, at + 1).join("/");
 }
 
 /** Programs that run the command they are given: the inner command decides. */
@@ -96,6 +108,7 @@ export function riskScopeOfTask(
 ): RiskScope {
   if (task === undefined) return { roots: [], cwd: "/", branches: [] };
   return {
+    tasksRoot: tasksRootOf(task.folder),
     roots: [task.folder, ...task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree]))],
     cwd: task.folder,
     branches: task.repos.filter((r) => r.writes !== false && r.branch !== r.base).map((r) => r.branch),
@@ -119,7 +132,9 @@ function isAssignment(word: string): boolean {
 
 function secretWord(word: string, scope: RiskScope): boolean {
   const value = word.startsWith("-") && word.includes("=") ? word.slice(word.indexOf("=") + 1) : word;
-  const parts = value.split("/");
+  const root = scope.tasksRoot;
+  const inTasks = root !== undefined && (value === root || value.startsWith(`${root}/`));
+  const parts = (inTasks ? value.slice(root.length) : value).split("/");
   const names = parts.some((p) => CREDENTIAL_SEGMENTS.has(p) || KEY_FILES.some((k) => p.startsWith(k)));
   return names && !insideRoots(value, scope);
 }
