@@ -1,4 +1,4 @@
-import type { RoomItem, Task, TaskStatus } from "@majhi/shared";
+import { caseOf, type RoomItem, type Task, type TaskStatus } from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -158,7 +158,8 @@ export class IdleWatch {
     const { store, runs, crew } = this.deps;
     const last = this.last.get(id);
     const task = store.tasks.get(id);
-    if (task === undefined || task.status !== "running" || isBossChat(task)) {
+    // A case has no lead to wake: its helper reports to the captain, whose lane is woken for it.
+    if (task === undefined || task.status !== "running" || isBossChat(task) || caseOf(task) !== undefined) {
       this.last.delete(id);
       this.handled.delete(id);
       return;
@@ -180,7 +181,8 @@ export class IdleWatch {
    */
   quiet(id: string): boolean {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined || task.status !== "running" || isBossChat(task)) return false;
+    if (task === undefined || task.status !== "running" || isBossChat(task) || caseOf(task) !== undefined)
+      return false;
     const busy = this.deps.runs.busy?.(id) ?? this.deps.runs.working(id).length > 0;
     return stalled(this.facts(task, busy ? 1 : 0));
   }

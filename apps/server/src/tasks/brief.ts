@@ -133,7 +133,10 @@ export function renderTaskMd(
   }
   if (multi) lines.push("", ...teamLines(task, members), "");
   else lines.push("", "## Agent", "", agent === undefined ? "None yet." : `@${agent.id} (${agent.role})`, "");
-  const leadFacts = facts !== undefined && task.mode === "lead" && task.kind !== "chat" ? facts : undefined;
+  const leadFacts =
+    facts !== undefined && task.mode === "lead" && task.kind !== "chat" && caseOf(task) === undefined
+      ? facts
+      : undefined;
   if (leadFacts) lines.push(...leadPlanLines(leadFacts.lead), "");
   if (task.kind === "ops") lines.push(...opsLines(), "");
   if (caseOf(task) !== undefined) lines.push(...helperLines(), "");

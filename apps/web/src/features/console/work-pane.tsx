@@ -228,6 +228,13 @@ const CardView = memo(function CardView(props: RowProps) {
             : kase.symptom}
         </div>
       )}
+      {kase?.helper !== undefined && kase.helper.endedAt === undefined && (
+        <div className="cs-card-l">
+          @{kase.helper.agent}: {kase.helper.job}
+          {" · "}
+          <Clock since={kase.helper.startedAt} />
+        </div>
+      )}
       {running !== undefined && (
         <div className="cs-card-run">
           <span className="cs-card-ru">▶ Running</span>
