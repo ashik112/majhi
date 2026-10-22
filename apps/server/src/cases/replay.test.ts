@@ -102,7 +102,7 @@ async function script(r: Replay, steps: ReturnType<typeof step>[]) {
 }
 
 /** Ana's message, as Telegram delivers it. */
-function ana(over: Partial<ChatEnvelope>): ChatEnvelope {
+function ana(over: NonNullable<Parameters<typeof envelope>[0]>): ChatEnvelope {
   return envelope({
     chatId: ROOM_CHAT,
     chat: { title: "Orders for Initech", kind: "group", people: 3 },
