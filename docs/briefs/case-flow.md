@@ -124,3 +124,23 @@ Tests: only these two replays and the read/write command classifier (security), 
 - The owner sees it before merge.
 
 Rules: CLAUDE.md. No regex for decisions. Generic sample names in code, tests and docs (Acme, Globex; never the real client names in this brief). No AI in commits. Never push or merge, and never touch the live majhi or `~/.majhi`. One heavy job at a time.
+
+## Self-healing
+
+Added to the brief by the owner's lead, 2026-10-22.
+
+**Goal:** majhi repairs its own faults so a client message is always handled without the owner. An alert to the owner is the last resort.
+
+1. **Lane watchdog.** A server timer that is independent of the captain, the lanes and the runs checks each minute. Its trigger is a client message waiting more than 2 minutes with no captain turn running for its workspace. It then heals by cause, using typed pause reasons (no text matching):
+   - a captain lane paused by an error (run failed, sign-in check failed, docker refused, folder missing) is resumed automatically, up to 3 times with backoff (1, 3, 6 minutes);
+   - a signed-out or rate-limited account switches the lane to the workspace's fallback, then any healthy account allowed for that workspace (reuse the existing account fallback; read docs/DECISIONS.md for "one captain, one account");
+   - a missing task folder is recreated (already on main);
+   - a lane paused by the owner is never resumed.
+
+   Each heal writes one line in the case room: "majhi restarted the captain: <cause>".
+2. **Last-resort alert.** When a client message is still unanswered 10 minutes after it arrived, after the heals, majhi sends the owner a message through the owner's own notification path: the existing phone notifications or a Telegram DM to the owner if configured. Reuse what exists. The message is one message per case, saying what was tried: "Ana wrote 10 min ago in <chat>; the captain could not start: <cause>; tried: resume x3, account switch."
+3. **Replays.**
+   - **Replay 3:** the Acme replay, but the captain lane starts paused with a sign-in error and its folder deleted. Expected: healed within the replay, client answered, zero alerts, zero owner clicks.
+   - **Replay 4:** heals keep failing. Expected: exactly one alert at 10 minutes, and the client gets "We're looking into it" from the fallback text.
+
+   Both are rows in test-guarantees, with no other new tests.
