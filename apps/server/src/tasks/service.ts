@@ -462,6 +462,18 @@ export class TaskService {
   }
 
   /** `only`: just these tasks, in the order the list gives (a screen that heard they changed). */
+  /**
+   * The agents the board shows as working: those in a turn, and those that ended their turn to wait for a
+   * process of their own that majhi wakes them for. Neither is the owner's turn.
+   */
+  private workingOf(id: string): string[] {
+    const inTurn = this.deps.runs.working(id);
+    const waiting = (this.deps.processes?.list(id) ?? [])
+      .filter((p) => p.wait && p.status === "running")
+      .map((p) => p.agent);
+    return [...new Set([...inTurn, ...waiting])];
+  }
+
   list(includeDone: boolean, only?: readonly string[]): TaskSummary[] {
     const rows = this.deps.store.tasks.list(includeDone, only);
     const waiting = this.deps.store.room.tasksWaitingOnOwner();
@@ -470,7 +482,7 @@ export class TaskService {
       const hold = t.status === "paused" ? this.lifecycle.state(t.id)?.hold : undefined;
       return {
         ...t,
-        working: this.deps.runs.working(t.id),
+        working: this.workingOf(t.id),
         ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
         ...(hold === undefined ? {} : { hold: holdViewOf(hold) }),
       };
