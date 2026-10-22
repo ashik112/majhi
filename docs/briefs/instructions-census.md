@@ -38,8 +38,8 @@ Gaps: none left open. One removed line names a rule that no code can check and t
 | H8 | At Ask me a deploy asks | `cases/service.ts:712` |
 | H9 | A case with a helper has 60 calls and 90 minutes | `caseLimits`, `cases/record.ts:67`, read by `overBudget`, `cases/record.ts:77` |
 | H10 | The deploy and the rollback show in the summary | `closingLines`, `cases/record.ts:172`, added at close by `CaseService.close` |
-| H11 | A helper's failed check goes back to the helper, never to the captain's lane | `handoffTell`, `tasks/service.ts:4599` |
-| H12 | A case is never put in review, never paused by the idle watch, and its helper's report wakes the captain | `tasks/service.ts:4092`, `rooms/idle-watch.ts:161`, `CaseService.helperIdle`, `cases/service.ts:664` |
+| H11 | A helper's failed check goes back to the helper, never to the captain's lane | `handoffTell`, `tasks/service.ts:4614` |
+| H12 | A case is never put in review, never paused by the idle watch, and its helper's report wakes the captain | `tasks/service.ts:4090`, `rooms/idle-watch.ts:161`, `CaseService.helperIdle`, `cases/service.ts:664` |
 
 ## The captain, `ADMIN_PREAMBLE`
 

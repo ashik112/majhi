@@ -224,7 +224,7 @@ export interface TaskDeps {
    */
   onCaseAnswer?: (task: string, item: string, said: string, pick: Record<string, string>) => Promise<boolean>;
   /** A helper in a case has nothing left to do and nothing waits for it: it has reported, and the captain is woken. */
-  onCaseIdle?: (task: string) => Promise<void>;
+  onCaseIdle?: (task: string, stopped?: string) => Promise<void>;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -4087,14 +4087,17 @@ export class TaskService {
     }
     // The model's safeguards stopped the last step: the task is not finished. The idle watch hands
     // the step to the lead, or to the owner.
-    if (refused) return;
-    if (this.deps.runs.working(id).length > 0) return;
-    // A case is the captain's to close, never a piece of work to review: its helper going idle is its report. A
-    // helper that waits for a background process reports when that ends.
+    // A case is the captain's to close, never a piece of work to review: its helper going idle is its report, also
+    // when its model's safeguards ended the turn. A helper that waits for a background process reports when that ends.
     if (caseOf(task) !== undefined) {
-      if ((this.deps.processes?.waiting(id) ?? []).length === 0) await this.deps.onCaseIdle?.(id);
+      if (this.deps.runs.working(id).length > 0) return;
+      if ((this.deps.processes?.waiting(id) ?? []).length === 0) {
+        await this.deps.onCaseIdle?.(id, refused ? "its model's safeguards ended the turn" : undefined);
+      }
       return;
     }
+    if (refused) return;
+    if (this.deps.runs.working(id).length > 0) return;
     // An agent's question to the owner is still open: the task is not ready for review. Answering
     // it wakes the agent, and the task reaches review when the agents are idle again.
     if (this.ownerAnswerPending(id)) return;
@@ -4198,6 +4201,18 @@ export class TaskService {
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "paused") return;
+    // A case is never paused by its helper's run: the case is the captain's, and the helper's stop is told to it.
+    const helper = caseOf(task)?.helper?.agent;
+    if (helper !== undefined) {
+      const said = why ?? reason;
+      this.deps.room.post(id as TaskId, `error:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `@${helper} stopped working on the case: ${said}`,
+      });
+      await this.deps.onCaseIdle?.(id, said);
+      return;
+    }
     const row = this.lifecycle.load(id);
     if (row === undefined) return;
     const at = this.now().toISOString();

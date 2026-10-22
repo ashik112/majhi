@@ -1313,7 +1313,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onCaseAnswer: async (task, item, said, pick) => (await cases?.answered(task, item, said, pick)) === true,
-    onCaseIdle: async (task) => cases?.helperIdle(task),
+    onCaseIdle: async (task, stopped) => cases?.helperIdle(task, stopped),
     // The lead's team facts say when this computer is busy: more workers would slow every run.
     machineBusy: () => busyReason(machine.get()?.host),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
