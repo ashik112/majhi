@@ -3,6 +3,7 @@ import {
   type AllowRule,
   type AuthorityLevel,
   type CommandMeta,
+  caseOf,
   currentRules,
   DEFAULT_LEVEL,
   isAlwaysKind,
@@ -22,7 +23,7 @@ import { redactSecrets } from "../connections/redact.ts";
 import { UserError } from "../errors.ts";
 import { isIncidentTask } from "../incident/engine.ts";
 import type { RoomService } from "../room/service.ts";
-import type { Store } from "../store/index.ts";
+import type { RoomPayload, Store } from "../store/index.ts";
 import { permissionPayload } from "./items.ts";
 import type { RunLive } from "./live.ts";
 import { connectionToolKey, connectionVerdict, riskAllowKey, withoutUnaskedModes } from "./permissions.ts";
@@ -118,6 +119,8 @@ export class PermissionFlow {
       }
       return Promise.resolve(once.id);
     }
+    const refused = this.refusedInCase(run, ask, id, base);
+    if (refused !== undefined) return refused;
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
@@ -126,6 +129,34 @@ export class PermissionFlow {
       run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
       signal.addEventListener("abort", () => this.cancelOne(run, id), { once: true });
     });
+  }
+
+  /**
+   * A helper in a client case never asks the owner (docs/briefs/instructions.md): what the level does not allow is
+   * refused, with the card left as a line that says so, and the captain decides what to do about it. Resolves with
+   * the refusing option, or undefined when the run is not a case's.
+   */
+  private refusedInCase(
+    run: AgentRun,
+    ask: PermissionAsk,
+    id: string,
+    base: Omit<Extract<RoomPayload, { type: "permission" }>, "state" | "options" | "chosen">,
+  ): Promise<string | undefined> | undefined {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined || caseOf(task) === undefined) return undefined;
+    const no = ask.options.find((o) => o.kind === "reject_once" || o.kind === "reject_always");
+    this.deps.room.post(run.task, id, {
+      ...base,
+      options: ask.options,
+      state: "auto",
+      ...(no === undefined ? {} : { chosen: no.id }),
+    });
+    this.deps.room.post(run.task, `case-no:${id}`, {
+      type: "system",
+      level: "info",
+      text: `@${run.agent} asked for "${ask.title}", which the workspace's level does not allow. A helper in a case does not ask the owner: it was refused. The captain decides.`,
+    });
+    return Promise.resolve(no?.id);
   }
 
   /** The workspace's level, its saved Always rules and its incident switches, from the cached settings. */
@@ -206,6 +237,8 @@ export class PermissionFlow {
       this.logWrites(run, writes, "allow", "rule");
       return Promise.resolve(once.id);
     }
+    const refused = this.refusedInCase(run, ask, id, base);
+    if (refused !== undefined) return refused;
     // The agent's own "allow always" is dropped: it would let the CLI run the call again without asking.
     // A tool write gets majhi's own choices instead, which majhi keeps and enforces.
     const kept = once === undefined ? ask.options : ask.options.filter((o) => o.kind !== "allow_always");

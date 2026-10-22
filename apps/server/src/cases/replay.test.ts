@@ -1,10 +1,11 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { ChatEnvelope, OwnerDecision, RoomItem, TaskSummary } from "@majhi/shared";
+import type { ChatEnvelope, DeployRunStep, OwnerDecision, RoomItem, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONN, envelope } from "../chat/testing/world.ts";
 import type { RemoteRunFn } from "../connections/remote.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { git } from "../testing/fixtures.ts";
 
 /**
  * The replay of the outage that started the case flow (docs/briefs/case-flow.md): a client says slips are not
@@ -394,5 +395,232 @@ describe("the case replay when the captain's lane is down", () => {
     // The client has the fixed words, once.
     expect(r.sent).toHaveLength(1);
     expect(r.sent[0]).toContain("We're looking into it.");
+  });
+});
+
+/** The cases of the workspace, other than the captain's lane and the chats. */
+async function work(r: Replay): Promise<TaskSummary[]> {
+  const all = (await r.h.cmd("tasks.list", { includeDone: true })).body as TaskSummary[];
+  return all.filter((t) => t.lane !== true && t.chat !== true);
+}
+
+describe("a helper in a case", () => {
+  it("never messages the client, asks the owner or files a task, and a second helper is refused while one works", async () => {
+    const r = await replayWorld(stuckHost([]));
+    await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", new Date());
+    await script(r, [
+      step("majhi_chat_openIncident", {
+        room: r.room.id,
+        found: "Slips fail and the courier call is not made.",
+      }),
+    ]);
+    await wakeAndWait(r, 1);
+    const caseId = (await work(r))[0]?.id ?? "";
+    const { cases, admin, coordinator } = r.services;
+
+    // One helper, one job. A second job while it works is refused.
+    const started = await cases.help(r.lane.id, {
+      case: caseId,
+      job: "Read the worker's code and say what holds its slots",
+    });
+    expect(started.note).toContain("@acme-builder");
+    await expect(cases.help(r.lane.id, { case: caseId, job: "Another job" })).rejects.toThrow(
+      /One helper at a time/,
+    );
+
+    // What a helper may not do is refused where each call is made: a client message, a card for the owner, a task.
+    const helper = { agent: "acme-builder", task: caseId };
+    for (const [tool, args] of [
+      ["majhi_chat_reply", { room: r.room.id, text: "Hello", ...FLAGS }],
+      ["majhi_tasks_create", { text: "fix the worker", reason: "a try", ownerAsked: false }],
+      [
+        "majhi_case_ask",
+        {
+          question: "Deploy?",
+          options: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+        },
+      ],
+    ] as const) {
+      expect(await admin.call(helper, tool, args)).toMatchObject({
+        isError: true,
+        text: expect.stringContaining("helper"),
+      });
+    }
+    await expect(
+      coordinator.postAskCard(caseId, "acme-builder", [
+        { id: "q", question: "Merge it?", options: [{ id: "y", label: "Yes" }], freeText: false },
+      ]),
+    ).rejects.toThrow(/never asks the owner/);
+    expect(
+      cases.beforeCommand(caseId, "acme-host: docker restart acme-worker", "write", undefined),
+    ).toMatchObject({ how: "refuse" });
+
+    // Nothing reached the client or the owner, and no task was made.
+    await r.services.runs.idle(caseId);
+    expect(r.sent).toEqual([]);
+    expect((await owner(r)).decisions).toEqual([]);
+    expect((await work(r)).map((t) => t.typing?.type)).toEqual(["incident"]);
+  });
+});
+
+const PREVIOUS = "1111111111111111111111111111111111111111";
+const DEPLOY_RUNS: DeployRunStep[] = [
+  { kind: "github-workflow", remote: "origin", workflow: "deploy.yml", ref: "base" },
+];
+
+/** A host whose courier job has a bug in the code: nothing a restart clears, and the slips check works once fixed. */
+function codeBugHost(fixed: { value: boolean }): RemoteRunFn {
+  return async (_alias, command) => {
+    if (command.startsWith("docker logs"))
+      return { code: 0, output: "KeyError: 'carrier' in courier.status_sweep, again and again" };
+    if (command.startsWith("curl"))
+      return fixed.value ? { code: 0, output: "ok" } : { code: 22, output: "curl: (22) HTTP 500" };
+    return { code: 127, output: "not found" };
+  };
+}
+
+describe("the case replay when the fix needs code", () => {
+  it("has a helper write it, deploys it, reads the symptom and closes, with no card and no task", async () => {
+    const fixed = { value: false };
+    const r = await replayWorld(codeBugHost(fixed));
+    const { services } = r;
+    // The project went live before through a run majhi can repeat: that is the deploy path the captain uses.
+    const env = await r.h.cmd("projects.setEnvironments", {
+      project: "acme-api",
+      environments: [{ env: "production", tier: "production", check: "https://orders.acme.example/health" }],
+    });
+    expect(env.status).toBe(200);
+    const store = services.store;
+    const before = store.deploys.create({
+      org: "acme",
+      project: "acme-api",
+      env: "production",
+      commit: PREVIOUS,
+      state: "queued",
+      runs: DEPLOY_RUNS,
+      by: "owner",
+      at: new Date().toISOString(),
+    });
+    for (const [from, to] of [
+      ["queued", "running"],
+      ["running", "verifying"],
+      ["verifying", "live"],
+    ] as const)
+      store.deploys.move(before?.id ?? 0, from, to, new Date().toISOString());
+    // The deploy service itself is covered by the deploy test: here it goes live at the head the fix landed as.
+    const deployed: string[] = [];
+    vi.spyOn(services.deploy.service, "deploy").mockImplementation(async (input, actor) => {
+      if (!("project" in input)) throw new Error("A case deploy names its project");
+      const base = store.tasks.get(input.task ?? "")?.repos[0]?.base ?? "main";
+      const head = (await git(join(r.h.dir, "Work", "api"), "rev-parse", base)).trim();
+      const at = new Date().toISOString();
+      const made = store.deploys.create({
+        org: "acme",
+        project: input.project,
+        env: input.env,
+        commit: head,
+        state: "queued",
+        runs: input.runs,
+        by: actor,
+        ...(input.task === undefined ? {} : { task: input.task }),
+        at,
+      });
+      const id = made?.id ?? 0;
+      store.deploys.move(id, "queued", "running", at, { previous: PREVIOUS });
+      store.deploys.move(id, "running", "verifying", at);
+      const live = store.deploys.move(id, "verifying", "live", at);
+      deployed.push(`${input.project} ${input.env} ${actor}`);
+      fixed.value = true;
+      if (live === undefined) throw new Error("The fake deploy did not go live");
+      return { record: live, repeat: false };
+    });
+
+    const now = new Date();
+    await say(r, "print slips are not generated and orders cannot be sent to the courier", "1", now);
+    // The fake helper only sleeps for its job (a prompt line that starts with run: is a shell command to it). The fix
+    // itself is committed below, in the helper's worktree, while it sleeps.
+    const JOB = "run: sleep 2";
+    await writeFile(
+      join(r.lane.folder, "CAPTAIN_SCRIPT.json"),
+      JSON.stringify({
+        rules: [
+          {
+            when: "Client chat",
+            flags: "",
+            steps: [
+              step("majhi_chat_openIncident", {
+                room: r.room.id,
+                found: "The courier status sweep fails on a missing carrier.",
+              }),
+              step("majhi_case_status", { now: "Reading the courier job on the host" }),
+              ssh("docker logs --tail 50 acme-worker"),
+              step("majhi_chat_reply", { room: r.room.id, text: REPLY_1, ...FLAGS }),
+              step("majhi_case_help", { project: "acme-api", job: JOB }),
+            ],
+          },
+        ],
+      }),
+    );
+    const first = await wakeAndWait(r, 5);
+    expect(first.every((d) => !d.isError)).toBe(true);
+    const caseId = (await work(r))[0]?.id ?? "";
+    const branch = services.cases.recordOf(caseId)?.helper?.branch ?? "";
+    expect(branch).not.toBe("");
+
+    // The helper's fix: a commit on its branch, in its own worktree of the project.
+    const worktree = services.store.tasks.get(caseId)?.repos[0]?.worktree ?? "";
+    await writeFile(join(worktree, "sweep-fix.txt"), "skip a missing carrier\n");
+    await git(worktree, "add", "-A");
+    await git(worktree, "commit", "-m", "fix(courier): skip a missing carrier");
+
+    // The helper reports back in the case; the captain deploys what it wrote, reads the symptom and closes.
+    await writeFile(
+      join(r.lane.folder, "CAPTAIN_SCRIPT.json"),
+      JSON.stringify({
+        rules: [
+          {
+            when: "reported back on case",
+            flags: "",
+            steps: [
+              step("majhi_case_deploy", { branch }),
+              ssh("curl -sf localhost:8000/slips/health"),
+              step("majhi_case_close", {
+                summary: [
+                  "Slips and courier orders failed.",
+                  "The courier status sweep failed on a missing carrier in the code.",
+                  "A helper fixed it and the fix went out through the project's own deploy.",
+                  "The slips check answers again.",
+                ].join("\n"),
+                tell: { text: REPLY_2, ...FLAGS },
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+    await w?.until(async () => (await lines(r)).length >= 8, "the captain's turn after the helper");
+    await services.runs.idle(r.lane.id);
+    const done = await lines(r);
+    expect(done.slice(5).map((d) => [d.tool, d.isError])).toEqual([
+      ["majhi_case_deploy", false],
+      ["ssh", false],
+      ["majhi_case_close", false],
+    ]);
+
+    // One case, closed. No second task, no card for the owner, two messages to the client.
+    expect((await work(r)).map((t) => [t.typing?.type, t.status])).toEqual([["incident", "done"]]);
+    expect((await owner(r)).decisions).toEqual([]);
+    expect(r.sent).toHaveLength(2);
+    // The fix landed through the helper's branch, was deployed once through the captain, and the summary says so.
+    expect(deployed).toEqual(["acme-api production captain"]);
+    const kase = services.cases.recordOf(caseId);
+    expect(kase?.helper).toMatchObject({ agent: "acme-builder", project: "acme-api", branch });
+    expect(kase?.deploys).toMatchObject([{ env: "production", previous: PREVIOUS, state: "live" }]);
+    expect(kase?.summary?.split("\n").at(-1)).toBe(
+      `Deployed ${branch} to acme-api production (replaced 1111111).`,
+    );
   });
 });

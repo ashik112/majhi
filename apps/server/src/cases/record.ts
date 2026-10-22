@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import {
+  CASE_HELPER_MAX_CALLS,
+  CASE_HELPER_MAX_MS,
   CASE_MAX_CALLS,
   CASE_MAX_MS,
   type CaseCommand,
+  type CaseDeploy,
   type CaseFollowUp,
+  type CaseHelper,
   type CaseRecord,
+  type CaseRollback,
 } from "@majhi/shared";
 
 /**
@@ -58,13 +63,21 @@ export function fingerprint(output: string): string {
 
 export type Over = "calls" | "time";
 
+/** What a case may spend: more once a helper works in it, because its calls count and a fix takes longer. */
+export function caseLimits(record: Pick<CaseRecord, "helper">): { calls: number; ms: number } {
+  return record.helper === undefined
+    ? { calls: CASE_MAX_CALLS, ms: CASE_MAX_MS }
+    : { calls: CASE_HELPER_MAX_CALLS, ms: CASE_HELPER_MAX_MS };
+}
+
 /**
  * Whether the case has used up what it may. `turnMs` is the time of the turn running now, which the record does not
  * hold yet. A case that stopped stays over until the owner gives it more.
  */
 export function overBudget(record: CaseRecord, turnMs = 0): Over | undefined {
-  if (record.calls > CASE_MAX_CALLS) return "calls";
-  if (record.ms + turnMs >= CASE_MAX_MS) return "time";
+  const limits = caseLimits(record);
+  if (record.calls > limits.calls) return "calls";
+  if (record.ms + turnMs >= limits.ms) return "time";
   return undefined;
 }
 
@@ -86,10 +99,90 @@ export function withStop(record: CaseRecord, at: string, why: string): CaseRecor
   return { ...record, stopped: { at, why: why.slice(0, 300) } };
 }
 
-export function overWords(over: Over): string {
+export function overWords(over: Over, record: Pick<CaseRecord, "helper">): string {
+  const limits = caseLimits(record);
   return over === "calls"
-    ? `the case used its ${CASE_MAX_CALLS} tool calls`
-    : `the case used its ${Math.round(CASE_MAX_MS / 60_000)} minutes of captain time`;
+    ? `the case used its ${limits.calls} tool calls`
+    : `the case used its ${Math.round(limits.ms / 60_000)} minutes`;
+}
+
+// ---------------------------------------------------------------------------
+// The helper, the deploys and the rollback
+
+/** A job as the case keeps and shows it: one line. The helper itself hears the job as it was written. */
+export function oneLine(text: string, max = 300): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .join(" ");
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** A helper that was given a job and has not reported back yet. */
+export function helperWorking(record: CaseRecord): boolean {
+  return record.helper !== undefined && record.helper.endedAt === undefined;
+}
+
+export function withHelper(record: CaseRecord, helper: CaseHelper): CaseRecord {
+  return { ...record, helper };
+}
+
+/**
+ * The helper reported back: its time since it began (or since its last report) counts against the case, and what it
+ * said is kept. A helper the checks sent back to work reports again, and counts only the new time.
+ */
+export function withHelperEnded(record: CaseRecord, at: string, report: string | undefined): CaseRecord {
+  if (record.helper === undefined) return record;
+  const spent = Math.max(0, Date.parse(at) - Date.parse(record.helper.endedAt ?? record.helper.startedAt));
+  return {
+    ...withTime(record, Number.isNaN(spent) ? 0 : spent),
+    helper: {
+      ...record.helper,
+      endedAt: at,
+      ...(report === undefined || report.trim() === "" ? {} : { report: report.trim().slice(0, 600) }),
+    },
+  };
+}
+
+/** A deploy of the case's fix: a change, so the symptom is read again before the case closes. */
+export function withDeploy(record: CaseRecord, deploy: CaseDeploy): CaseRecord {
+  return { ...record, deploys: [...(record.deploys ?? []), deploy].slice(-5), changes: record.changes + 1 };
+}
+
+/** The latest deploy entry, replaced once its record and its end are known. */
+export function withDeployEnded(record: CaseRecord, deploy: CaseDeploy): CaseRecord {
+  const rest = (record.deploys ?? []).slice(0, -1);
+  return { ...record, deploys: [...rest, deploy] };
+}
+
+/** The case's one rollback: made once, whether or not it worked. */
+export function withRollback(record: CaseRecord, rollback: CaseRollback): CaseRecord {
+  return { ...record, rollback, changes: record.changes + 1 };
+}
+
+/** The deploy a rollback goes back from: the last one of the case, when it went live and nothing rolled it back. */
+export function rollbackTarget(record: CaseRecord): CaseDeploy | undefined {
+  if (record.rollback !== undefined) return undefined;
+  const last = record.deploys?.at(-1);
+  return last?.state === "live" && last.record !== undefined ? last : undefined;
+}
+
+/** What the owner reads about the deploys in the summary: one line each, added by majhi, never left to the captain. */
+export function closingLines(record: CaseRecord): string[] {
+  const lines = (record.deploys ?? []).map((d) =>
+    d.state === "live"
+      ? `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${d.previous.slice(0, 7)}).`
+      : `Deployed ${d.branch} to ${d.project} ${d.env} (replaced ${d.previous.slice(0, 7)}): it did not go live.`,
+  );
+  if (record.rollback !== undefined) {
+    lines.push(
+      record.rollback.ok
+        ? `Rolled back to ${record.rollback.to.slice(0, 7)}.`
+        : `Tried to roll back to ${record.rollback.to.slice(0, 7)}: it did not work.`,
+    );
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------

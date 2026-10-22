@@ -3168,3 +3168,16 @@ What works:
 Checked: `pnpm -r typecheck`; biome (no errors); the two tests; `pnpm exec vitest run` (119 files, 595 tests passed, 1 skipped); first-load JS: main chunk 147.3 KB gzip (budget 150); the old addresses in a browser; shots of every approved mockup at 1440 and 1100, dark.
 
 Left and known: the walk of every place in light and dark was skipped on the owner's order; the account id is `<tool>-me` (recorded in DECISIONS); the "Client told ..." line on an incident card shows only for a real case; setup's host-sign-in and folder suggestions need a real host helper to see.
+
+## Short instructions, helpers in a case, the captain deploys, 2026-10-22 (branch feat/short-instructions, not merged)
+
+Plan: the brief is `docs/briefs/instructions.md`, built in its order: (1) the two texts, (2) helpers in a case, (3) the captain deploys. Tests: the three the brief names, rows 104l to 104n of `docs/briefs/test-guarantees.md`, and the four case replays that were already there.
+
+What works:
+- The captain reads one text (`apps/server/src/admin/captain-text.ts`, 766 words with the writing rule and the screen map, down from 1,603 for the owner's chats and 3,782 for a lane). A task agent's TASK.md Rules are one text (`tasks/agent-text.ts`, 236 words, down from 997). What a rule said about one tool moved into that tool's description; every removed line is in `docs/briefs/instructions-census.md` with where it went.
+- `majhi_case_help { case, agent?, project?, job }`: one helper per case, in the case's own room and folder, on a branch and worktree of the project for a code fix. It cannot message the client, ask the owner, file a task, merge or close. Its report wakes the captain. Home shows "@agent: job" with a clock while it works. A case with a helper has 60 calls and 90 minutes.
+- `majhi_case_deploy { case, branch }` at Routine and Full: the checks pass, the branch lands, the project's own deploy runs, the version it replaces is noted first. `majhi_case_rollback { case }` puts it back, once. The case summary in Done today says both.
+
+Checked: typecheck of shared, server and web; biome on the changed files; the case replays (six tests) and the deploy test; the full `pnpm exec vitest run` once at the end (121 files, 601 tests passed, 1 skipped).
+
+Left and known: a project with no environment that ever went live through a repeatable run has no deploy path, so a fix there still asks the owner with one card. A project with several production environments asks too. The call to `majhi_case_deploy` waits for the deploy's own answer, up to 30 minutes. No walk in a throwaway majhi was done, on the owner's order.

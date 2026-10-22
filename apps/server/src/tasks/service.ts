@@ -223,6 +223,8 @@ export interface TaskDeps {
    * the answer instead. True when the task is a case and the answer was taken.
    */
   onCaseAnswer?: (task: string, item: string, said: string, pick: Record<string, string>) => Promise<boolean>;
+  /** A helper in a case has nothing left to do and nothing waits for it: it has reported, and the captain is woken. */
+  onCaseIdle?: (task: string, stopped?: string) => Promise<void>;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -3038,12 +3040,23 @@ export class TaskService {
       );
     }
     // An incident that began as a read of the whole workspace becomes code work once its lead names the project.
+    // A client case reads the project it points at; a helper's code fix turns that read into a branch and a worktree.
+    const forCase = caseOf(task) !== undefined;
     const unscoped =
       task.kind === "ops" &&
       task.typing?.type === "incident" &&
-      task.repos.length === 0 &&
-      (task.readMounts ?? []).length === 0;
-    if (unscoped) this.deps.store.tasks.setKind(task.id, "code", this.now().toISOString());
+      (forCase || (task.repos.length === 0 && (task.readMounts ?? []).length === 0));
+    if (unscoped) {
+      const at = this.now().toISOString();
+      this.deps.store.tasks.setKind(task.id, "code", at);
+      if (forCase) {
+        this.deps.store.tasks.setReadMounts(
+          task.id,
+          (task.readMounts ?? []).filter((m) => m.path !== project.path),
+          at,
+        );
+      }
+    }
     if (task.kind === "ops" && !unscoped) {
       throw new UserError(
         `${task.id} is an investigation: it reads repos, it does not branch them. Say which repo to read in the room.`,
@@ -3073,6 +3086,59 @@ export class TaskService {
     else await this.refreshBriefs([task.id]);
     await this.afterRepoChange(task);
     return this.get(task.id);
+  }
+
+  /**
+   * A helper for a client case (docs/briefs/instructions.md): an agent of the case's workspace joins the case task
+   * and gets the job as its first message. The case is the task, so its room, folder and worktrees are the helper's
+   * own: for a code fix `addRepo` makes the branch and the worktree the way it does for any task, and nothing is
+   * copied. The captain never helps itself, and the agent must be one that may work in the workspace.
+   */
+  async startCaseHelper(input: {
+    id: string;
+    agent?: string | undefined;
+    project?: string | undefined;
+    job: string;
+    by: string;
+    /** Called once the agent and its branch are known, before it hears the job: the case keeps them. */
+    remember?: ((agent: string, branch: string | undefined) => void) | undefined;
+  }): Promise<{ agent: string; branch: string | undefined }> {
+    const task = this.get(input.id);
+    if (caseOf(task) === undefined || task.org === undefined) {
+      throw new UserError(`${input.id} is not a client case.`, 409);
+    }
+    const sections = await this.deps.config.sections();
+    const boss = sections.boss;
+    const agents = (await this.frontmatters()).filter((a) => a.id !== boss);
+    const views = await this.deps.accounts.list();
+    const held = await this.heldAccounts(views);
+    const accountStatus = new Map(views.map((v) => [v.id, v.status]));
+    const agent = input.agent ?? pickDefaultAgent({ agents, org: task.org, boss, accountStatus, held });
+    if (agent === undefined) {
+      throw new UserError(
+        `No agent but the captain can work in "${task.org}", so there is no helper. Create one on the Agents page.`,
+        409,
+      );
+    }
+    if (agent === boss) throw new UserError("The captain is not its own helper: name another agent.", 409);
+    await this.checkMember(task, agent);
+    let branch: string | undefined;
+    if (input.project !== undefined) {
+      const changed = await this.addRepo({ id: task.id, project: input.project, byOwner: false });
+      branch = changed.repos.find((r) => r.project === input.project)?.branch;
+    }
+    if (!this.get(task.id).team.includes(agent)) await this.addToTeam(task.id, agent);
+    input.remember?.(agent, branch);
+    await this.refreshBriefs([task.id]);
+    await this.send({
+      task: task.id,
+      text: input.job,
+      attachments: [],
+      mode: "queue",
+      agent,
+      by: input.by,
+    });
+    return { agent, branch };
   }
 
   /**
@@ -4021,6 +4087,15 @@ export class TaskService {
     }
     // The model's safeguards stopped the last step: the task is not finished. The idle watch hands
     // the step to the lead, or to the owner.
+    // A case is the captain's to close, never a piece of work to review: its helper going idle is its report, also
+    // when its model's safeguards ended the turn. A helper that waits for a background process reports when that ends.
+    if (caseOf(task) !== undefined) {
+      if (this.deps.runs.working(id).length > 0) return;
+      if ((this.deps.processes?.waiting(id) ?? []).length === 0) {
+        await this.deps.onCaseIdle?.(id, refused ? "its model's safeguards ended the turn" : undefined);
+      }
+      return;
+    }
     if (refused) return;
     if (this.deps.runs.working(id).length > 0) return;
     // An agent's question to the owner is still open: the task is not ready for review. Answering
@@ -4126,6 +4201,18 @@ export class TaskService {
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "paused") return;
+    // A case is never paused by its helper's run: the case is the captain's, and the helper's stop is told to it.
+    const helper = caseOf(task)?.helper?.agent;
+    if (helper !== undefined) {
+      const said = why ?? reason;
+      this.deps.room.post(id as TaskId, `error:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `@${helper} stopped working on the case: ${said}`,
+      });
+      await this.deps.onCaseIdle?.(id, said);
+      return;
+    }
     const row = this.lifecycle.load(id);
     if (row === undefined) return;
     const at = this.now().toISOString();
@@ -4524,7 +4611,8 @@ export class TaskService {
     if (task.status !== "running" && task.status !== "review") {
       throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
     }
-    const lead = task.team[0];
+    // A case's failed check goes back to its helper: the captain is not a member of the case's team.
+    const lead = caseOf(task)?.helper?.agent ?? task.team[0];
     if (lead === undefined) throw new UserError(`${task.id} has no agent.`, 409);
     const first = input.text.split("\n").slice(0, 3).join(" ").slice(0, 300);
     const f = input.failed;
@@ -4697,7 +4785,9 @@ function ideaLine(reason: IdeaReason, askedToStart: boolean): string {
 }
 
 function briefTeam(task: Task, agents: readonly AgentFrontmatter[]): BriefAgent[] {
-  return task.team.flatMap((id) => {
+  // A case's brief is its helper's: the captain works the case from its lane and is no member of a team with a plan.
+  const helper = caseOf(task)?.helper?.agent;
+  return (helper === undefined ? task.team : [helper]).flatMap((id) => {
     const fm = agents.find((a) => a.id === id);
     if (fm === undefined) return [];
     const o: TeamOverride | undefined = task.overrides[id];

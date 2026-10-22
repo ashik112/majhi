@@ -104,7 +104,12 @@ export const QueueItemSchema = z.object({
    * unreachable), `available` once it is also under its limit. majhi reads the account each minute,
    * sets `readyAt` when the wait lifts and wakes the captain with one line.
    */
-  waitFor: z.object({ account: IdSchema, state: z.enum(["signed-in", "available"]) }).optional(),
+  waitFor: z
+    .object({ account: IdSchema, state: z.enum(["signed-in", "available"]) })
+    .optional()
+    .describe(
+      "When the work waits for an account, set this instead of writing a belief about the account in why: majhi checks the account every minute, marks the item READY and wakes you the moment it holds. A wait for an account that already meets it is refused. Read an account's state in the digest or with accounts_list, never from memory",
+    ),
   /** Set by majhi: when the account condition of `waitFor` came true. Cleared when it stops holding. */
   readyAt: z.string().optional(),
 });

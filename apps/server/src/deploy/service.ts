@@ -539,6 +539,20 @@ export class DeployService {
     }
   }
 
+  /**
+   * Whether these runs can be put back: every one of them can run again for an earlier commit (see `goBack`). A
+   * deploy that cannot be put back is not started by the captain on its own.
+   */
+  repeatable(runs: readonly DeployRunStep[]): boolean {
+    return runs.length > 0 && runs.every((step) => this.deps.providers[step.kind].redeploy !== undefined);
+  }
+
+  /** Whether the project's remote is on a host the deploy runs reach, so a landed commit must be pushed first. */
+  async onHost(projectId: string): Promise<boolean> {
+    const project = await this.deps.projects.get(projectId).catch(() => undefined);
+    return project !== undefined && (await this.deps.repoRef(project)) !== undefined;
+  }
+
   /** The deploys whose rollback is running now. */
   rollingBackIds(): number[] {
     return [...this.rollingBack];

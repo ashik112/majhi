@@ -1,3 +1,4 @@
+import { caseOf } from "@majhi/shared";
 import type { ShipCheck } from "../captain/ports.ts";
 import { git, operationInProgress } from "../git/git.ts";
 import { mergeConflicts } from "../git/merge.ts";
@@ -30,12 +31,18 @@ const WAITING = ["approval", "ask", "choice", "owner-question", "secret-request"
 export async function shipReadiness(deps: ReadyDeps, id: string, except?: string): Promise<ShipCheck> {
   const { store } = deps;
   const task = store.tasks.get(id);
-  if (task === undefined || task.status !== "review")
+  // A client case is never in review: the captain works it, and its helper's fix is checked for the deploy while the
+  // case is running. Everything else below (an agent still working, a conflict, uncommitted work, a secret) applies.
+  const inCase = task !== undefined && caseOf(task) !== undefined;
+  if (task === undefined || (task.status !== "review" && !inCase))
     return { ready: false, why: "it is not in review", owner: true };
   if (deps.runs.working(id).length > 0)
     return { ready: false, why: "an agent is still working", owner: true };
   deps.room.flush(id);
-  const waiting = WAITING.find((type) => store.room.pendingOfType(id, type).some((i) => i.id !== except));
+  // The cards of a case are the captain's own (its one card for the owner): they are not a lead waiting on a merge.
+  const waiting = inCase
+    ? undefined
+    : WAITING.find((type) => store.room.pendingOfType(id, type).some((i) => i.id !== except));
   if (waiting !== undefined) {
     const card = waiting.replace("-", " ");
     return {

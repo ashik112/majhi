@@ -19,6 +19,7 @@ import {
   isOwnerChat,
   type Job,
   type MrHost,
+  mergeVerdictLine,
   NotificationsSettingsSchema,
   OWNER,
   PRIVATE,
@@ -74,6 +75,7 @@ import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { LaneWatchdog } from "./captain/watchdog.ts";
 import { captainWorld } from "./captain/world.ts";
+import { CaseDeployer } from "./cases/deploy.ts";
 import { CaseService } from "./cases/service.ts";
 import { waitsForCaptain } from "./chat/desk.ts";
 import type { ClientChat } from "./chat/service.ts";
@@ -1311,6 +1313,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onCaseAnswer: async (task, item, said, pick) => (await cases?.answered(task, item, said, pick)) === true,
+    onCaseIdle: async (task, stopped) => cases?.helperIdle(task, stopped),
     // The lead's team facts say when this computer is busy: more workers would slow every run.
     machineBusy: () => busyReason(machine.get()?.host),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -3084,6 +3087,49 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   cases = new CaseService({
     store,
     room,
+    helpers: {
+      start: ({ task, ...rest }) => tasks.startCaseHelper({ id: task, ...rest }),
+      lastWords: (task, agent) => {
+        room.flush(task);
+        const said = store.room
+          .page(task, 60)
+          .items.find((i) => i.type === "agent" && i.agent === agent && i.text.trim() !== "");
+        return said?.type === "agent" ? said.text.trim() : undefined;
+      },
+      busy: (task) => runs.busy(task),
+    },
+    deployer: new CaseDeployer({
+      environments: async (project) => (await projects.get(project).catch(() => undefined))?.deploy ?? [],
+      latestLive: (project, env) => store.deploys.latestLive(project, env),
+      repeatable: (runs) => deployWorld.service.repeatable(runs),
+      onHost: (project) => deployWorld.service.onHost(project),
+      checks: async (task) => {
+        // The hand-off checks of the case's head, run once per head, and the merge rule the merge itself will read.
+        const checked = await handoffService?.ensure(task, { force: false });
+        if (checked === undefined) return { ok: false, why: "the hand-off check is not ready yet" };
+        if (checked.verdict === "red") {
+          const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
+          return { ok: false, why: first.split("\n")[0] ?? first };
+        }
+        const rule = await tasks.mergeChecks(task);
+        return rule.verdict.kind === "ok" ? { ok: true } : { ok: false, why: mergeVerdictLine(rule.verdict) };
+      },
+      land: async (task, project, push) => {
+        // The same merge every ship goes through: its rule refuses a head whose checks did not pass.
+        const landed = push
+          ? await mrs.mergeAndPush({ id: task, project, done: false, by: "captain" })
+          : await tasks.merge({ id: task, project, done: false, settle: false, by: "captain" });
+        const failed = landed.results.find((r) => !r.ok && r.skipped !== true);
+        if (failed !== undefined) throw new UserError(`${failed.project}: ${failed.detail}`, 409);
+      },
+      deploy: (input, actor) => deployWorld.service.deploy(input, actor),
+      rollback: (id, actor) => deployWorld.service.rollback(id, actor),
+      record: (id) => store.deploys.get(id),
+      now: () => options.runClock?.() ?? new Date(),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      pollMs: options.deploy?.timing?.pollMs ?? 2_000,
+      waitMs: 30 * 60_000,
+    }),
     tasks: {
       setStatusLines: (id, lines) => tasks.setStatusLines(id, lines),
       close: (id, opts) => tasks.close(id, opts),

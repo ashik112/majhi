@@ -79,10 +79,14 @@ import {
 import {
   CaseAskInputSchema,
   CaseCloseInputSchema,
+  CaseDeployInputSchema,
+  CaseDeployResultSchema,
   CaseFollowUpInputSchema,
+  CaseHelpInputSchema,
   CaseMadeTaskSchema,
   CaseMakeTaskInputSchema,
   CaseOkSchema,
+  CaseRollbackInputSchema,
   CaseStatusInputSchema,
   CaseStopInputSchema,
 } from "./case.ts";
@@ -999,7 +1003,7 @@ export const commands = {
   "decisions.recommend": {
     risk: "change",
     summary:
-      "The captain's tool: record which option of a decision you recommend, with a one-line reason. The owner sees it on the decision. Captain only, in its lane's workspace",
+      "The captain's tool: record which option of a decision you recommend, with a one-line reason. The owner sees it on the decision. Captain only, in its lane's workspace. Use it instead of writing \"I would choose X\" in chat. It works whether Autonomous is on or off, and it answers nothing: the owner decides",
     input: DecisionRecommendInputSchema,
     output: z.object({ id: z.string(), option: z.string() }),
   },
@@ -1193,7 +1197,7 @@ export const commands = {
   "ops.ack": {
     risk: "change",
     summary:
-      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. Agents acknowledge their own workspace's incidents through the owner's approval",
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. Agents acknowledge their own workspace's incidents through the owner's approval. When the owner hands you an incident, look into it and fix what you can first, then acknowledge it",
     input: OpsAckInputSchema,
     output: OpsIncidentSchema,
   },
@@ -1266,14 +1270,15 @@ export const commands = {
   },
   "watch.test": {
     risk: "read",
-    summary: "Run a watch's check once, without saving it",
+    summary:
+      "Run a watch's check once, without saving it. Never tell the owner majhi cannot read a number before you tried it here: to read one from any service, write a script watch and run it once with this tool. Use curl or the service's CLI with the connection's token ($<ID>_TOKEN, or its own variable like DIGITALOCEAN_ACCESS_TOKEN; a CLI reads its variable itself, and curl gets the header from stdin with `printf 'Authorization: Bearer %s\\n' \"$VAR\" | curl -H @- ...`, never as an argument, because arguments show in the process list), and parse JSON with jq or Prometheus text with awk or grep. Many services publish metrics over HTTP: a REST monitoring API, or a /metrics address whose login an API call returns. Say why a check fails, with its error, only after a test shows it",
     input: WatchTestInputSchema,
     output: WatchTestResultSchema,
   },
   "watch.save": {
     risk: "change",
     summary:
-      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). Agents may save watches that only alert, look into it or draft a status note; a fix, an action, steps to follow or a phone page are the owner's",
+      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). Agents may save watches that only alert, look into it or draft a status note; a fix, an action, steps to follow or a phone page are the owner's: propose those with one ask card. Watches run on majhi's own clock, without a model. Use a plain kind (website, database, server, metric on a connection's tool, and the rest). When none can read the signal, write a script watch: a short read-only script (curl, jq, python3, kubectl, glab, gh) with the connections it needs, test it once, then save it. Keep custom for what no script can check. When a plain watch fails, report the exact error; do not switch to custom to get around it, and do not claim a setting changed unless you read it back. After an incident, read watch_overview first and tighten or extend a watch that already covers the signal: never add a second one for the same thing",
     input: WatchSaveInputSchema,
     output: WatchViewSchema,
   },
@@ -1640,7 +1645,7 @@ export const commands = {
   "case.ask": {
     risk: "read",
     summary:
-      "The captain asks the owner once, with buttons, for what cannot be undone: deploying new code, changing env or config files on a host, writing to a database or deleting data or volumes, spending money. Put one plain question and two to four buttons. The case goes on with whatever does not need the answer, and you are woken here with the owner's pick",
+      "The captain asks the owner once, with buttons, for what cannot be undone: changing env or config files on a host, writing to a database or deleting data or volumes, spending money, or deploying a fix when the workspace is at Ask me (at Routine and Full you deploy it yourself with case_deploy). Put one plain question and two to four buttons. The case goes on with whatever does not need the answer, and you are woken here with the owner's pick",
     input: CaseAskInputSchema,
     output: CaseOkSchema,
   },
@@ -1654,8 +1659,29 @@ export const commands = {
   "case.stop": {
     risk: "read",
     summary:
-      "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its 20 tool calls or 30 minutes",
+      "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its tool calls or its minutes (20 and 30, or 60 and 90 once a helper works in it)",
     input: CaseStopInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.help": {
+    risk: "read",
+    summary:
+      "The captain gives one job to one helper, inside a client case: an agent of the workspace (its lead by default) works the job in the case's own room and folder and reports back to you there. Give the job in one line. For a code fix, name the project: the helper gets a branch and a worktree of it. One helper at a time: a second call while it works is refused. A helper never writes to the client, never asks the owner and never files a task. Its tool calls count against the case, which then has 60 calls and 90 minutes",
+    input: CaseHelpInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.deploy": {
+    risk: "read",
+    summary:
+      "The captain deploys the fix a helper wrote, at Routine or Full (at Ask me a deploy asks the owner with case_ask). It goes only through the project's own deploy, the way majhi deployed it before, and only when the branch's checks passed. majhi notes the version it replaces. It answers once the environment's own check says live or failed. Then check the client's symptom with a read. Refused when the project has no known deploy to repeat: ask the owner once with case_ask",
+    input: CaseDeployInputSchema,
+    output: CaseDeployResultSchema,
+  },
+  "case.rollback": {
+    risk: "read",
+    summary:
+      "The captain puts back the version its case deploy replaced, through the same deploy. Allowed once per case and without asking: use it when the symptom is worse after the deploy, and say so in the case",
+    input: CaseRollbackInputSchema,
     output: CaseOkSchema,
   },
   "case.makeTask": {
@@ -1669,7 +1695,7 @@ export const commands = {
     // `read` on purpose, like chat.reply: the Start row and the chat rules decide whether it starts or waits for the owner.
     risk: "read",
     summary:
-      "The captain, in its workspace lane, makes a task from a client chat's message (origin: the client) and starts it when the owner's Start row allows; otherwise it waits as a card for the owner. When the task is ready you are woken here to tell the client. Set readOnly for a question that needs a look, not a change",
+      "The captain, in its workspace lane, makes a task from a client chat's message (origin: the client) and starts it when the owner's Start row allows; otherwise it waits as a card for the owner. When the task is ready you are woken here to tell the client. Set readOnly for a question that needs a look, not a change. A question that only needs an answer is not a task: find the answer and reply. When you start a task, say so in your reply",
     input: ChatStartTaskInputSchema,
     output: ChatStartTaskResultSchema,
   },
@@ -2069,7 +2095,8 @@ export const commands = {
   },
   "projects.register": {
     risk: "change",
-    summary: "Register a repo as a project of an org, with aliases for the task box",
+    summary:
+      "Register a repo as a project of an org, with aliases for the task box. The captain may register a repo that sits in its workspace's folder as upkeep",
     input: z.object({ id: IdSchema }).extend(
       ProjectConfigSchema.pick({
         org: true,
@@ -2842,7 +2869,7 @@ export const commands = {
   "tasks.look": {
     risk: "read",
     summary:
-      "Read a task's working folder without changing anything: for each repo its branch and `git status` (uncommitted changes), and the files. Give path (from the repo root) to read one file or list one folder; with more than one repo, give project too",
+      "Read a task's working folder without changing anything: for each repo its branch and `git status` (uncommitted changes), and the files. Give path (from the repo root) to read one file or list one folder; with more than one repo, give project too. To show the owner a task's output, link it as /api/tasks/<task-id>/files/<relative-path>, not a path relative to your own chat. The task folders and every registered project are mounted read-only in your runs, at the same path as on the owner's machine: read them directly (cat, grep, ls), and never create a task just to look at code",
     input: z.object({
       id: TaskIdSchema,
       project: IdSchema.optional(),
@@ -3473,7 +3500,7 @@ export const commands = {
   "toolbox.install": {
     risk: "change",
     summary:
-      "Install a command-line tool (a release binary, no sudo) into the workspace's tools folder, where later runs, watch scripts and secret fetches find it on PATH. majhi downloads it itself over https and installs it only when its SHA-256 matches the vendor's: pass sha256, or checksumUrl for the vendor's checksums file. Use {arch} (amd64 or arm64) or {machine} (x86_64 or aarch64) in the url to match the runner's CPU. archive is binary, tar.gz or zip, and path is the program inside it. Prefer this to downloading a binary inside a run",
+      "Install a command-line tool (a release binary, no sudo) into the workspace's tools folder, where later runs, watch scripts and secret fetches find it on PATH. majhi downloads it itself over https and installs it only when its SHA-256 matches the vendor's: pass sha256, or checksumUrl for the vendor's checksums file. Use {arch} (amd64 or arm64) or {machine} (x86_64 or aarch64) in the url to match the runner's CPU. archive is binary, tar.gz or zip, and path is the program inside it. Prefer this to downloading a binary inside a run: do not download binaries by hand, and there is no sudo or apt. A script that only builds a URL or connection string from variables (no call out) runs with the network off",
     input: ToolInstallInputSchema,
     output: InstalledToolSchema,
   },
@@ -4321,7 +4348,7 @@ export const commands = {
   "captain.reportBug": {
     risk: "change",
     summary:
-      "File a fix task on majhi's own project in the Private workspace for a bug in majhi itself (an error that starts with 'majhi problem:', a check majhi runs wrong, a refusal that contradicts an approval). Works from any workspace's thread. Write the exact error, what you did and what you expected; nothing else of the workspace",
+      "File a fix task on majhi's own project in the Private workspace for a bug in majhi itself (an error that starts with 'majhi problem:', a check majhi runs wrong, a refusal that contradicts an approval, a missing program on its server, a tool it routes wrong). Works from any workspace's thread, and never from a client case: a case files no bugs. Do not work around such an error and do not ask the owner to fix it by hand: file it here, then tell the owner in one line with the task id. Write the exact error, what you did and what you expected; nothing else of the workspace",
     input: z.object({
       title: z.string().trim().min(1).max(120),
       details: z.string().trim().min(1).max(4000),
@@ -4366,7 +4393,7 @@ export const commands = {
   "autonomy.plan": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the captain: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time",
+      "Autonomous mode only, for the captain: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time. Record it after each wake",
     input: AutonomyPlanInputSchema,
     output: z.object({ queue: z.number().int().nonnegative() }),
   },
