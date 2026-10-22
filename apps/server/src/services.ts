@@ -66,7 +66,7 @@ import { TurnContext } from "./captain/context.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { CaptainHears } from "./captain/hears.ts";
 import { Lanes } from "./captain/lanes.ts";
-import { authorityOf, levelOf, workspaceIds } from "./captain/levels.ts";
+import { authorityOf, incidentShipsOf, levelOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
 import { Pointers } from "./captain/pointers.ts";
 import { CaptainRepo } from "./captain/repo.ts";
@@ -3196,6 +3196,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     laneOrg: (chat) => lanes.orgOf(chat),
     captain: () => lanes.boss(),
     level: async (org) => levelOf((await config.settings()).autonomy, org),
+    fixShips: async (org) => incidentShipsOf((await config.settings()).autonomy, org).fix === "ships",
     tz: async (org) => {
       const a = (await config.settings()).autonomy;
       return zoneOr(a.orgs[org]?.tz ?? a.tz);
