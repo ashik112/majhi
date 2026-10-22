@@ -1,4 +1,5 @@
 import type { DeployRunStep } from "@majhi/shared";
+import { titleIsFor } from "./recipe.ts";
 import { call, HostUnreachable, num, str } from "../gitConnect/http.ts";
 import {
   apiScheme,
@@ -83,17 +84,31 @@ async function api(
   }
 }
 
-function runsOf(body: unknown): { id: number; head_sha: string; created_at: string; html_url: string }[] {
+interface ListedRun {
+  id: number;
+  head_sha: string;
+  created_at: string;
+  html_url: string;
+  display_title: string;
+}
+
+function runsOf(body: unknown): ListedRun[] {
   if (typeof body !== "object" || body === null) return [];
   const list = (body as { workflow_runs?: unknown }).workflow_runs;
   if (!Array.isArray(list)) return [];
-  const out: { id: number; head_sha: string; created_at: string; html_url: string }[] = [];
+  const out: ListedRun[] = [];
   for (const r of list) {
     const id = num(r, "id");
     const head = str(r, "head_sha");
     const at = str(r, "created_at");
     if (id !== undefined && head !== undefined && at !== undefined) {
-      out.push({ id, head_sha: head, created_at: at, html_url: str(r, "html_url") ?? "" });
+      out.push({
+        id,
+        head_sha: head,
+        created_at: at,
+        html_url: str(r, "html_url") ?? "",
+        display_title: str(r, "display_title") ?? "",
+      });
     }
   }
   return out;
@@ -161,6 +176,28 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
       const conclusion = str(answer.body, "conclusion") ?? "unknown";
       if (conclusion === "success") return { state: "success" };
       return { state: "failed", detail: await failure(deps, a, run, conclusion) };
+    },
+
+    // GitHub does not return the inputs of a dispatched run, only its title. A workflow whose `run-name` holds its
+    // inputs tells them back there: the newest successful run whose title is for this environment is what it runs.
+    async liveVersion(ctx, source) {
+      if (source.kind !== "run-name") return undefined;
+      const a = await access(
+        ctx,
+        { kind: "github-workflow", remote: source.remote, workflow: source.workflow, ref: "base" },
+        deps,
+      );
+      const listed = await api(
+        deps,
+        a,
+        `/repos/${a.slug}/actions/workflows/${segment(source.workflow)}/runs?status=success&event=workflow_dispatch&per_page=30`,
+      );
+      if (listed.status !== 200) return undefined;
+      for (const run of runsOf(listed.body).sort((x, y) => y.id - x.id)) {
+        const found = titleIsFor(source, run.display_title);
+        if (found !== undefined) return found;
+      }
+      return undefined;
     },
 
     async redeploy(ctx, step, previous: PreviousDeploy): Promise<RunHandle> {
