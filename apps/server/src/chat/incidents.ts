@@ -231,14 +231,13 @@ export class ClientIncidents {
           ? { status, at: record.closedAt }
           : { status },
     );
-    const told =
-      record.told === 0 ? "not told yet" : `told ${record.told} time${record.told === 1 ? "" : "s"}`;
+    // Each room's line already says when that room was told.
     const line = closed ? (record.summary?.split("\n")[0] ?? "Closed") : (task.now ?? "Looking into it");
     return {
       task: task.id as TaskId,
       status: closed ? "resolved" : "investigating",
       steps,
-      facts: `${clip(line, 120)} · ${told}`,
+      facts: clip(line, 120),
       rooms: rooms.map(
         (room): IncidentRoomView => ({
           room: room.id as TaskId,

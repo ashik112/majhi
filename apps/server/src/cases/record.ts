@@ -188,5 +188,5 @@ export function badSummary(text: string): string | undefined {
   const n = summaryLines(text).length;
   return n >= 3 && n <= 6
     ? undefined
-    : `The summary is ${n} lines. Write 3 to 6 lines: what broke, what you found, what you did, what to watch.`;
+    : `The summary is ${n} lines. Write 3 to 6 lines: what broke, what you found, what you did, how you checked it. Follow-ups go in their own lines, not here.`;
 }

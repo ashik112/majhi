@@ -116,7 +116,6 @@ async function script(tasksDir: string, rooms: { slips: string; invoices: string
               "The courier status sweep held all 3 slots of the order worker.",
               "Restarted the worker once; it took new work at once.",
               "The slips check answers again.",
-              "Follow-up: keep the sweep from filling every slot.",
             ].join("\n"),
             tell: { text: "Fixed, please try again.", ...FLAGS },
           },

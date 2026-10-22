@@ -169,7 +169,6 @@ function fixSteps(r: Replay) {
         "The courier status sweep held all 3 slots of the order worker.",
         "Restarted the worker once; it took new work at once.",
         "The slips check answers again.",
-        "Follow-up: keep the sweep from filling every slot.",
       ].join("\n"),
       tell: { text: REPLY_2, ...FLAGS },
     }),
@@ -207,7 +206,7 @@ describe("the case replay", () => {
       followUps: [{ text: "Stop the courier status sweep from filling every slot" }],
       stopped: false,
     });
-    expect(fields?.summary?.split("\n")).toHaveLength(5);
+    expect(fields?.summary?.split("\n")).toHaveLength(4);
   });
 });
 
