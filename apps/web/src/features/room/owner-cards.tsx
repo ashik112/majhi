@@ -29,6 +29,7 @@ import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useAllTasks, useShipOptions } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { DockBar } from "./dock-bar";
+import { GitSignInCard } from "./git-signin-card";
 import { Markdown } from "./markdown";
 import { isQuestion, questionLine } from "./question-line";
 
@@ -148,6 +149,11 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const red = handoff?.current?.verdict === "red" && !checking;
   const notReady = (failed || red) && !checking;
   const queuedMerge = options.data?.queued;
+  // No git sign-in for the host the task pushes to: asked here, the first time it matters.
+  const blocked = [options.data?.mr, options.data?.push].find(
+    (o) => o?.ok === false && o.fix?.page === "orgs",
+  );
+  const gitFix = blocked?.ok === false && blocked.fix?.page === "orgs" ? blocked.fix.org : undefined;
   const cancelQueued = useMutation<unknown, ApiRequestError>({
     mutationFn: () => cmd("tasks.cancelQueuedMerge", { id: task.id }),
     onSuccess: () => after(),
@@ -197,6 +203,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         below={
           <>
             {notReady && task.repos.length > 0 && <FailedStep task={task.id} />}
+            {gitFix !== undefined && <GitSignInCard org={gitFix} />}
             {queuedMerge !== undefined && (
               <p className="m-0 flex items-center gap-2 pl-4 text-sm text-fg-soft">
                 <span>

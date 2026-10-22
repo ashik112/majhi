@@ -20,7 +20,6 @@ import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
 import { preloadOpenOnDemand } from "@/lib/preload";
 import { useServerEvents } from "@/lib/use-server-events";
-import { useArrivalNewTask } from "@/onboarding/arrive";
 
 // What opens on demand is read when it first opens, so the first screen carries only the console.
 const loadPalette = () => import("@/features/search/palette").then((m) => ({ default: m.Palette }));
@@ -70,7 +69,6 @@ export function AppShell() {
 function Frame() {
   const newTask = useNewTask();
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
-  useArrivalNewTask(newTask.open);
   useAdoptOrgParam();
   useEffect(preloadOpenOnDemand, []);
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });

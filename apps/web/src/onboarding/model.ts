@@ -2,7 +2,6 @@ import {
   type AccountView,
   type AgentEntry,
   DEFAULT_GIT_HOST,
-  type LegacyOnboardingStepId,
   type MrHost,
   MrHostSchema,
   ONBOARDING_STEP_IDS,
@@ -15,13 +14,6 @@ import {
   WRITING_IN_THE_ROOM,
 } from "@majhi/shared";
 import { isUsableStatus } from "../features/accounts/model";
-
-/**
- * A step onboarding can open at. The steps and their order are `ONBOARDING_STEP_IDS` in
- * `@majhi/shared` (welcome, account, workspaces, git, projects, boss, finish). `roots` is the old id
- * of `welcome`; map it with `onboardingStepId` before looking a step up.
- */
-export type SetupStepId = OnboardingStepId | LegacyOnboardingStepId;
 
 /** An account that passed its health check and can run agents. */
 export function firstHealthyAccount(accounts: readonly AccountView[]): AccountView | undefined {
@@ -109,41 +101,13 @@ export function deriveStatus(input: DerivedInput): OnboardingStatus {
   };
 }
 
-/** Steps without which majhi cannot run a task. Only these open the journey by themselves. */
-export const ESSENTIAL_STEPS: readonly OnboardingStepId[] = ["welcome", "account", "boss"];
-
 /**
- * Where the gate should open the journey, or null to show the app: the first essential step that
- * is neither done nor skipped. Workspaces, git and projects never open it alone; the journey walks
- * through them once it is open, and Hub setup reopens them.
+ * Whether setup has to open: no account that can run agents yet, or no captain. Everything else (the
+ * workspace, the lead, projects, git) is made by setup or asked for when it is first needed.
  */
-export function gateStep(
-  status: Pick<OnboardingStatus, "steps">,
-  skipped: ReadonlySet<OnboardingStepId>,
-): OnboardingStepId | null {
+export function setupOpen(status: Pick<OnboardingStatus, "steps">): boolean {
   const done = new Set(status.steps.filter((s) => s.done).map((s) => s.id));
-  return ESSENTIAL_STEPS.find((id) => !done.has(id) && !skipped.has(id)) ?? null;
-}
-
-/**
- * The suggested id for the captain. A root agent already called `majhi-boss` (from an attempt that
- * stopped before it was made captain) is reused; any other agent with that id makes the id bump.
- */
-export function bossId(agents: readonly AgentEntry[]): string {
-  const blocked = new Set(
-    agents
-      .filter((a) => !(a.status === "ok" && a.agent.frontmatter.scope === "root"))
-      .map((a) => (a.status === "ok" ? a.agent.frontmatter.id : a.id)),
-  );
-  if (!blocked.has("majhi-boss")) return "majhi-boss";
-  for (let n = 2; ; n += 1) if (!blocked.has(`majhi-boss-${n}`)) return `majhi-boss-${n}`;
-}
-
-/** True when a valid root agent with this id exists, so creating it again would fail. */
-export function isExistingRootAgent(agents: readonly AgentEntry[], id: string): boolean {
-  return agents.some(
-    (a) => a.status === "ok" && a.agent.frontmatter.id === id && a.agent.frontmatter.scope === "root",
-  );
+  return !done.has("account") || !done.has("boss");
 }
 
 export const BOSS_INSTRUCTIONS = [

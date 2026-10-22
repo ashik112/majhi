@@ -1,7 +1,7 @@
 import "@fontsource/baloo-da-2/latin-600.css";
 import "@fontsource/baloo-da-2/latin-700.css";
 import { useReducedMotion } from "motion/react";
-import { type CSSProperties, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { Boat } from "./boat";
 import { SIGN_RATIO, stopPlaces, VIEW_H, VIEW_W } from "./geometry";
@@ -68,8 +68,6 @@ function usePageVisible(): boolean {
   return visible;
 }
 
-const PLACES = stopPlaces(7);
-
 /**
  * The journey as a rickshaw-art river painting, by day in the light theme and by moonlight in the
  * dark one. The stops are painted signboards on the banks, near to far, and the majhi's boat waits
@@ -95,7 +93,7 @@ export function RiverScene({
   const fit = useFit(box);
   const reduced = useReducedMotion() ?? false;
   const visible = usePageVisible();
-  const places = PLACES.slice(0, stops.length);
+  const places = useMemo(() => stopPlaces(stops.length), [stops.length]);
   const here = places[Math.min(current, places.length - 1)];
 
   return (

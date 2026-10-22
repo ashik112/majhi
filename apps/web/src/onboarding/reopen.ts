@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import type { SetupStepId } from "./model";
+import type { SetupStepId } from "./steps";
 
 /**
- * A page asks the app gate to show onboarding again, from a given step (Hub setup does). The gate
- * owns the screen, so this is a one-slot mailbox it reads and clears.
+ * A page asks the app gate to show setup again, from a given step (the palette does). The gate owns the screen, so
+ * this is a one-slot mailbox it reads and clears.
  */
 export interface OnboardingRequest {
   step: SetupStepId;
@@ -19,7 +19,7 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
-export function reopenOnboarding(step: SetupStepId = "welcome"): void {
+export function reopenOnboarding(step: SetupStepId = "signin"): void {
   counter += 1;
   current = { step, id: counter };
   emit();
