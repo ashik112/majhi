@@ -79,7 +79,7 @@ export function NeedsBlock({
         "border-lamp-needs/30",
       )}
     >
-      <ol className="m-0 flex min-h-0 flex-col divide-y divide-line p-0">
+      <ol className="m-0 flex shrink-0 flex-col divide-y divide-line p-0">
         {line !== undefined &&
           task !== undefined &&
           (taken === undefined ? (
@@ -100,7 +100,7 @@ export function NeedsBlock({
         {report !== undefined && <IncidentReport view={report} />}
       </ol>
       {more > 0 && (
-        <p className="m-0 pb-1.5 pl-4 text-sm text-fg-muted">
+        <p className="m-0 shrink-0 pb-1.5 pl-4 pt-1.5 text-sm text-fg-muted">
           {more === 1 ? "1 more waits" : `${more} more wait`} after this one.
         </p>
       )}
