@@ -271,7 +271,7 @@ export class TaskFolderSweep {
   }
 
   /**
-   * The worktree budget: at most `limit` task folders. Over it, the oldest done, reviewed or paused task
+   * The worktree budget: at most `limit` task folders. Over it, the oldest done task
    * goes whole, after its branch is saved. A running task, a pinned task and a folder with a change
    * that is not committed never go (the report says why). Returns the tasks removed and the ones kept.
    */
@@ -291,8 +291,9 @@ export class TaskFolderSweep {
     report.count = folders.length;
     let over = folders.length - limit;
     if (over <= 0) return report;
+    // Only a task that is done loses its folder. A paused, reviewed or chat task still has a run to open there.
     const eligible = folders
-      .filter((t) => t.status === "done" || t.status === "review" || t.status === "paused")
+      .filter((t) => t.status === "done")
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
     for (const task of eligible) {
       if (over <= 0) break;
