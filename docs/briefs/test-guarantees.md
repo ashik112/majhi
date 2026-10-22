@@ -10,7 +10,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 - A fold may move cases out of a file that is otherwise deleted (for example `room/socket.test.ts` into the cross-site row); that file is then deleted after the move.
 - Test names are exact titles from the files (or the `describe` name where marked). Path prefix: `apps/server/src/` is written `server/`, `apps/host/internal/` is `host/` (the host helper is Go since step 2c, and its tests are Go tests: `TestName` is the function's name).
 
-## 1 Security and isolation (46)
+## 1 Security and isolation (47)
 
 | # | Guarantee | Test kept (file: title) | Table rows |
 |---|---|---|---|
@@ -75,6 +75,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 46m | A push is refused when the repo's own git config sets a network setting (any `http.` key, a remote's proxy, pushurl or receivepack, `push.recurseSubmodules` other than `no`), and the token file is never written. | `host/git/network_test.go`: TestPushRefusesNetworkSettingsOfTheRepo |  |
 | 46n | A token folder does not outlive a crash: a panic during a push leaves no `job-*` folder, and a folder a stopped helper left is removed at start. | `host/git/network_test.go`: TestTokenFolderDoesNotOutliveACrash |  |
 | 46o | A planted update journal (a git option as the head, an image id that is not a sha256 id, a moved release with a missing field, a mount of the root, the Docker socket, a path outside the home or a privileged service) is kept aside and nothing runs. | `host/update/update_test.go`: TestAPlantedJournalIsRefusedAndNothingRuns |  |
+| 46p | A command run on a connected host is read from its parsed words by typed tables, never by its text: a read (logs, `docker ps`, `docker inspect`, files, a SELECT, a local status endpoint) runs with no card, one restart or recreate of a service on the same image and config is a recovery, and everything else, or anything that cannot be parsed, is a write that asks. A key, a login or an `.env` file is never a plain read. | `server/connections/remote-command.test.ts`: reads, recovers and writes (three it.each tables) |  |
 
 | 17a | A new workspace home is seeded only with who the account is, never with MCP servers, hooks, settings, instructions, skills or plugins from the account folder, and a file the CLI already made is never overwritten. | `packages/acp/src/seed.test.ts`: copies only who the account is, never MCP servers, hooks, settings, instructions, skills or plugins |  |
 | 17b | A session never starts on a sign-in file that belongs to someone else than the person the account was pinned to: the account becomes signed out with the reason (Needs you shows Sign in), and a refreshed file of the same person passes. | `server/accounts/identity.test.ts`: refuses the next session when a changed file belongs to someone else and asks to sign in again, and lets a refreshed file of the same person through |  |
@@ -129,7 +130,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 80 | When an account hits its limit mid-run, another agent continues from the last checkpoint (lead replaced by the worker with most headroom; a worker's step finished by another); the task does not pause. | `server/tasks/crew.test.ts`: is replaced by the worker with the most headroom, who carries on with the plan | add the worker case 'has its step finished by another agent from the last checkpoint' as a second row; replaces e2e/phase7-limits.spec.ts |
 | 81 | A task is paused after three answers with no progress. | `server/captain/loop-guard.test.ts`: pauses a task after three answers with no progress, and not before |  |
 
-## 4 Core state machines (23)
+## 4 Core state machines (27)
 
 | # | Guarantee | Test kept (file: title) | Table rows |
 |---|---|---|---|
@@ -159,6 +160,10 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 104 | Stop everything halts the captain: no lane, no tools, no start, whatever else is on. (goes with the Autonomous step) | `server/autonomy/switch.test.ts`: Stop everything halts captain work: no lane, no tools, no start, whatever Auto-pilot says |  |
 | 104a | A client message is marked handled ("had nothing to send") only when a captain turn ended normally after the message was given to it; a lane that was paused, errored or never started leaves it waiting and urgent, so it shows in Needs you. | `server/chat/desk.test.ts`: waits, urgent, when the lane stopped without a turn that ended; is handled when the lane's turn ran and ended with no reply |  |
 | 104b | A connection command the owner approves runs exactly once, whether the owner answers while the agent's turn still runs or before the wait is registered, and the agent gets the output: with its next majhi-connections call, or in a message at the end of its turn, never both. | `server/connections/approved-ssh.test.ts`: runs once and the agent gets the output: approved %s, read through %s | rows: while its turn runs / before the wait is registered, each read through its next tool call / a message at the end of its turn |
+| 104c | The Acme replay: a client's two messages open one case in the workspace, the captain reads and restarts the stuck worker once with no card, a read shows the symptom is gone, the client gets two messages at most, the case closes with a summary, zero tasks and zero bug reports are made (the captain's tries are refused), and the owner has nothing to decide. | `server/cases/replay.test.ts`: opens one case for two messages, reads and restarts without a card, checks it works, and closes it |  |
+| 104d | The replay where the fix needs a code deploy ends with exactly one Needs-you card ("Deploy fix X to Acme?") with its buttons, the client told it is being worked on, a second card and a repeated read refused, a later message joining the same case with no reply of its own, and the owner's answer reaching the captain. | `server/cases/replay.test.ts`: ends with one card, tells the client it is being worked on, and takes a later message into the same case |  |
+| 104e | A captain lane that is held by an error and has lost its folder is resumed by the watchdog, the waiting messages are woken, the client is answered, and the owner is told nothing. | `server/cases/replay.test.ts`: heals a lane that is paused with a sign-in error and has lost its folder, answers the client, and never tells the owner |  |
+| 104f | When the heals keep failing, a client message that waited ten minutes gets exactly one message to the owner (what was tried) and the client's fixed words once; the lane is resumed three times and no more. | `server/cases/replay.test.ts`: tells the owner once at ten minutes when the heals keep failing, and tells the client we are looking into it |  |
 
 ## Cut that you may want back
 
