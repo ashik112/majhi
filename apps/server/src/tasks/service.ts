@@ -83,7 +83,7 @@ import { useLine } from "../connections/plan.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { writeFileAtomic } from "../fs.ts";
+import { isBelow, isDirectory, writeFileAtomic } from "../fs.ts";
 import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
 import {
@@ -1216,6 +1216,24 @@ export class TaskService {
       writeFile(join(task.folder, "AGENTS.md"), pointer),
       writeFile(join(task.folder, "CLAUDE.md"), pointer),
     ]);
+  }
+
+  /**
+   * A task's folder is where its agent runs. When it is gone (a hand delete, a disk restore), it is made again
+   * with the files a task starts with, before any run opens it; the worktrees come back through `start`.
+   * Only a folder inside the tasks folder is made, never a path outside it. True when it had to be made.
+   */
+  async ensureFolder(task: Task): Promise<boolean> {
+    if (await isDirectory(task.folder)) return false;
+    const loaded = await this.deps.config.load();
+    if (loaded.state.status !== "loaded" || !isBelow(task.folder, loaded.state.config.tasksDir))
+      throw new UserError(`The folder of ${task.id} is gone and is outside the tasks folder.`, 409);
+    await mkdir(task.folder, { recursive: true });
+    const sections = await this.deps.config.sections();
+    const stored = await this.deps.agents.list();
+    const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
+    await this.writeBriefFiles(task, agents, sections.orgs[task.org ?? ""]?.name, this.relatedOf(task));
+    return true;
   }
 
   // ---------------------------------------------------------------------------

@@ -8,6 +8,9 @@ import { attr, type ClientItem, fenced, peopleLine, readable } from "./read.ts";
 /** The reason a message waits when the captain could not be woken. The desk finds these again by it. */
 export const NOT_READING = "The captain is not reading now";
 
+/** The reason a message waits when the captain was woken but its lane could not run a turn. */
+export const NOT_ANSWERED = "Not answered: the captain could not start";
+
 /** How far back a message that waited for the captain is woken again. */
 const RETRY_WINDOW_MS = 3 * 86_400_000;
 
@@ -48,8 +51,10 @@ interface Pending {
  */
 export class ChatDesk {
   private readonly pending = new Map<string, Pending>();
-  /** Rooms woken whose lane turn has not ended yet, by lane chat. */
-  private readonly woken = new Map<string, Set<string>>();
+  /** Rooms woken whose lane has not settled yet, by lane chat. `ran`: a turn of the lane ended normally since. */
+  private readonly woken = new Map<string, Map<string, { ran: boolean }>>();
+  /** Rooms whose messages wait because the lane could not run a turn, by lane chat. They are woken when it runs. */
+  private readonly parked = new Map<string, Set<string>>();
 
   constructor(private readonly deps: DeskDeps) {}
 
@@ -77,13 +82,17 @@ export class ChatDesk {
    */
   retry(): void {
     const since = Date.now() - RETRY_WINDOW_MS;
+    const parkedRooms = new Set([...this.parked.values()].flatMap((rooms) => [...rooms]));
     for (const room of this.deps.store.client.rooms()) {
       if (room.org === undefined || room.chat.holder !== "captain" || this.pending.has(room.id)) continue;
       for (const item of this.deps.store.room.page(room.id, 60).items.toReversed()) {
         if (item.type !== "client" || item.us === true) continue;
         if (item.outcome?.state !== "waits") continue;
-        if (item.outcome.decision === undefined && item.outcome.why?.startsWith(NOT_READING) !== true)
-          continue;
+        const why = item.outcome.why ?? "";
+        const unread = why.startsWith(NOT_READING);
+        // A message the lane could not run a turn for waits until the lane runs (`settle`), not on every sweep.
+        const unanswered = why.startsWith(NOT_ANSWERED) && !parkedRooms.has(room.id);
+        if (item.outcome.decision === undefined && !unread && !unanswered) continue;
         if (Date.parse(item.sentAt ?? item.at) < since) continue;
         this.queue(room, `message:${item.id}`, this.messageBlock(room, item), undefined, item);
       }
@@ -154,31 +163,66 @@ export class ChatDesk {
         writeOutcome(this.deps, room.id, current, {
           state: "working",
           ...(current.outcome.finding === undefined ? {} : { finding: current.outcome.finding }),
-          ...(current.outcome.urgent === true ? { urgent: true as const } : {}),
+          // The owner was told when the lane stopped; a message the lane takes again is not urgent any more.
+          ...(current.outcome.urgent === true && current.outcome.why?.startsWith(NOT_ANSWERED) !== true
+            ? { urgent: true as const }
+            : {}),
         });
     }
     if (now.retried.length > 0) this.deps.changed();
-    const rooms = this.woken.get(sent.chat) ?? new Set<string>();
-    rooms.add(room.id);
+    // A turn that ended before this wake did not read it: the room is read only by a turn that ends from here on.
+    const rooms = this.woken.get(sent.chat) ?? new Map<string, { ran: boolean }>();
+    rooms.set(room.id, { ran: false });
     this.woken.set(sent.chat, rooms);
+    this.parked.get(sent.chat)?.delete(room.id);
+  }
+
+  /** The captain's turn in this lane ended normally (not refused): what was woken to it has been read. */
+  turnEnded(chat: string): void {
+    for (const state of this.woken.get(chat)?.values() ?? []) state.ran = true;
   }
 
   /**
    * Tasks changed: a captain turn that ended leaves nothing in silence. A message it neither answered nor acted on
-   * says it was read and needed nothing.
+   * says it was read and needed nothing, but only when a turn really ended after the message was given to it. A lane
+   * that stopped without one (paused, errored, never started) leaves the message waiting, urgent, with the reason,
+   * and the message is woken again once the lane runs.
    */
   settle(ids: readonly string[]): void {
     for (const chat of ids) {
+      if (this.deps.store.tasks.get(chat)?.status === "running") {
+        if (this.parked.delete(chat)) this.retry();
+        continue;
+      }
       const rooms = this.woken.get(chat);
-      if (rooms === undefined || this.deps.store.tasks.get(chat)?.status === "running") continue;
+      if (rooms === undefined) continue;
       this.woken.delete(chat);
-      for (const room of rooms) {
-        const done = markWorking(this.deps, room, {
-          state: "handled",
-          why: "The captain read it and had nothing to send",
+      for (const [room, state] of rooms) {
+        if (state.ran) {
+          const done = markWorking(this.deps, room, {
+            state: "handled",
+            why: "The captain read it and had nothing to send",
+          });
+          if (done.length > 0) this.deps.changed();
+          continue;
+        }
+        this.parked.set(chat, (this.parked.get(chat) ?? new Set<string>()).add(room));
+        const waiting = markWorking(this.deps, room, {
+          state: "waits",
+          // The outcome's `why` holds 400 characters, and a docker error can be longer.
+          why: `${NOT_ANSWERED} (${this.pauseReason(chat).slice(0, 300)})`,
+          urgent: true,
         });
-        if (done.length > 0) this.deps.changed();
+        if (waiting.length > 0) this.deps.changed();
       }
     }
+  }
+
+  /** Why a lane is not running: its pause card's own line, else the pause reason, else its status. */
+  private pauseReason(chat: string): string {
+    const card = this.deps.store.room.pendingOfType(chat, "paused").at(-1);
+    if (card?.type === "paused" && card.why !== undefined && card.why !== "") return card.why;
+    const task = this.deps.store.tasks.get(chat);
+    return task?.pausedReason ?? task?.status ?? "it stopped";
   }
 }

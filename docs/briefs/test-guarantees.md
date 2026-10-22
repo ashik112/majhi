@@ -106,6 +106,8 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 64 | A migration that fails is rolled back and not recorded. | `server/store/store.test.ts`: rolls a failing migration back and does not record it |  |
 | 65 | An older database upgrades keeping its rows readable. | `server/store/store.test.ts`: adds the column to an older database and keeps its rows readable |  |
 | 66 | A config write refuses a file with YAML errors and keeps comments and keys it does not own. | `server/config/service.test.ts`: refuses to rewrite a file with YAML errors |  |
+| 66a | The worktree budget never removes the folder of a task that is not done: a paused task, a task in review and a captain lane keep theirs, however many folders there are. | `server/tasks/folder-sweep.test.ts`: never removes the folder of a task that is not done, a captain lane included |  |
+| 66b | A run opens its task folder only after it exists: a folder that was deleted is made again with TASK.md before the session starts. | `server/runs/launch.test.ts`: makes its folder again when it is missing, with TASK.md, and starts |  |
 
 ## 3 Money and limits (15)
 
@@ -155,6 +157,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 102 | A merge needs green checks on the exact head: a failed check, an agent, a wrong sha or a moved head cannot get it through. | `server/handoff/merge-gate.test.ts`: refuses a failed check, cannot be overridden by an agent or a wrong sha, and lets the owner confirm the head | fold queued-merge 'never merges when the head moved, even if the new head is green' in as a row |
 | 103 | A client message never goes out under Ask me, and a secret, another client, a report or a first message always waits for the owner. | `server/chat/rails.test.ts`: never goes out under Tell Ask me, however clear it is | fold chat/rails 'always waits' tests in as rows |
 | 104 | Stop everything halts the captain: no lane, no tools, no start, whatever else is on. (goes with the Autonomous step) | `server/autonomy/switch.test.ts`: Stop everything halts captain work: no lane, no tools, no start, whatever Auto-pilot says |  |
+| 104a | A client message is marked handled ("had nothing to send") only when a captain turn ended normally after the message was given to it; a lane that was paused, errored or never started leaves it waiting and urgent, so it shows in Needs you. | `server/chat/desk.test.ts`: waits, urgent, when the lane stopped without a turn that ended; is handled when the lane's turn ran and ended with no reply |  |
 
 ## Cut that you may want back
 

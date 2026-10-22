@@ -1039,6 +1039,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
+    ensureFolder: (task) => tasks.ensureFolder(task),
     onPaused: (task, reason, why, account) =>
       background.run(() => tasks.pausedByRuns(task, reason, why, account)),
     checkAccount: async (id) => {
@@ -1082,6 +1083,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
+      // A client message is read only by a turn that ends normally: the desk learns of it before the lane settles.
+      if (turn.refused !== true) clientChat?.desk.turnEnded(turn.task);
       // The captain's turn in a lane is over: its last words are stored with their tag, then the lane is about nothing.
       room.flush(turn.task);
       room.setSubject(turn.task, undefined);
