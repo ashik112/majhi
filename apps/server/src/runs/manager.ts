@@ -2236,6 +2236,7 @@ export class RunManager {
     const { deps } = this;
     const key = this.key(run.task, run.agent);
     run.startFailure = undefined;
+    this.permissions.dropOrphans(run);
     this.setLive(run, { status: "starting", nowDoing: undefined, couldNotStart: undefined });
     try {
       // The project's dependencies are installed before the agent starts, once for every task of the project.

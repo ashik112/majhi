@@ -476,3 +476,5 @@ Every other test in these files is deleted. Files where every case stays are mar
 - Config writes are atomic (`apps/server/src/config/write.ts` writes a temp file and renames it) but no test kills a write halfway or checks that the old file survives. #66 covers broken YAML only.
 - Browser container egress: `server/browsers/service.test.ts` has one test (never shared between workspaces). Nothing tests that a browser container cannot reach private ranges.
 - Nothing else found without a test. Every other guarantee above has one test today.
+| 104t | The tasks folder is named `.majhi` like majhi's home, but a command that reads inside it (another task's folder, its report, its repo) is a plain read and never asks; majhi's home (`~/.majhi`) and login files (`.ssh`, keys) still count as secrets, inside the tasks folder too. | `server/runs/shell-risk.test.ts` |  |
+| 104u | A permission card whose prompt went with an ended or replaced run (a fresh session) closes when the agent's next run starts, and a click on such a card closes it instead of answering. | `server/runs/permission-flow.test.ts`: closes when the agent's next run starts |  |
