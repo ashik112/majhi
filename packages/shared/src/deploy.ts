@@ -32,7 +32,6 @@ export function deployStepOf(tier: DeployTier): Extract<ShipStep, "deployStaging
   return tier === "staging" ? "deployStaging" : "deployProduction";
 }
 
-
 const FileName = z
   .string()
   .trim()
@@ -249,7 +248,7 @@ export const DeployEnvironmentSchema = z.object({
   /** How the project's CI deploys it: found by majhi in the CI files, never written by the captain. */
   recipe: DeployRecipeSchema.optional(),
 });
-export type DeployEnvironment =z.infer<typeof DeployEnvironmentSchema>;
+export type DeployEnvironment = z.infer<typeof DeployEnvironmentSchema>;
 
 /**
  * Environments written before deploys v2 were targets with a route, a check and a rollback. The name and the

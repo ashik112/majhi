@@ -338,11 +338,7 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
     // The commit an environment runs now is the one of its last deployment, and the job that made it can run again.
     async liveVersion(ctx, source) {
       if (source.kind !== "gitlab-environment") return undefined;
-      const a = await access(
-        ctx,
-        { kind: "gitlab-job", remote: source.remote, job: source.name },
-        deps,
-      );
+      const a = await access(ctx, { kind: "gitlab-job", remote: source.remote, job: source.name }, deps);
       const listed = await api(
         deps,
         a,
@@ -356,7 +352,9 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       const deployable = (last as { deployable?: unknown } | undefined)?.deployable;
       const sha = str(last, "sha") ?? str((deployable as { commit?: unknown } | undefined)?.commit, "id");
       const job = num(deployable, "id");
-      return sha === undefined ? undefined : { commit: sha, ...(job === undefined ? {} : { job: String(job) }) };
+      return sha === undefined
+        ? undefined
+        : { commit: sha, ...(job === undefined ? {} : { job: String(job) }) };
     },
 
     // A job of the commit's pipeline is run again. A pipeline starts from a branch, so the earlier commit gets a

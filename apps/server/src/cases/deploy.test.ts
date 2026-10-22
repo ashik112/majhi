@@ -1,5 +1,8 @@
+import type { DeployEnvironment } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { C1, C2, environment, GH, push as pushTo, rig } from "../deploy/testing/rig.ts";
+import { discoverEnvironments } from "../deploy/discover.ts";
+import { acmeShopCi } from "../deploy/testing/acme-shop.ts";
+import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
 import { closingLines, newCase, rollbackTarget, withDeploy, withRollback } from "./record.ts";
 
@@ -15,6 +18,9 @@ describe("a case deploy", () => {
       const landed: string[] = [];
       const ports: CaseDeployPorts = {
         environments: async () => r.project.environments,
+        discover: async () => [],
+        current: (project, env) => r.service.current(project, env),
+        changedPaths: async () => undefined,
         latestLive: (project, env) => r.store.deploys.latestLive(project, env),
         repeatable: (runs) => r.service.repeatable(runs),
         onHost: (project) => r.service.onHost(project),
@@ -23,7 +29,7 @@ describe("a case deploy", () => {
           landed.push(`${project} pushed=${pushed}`);
           pushTo(r, C2);
         },
-        deploy: (input, actor) => r.service.deploy(input, actor),
+        deploy: (input, actor, hint) => r.service.deploy(input, actor, undefined, hint),
         rollback: (id, actor) => r.service.rollback(id, actor),
         record: (id) => r.store.deploys.get(id),
         now: () => new Date(),
@@ -94,6 +100,166 @@ describe("a case deploy", () => {
       expect(rollbackTarget(kase)).toBeUndefined();
       expect(closingLines(kase).at(-1)).toBe("Rolled back to 1111111.");
       expect((await ports.rollback(record.id, "captain")).repeat).toBe(true);
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+});
+
+/** The environments of the sample `acme-shop`, as discovery reads them from its CI files. */
+async function shop(): Promise<DeployEnvironment[]> {
+  const found = discoverEnvironments({
+    files: await acmeShopCi(),
+    base: "main",
+    provider: "github",
+    remote: "origin",
+    folders: ["backend", "frontend"],
+  });
+  return found.environments.map((e) => ({ ...e, check: `https://${e.env}.acme.example/health` }));
+}
+
+function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): CaseDeployPorts {
+  return {
+    environments: async () => r.project.environments,
+    discover: async () => [],
+    current: (project, env) => r.service.current(project, env),
+    changedPaths: async () => paths,
+    latestLive: (project, env) => r.store.deploys.latestLive(project, env),
+    repeatable: (runs) => r.service.repeatable(runs),
+    onHost: (project) => r.service.onHost(project),
+    checks: async () => ({ ok: true }),
+    land: async (_task, project) => {
+      landed.push(project);
+      pushTo(r, C2);
+    },
+    deploy: (input, actor, hint) => r.service.deploy(input, actor, undefined, hint),
+    rollback: (id, actor) => r.service.rollback(id, actor),
+    record: (id) => r.store.deploys.get(id),
+    now: () => new Date(),
+    sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+    pollMs: 1,
+    waitMs: 60_000,
+  };
+}
+
+const fix = { task: "ACM-1", project: "storefront", branch: "fix/slips" };
+const V1 = `sha-${C1}`;
+const V2 = `sha-${C2}`;
+
+/** The workflow dispatches the fake GitHub saw, in order: which workflow, and what it was sent. */
+const dispatches = (r: Rig) =>
+  r.hosts.calls
+    .filter((c) => c.method === "POST")
+    .map((c) => [c.path.split("/workflows/")[1], c.body] as const);
+
+describe("a case deploy through the recipe of the project's CI", () => {
+  it("reads the version it replaces first, builds, then releases the built tag at the commit, and goes back once", async () => {
+    const r = await rig(await shop());
+    try {
+      r.hosts.runNames.set("release.yml", (i) => `Release ${i.target} ${i.backend_version}`);
+      // The owner released acme at the version the build made for C1; globex was released after it, at another one.
+      const slug = "acme/storefront";
+      r.hosts.seedRun({
+        slug,
+        workflow: "release.yml",
+        sha: C1,
+        inputs: { target: "acme", backend_version: V1 },
+      });
+      r.hosts.seedRun({
+        slug,
+        workflow: "release.yml",
+        sha: C1,
+        inputs: { target: "globex", backend_version: `sha-${C1.replaceAll("1", "9")}` },
+      });
+      pushTo(r, C1);
+      const landed: string[] = [];
+      const ports = portsOf(r, ["backend/app/slips.py"], landed);
+      const deployer = new CaseDeployer(ports);
+
+      const path = await deployer.prepare({ ...fix, env: "acme" });
+      if (!path.ok) throw new Error(path.why);
+      // What acme runs now is known before anything moves, and the change touched only the backend.
+      expect(path.replaces).toEqual({ version: V1, commit: C1, from: "ci" });
+      expect(path.notes).toContain("Deploys acme the way .github/workflows/release.yml:6 says.");
+      expect(path.notes).toContain("Components: backend, because only backend files changed.");
+      expect(dispatches(r)).toEqual([]);
+
+      const record = await deployer.run({
+        ...fix,
+        env: "acme",
+        runs: path.runs,
+        replaces: path.replaces,
+        landed: false,
+      });
+      expect(landed).toEqual(["storefront"]);
+      expect(record).toMatchObject({
+        state: "live",
+        commit: C2,
+        version: V2,
+        replaces: { version: V1, commit: C1 },
+      });
+      // The read of the live version came before the first dispatch; then the build, then the release with its tag.
+      const calls = r.hosts.calls.map((c) => `${c.method} ${c.path.split("/workflows/")[1] ?? ""}`);
+      expect(calls.findIndex((c) => c.startsWith("GET release.yml/runs?status=success"))).toBeLessThan(
+        calls.findIndex((c) => c.startsWith("POST")),
+      );
+      expect(dispatches(r)).toEqual([
+        ["build-image.yml/dispatches", { ref: "main", inputs: { source_ref: C2 } }],
+        [
+          "release.yml/dispatches",
+          {
+            ref: "main",
+            inputs: { target: "acme", components: "backend", source_ref: C2, backend_version: V2 },
+          },
+        ],
+      ]);
+
+      // The rollback workflow goes out once, with the version and commit recorded before the deploy.
+      const back = await deployer.rollback(record.id);
+      expect(back).toMatchObject({ state: "rolled-back", rollback: { ok: true, commit: C1 } });
+      expect(dispatches(r).slice(2)).toEqual([
+        [
+          "rollback.yml/dispatches",
+          {
+            ref: "main",
+            inputs: { target: "acme", components: "backend", backend_version: V1, source_ref: C1 },
+          },
+        ],
+      ]);
+      expect((await ports.rollback(record.id, "captain")).repeat).toBe(true);
+      expect(dispatches(r)).toHaveLength(3);
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+
+  it("asks once, and starts nothing, when the version the environment runs cannot be read", async () => {
+    const r = await rig(await shop());
+    try {
+      r.hosts.runNames.set("release.yml", (i) => `Release ${i.target} ${i.backend_version}`);
+      pushTo(r, C1);
+      const deployer = new CaseDeployer(portsOf(r, ["backend/app/slips.py"]));
+
+      // initech was never released through majhi or by a run the CI titles: one card, with the one question.
+      const asked = await deployer.prepare({ ...fix, env: "initech" });
+      expect(asked).toMatchObject({ ok: false, ask: [{ id: "previous-version", options: [] }] });
+      expect(dispatches(r)).toEqual([]);
+
+      // With the owner's answer it goes: the commit is the one the version names, and nothing asks again.
+      const answered = await deployer.prepare({
+        ...fix,
+        env: "initech",
+        answers: { "previous-version": V1 },
+      });
+      expect(answered).toMatchObject({
+        ok: true,
+        previous: V1,
+        replaces: { version: V1, commit: C1, from: "owner" },
+      });
     } finally {
       await r.service.idle();
       await r.hosts.close();

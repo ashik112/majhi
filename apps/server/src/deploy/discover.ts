@@ -226,10 +226,7 @@ function tagOfMetadata(line: string): TagPart[] | undefined {
   if (type === "sha") {
     const prefix = fields.get("prefix") ?? "sha-";
     const length = fields.get("format") === "long" ? 40 : 7;
-    return [
-      ...(prefix === "" ? [] : [{ kind: "text" as const, text: prefix }]),
-      { kind: "commit", length },
-    ];
+    return [...(prefix === "" ? [] : [{ kind: "text" as const, text: prefix }]), { kind: "commit", length }];
   }
   if (type === "raw") {
     const value = fields.get("value");
@@ -280,7 +277,8 @@ function rolesOf(flow: Flow): Roles {
     target: flow.inputs.find((i) => TARGET_NAMES.includes(i.name) && i.options.length > 0)?.name,
     refs: names.filter((n) => REF_NAMES.includes(n)),
     versions: names.filter(
-      (n) => n === "version" || n === "tag" || n === "image_tag" || n.endsWith("_version") || n.endsWith("_tag"),
+      (n) =>
+        n === "version" || n === "tag" || n === "image_tag" || n.endsWith("_version") || n.endsWith("_tag"),
     ),
     components: flow.inputs.find((i) => COMPONENT_NAMES.includes(i.name) && i.options.length > 0),
   };
@@ -342,14 +340,16 @@ function lineOfTarget(flow: Flow, target: string | undefined): number | undefine
 
 function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnvironment[] {
   const flows = input.files.workflows.map(flowOf);
-  const release = flows.find((f) => f.kind === "release" && f.dispatch && f.inputs.length > 0) ??
+  const release =
+    flows.find((f) => f.kind === "release" && f.dispatch && f.inputs.length > 0) ??
     flows.find((f) => f.kind === "release" && f.dispatch);
   if (release === undefined) return [];
   const rollback = flows.find((f) => f.kind === "rollback" && f.dispatch);
   const build = flows.find((f) => f.kind === "build");
   const roles = rolesOf(release);
   const tag = build === undefined ? undefined : buildTag(build);
-  const targets = roles.target === undefined ? [] : (release.inputs.find((i) => i.name === roles.target)?.options ?? []);
+  const targets =
+    roles.target === undefined ? [] : (release.inputs.find((i) => i.name === roles.target)?.options ?? []);
   const options = targets.length > 0 ? targets : [undefined];
   const out: DeployEnvironment[] = [];
 
@@ -494,7 +494,11 @@ const GITLAB_KEYWORDS = new Set([
 function jobBranches(job: Record<string, unknown>): string[] {
   const out: string[] = [];
   const only = job.only;
-  const refs = Array.isArray(only) ? only : Array.isArray(rec(only).refs) ? (rec(only).refs as unknown[]) : [];
+  const refs = Array.isArray(only)
+    ? only
+    : Array.isArray(rec(only).refs)
+      ? (rec(only).refs as unknown[])
+      : [];
   for (const r of refs) if (typeof r === "string") out.push(r);
   for (const rule of Array.isArray(job.rules) ? job.rules : []) {
     const condition = text(rec(rule).if);
@@ -504,7 +508,8 @@ function jobBranches(job: Record<string, unknown>): string[] {
     if (sides.length !== 2 || left === undefined || right === undefined) continue;
     if (left !== "$CI_COMMIT_BRANCH" && left !== "$CI_COMMIT_REF_NAME") continue;
     const quote = right[0];
-    if ((quote === '"' || quote === "'") && right.endsWith(quote) && right.length > 2) out.push(right.slice(1, -1));
+    if ((quote === '"' || quote === "'") && right.endsWith(quote) && right.length > 2)
+      out.push(right.slice(1, -1));
   }
   return out;
 }

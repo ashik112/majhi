@@ -47,7 +47,10 @@ export const deployGit: DeployGit = {
         if (tab < 0) continue;
         const [mode, type] = line.slice(0, tab).split(" ");
         if (mode === "120000") continue;
-        const name = line.slice(tab + 1).split("/").at(-1);
+        const name = line
+          .slice(tab + 1)
+          .split("/")
+          .at(-1);
         if (name !== undefined && name !== "") entries.push({ name, dir: type === "tree" });
       }
       return entries;

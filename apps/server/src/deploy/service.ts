@@ -25,7 +25,7 @@ import { type DeployGit, envKeys } from "./git.ts";
 import { gitlabVariableKeys } from "./gitlab.ts";
 import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
-import { bindRuns, bindsOf, tagOf, versionPutLive } from "./recipe.ts";
+import { bindRuns, bindsOf, commitOfVersion, tagOf, versionPutLive } from "./recipe.ts";
 import {
   type DeployContext,
   DeployProblem,
@@ -287,7 +287,10 @@ export class DeployService {
       if (actor === "captain" && (step.runs ?? []).some((r) => r.kind === "ssh")) {
         throw new UserError("An ssh run is the owner's: the captain does not plan one.", 409);
       }
-      if (step.runs === undefined && project.environments.find((e) => e.env === step.env)?.recipe === undefined) {
+      if (
+        step.runs === undefined &&
+        project.environments.find((e) => e.env === step.env)?.recipe === undefined
+      ) {
         throw new UserError(
           `${step.env} of ${step.project} has no recipe read from its CI, so name the runs to start.`,
           409,
@@ -304,8 +307,14 @@ export class DeployService {
       const recipe = env?.recipe;
       if (recipe === undefined) throw new UserError(`${step.env} has no recipe.`, 409);
       const said = recipe.asks.map((a) => a.question).join(" ");
-      const narrowed = recipe.components === undefined ? "" : ` Deploys ${recipe.components.all}: nothing narrows it to one part.`;
-      return { runs: recipe.deploy, said: `From ${recipe.from.file}.${narrowed}${said === "" ? "" : ` Needs the owner: ${said}`}` };
+      const narrowed =
+        recipe.components === undefined
+          ? ""
+          : ` Deploys ${recipe.components.all}: nothing narrows it to one part.`;
+      return {
+        runs: recipe.deploy,
+        said: `From ${recipe.from.file}.${narrowed}${said === "" ? "" : ` Needs the owner: ${said}`}`,
+      };
     };
     const chosen = await Promise.all(input.steps.map(runsOf));
     const notes = await Promise.all(
@@ -713,7 +722,8 @@ export class DeployService {
     const said = await provider.liveVersion?.(ctx, source);
     if (said === undefined) return known;
     const version = known?.version ?? said.version;
-    const commit = known?.commit ?? said.commit ?? (version === undefined ? undefined : commitOfVersion(recipe, version));
+    const commit =
+      known?.commit ?? said.commit ?? (version === undefined ? undefined : commitOfVersion(recipe, version));
     return {
       ...(version === undefined ? {} : { version }),
       ...(commit === undefined ? {} : { commit }),
@@ -760,7 +770,10 @@ export class DeployService {
           const started = await provider.start(ctx, step);
           outcome = started.outcome;
           const { outcome: _over, ...made } = started;
-          const run = step.kind === "github-workflow" && step.inputs !== undefined ? { ...made, inputs: step.inputs } : made;
+          const run =
+            step.kind === "github-workflow" && step.inputs !== undefined
+              ? { ...made, inputs: step.inputs }
+              : made;
           handle = run;
           handles[i] = run;
           this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
@@ -778,7 +791,13 @@ export class DeployService {
     }
     // What the environment runs now is the version the recipe's inputs carried.
     const aligned = alignedRecipe(ctx.env.recipe, record.runs);
-    const version = aligned === undefined ? undefined : versionPutLive(aligned.deploy, handles.map((h) => h?.inputs));
+    const version =
+      aligned === undefined
+        ? undefined
+        : versionPutLive(
+            aligned.deploy,
+            handles.map((h) => h?.inputs),
+          );
     const verifying = this.deps.repo.move(
       record.id,
       "running",
@@ -1020,7 +1039,9 @@ export class DeployService {
         at: at(),
       };
     }
-    const deployed = recipe.deploy.flatMap((_, i) => (record.handles[i]?.inputs === undefined ? [] : [record.handles[i]?.inputs]));
+    const deployed = recipe.deploy.flatMap((_, i) =>
+      record.handles[i]?.inputs === undefined ? [] : [record.handles[i]?.inputs],
+    );
     const components = bindsOf(recipe.deploy, "components")
       .map((name) => deployed.map((inputs) => inputs?.[name]).find((v) => v !== undefined))
       .find((v) => v !== undefined);
@@ -1133,21 +1154,6 @@ export function goesBackBy(recipe: DeployRecipe, replaces: DeployReplaces | unde
     return "it does not know which commit the environment runs now, so it could not put it back";
   }
   return undefined;
-}
-
-/** The commit a version names, when the build tags images by the whole commit with a fixed prefix. */
-function commitOfVersion(recipe: DeployRecipe, version: string): string | undefined {
-  const parts = recipe.build;
-  if (parts === undefined) return undefined;
-  const sha = parts.at(-1);
-  if (sha?.kind !== "commit" || sha.length !== 40) return undefined;
-  const prefix = parts
-    .slice(0, -1)
-    .map((p) => (p.kind === "text" ? p.text : undefined))
-    .join("");
-  if (parts.slice(0, -1).some((p) => p.kind !== "text") || !version.startsWith(prefix)) return undefined;
-  const rest = version.slice(prefix.length);
-  return rest.length === 40 ? rest : undefined;
 }
 
 function progressOf(p: { state: "running" } | { state: "success" } | { state: "failed"; detail: string }) {

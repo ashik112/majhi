@@ -8,9 +8,9 @@ import {
   deployRunLine,
   deployRunStates,
 } from "@majhi/shared";
+import { bindRuns, bindsOf, commitOfVersion, componentsFor, recipeSource } from "../deploy/recipe.ts";
 import type { DeployHint } from "../deploy/service.ts";
 import { goesBackBy } from "../deploy/service.ts";
-import { bindRuns, bindsOf, componentsFor, recipeSource } from "../deploy/recipe.ts";
 import { UserError } from "../errors.ts";
 import { shortVersion } from "./record.ts";
 
@@ -139,7 +139,9 @@ export class CaseDeployer {
   async path(
     project: string,
     pick: { env?: string | undefined; about?: readonly string[] | undefined } = {},
-  ): Promise<{ ok: true; candidate: Candidate; read: string[] } | { ok: false; why: string; ask?: DeployQuestion[] }> {
+  ): Promise<
+    { ok: true; candidate: Candidate; read: string[] } | { ok: false; why: string; ask?: DeployQuestion[] }
+  > {
     const read: string[] = [];
     let found = await this.candidates(project);
     if (found.length === 0) {
@@ -179,7 +181,9 @@ export class CaseDeployer {
     return {
       ok: false,
       why: `${project} deploys to several environments (${names.join(", ")}) and none is named in the case. The owner is asked which, once.`,
-      ask: [{ id: "env", question: `Which environment is the fix for: ${names.join(", ")}?`, options: names }],
+      ask: [
+        { id: "env", question: `Which environment is the fix for: ${names.join(", ")}?`, options: names },
+      ],
     };
   }
 
@@ -190,7 +194,10 @@ export class CaseDeployer {
    * fill with certainty comes back as the questions of one card.
    */
   async prepare(input: PrepareInput): Promise<DeployPath> {
-    const chosen = await this.path(input.project, input);
+    const chosen = await this.path(input.project, {
+      env: input.env ?? input.answers?.env,
+      about: input.about,
+    });
     if (!chosen.ok) return chosen;
     const { candidate } = chosen;
     const notes = [...chosen.read];
@@ -260,16 +267,20 @@ export class CaseDeployer {
     const owner = answers["previous-version"];
     const ownerCommit = answers["previous-commit"];
     if (owner !== undefined || ownerCommit !== undefined) {
+      const commit = ownerCommit ?? (owner === undefined ? undefined : commitOfVersion(recipe, owner));
       replaces = {
         ...replaces,
         ...(owner === undefined ? {} : { version: owner }),
-        ...(ownerCommit === undefined ? {} : { commit: ownerCommit }),
+        ...(commit === undefined ? {} : { commit }),
         from: "owner",
       };
     }
     const lack = goesBackBy(recipe, replaces);
     if (lack !== undefined) {
-      if (replaces?.version === undefined && bindsOf(recipe.rollback?.runs ?? [], "previous-version").length > 0) {
+      if (
+        replaces?.version === undefined &&
+        bindsOf(recipe.rollback?.runs ?? [], "previous-version").length > 0
+      ) {
         asks.push({
           id: "previous-version",
           question: `Which version does ${env.env} run now? majhi could not read it from the CI, and a rollback needs it.`,
@@ -295,7 +306,8 @@ export class CaseDeployer {
       if (step.kind !== "github-workflow") return step;
       const inputs = { ...step.inputs };
       for (const [key, value] of Object.entries(filled)) {
-        if (key.startsWith("input:") && key !== "input:build-version") inputs[key.slice("input:".length)] = value;
+        if (key.startsWith("input:") && key !== "input:build-version")
+          inputs[key.slice("input:".length)] = value;
       }
       return Object.keys(inputs).length === 0 ? step : { ...step, inputs };
     });

@@ -89,7 +89,9 @@ export const CaseDeployInputSchema = z.object({
     .min(1)
     .max(80)
     .optional()
-    .describe("The environment the client is on, when the project has several. Left out, the one the case names"),
+    .describe(
+      "The environment the client is on, when the project has several. Left out, the one the case names",
+    ),
   answers: z
     .record(z.string().trim().min(1).max(120), z.string().trim().min(1).max(300))
     .optional()

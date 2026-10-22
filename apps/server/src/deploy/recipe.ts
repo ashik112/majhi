@@ -30,7 +30,7 @@ export function tagOf(parts: readonly TagPart[], commit: string): string {
   return parts.map((p) => (p.kind === "text" ? p.text : commit.slice(0, p.length))).join("");
 }
 
-function valueOf(binding: InputBinding, facts: BindFacts): string | undefined {
+function bindingValue(binding: InputBinding, facts: BindFacts): string | undefined {
   switch (binding) {
     case "commit":
       return facts.commit;
@@ -60,7 +60,7 @@ export function bindRuns(
     const inputs: Record<string, string> = { ...step.inputs };
     const left: Record<string, InputBinding> = {};
     for (const [name, binding] of Object.entries(step.bind)) {
-      const value = valueOf(binding, facts);
+      const value = bindingValue(binding, facts);
       if (value === undefined) {
         missing.push(`${name} needs ${binding}`);
         left[name] = binding;
@@ -177,4 +177,19 @@ export function componentsFor(
 export function recipeSource(env: DeployEnvironment): string | undefined {
   const from = env.recipe?.from;
   return from === undefined ? undefined : `${from.file}${from.line === undefined ? "" : `:${from.line}`}`;
+}
+
+/** The commit a version names, when the build tags images by the whole commit with a fixed prefix. */
+export function commitOfVersion(recipe: DeployRecipe, version: string): string | undefined {
+  const parts = recipe.build;
+  if (parts === undefined) return undefined;
+  const sha = parts.at(-1);
+  if (sha?.kind !== "commit" || sha.length !== 40) return undefined;
+  const prefix = parts
+    .slice(0, -1)
+    .map((p) => (p.kind === "text" ? p.text : undefined))
+    .join("");
+  if (parts.slice(0, -1).some((p) => p.kind !== "text") || !version.startsWith(prefix)) return undefined;
+  const rest = version.slice(prefix.length);
+  return rest.length === 40 ? rest : undefined;
 }

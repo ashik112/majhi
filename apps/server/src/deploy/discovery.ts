@@ -45,11 +45,7 @@ const META: CommandMeta = {
 };
 
 /** Folders where a part of the project may live: the root's, and the children of `apps`, `services` and `packages`. */
-async function foldersOf(
-  git: DiscoveryDeps["git"],
-  path: string,
-  tip: string,
-): Promise<string[]> {
+async function foldersOf(git: DiscoveryDeps["git"], path: string, tip: string): Promise<string[]> {
   const out: string[] = [];
   for (const entry of await git.list(path, tip, "")) {
     if (!entry.dir) continue;
@@ -84,7 +80,8 @@ export class DeployDiscovery {
       return { ...none, skipped: `${projectId} has no checkout or base branch to read` };
     }
     const repo = await this.deps.repoRef(project);
-    if (repo === undefined) return { ...none, skipped: `${projectId} has no remote on a host majhi deploys through` };
+    if (repo === undefined)
+      return { ...none, skipped: `${projectId} has no remote on a host majhi deploys through` };
     const tip = await this.deps.git.tip(project.path, project.base);
     if (tip === undefined) return { ...none, skipped: `${projectId} has no single head on ${project.base}` };
     const files = await readCiFiles({
@@ -125,7 +122,10 @@ export class DeployDiscovery {
     await this.deps.projects.setEnvironments(project.id, next, "projects.setEnvironments", META);
     const where = found.environments
       .filter((e) => added.includes(e.env) || updated.includes(e.env))
-      .map((e) => `${e.env} (${e.recipe?.from.file}${e.recipe?.from.line === undefined ? "" : `:${e.recipe.from.line}`})`)
+      .map(
+        (e) =>
+          `${e.env} (${e.recipe?.from.file}${e.recipe?.from.line === undefined ? "" : `:${e.recipe.from.line}`})`,
+      )
       .join(", ");
     const asking = found.environments.filter(
       (e) => (added.includes(e.env) || updated.includes(e.env)) && (e.recipe?.asks.length ?? 0) > 0,
