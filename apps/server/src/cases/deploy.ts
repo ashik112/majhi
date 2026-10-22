@@ -80,8 +80,21 @@ export class CaseDeployer {
     return knownPath(this.ports, project);
   }
 
-  checks(task: string): Promise<{ ok: true } | { ok: false; why: string }> {
-    return this.ports.checks(task);
+  /**
+   * Whether the branch may be deployed at all: the project has a deploy path majhi knows, and the hand-off checks of
+   * the case's head passed. Nothing moves before both hold. `previous` is the version the environment runs now.
+   */
+  async prepare(input: { task: string; project: string; branch: string }): Promise<DeployPath> {
+    const path = await this.path(input.project);
+    if (!path.ok) return path;
+    const checked = await this.ports.checks(input.task);
+    if (!checked.ok) {
+      return {
+        ok: false,
+        why: `The checks of ${input.branch} did not pass: ${checked.why}. A deploy goes only when they do. Wait for the helper's next report, or give it the failure with case_help.`,
+      };
+    }
+    return path;
   }
 
   /**

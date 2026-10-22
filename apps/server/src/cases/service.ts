@@ -34,6 +34,7 @@ import {
   helperWorking,
   notClosable,
   type Over,
+  oneLine,
   overBudget,
   overWords,
   recoveryDone,
@@ -626,7 +627,7 @@ export class CaseService {
         this.update(found.task.id, (r) =>
           withHelper(r, {
             agent,
-            job: input.job,
+            job: oneLine(input.job),
             startedAt: at,
             ...(project === undefined ? {} : { project }),
             ...(branch === undefined ? {} : { branch }),
@@ -679,6 +680,7 @@ export class CaseService {
       "The helper reported back",
       task,
     );
+
     if (woke.sent) this.expect(woke.chat, task);
     this.deps.changed();
   }
@@ -722,15 +724,8 @@ export class CaseService {
         409,
       );
     }
-    const path = await this.deps.deployer.path(repo.project);
+    const path = await this.deps.deployer.prepare({ task, project: repo.project, branch: input.branch });
     if (!path.ok) throw new UserError(path.why, 409);
-    const checked = await this.deps.deployer.checks(task);
-    if (!checked.ok) {
-      throw new UserError(
-        `The checks of ${input.branch} did not pass: ${checked.why}. A deploy goes only when they do. Give the helper the failure with case_help.`,
-        409,
-      );
-    }
     // The version the environment runs now is written before anything moves, so a rollback always knows where to go.
     const at = this.at();
     this.update(task, (r) =>

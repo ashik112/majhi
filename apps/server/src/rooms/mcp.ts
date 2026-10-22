@@ -7,7 +7,6 @@ import {
   type CodexHookVerdict,
   type CommandName,
   canWorkIn,
-  caseOf,
   commands,
   type DiagramSpec,
   DiagramSpecSchema,
@@ -622,12 +621,6 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         case "record_plan":
           return ok(await deps.tasks.recordPlan(caller.task, caller.agent, args as TeamPlan));
         case "ask": {
-          // A helper in a client case never asks the owner: the captain does, once, with case_ask.
-          if (caseOf(deps.store.tasks.get(caller.task) ?? {}) !== undefined) {
-            return fail(
-              "You are a helper in a client case, and a helper never asks the owner. Say what you need in your last message in the case room: the captain reads it and decides.",
-            );
-          }
           const questions = args.questions as Array<{
             id: string;
             question: string;

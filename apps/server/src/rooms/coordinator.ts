@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AskOption,
+  caseOf,
   isCaptainLane,
   OWNER_HANDLE,
   parseMentions,
@@ -119,6 +120,13 @@ export class RoomCoordinator {
     const task = this.deps.tasks.get(taskId);
     if (!task.team.includes(agent)) {
       throw new UserError(`Agent @${agent} is not on this task.`, 409);
+    }
+    // A helper in a client case never asks the owner: the captain does, once, with case_ask.
+    if (caseOf(task) !== undefined) {
+      throw new UserError(
+        "You are a helper in a client case, and a helper never asks the owner. Say what you need in your last message in the case room: the captain reads it and decides.",
+        409,
+      );
     }
     // An option that starts a task names one of this workspace that is not done yet.
     for (const option of questions.flatMap((q) => q.options)) {

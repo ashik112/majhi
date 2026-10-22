@@ -109,6 +109,16 @@ export function overWords(over: Over, record: Pick<CaseRecord, "helper">): strin
 // ---------------------------------------------------------------------------
 // The helper, the deploys and the rollback
 
+/** A job as the case keeps and shows it: one line. The helper itself hears the job as it was written. */
+export function oneLine(text: string, max = 300): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .join(" ");
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
 /** A helper that was given a job and has not reported back yet. */
 export function helperWorking(record: CaseRecord): boolean {
   return record.helper !== undefined && record.helper.endedAt === undefined;
