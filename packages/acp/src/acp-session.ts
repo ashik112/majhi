@@ -7,8 +7,8 @@ import {
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { OptionValue } from "@majhi/shared";
-import type { AccountRuntime, Command, RuntimeOptions } from "./index.ts";
 import { ExitCause } from "./exit-cause.ts";
+import type { AccountRuntime, Command, RuntimeOptions } from "./index.ts";
 import { startTool, type ToolProcess } from "./tool-process.ts";
 
 export interface SessionOptions {
