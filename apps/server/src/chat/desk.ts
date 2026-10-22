@@ -163,7 +163,10 @@ export class ChatDesk {
         writeOutcome(this.deps, room.id, current, {
           state: "working",
           ...(current.outcome.finding === undefined ? {} : { finding: current.outcome.finding }),
-          ...(current.outcome.urgent === true ? { urgent: true as const } : {}),
+          // The owner was told when the lane stopped; a message the lane takes again is not urgent any more.
+          ...(current.outcome.urgent === true && current.outcome.why?.startsWith(NOT_ANSWERED) !== true
+            ? { urgent: true as const }
+            : {}),
         });
     }
     if (now.retried.length > 0) this.deps.changed();

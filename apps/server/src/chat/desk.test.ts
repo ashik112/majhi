@@ -46,7 +46,7 @@ async function woken(status: Task["status"]) {
   if (row === undefined) throw new Error("no room");
   desk.add(row, first);
   await desk.flush(room);
-  return { w, desk, outcome };
+  return { w, desk, outcome, room };
 }
 
 describe("a client message the captain was woken with", () => {
@@ -55,6 +55,20 @@ describe("a client message the captain was woken with", () => {
     t.desk.settle([LANE]);
     expect(t.outcome()).toMatchObject({ state: "waits", urgent: true });
     expect(t.outcome()?.why?.startsWith("Not answered: the captain could not start (")).toBe(true);
+  });
+
+  it("is not urgent any more once the lane runs again and handles it", async () => {
+    const t = await woken("paused");
+    t.desk.settle([LANE]);
+    t.w.store.raw.prepare("update tasks set status = 'running' where id = ?").run(LANE);
+    t.desk.settle([LANE]);
+    await t.desk.flush(t.room);
+    expect(t.outcome()).toMatchObject({ state: "working" });
+    t.w.store.raw.prepare("update tasks set status = 'review' where id = ?").run(LANE);
+    t.desk.turnEnded(LANE);
+    t.desk.settle([LANE]);
+    expect(t.outcome()).toMatchObject({ state: "handled" });
+    expect(t.outcome()?.urgent).toBeUndefined();
   });
 
   it("is handled when the lane's turn ran and ended with no reply", async () => {
