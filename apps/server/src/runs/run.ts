@@ -34,7 +34,7 @@ export type QueueEntry =
   /** The owner asked for a fresh session. */
   | { kind: "fresh" }
   /** majhi tells the agent something, like a restart that stopped its processes. */
-  | { kind: "notice"; text: string }
+  | { kind: "notice"; text: string; claim?: () => boolean }
   /** Background processes of the agent ended (5.15): `processEnds`, merged into one prompt when sent. */
   | { kind: "processes" };
 
