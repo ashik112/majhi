@@ -1,3 +1,45 @@
+# Design note (builder, before code)
+
+Branch `feat/case-flow`, from main at `14206157` (it holds the approved-command fix and the lane-folder fix).
+
+## What a case is
+
+A case is an incident task (`typing.type = "incident"`) whose `fields` carry a case record. No new store, no new task kind. The record lives in the existing `tasks.fields` column through a second member of `TaskFieldsSchema` (`packages/shared/src/task-type.ts`): the client room, the day it opened, the symptom, the counters (tool calls, captain time), the commands that ran with a hash of their result, the recoveries done, the follow-ups, the messages told, and the summary when it closes. Its status is the ordinary lifecycle status: `running` while the captain works it, `done` when it closes. The task has no run of its own: it is opened with the lifecycle `start` event with the agent effects skipped, so nothing starts an agent in it.
+
+The captain works the case in its on-call (`reacting`) lane, as it does for every client chat today, so the account choice, the rest budgets and the cannot-run card stay as they are. The lane's lines about the case are tagged to the case room by the existing `about` mechanism. Which case a lane turn is about is one in-memory fact (`CaseService.active(lane)`), set when the turn opens or joins a case and cleared by the existing `onTurnEnd`.
+
+## Which existing modules are extended
+
+- `incident/engine.ts`: a client source opens a case (agent = the captain, no lead start, no soak `doneWhen`). `findOpen` for a client joins only a case of the same room opened the same day in the workspace's time zone; this is what stops today's report joining the incident of 2026-10-08. A client report no longer joins a watch's incident.
+- `chat/incidents.ts` (`ClientIncidents`): `openFor` and `claim` go through the engine as above. `followed` prefers the room's current case (the stale incident bar). `tick`, `decisions`, `askCause` and the report skip cases, so nothing but the captain tells the client.
+- `chat/desk.ts`: a message in a room that has an open case joins it by code (its outcome says so) and wakes the lane about the case. It gets no task and no reply of its own.
+- `chat/replies.ts` and `chat/captain.ts`: a reply about a case counts against the case (two before it closes); the close message is the third at most.
+- `connections/gate.ts` `classifyRemote` and `connections/read-only.ts`: the remote command is read by a new typed module, `connections/remote-command.ts`: parsed with the existing shell parser, each program looked up in a table of read verbs (docker, compose, systemctl, journalctl, kubectl, git, psql and mysql statements by first keyword, redis-cli, celery, curl to the host's own address, the usual file and text tools). Three answers: `read`, `recovery` (restart or recreate a service or container on the same image and config), `write`. Anything that does not parse, or has a program or verb not in a table, is `write`. No regex.
+- `connections/mcp.ts` `ssh()`: in a case, a repeated command is refused unless a write happened since it ran; a `recovery` runs without a card at Routine or Full, once per case; the counters and the 20 call and 30 minute bound are checked before each call. A read that exits 0 is recorded as the case's evidence.
+- `runs/manager.ts`: the tool-call event (where `turnTools` is counted) also counts the call against the active case.
+- `admin/service.ts` and `shared/captain-places.ts`: new commands `case.status`, `case.followUp`, `case.ask`, `case.close`, `case.stop` for the captain (needs place), `case.makeTask` for the owner. While a lane turn has an active case, the commands that cut a case's path are refused with a pointer.
+- `tasks/service.ts`: `answerAsk` of a case card wakes the lane instead of sending a message to an agent; `lostByRestart` leaves a case running (the lane resumes it).
+- `autonomy/preamble.ts`: the client-chat paragraph is rewritten for cases.
+- Web: `work-pane.tsx` and `model.ts` show a case as one Work line (lamp, title, client, time) with Now and Needs you under it, and a closed case in Done today with its summary. The incident bar reads the case's own facts.
+
+## Which calls are cut, for a client case
+
+Team plans and plan steps (`tasks.plan`, `tasks.split`, `team.add`, `team.swap`), hand-offs and send-backs (`tasks.tell`, `tasks.setLead`, `step_done`, `send_back`), captain-created tasks (`tasks.create`, `chat.startTask`, `findings.toTask`), `captain.reportBug`, and per-command approval cards for reads. Each stays where other flows use it; only a case's path stops calling it. Named in DECISIONS.
+
+## Bounds, in code
+
+20 tool calls and 30 minutes of captain time per case; past either, every call but `case.stop` is refused, and `case.stop` writes the one card (what it knows, what it tried, what it needs). If the turn ends without it, majhi writes the card from the record. The same command never runs twice unless a write happened since. A recovery runs once per case. No case opens without a client message to point at.
+
+## Tests (only these, each a row of `test-guarantees.md`)
+
+The read/write/recovery classifier; the Acme replay (restart fixes it); the Acme replay where the fix needs a deploy (one card).
+
+## Order
+
+Design note, classifier and its test, model and engine, desk and incidents cuts, ssh bounds, tool cuts, replays, web, walk, DECISIONS, PROGRESS, test-guarantees.
+
+---
+
 # Brief: one client problem, one case, handled while the owner sleeps
 
 Approved by the owner on 2026-10-22, after the Acme outage that morning. This rebuilds one flow: a client reports a problem in a chat, and majhi fixes it and tells the client. It does not touch any other flow.
