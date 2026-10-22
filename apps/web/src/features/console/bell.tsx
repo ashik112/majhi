@@ -46,7 +46,7 @@ export function useUrgent(): Urgent[] {
           continue;
         if (counted.has(d.link.id)) continue;
         counted.add(d.link.id);
-        out.push({ key: `c:${d.link.id}`, what: "Client message", line: d.title, to: { id: d.id } });
+        out.push({ key: `c:${d.link.id}`, what: "Client message", line: d.title, to: { chat: d.link.id } });
       }
     }
     for (const c of conversations ?? []) {
