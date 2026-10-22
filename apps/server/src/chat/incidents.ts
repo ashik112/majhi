@@ -881,7 +881,10 @@ export class ClientIncidents {
       .items.flatMap((i) => (i.type === "client" && i.us !== true ? [i] : []));
     const joined = mine.filter((i) => i.outcome?.task === task.id);
     const pool = joined.length > 0 ? joined : mine.filter((i) => (i.sentAt ?? i.at) >= task.createdAt);
-    return earliest(pool.map((i) => i.sentAt ?? i.at));
+    const first = earliest(pool.map((i) => i.sentAt ?? i.at));
+    // Never before the incident's own open: a message it took over from an older record is not its own time.
+    if (first === undefined) return undefined;
+    return first < task.createdAt ? task.createdAt : first;
   }
 
   /**
