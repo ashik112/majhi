@@ -512,7 +512,7 @@ export class ClientIncidents {
         }
         if (result.status === "monitoring" && (await this.askCause(read))) changed = true;
         if (result.status === "resolved" && result.at.resolved !== undefined) {
-          if (await this.ensureReport(read, result.at.resolved)) changed = true;
+          if (await this.ensureReport(read, result.at.resolved, result.at.investigating)) changed = true;
           if (await this.settleReport(read)) changed = true;
         }
       } catch {
@@ -591,6 +591,7 @@ export class ClientIncidents {
       told,
       changed,
       this.reporter(room.id),
+      this.lastSaid(room.id),
     );
     const at = this.at();
     this.deps.desk.event(
@@ -615,6 +616,7 @@ export class ClientIncidents {
     told: { status: ClientStatus } | undefined,
     changed: boolean,
     to: { sender: string; thread?: string } | undefined,
+    said: string | undefined,
   ): string {
     // What a client may be told is built from typed facts only: what broke, when it started, the status, the fix
     // state. Never the task's id, title or branch, and never a client's own words.
@@ -646,12 +648,25 @@ export class ClientIncidents {
       lines.push(`Cause, in words a client may read: ${clip(cause.client, 200)}.`);
     if (result.status === "monitoring" && result.at.monitoring !== undefined)
       lines.push(`The fix went live at ${this.clock(result.at.monitoring, tz)}.`);
+    // What the chat already read is the record: a cause or an outcome told there is never replaced by a new one.
+    if (said !== undefined)
+      lines.push(
+        `This chat was last told, word for word: "${clip(said, 400)}". Never contradict it: if it names a cause, that is the cause; give no other, and do not say there was no problem or nothing to fix unless it said so.`,
+      );
     lines.push(
       "Tell this chat what changed and what happens next, in plain words, with majhi_chat_reply. Say only what is listed here: no cause that is not given, and no time you were not given (mark a reply that names any time as promisedTime). Never write an internal id, a branch name, a commit, a checkpoint or a secret.",
     );
     if (to !== undefined)
       lines.push(`Reply to sender ${to.sender}${to.thread === undefined ? "" : ` in thread ${to.thread}`}.`);
     return lines.join("\n");
+  }
+
+  /** The last message that went out to a chat, as it was sent. */
+  private lastSaid(room: string): string | undefined {
+    const sent = this.deps.store.room
+      .ofType(room, "client-reply")
+      .flatMap((i) => (i.type === "client-reply" && i.state === "sent" && i.weekly !== true ? [i] : []));
+    return sent.at(-1)?.text;
   }
 
   /** The captain's reply went out in a room: it is added to the incident's record of what this room was told. */
@@ -685,18 +700,34 @@ export class ClientIncidents {
     return this.deps.store.room.ofType(task, "report").flatMap((i) => (i.type === "report" ? [i] : []));
   }
 
-  /** Makes the report of a resolution once, from what was recorded. */
-  private async ensureReport(read: Read, resolvedAt: string): Promise<boolean> {
-    const id = `report:${resolvedAt}`;
-    if (this.deps.room.get(read.task.id, id) !== undefined) return false;
-    const text = await this.compose(read, resolvedAt);
-    this.deps.room.post(read.task.id as TaskId, id, {
-      type: "report",
-      resolvedAt,
-      internal: text.internal,
-      client: text.client,
-      sent: [],
-    });
+  /** Incidents whose report is being made now, so two passes never make it twice. */
+  private making = new Set<string>();
+
+  /**
+   * Makes the report of a resolution once per close. Its id is the moment the incident last opened (its open, or the
+   * client's last reopen), never the time it resolved at: that time moves (a done task's updated time does), and each
+   * move made a new report that was sent again.
+   */
+  private async ensureReport(read: Read, resolvedAt: string, openedAt: string | undefined): Promise<boolean> {
+    const since = openedAt ?? read.task.createdAt;
+    const id = `report:${since}`;
+    const key = `${read.task.id} ${id}`;
+    // A report of this close may carry an older id (the time it resolved at): it still counts.
+    const made = this.reports(read.task.id).some((r) => r.resolvedAt >= since);
+    if (made || this.making.has(key)) return false;
+    this.making.add(key);
+    try {
+      const text = await this.compose(read, resolvedAt);
+      this.deps.room.post(read.task.id as TaskId, id, {
+        type: "report",
+        resolvedAt,
+        internal: text.internal,
+        client: text.client,
+        sent: [],
+      });
+    } finally {
+      this.making.delete(key);
+    }
     return true;
   }
 
@@ -712,12 +743,14 @@ export class ClientIncidents {
     const liveAt = clientStatus(read.facts).at.monitoring;
     const reopens = read.events.flatMap((e) => (e.detail.event === "reopened" ? [e.detail.at] : []));
     // Each room reported at its own time: the first message that became or joined this incident.
+    // Nothing in a report is from before this incident opened: a watch or a message it took over from an older
+    // record is not its own time.
+    const began = task.createdAt;
+    const notBefore = (iso: string): string => (iso < began ? began : iso);
     const reported = rooms.flatMap((r) => {
       const when = this.reportedAt(task, r);
-      return when === undefined ? [] : [{ room: r, at: when }];
+      return when === undefined ? [] : [{ room: r, at: notBefore(when) }];
     });
-    const reportedAt = earliest(reported.map((r) => r.at));
-    const began = earliest([watch?.openedAt, reportedAt, task.createdAt]) ?? task.createdAt;
     // Time while it was failing: a stretch when the watch was green does not count.
     const failing = failingMinutes(began, resolvedAt, watch?.timeline ?? []);
     const minutes = Math.max(1, failing.minutes);
@@ -734,7 +767,7 @@ export class ClientIncidents {
     const entries: { at: string; internal: string; client?: string }[] = [];
     if (watch !== undefined)
       entries.push({
-        at: watch.openedAt,
+        at: notBefore(watch.openedAt),
         internal: `watch: ${clip(watch.title, 60)}`,
         client: "our monitoring flagged it",
       });
@@ -758,7 +791,7 @@ export class ClientIncidents {
       }
     }
     for (const t of watch?.timeline ?? []) {
-      if (t.kind === "resolved" || t.kind === "reopened")
+      if (t.at >= began && (t.kind === "resolved" || t.kind === "reopened"))
         entries.push({ at: t.at, internal: `watch ${t.kind}: ${clip(t.text, 80)}` });
     }
     for (const r of reopens) entries.push({ at: r, internal: "reported again" });
@@ -971,6 +1004,23 @@ export class ClientIncidents {
 
   /** The owner's click: the client version goes to one linked room, once. Nothing else sends a report. */
   async sendReport(
+    task: string,
+    room: string,
+  ): Promise<{ draft: number; state: "sent" | "held" | "failed" }> {
+    // A second pass while the first is still sending would send it twice.
+    const key = `${task} ${room}`;
+    if (this.sending.has(key)) throw new UserError("The report is going to that chat now.", 409);
+    this.sending.add(key);
+    try {
+      return await this.sendNow(task, room);
+    } finally {
+      this.sending.delete(key);
+    }
+  }
+
+  private sending = new Set<string>();
+
+  private async sendNow(
     task: string,
     room: string,
   ): Promise<{ draft: number; state: "sent" | "held" | "failed" }> {
