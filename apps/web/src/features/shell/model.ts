@@ -50,8 +50,8 @@ export type BannerAction =
         signin?: "start";
         id?: string;
         tab?: string;
-        section?: string;
-        thread?: string;
+        rules?: true;
+        settings?: true;
         create?: string;
       };
     };

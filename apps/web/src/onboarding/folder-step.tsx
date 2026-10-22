@@ -13,15 +13,14 @@ import { RootsForm } from "@/features/roots/roots-form";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/format";
 import { queryKeys, useConfig, useSetWorkspaces, useSuggestRoots } from "@/lib/queries";
-import { GroupTitle, Problem, StepFrame, useStep } from "./step-frame";
+import { Problem } from "./step-frame";
 
 /**
- * Welcome: what majhi is, then the project folder. One click takes the folder majhi suggests;
- * "Choose another" opens the full folder picker. Every later step writes majhi.yaml, which only
- * loads with a folder, so this one comes first and cannot be skipped.
+ * The project folder, before the first step on a computer majhi has not seen: one click takes the folder majhi
+ * suggests; "Choose another" opens the full folder picker. Everything majhi saves goes in majhi.yaml, which only
+ * loads with a folder, so this comes first.
  */
-export function WelcomeStep() {
-  const step = useStep();
+export function FolderStep({ onDone }: { onDone: () => void }) {
   const config = useConfig();
   const toast = useToast();
   const client = useQueryClient();
@@ -31,76 +30,74 @@ export function WelcomeStep() {
   const home = state?.home ?? "";
 
   const onSaved = (result: WorkspacesUpdateResult) => {
-    // The journey's status reads the folder; ask for it again now rather than on the next event.
+    // The setup status reads the folder; ask for it again now rather than on the next event.
     void client.invalidateQueries({ queryKey: queryKeys.onboarding });
     if (result.remount !== "not-needed") {
       setPending(result);
       return;
     }
     toast("Folder saved");
-    step.next();
+    onDone();
   };
 
   if (pending?.remount === "restarting") {
     return (
-      <StepFrame skippable={false}>
+      <div>
         <RestartingCard
           roots={pending.unmounted}
           home={pending.state.home}
           onBack={() => {
             toast("Folder mounted");
-            step.next();
+            onDone();
           }}
         />
-      </StepFrame>
+      </div>
     );
   }
   if (pending) {
     return (
-      <StepFrame skippable={false}>
+      <div>
         <RestartCard result={pending} home={pending.state.home} />
-      </StepFrame>
+      </div>
     );
   }
 
-  const roots = step.status.roots;
+  const roots = state?.status === "loaded" ? state.config.workspaces : [];
 
   return (
-    <StepFrame skippable={false}>
-      <div className="flex flex-col gap-8">
-        <section aria-labelledby="folder-title" className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <GroupTitle>
-              <span id="folder-title">Your project folder</span>
-            </GroupTitle>
-            <p className="m-0 text-base text-fg-muted text-pretty">
-              Where your git repos live. majhi needs it before it can save anything else.
-            </p>
-          </div>
-          {roots.length > 0 && !choosing ? (
-            <ChosenRoots roots={roots} home={home} onChange={() => setChoosing(true)} />
-          ) : choosing || state === undefined ? (
-            state && (
-              <RootsForm
-                bare
-                mode={state.status === "loaded" ? "edit" : "first-run"}
-                home={state.home}
-                file={state.file}
-                initial={
-                  state.status === "loaded"
-                    ? draftFromConfig(state.config, state.home)
-                    : { rows: [], tasksDir: "" }
-                }
-                onSaved={onSaved}
-                {...(roots.length > 0 ? { onCancel: () => setChoosing(false) } : {})}
-              />
-            )
-          ) : (
-            <Suggestion home={home} onSaved={onSaved} onChoose={() => setChoosing(true)} />
-          )}
-        </section>
-      </div>
-    </StepFrame>
+    <div className="flex flex-col gap-8">
+      <section aria-labelledby="folder-title" className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 id="folder-title" className="m-0 text-md font-semibold text-fg">
+            Your project folder
+          </h2>
+          <p className="m-0 text-base text-fg-muted text-pretty">
+            Where your git repos live. majhi needs it before it can save anything else.
+          </p>
+        </div>
+        {roots.length > 0 && !choosing ? (
+          <ChosenRoots roots={roots} home={home} onChange={() => setChoosing(true)} />
+        ) : choosing || state === undefined ? (
+          state && (
+            <RootsForm
+              bare
+              mode={state.status === "loaded" ? "edit" : "first-run"}
+              home={state.home}
+              file={state.file}
+              initial={
+                state.status === "loaded"
+                  ? draftFromConfig(state.config, state.home)
+                  : { rows: [], tasksDir: "" }
+              }
+              onSaved={onSaved}
+              {...(roots.length > 0 ? { onCancel: () => setChoosing(false) } : {})}
+            />
+          )
+        ) : (
+          <Suggestion home={home} onSaved={onSaved} onChoose={() => setChoosing(true)} />
+        )}
+      </section>
+    </div>
   );
 }
 

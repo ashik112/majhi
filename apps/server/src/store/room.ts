@@ -147,6 +147,39 @@ export class RoomRepo {
     return row === undefined ? undefined : toItem(row);
   }
 
+  /** The tool call of the task that is in progress now, the newest one, or undefined. */
+  runningTool(task: string): RoomItem | undefined {
+    const row = this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          eq(roomItems.task, task),
+          eq(roomItems.type, "tool"),
+          sql`json_extract(${roomItems.payload}, '$.status') = 'in_progress'`,
+        ),
+      )
+      .orderBy(desc(roomItems.seq))
+      .limit(1)
+      .get();
+    return row === undefined ? undefined : toItem(row);
+  }
+
+  /** The process items that say their run is still going. After a restart none really is: no process outlives the server. */
+  runningProcesses(): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          eq(roomItems.type, "process"),
+          sql`json_extract(${roomItems.payload}, '$.process.status') = 'running'`,
+        ),
+      )
+      .all()
+      .flatMap(readable);
+  }
+
   /** The item a chat app's message was stored as, found by its external key (`externalKeyText`). */
   byExternal(external: string): RoomItem | undefined {
     const row = this.db.select().from(roomItems).where(sql`${roomItems.external} = ${external}`).get();

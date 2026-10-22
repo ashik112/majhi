@@ -110,6 +110,39 @@ export function PaneRail({
   );
 }
 
+/**
+ * Needs you below 1300 px: a 52 px rail that is always there, with its red count, its name set vertically and, when
+ * there are incidents, a red dot and how many. A click slides the whole list over Work; the chat stays in view.
+ */
+export function NeedsRail({
+  count,
+  incidents,
+  open,
+  onClick,
+}: {
+  count: number;
+  incidents: number;
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <section className="cs-pane cs-glass cs-nrail" data-pane="needs-rail" aria-label="Needs you">
+      <button type="button" className="cs-nrail-b" aria-expanded={open} onClick={onClick}>
+        {count > 0 && <span className="cs-badge">{count}</span>}
+        <span className="cs-nrail-w">Needs you</span>
+        {incidents > 0 && (
+          <>
+            <span className="cs-nrail-dot" aria-hidden="true" />
+            <span className="cs-nrail-i">
+              {incidents} {incidents === 1 ? "incident" : "incidents"}
+            </span>
+          </>
+        )}
+      </button>
+    </section>
+  );
+}
+
 export function Btn({
   children,
   primary = false,

@@ -1844,7 +1844,7 @@ export class RunManager {
     this.pause(
       run,
       "signed-out",
-      `@${run.agent} cannot run: its account ${account} needs a new sign-in.${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
+      `@${run.agent} cannot run: its account ${account} needs a new sign-in.${nobody} Sign in ${account} under Settings > AI accounts, then the task continues.`,
       true,
       account,
     );

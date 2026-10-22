@@ -2,7 +2,7 @@ import type { AuditEntry } from "@majhi/shared";
 import { PAGE_PATH } from "@majhi/shared";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -34,7 +34,7 @@ const HEADS = ["Time", "Workspace", "Task", "Kind", "What", "Decision", "By", "D
  * The audit log: what majhi pushed, merged and was allowed to do, newest first. The filters live in
  * the address, so a filtered view can be linked. The table scrolls inside the page, never the page.
  */
-export function AuditView() {
+export function AuditView({ tabs }: { tabs: ReactNode }) {
   const search = useSearch({ from: "__root__" });
   const navigate = useNavigate();
   const filters = filtersFromSearch(search);
@@ -45,12 +45,16 @@ export function AuditView() {
   const lists = pages[0];
 
   function change(next: AuditFilters) {
-    void navigate({ to: PAGE_PATH.audit, search: searchFromFilters(next), replace: true });
+    void navigate({
+      to: PAGE_PATH.usage,
+      search: { ...searchFromFilters(next), tab: "activity" },
+      replace: true,
+    });
   }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Audit log" subtitle="What majhi pushed, merged and was allowed to do, newest first.">
+      <PageHeader tabs={tabs} subtitle="What majhi pushed, merged and was allowed to do, newest first.">
         <Button size="lg" disabled={!hasFilters(filters)} onClick={() => change({})}>
           Clear filters
         </Button>

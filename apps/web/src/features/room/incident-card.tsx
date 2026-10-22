@@ -7,15 +7,17 @@ import {
   type ReportText,
   type Task,
 } from "@majhi/shared";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { LampState } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useAnswerIncident, useAskCaptain, useEditReport, useSendReport } from "@/lib/incident-queries";
+import { useTaskRow } from "@/lib/task-queries";
 import { CloseDialog } from "../task/task-menu";
 import { DockBar } from "./dock-bar";
+import { Markdown } from "./markdown";
 
 const LAMP: Record<ClientStatus, LampState> = {
   investigating: "needs",
@@ -33,115 +35,174 @@ export function incidentCardOpen(view: IncidentView | null | undefined): view is
   return view.status !== "resolved" || view.report !== undefined;
 }
 
+/** What an incident line needs from the paused task it takes in: why it stopped, the buttons that fix it, its details. */
+export interface PauseView {
+  why: string;
+  actions: ReactNode;
+  details: ReactNode;
+  below: ReactNode;
+}
+
 /**
- * What the client sees of an incident, as bars in the room's dock: one per client room with the four steps and the
- * time each began, and, once the incident is resolved, the report with an Internal and Client version. Sending it is
- * the owner's click; the text freezes once it went.
+ * The incident as one line above the message box: its lamp, "Incident" or "Recovered", the stage it is at, Details
+ * (what each client room sees, the four steps, the follow-ups) and its buttons. When the task is paused the line
+ * takes the pause in: why the agent stopped, in one plain line, and the one set of buttons. One card, never a stack.
  */
-export function IncidentCard({ view, task }: { view: IncidentView; task?: Task | undefined }) {
+export function IncidentLine({
+  view,
+  task,
+  pause,
+  working,
+}: {
+  view: IncidentView;
+  task: Task | undefined;
+  pause?: PauseView | undefined;
+  /** An agent of the task is in its turn: "Let the lead continue" has nothing to continue. */
+  working: boolean;
+}) {
   const [closing, setClosing] = useState(false);
   const ask = useAskCaptain();
   const answer = useAnswerIncident();
   const toast = useToast();
   const fail = (what: string) => (error: unknown) =>
     toast(what, { detail: describeError(error), tone: "error" });
-  const showStatus =
-    (view.rooms.length === 0 || view.quiet !== undefined || view.recovered !== undefined) &&
-    view.status !== "resolved";
-  const closeButton =
-    task === undefined || task.status === "done" ? undefined : (
-      <Button size="sm" onClick={() => setClosing(true)}>
-        Close incident
-      </Button>
-    );
+  const asking = view.recovered !== undefined && !view.recovered.closed;
+  const stage = view.steps.find((s) => s.status === view.status);
+  const told = view.rooms.some((r) => r.toldAt !== undefined);
+  const stageText = [
+    `${CLIENT_STATUS_LABEL[view.status]}${stage?.at === undefined ? "" : ` ${clock(stage.at)}`}`,
+    view.report?.internal.cause ? "cause found" : "cause not found",
+    told ? "client told" : "client not told yet",
+    view.quiet === undefined ? "" : `nobody has looked: ${view.quiet}`,
+  ].filter((p) => p !== "");
+  const title = asking ? "Recovered. Close it?" : view.recovered !== undefined ? "Recovered" : "Incident";
+  const line = asking
+    ? (pause?.why ?? "The watch is green and nothing was shipped. Close it, or let the lead keep working.")
+    : [stageText.join(" · "), pause?.why].filter((p) => p !== undefined && p !== "").join(" · ");
+  const open = task !== undefined && task.status !== "done";
+  const close = asking ? (
+    <Button
+      size="sm"
+      variant="primary"
+      disabled={answer.isPending}
+      onClick={() =>
+        answer.mutate(
+          { id: `iask:recovered:${view.task}`, option: "close" },
+          { onError: fail("Could not close the incident") },
+        )
+      }
+    >
+      Close
+    </Button>
+  ) : open ? (
+    <Button size="sm" onClick={() => setClosing(true)}>
+      Close incident
+    </Button>
+  ) : undefined;
   return (
     <>
       {closing && task !== undefined && <CloseDialog task={task} onDone={() => setClosing(false)} />}
-      {showStatus && (
-        <li className="list-none">
-          <DockBar
-            label="Incident"
-            lamp={view.recovered === undefined ? LAMP[view.status] : "working"}
-            title={view.recovered === undefined ? CLIENT_STATUS_LABEL[view.status] : "Recovered"}
-            line={[view.facts, view.quiet === undefined ? "" : `Nobody has looked: ${view.quiet}`]
-              .filter((p) => p !== "")
-              .join(" · ")}
-            actions={
-              <>
-                {closeButton}
-                {view.quiet !== undefined && (
-                  <Button
-                    size="sm"
-                    disabled={ask.isPending}
-                    onClick={() => ask.mutate(view.task, { onError: fail("Could not ask the captain") })}
-                  >
-                    Ask the captain now
-                  </Button>
-                )}
-                {view.recovered !== undefined && !view.recovered.closed && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={answer.isPending}
-                      onClick={() =>
-                        answer.mutate(
-                          { id: `iask:recovered:${view.task}`, option: "close" },
-                          { onError: fail("Could not close the incident") },
-                        )
-                      }
-                    >
-                      Close: it recovered
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={answer.isPending}
-                      onClick={() =>
-                        answer.mutate(
-                          { id: `iask:recovered:${view.task}`, option: "continue" },
-                          { onError: fail("Could not answer") },
-                        )
-                      }
-                    >
-                      Let the lead continue
-                    </Button>
-                  </>
-                )}
-              </>
-            }
-          />
-        </li>
-      )}
-      {view.rooms.map((room, i) => (
-        <li key={room.room} className="list-none">
-          <DockBar
-            label={`${room.title} sees`}
-            lamp={room.joined === true ? "idle" : LAMP[room.sees ?? view.status]}
-            title={
-              room.joined === true
-                ? `${room.title}: joined`
-                : `${room.title} sees: ${room.sees === undefined ? "nothing yet" : CLIENT_STATUS_LABEL[room.sees]}`
-            }
-            line={
-              room.joined === true
-                ? "This chat follows a newer incident and hears about that one"
-                : lineOf(view, room)
-            }
-            actions={i === 0 && !showStatus ? closeButton : undefined}
-            below={
-              i === 0 && room.joined !== true && view.status !== "resolved" ? (
-                <Steps view={view} />
-              ) : undefined
-            }
-          />
-        </li>
-      ))}
-      {view.report !== undefined && (
-        <li className="list-none">
-          <Report view={view} report={view.report} />
-        </li>
-      )}
+      <li className="list-none">
+        <DockBar
+          label="Incident"
+          lamp={view.recovered === undefined ? LAMP[view.status] : "working"}
+          title={title}
+          line={line}
+          inline={!asking}
+          detailsLabel="Details"
+          details={<IncidentDetails view={view} task={task} pause={pause} />}
+          below={pause?.below}
+          actions={
+            <>
+              {!asking && pause?.actions}
+              {close}
+              {asking && !working && (
+                <Button
+                  size="sm"
+                  disabled={answer.isPending}
+                  onClick={() =>
+                    answer.mutate(
+                      { id: `iask:recovered:${view.task}`, option: "continue" },
+                      { onError: fail("Could not answer") },
+                    )
+                  }
+                >
+                  Let the lead continue
+                </Button>
+              )}
+              {view.quiet !== undefined && (
+                <Button
+                  size="sm"
+                  disabled={ask.isPending}
+                  onClick={() => ask.mutate(view.task, { onError: fail("Could not ask the captain") })}
+                >
+                  Ask the captain now
+                </Button>
+              )}
+            </>
+          }
+        />
+      </li>
     </>
+  );
+}
+
+/** What Details opens: each client room with what it sees, the four steps, the follow-ups, and what a pause left. */
+function IncidentDetails({
+  view,
+  task,
+  pause,
+}: {
+  view: IncidentView;
+  task: Task | undefined;
+  pause: PauseView | undefined;
+}) {
+  const row = useTaskRow(task?.id);
+  const followUps = row?.case?.followUps ?? [];
+  const current = view.status;
+  return (
+    <>
+      {view.facts !== "" && <p className="text-pretty">{view.facts}</p>}
+      {view.rooms.map((room) => (
+        <p key={room.room} className="text-pretty">
+          <span className="font-medium">
+            {room.joined === true
+              ? `${room.title}: joined a newer incident`
+              : `${room.title} sees ${room.sees === undefined ? "nothing yet" : CLIENT_STATUS_LABEL[room.sees]}`}
+          </span>
+          {room.joined === true ? "" : `. ${lineOf(view, room)}`}
+        </p>
+      ))}
+      <Steps view={view} current={current} />
+      {followUps.length > 0 && <FollowUps items={followUps} />}
+      {pause?.details}
+    </>
+  );
+}
+
+/** The follow-ups the case found, folded behind one line, each as markdown. */
+function FollowUps({ items }: { items: readonly { id: string; text: string }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-fit cursor-pointer text-sm font-medium text-fg hover:underline"
+      >
+        Follow-ups ({items.length}) {open ? "▾" : "▸"}
+      </button>
+      {open && (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
+          {items.map((f) => (
+            <li key={f.id} className="min-w-0">
+              <Markdown text={f.text} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -157,10 +218,10 @@ function lineOf(view: IncidentView, room: IncidentView["rooms"][number]): string
   return [view.facts, told].filter((p) => p !== "").join(" · ");
 }
 
-function Steps({ view }: { view: IncidentView }) {
-  const current = view.steps.findIndex((s) => s.status === view.status);
+function Steps({ view, current: status }: { view: IncidentView; current: ClientStatus }) {
+  const current = view.steps.findIndex((s) => s.status === status);
   return (
-    <ol className="m-0 mt-1 flex list-none flex-wrap gap-x-4 gap-y-0.5 p-0 pl-4 text-sm">
+    <ol className="m-0 flex list-none flex-wrap gap-x-4 gap-y-0.5 p-0 text-sm">
       {view.steps.map((step, i) => (
         <li
           key={step.status}
@@ -181,6 +242,15 @@ function Steps({ view }: { view: IncidentView }) {
 }
 
 type Version = "internal" | "client";
+
+/** The report of a resolved incident, in its two versions, with the owner's Send to the client. */
+export function IncidentReport({ view }: { view: IncidentView }) {
+  return view.report === undefined ? null : (
+    <li className="list-none">
+      <Report view={view} report={view.report} />
+    </li>
+  );
+}
 
 function Report({ view, report }: { view: IncidentView; report: NonNullable<IncidentView["report"]> }) {
   const [version, setVersion] = useState<Version>("client");

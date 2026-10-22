@@ -463,7 +463,8 @@ export class CaseService {
         note: `Told ${found.record.client} the case is fixed`,
         about: found.task.id,
       });
-      this.update(found.task.id, withTold);
+      const toldAt = this.now().toISOString();
+      this.update(found.task.id, (record) => withTold(record, toldAt, input.tell?.text ?? ""));
       if (sent.state !== "sent") {
         note = `The message to the client is ${sent.state === "held" ? `held for the owner (${sent.why ?? "a rule"})` : `not sent (${sent.why ?? "it failed"})`}. The case is closed anyway.`;
       }
@@ -509,8 +510,9 @@ export class CaseService {
     return { task: open.task, level: await this.deps.level(org) };
   }
 
-  told(task: string): void {
-    this.update(task, withTold);
+  told(task: string, text: string): void {
+    const at = this.now().toISOString();
+    this.update(task, (record) => withTold(record, at, text));
   }
 
   // ---------------------------------------------------------------------------

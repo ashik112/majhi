@@ -1,5 +1,4 @@
-import type { AccountView, AgentEntry, HostStatus, OrgView, RootScan } from "@majhi/shared";
-import { accountsNeedingYou } from "../shell/model";
+import type { HostStatus, RootScan } from "@majhi/shared";
 
 export type Tone = "green" | "coral" | "blue" | "neutral";
 
@@ -49,54 +48,4 @@ export function sshCard(host: HostStatus | undefined): CardState {
     tone: "green",
     detail: `${ssh.loaded} ${ssh.loaded === 1 ? "key" : "keys"} loaded`,
   };
-}
-
-export function accountsCard(accounts: readonly AccountView[] | undefined): CardState {
-  if (accounts === undefined) return { pill: "Checking", tone: "neutral", detail: "" };
-  if (accounts.length === 0)
-    return { pill: "None yet", tone: "coral", detail: "Add an account so agents can run" };
-  const need = accountsNeedingYou(accounts).length;
-  const count = `${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`;
-  return need > 0
-    ? { pill: "Needs you", tone: "coral", detail: `${count}, ${need} ${need === 1 ? "needs" : "need"} you` }
-    : { pill: "Ready", tone: "green", detail: count };
-}
-
-export function agentsCard(agents: readonly AgentEntry[] | undefined, orgs: readonly OrgView[]): CardState {
-  if (agents === undefined) return { pill: "Checking", tone: "neutral", detail: "" };
-  const ok = agents.filter((a) => a.status === "ok");
-  const broken = agents.length - ok.length;
-  const scopes = new Set(ok.map((a) => (a.status === "ok" ? a.agent.frontmatter.scope : "")));
-  const orgScopes = orgs.filter((o) => scopes.has(o.id)).length;
-  const detail = `${ok.length} ${ok.length === 1 ? "agent" : "agents"}${
-    orgScopes > 0 ? ` across ${orgScopes} ${orgScopes === 1 ? "workspace" : "workspaces"}` : ""
-  }`;
-  if (broken > 0) return { pill: "Needs you", tone: "coral", detail: `${detail}, ${broken} with errors` };
-  return { pill: ok.length > 0 ? "Ready" : "None yet", tone: ok.length > 0 ? "green" : "coral", detail };
-}
-
-/** The captain agent and how its account is doing. */
-export function bossCard(
-  agents: readonly AgentEntry[] | undefined,
-  accounts: readonly AccountView[] | undefined,
-): CardState & { id?: string } {
-  if (agents === undefined) return { pill: "Checking", tone: "neutral", detail: "" };
-  const boss = agents.find((a): a is Extract<AgentEntry, { status: "ok" }> => a.status === "ok" && a.isBoss);
-  if (!boss) return { pill: "No captain", tone: "coral", detail: "Choose the agent that runs setup" };
-  const f = boss.agent.frontmatter;
-  const account = accounts?.find((a) => a.id === f.account);
-  const detail = `@${f.id} · ${f.account} · ${f.model ?? "account default"}`;
-  const ok =
-    account?.status === "healthy" || account?.status === "running-high" || account?.status === "relogin-soon";
-  return {
-    id: f.id,
-    detail,
-    pill: ok ? "Healthy" : account ? "Needs you" : "No account",
-    tone: ok ? "green" : "coral",
-  };
-}
-
-/** How many of the five cards are ready. */
-export function readyCount(cards: readonly CardState[]): number {
-  return cards.filter((c) => c.tone === "green").length;
 }

@@ -1,11 +1,12 @@
 import { type WikiPageId, WikiPageIdSchema, type WikiSource, type WikiStatus } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { BookText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, ListDetail } from "@/components/ui/list-detail";
+import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { describeError } from "@/lib/errors";
@@ -33,7 +34,7 @@ const WORKSPACE_SCOPE = "workspace";
  * and line behind it, or the whole workspace's: how its repos connect. The workspace is the sidebar's filter,
  * shown here as a picker; the project (or `scope=workspace`) and the page are in the URL.
  */
-export function WikiView() {
+export function WikiView({ tabs }: { tabs: ReactNode }) {
   const { org: filter, setOrg } = useOrgFilter();
   const { workspaces } = useWikiWorkspaces();
   const projects = useProjects();
@@ -48,6 +49,7 @@ export function WikiView() {
   if (workspace === undefined) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <PageHeader tabs={tabs} />
         <RowsSkeleton rows={6} height={44} />
       </div>
     );
@@ -58,6 +60,7 @@ export function WikiView() {
       workspaces={workspaces}
       workspace={workspace}
       onOrg={(org) => setOrg(org)}
+      tabs={tabs}
     />
   );
 }
@@ -97,10 +100,12 @@ function Scope({
   workspaces,
   workspace,
   onOrg,
+  tabs,
 }: {
   workspaces: ReturnType<typeof useWikiWorkspaces>["workspaces"];
   workspace: ReturnType<typeof useWikiWorkspaces>["workspaces"][number];
   onOrg: (org: string) => void;
+  tabs: ReactNode;
 }) {
   const org = workspace.org.id;
   const search: AppSearch = useSearch({ strict: false });
@@ -286,6 +291,7 @@ function Scope({
         projects={on ? projects.map((id) => ({ id, status: statuses.find((s) => s.project === id) })) : []}
         scope={whole ? WHOLE : project}
         onScope={(p) => go({ project: p === WHOLE ? undefined : p })}
+        tabs={tabs}
         status={status}
         commits={whole ? commits : undefined}
         onUpdate={

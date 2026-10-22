@@ -51,7 +51,53 @@ export function ageWord(iso: string, now: number): string {
   return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
+/** "0:08", "4:12", "1:02:03": how long something has run, for the line of a card in Work. */
+export function runClock(from: string, now: number): string {
+  const total = Math.max(0, Math.floor((now - Date.parse(from)) / 1000));
+  const two = (n: number) => String(n).padStart(2, "0");
+  const h = Math.floor(total / 3600);
+  const m = Math.floor(total / 60) % 60;
+  return h > 0 ? `${h}:${two(m)}:${two(total % 60)}` : `${m}:${two(total % 60)}`;
+}
+
+/** The clock time of a moment, "13:37", for who and when on a card. */
+export function clockOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 // Work -----------------------------------------------------------------------
+
+/**
+ * How a task's card in Work looks: its look follows what it is doing, so each state is told apart at a glance.
+ * An incident (a client's case, or a task typed as one) is red whatever else it is doing.
+ */
+export type CardKind = "incident" | "working" | "needs" | "blocked" | "paused" | "mr";
+
+export const CARD_TAG: Record<CardKind, string> = {
+  incident: "Incident",
+  working: "Working",
+  needs: "Needs you",
+  blocked: "Blocked",
+  paused: "Paused",
+  mr: "MR open",
+};
+
+/** The card kind of a task in Work, from its state and its type. No new store: both are on the row. */
+export function cardKindOf(task: Pick<TaskSummary, "case" | "typing">, state: WorkState): CardKind {
+  if (task.case !== undefined || task.typing?.type === "incident") return "incident";
+  switch (state) {
+    case "working":
+      return "working";
+    case "your-call":
+      return "needs";
+    case "blocked":
+      return "blocked";
+    case "mr":
+      return "mr";
+    default:
+      return "paused";
+  }
+}
 
 /** What a task in Work is doing, for its lamp, its word and its main button. */
 export type WorkState = "your-call" | "working" | "blocked" | "paused" | "queued" | "mr";
@@ -199,7 +245,10 @@ export function buildWork(
       .map(([project, list]): ProjectGroup => {
         const sorted = list.toSorted(
           (a, b) =>
-            STATE_RANK[a.state] - STATE_RANK[b.state] || b.task.updatedAt.localeCompare(a.task.updatedAt),
+            Number(cardKindOf(b.task, b.state) === "incident") -
+              Number(cardKindOf(a.task, a.state) === "incident") ||
+            STATE_RANK[a.state] - STATE_RANK[b.state] ||
+            b.task.updatedAt.localeCompare(a.task.updatedAt),
         );
         const blocked = sorted.filter((r) => r.state === "blocked");
         const fold = blocked.length >= 2;

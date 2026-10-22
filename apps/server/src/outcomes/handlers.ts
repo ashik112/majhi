@@ -24,7 +24,7 @@ export interface OutcomesHandlerDeps extends FindingsHandlerDeps {
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     const where: Record<string, string> = {
-      "money.set": " The owner sets it on the Health & usage page.",
+      "money.set": " The owner sets it on the Usage page.",
       "scorecard.setMinutes": " The owner sets it on the Captain page.",
       "trust.unmute": " The owner does it on the Captain page.",
     };

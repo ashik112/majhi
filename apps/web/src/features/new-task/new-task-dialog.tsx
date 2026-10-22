@@ -1,5 +1,6 @@
 import {
   ATTACHMENT_ACCEPT,
+  PAGE_PATH,
   type ParsedTask,
   parseTaskText,
   TASK_TYPE_LABEL,
@@ -374,8 +375,8 @@ export function NewTaskDialog({
             {projects.data?.length === 0 && (
               <p className="text-sm text-fg-muted">
                 No projects yet.{" "}
-                <Link to="/projects" onClick={onClose} className="text-blue hover:underline">
-                  Add one in Projects and links
+                <Link to={PAGE_PATH.projects} onClick={onClose} className="text-blue hover:underline">
+                  Add one in Projects
                 </Link>
                 . A task without one is a chat task.
               </p>

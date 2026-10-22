@@ -236,6 +236,19 @@ export type ShipFix = z.infer<typeof ShipFixSchema>;
 export const PausedBySchema = z.enum(["captain", "autonomy-off", "autonomy-stop"]);
 export type PausedBy = z.infer<typeof PausedBySchema>;
 
+/**
+ * Pauses of a captain lane that majhi heals by itself: the lane watchdog resumes a lane held by an error, a
+ * signed-out account, a usage limit or agents that are down, and tells the owner only when ten minutes have
+ * passed without it working. Until then the pause is not a card for the owner.
+ */
+export const LANE_HEAL_REASONS: readonly PausedReason[] = ["error", "signed-out", "limit", "down"];
+export const LANE_HEAL_MS = 10 * 60_000;
+
+/** Whether majhi is still healing this pause of a captain lane: the reason is one it heals and the wait is not over. */
+export function healsItself(reason: PausedReason, pausedAt: string, now: number): boolean {
+  return LANE_HEAL_REASONS.includes(reason) && now - Date.parse(pausedAt) < LANE_HEAL_MS;
+}
+
 /** Paused until the owner continues it: never resumed by majhi on its own. */
 export function waitsForOwner(reason: PausedReason | undefined): boolean {
   return reason === "owner" || reason === "loop" || reason === "blocked";
@@ -1224,6 +1237,16 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     internal: ReportTextSchema,
     client: ReportTextSchema,
     sent: z.array(ReportSentSchema),
+  }),
+  /**
+   * A background process of the task (5.15), where it started: one item per run, `process:<id>:<startedAt>`,
+   * updated in place until it ends. While it runs the page reads its live output from the room's process list.
+   * `handled`: its end was dealt with (the agent that waited for it was woken, or nobody had to be).
+   */
+  RoomItemBase.extend({
+    type: z.literal("process"),
+    process: ProcessInfoSchema,
+    handled: z.literal(true).optional(),
   }),
   RoomItemBase.extend({
     type: z.literal("system"),

@@ -702,6 +702,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     })),
   );
   const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
+  // No process outlives the server: a run recorded as running ended with the last one.
+  room.closeOrphanedProcesses();
   const agents = new AgentService(config, agentStore, cache, accounts, Date.now, {
     isWorking: (agent) => runs.isWorking(agent),
     renameInTasks: (agent, newId) => {
@@ -1398,6 +1400,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     const gate = status === "review" ? handoffService?.gate(id) : undefined;
     return gate === undefined ? {} : { checks: gate };
   };
+  /** The captain's agent id, for a subject: its asks read "Captain asks". */
+  const captainOf = (): Pick<Subject, "captain"> => {
+    const captain = config.knownBoss();
+    return captain === undefined ? {} : { captain };
+  };
   /** The task an item belongs to, as notifications and the Decisions inbox name it. */
   const subjectOf = (id: string): Subject | undefined => {
     const task = store.tasks.subjectInfo(id);
@@ -1408,6 +1415,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           title: task.title,
           chat: isOwnerChat(task),
           ...(isCaptainThread(task) ? { lane: true } : {}),
+          ...captainOf(),
           ...(task.org === undefined ? {} : { org: task.org }),
           repos: task.repos,
           status: task.status,
@@ -1431,6 +1439,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         title: task.title,
         chat: isOwnerChat(task),
         ...(isCaptainThread(task) ? { lane: true } : {}),
+        ...captainOf(),
         ...(task.org === undefined ? {} : { org: task.org }),
         repos: task.repos,
         status: task.status,

@@ -1,56 +1,82 @@
 /**
- * majhi's screens as plain data: the web app builds its Settings list and router paths
- * from it, and the captain's prompt carries the same map, so neither can name a page that is not there.
+ * majhi's screens as plain data: the web app builds its top bar places, its Settings list and router
+ * paths from it, and the captain's prompt carries the same map, so neither can name a page that is not there.
  */
 
-/** The path of every page, in one place: the router, the keys and the links between pages read it. */
+/**
+ * The path of every page, in one place: the router, the keys and the links between pages read it.
+ * Places (Watch, Wiki, Usage) have their own address. Settings entries are `/settings/<entry>`; a page
+ * that is a part of an entry (the Captain page inside Agents) shares its entry's address.
+ */
 export const PAGE_PATH = {
   today: "/today",
   board: "/",
   chats: "/chats",
-  agents: "/agents",
-  accounts: "/accounts",
-  connections: "/connections",
-  // Not `/health`: the server answers that address itself, so a reload there would show its JSON.
-  usage: "/usage",
-  audit: "/audit",
-  skills: "/skills",
-  memory: "/memory",
-  setup: "/setup",
-  projects: "/projects",
-  orgs: "/orgs",
-  captain: "/captain",
-  playbooks: "/playbooks",
+  decisions: "/decisions",
   watch: "/watch",
   wiki: "/wiki",
-  limits: "/limits",
-  decisions: "/decisions",
+  // Memory is the Wiki's second tab and the audit log is Usage's second tab (`PAGE_TAB`).
+  memory: "/wiki",
+  // Not `/health`: the server answers that address itself, so a reload there would show its JSON.
+  usage: "/usage",
+  audit: "/usage",
+  setup: "/settings",
+  orgs: "/settings/workspaces",
+  projects: "/settings/projects",
+  accounts: "/settings/accounts",
+  git: "/settings/git",
+  connections: "/settings/connections",
+  agents: "/settings/agents",
+  captain: "/settings/agents",
+  approvals: "/settings/approvals",
+  skills: "/settings/skills",
+  playbooks: "/settings/playbooks",
+  limits: "/settings/limits",
+  look: "/settings/look",
+  editor: "/settings/editor",
+  laya: "/settings/local-model",
+  system: "/settings/system",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;
 export type PagePath = (typeof PAGE_PATH)[PageName];
 
+/** The tab a page opens on, for the pages that are a tab of another one. */
+export const PAGE_TAB: Partial<Record<PageName, string>> = { memory: "memory", audit: "activity" };
+
+/** Where a page opens: its address, and the tab when it is one. */
+export function pageTarget(page: PageName): { to: PagePath; tab?: string } {
+  const tab = PAGE_TAB[page];
+  return tab === undefined ? { to: PAGE_PATH[page] } : { to: PAGE_PATH[page], tab };
+}
+
 /** What each page is called in Settings, the palette and the shortcuts list. */
 export const PAGE_LABEL: Record<PageName, string> = {
   today: "Today",
-  board: "Console",
+  board: "Home",
   chats: "Chat",
-  captain: "Captain",
-  playbooks: "Playbooks",
+  decisions: "Decisions",
   watch: "Watch",
   wiki: "Wiki",
-  limits: "Limits",
-  decisions: "Decisions",
-  agents: "Agents",
-  accounts: "Accounts",
-  connections: "Connections",
-  projects: "Projects and links",
-  skills: "Skills & MCP",
   memory: "Memory",
+  usage: "Usage",
+  audit: "Activity",
+  setup: "Settings",
   orgs: "Workspaces",
-  setup: "Hub setup",
-  usage: "Health & usage",
-  audit: "Audit log",
+  projects: "Projects",
+  accounts: "AI accounts",
+  git: "Git and SSH",
+  connections: "Connections",
+  agents: "Agents",
+  captain: "Captain",
+  approvals: "Approvals",
+  skills: "Skills and tools",
+  playbooks: "Playbooks",
+  limits: "Limits",
+  look: "Look and alerts",
+  editor: "Editor",
+  laya: "Local model",
+  system: "System",
 };
 
 /** The name a page is called in a message ("Watch (/watch)"). The console is one screen with three panes. */
@@ -58,27 +84,46 @@ export function pageLabel(page: PageName): string {
   return page === "decisions" ? "Needs you" : PAGE_LABEL[page];
 }
 
-/** The sections of Hub setup, in list order, under their group. The URL keeps one as `?section=`. */
-export const SETUP_GROUPS = [
-  { label: "Basics", sections: ["overview", "roots", "ssh"] },
-  {
-    label: "How majhi works",
-    sections: ["decisions", "memory", "wiki", "context", "turns", "approvals", "notifications", "containers"],
-  },
-  { label: "More", sections: ["editor", "appearance", "backups", "history"] },
+/** The places in the top bar, after the boat mark: where the owner checks things daily. */
+export const PLACES = ["board", "watch", "wiki", "usage"] as const satisfies readonly PageName[];
+export type Place = (typeof PLACES)[number];
+
+/** The tabs of the Wiki place and of the Usage place, in order. */
+export const WIKI_TABS = [
+  { id: "pages", label: "Pages" },
+  { id: "memory", label: "Memory" },
+] as const;
+export const USAGE_TABS = [
+  { id: "health", label: "Health and cost" },
+  { id: "activity", label: "Activity" },
 ] as const;
 
-export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
+/** The parts of Settings that were sections of Hub setup, each one panel of majhi.yaml. */
+export const SETUP_SECTIONS = [
+  "roots",
+  "ssh",
+  "decisions",
+  "memory",
+  "wiki",
+  "context",
+  "turns",
+  "approvals",
+  "notifications",
+  "editor",
+  "containers",
+  "appearance",
+  "backups",
+  "history",
+] as const;
 
-export const SETUP_SECTIONS: readonly SetupSection[] = SETUP_GROUPS.flatMap((g) => g.sections);
+export type SetupSection = (typeof SETUP_SECTIONS)[number];
 
 export const SECTION_TITLE: Record<SetupSection, string> = {
-  overview: "Overview",
   roots: "Project folders",
   ssh: "SSH keys",
-  decisions: "Laya",
-  memory: "Memory",
-  wiki: "Wiki",
+  decisions: "Local model",
+  memory: "Memory rules",
+  wiki: "Wiki settings",
   context: "Context and limits",
   turns: "Turns",
   approvals: "Approvals",
@@ -94,119 +139,179 @@ export function isSetupSection(value: string | undefined): value is SetupSection
   return SETUP_SECTIONS.some((s) => s === value);
 }
 
-/** One row of the Settings list: a page with its own address, or a section of Hub setup. */
-export type SettingsItem =
-  | { kind: "page"; page: SettingsPage }
-  | { kind: "section"; section: SetupSection; label?: string };
+/**
+ * One panel inside a Settings entry: an existing page, a section of Hub setup, or the git sign-ins of
+ * every workspace. An entry that holds several shows them one after another, each under its heading.
+ */
+export type SettingsPart =
+  | { kind: "page"; page: PageName; title: string }
+  | { kind: "section"; section: SetupSection; title: string }
+  | { kind: "git"; title: string };
 
-/** The pages that open inside the Settings frame, besides Hub setup itself. */
-export type SettingsPage = Extract<
-  PageName,
-  | "connections"
-  | "projects"
-  | "memory"
-  | "limits"
-  | "audit"
-  | "accounts"
-  | "usage"
-  | "agents"
-  | "skills"
-  | "wiki"
-  | "playbooks"
-  | "orgs"
-  | "watch"
-  | "captain"
->;
+/** One row of the Settings list. */
+export interface SettingsEntry {
+  /** The last part of its address: `/settings/<id>`. */
+  id: string;
+  label: string;
+  page: PageName;
+  parts: readonly SettingsPart[];
+}
 
-/** The Settings list, in order. Pages keep their own address; Hub setup's sections are `/setup?section=`. */
-export const SETTINGS_GROUPS: readonly { label: string; items: readonly SettingsItem[] }[] = [
+const page = (p: PageName, title: string): SettingsPart => ({ kind: "page", page: p, title });
+const section = (s: SetupSection): SettingsPart => ({ kind: "section", section: s, title: SECTION_TITLE[s] });
+
+/** The Settings list: 14 entries in 4 groups. Each entry's panels are today's pages and sections, unchanged. */
+export const SETTINGS_GROUPS: readonly { label: string; entries: readonly SettingsEntry[] }[] = [
   {
-    label: "General",
-    items: [
-      { kind: "section", section: "overview" },
-      { kind: "section", section: "appearance" },
-      { kind: "section", section: "notifications" },
-      { kind: "section", section: "editor" },
+    label: "Workspaces",
+    entries: [
+      { id: "workspaces", label: "Workspaces", page: "orgs", parts: [page("orgs", "Workspaces")] },
+      {
+        id: "projects",
+        label: "Projects",
+        page: "projects",
+        parts: [page("projects", "Projects and links"), section("roots")],
+      },
     ],
   },
   {
-    label: "Workspaces",
-    items: [
-      { kind: "page", page: "orgs" },
-      { kind: "page", page: "projects" },
-      { kind: "page", page: "accounts" },
-      { kind: "page", page: "connections" },
-      { kind: "section", section: "roots" },
-      { kind: "section", section: "ssh" },
+    label: "Sign-ins",
+    entries: [
+      { id: "accounts", label: "AI accounts", page: "accounts", parts: [page("accounts", "AI accounts")] },
+      {
+        id: "git",
+        label: "Git and SSH",
+        page: "git",
+        parts: [section("ssh"), { kind: "git", title: "Git logins" }],
+      },
+      {
+        id: "connections",
+        label: "Connections",
+        page: "connections",
+        parts: [page("connections", "Connections")],
+      },
     ],
   },
   {
     label: "Agents",
-    items: [
-      { kind: "page", page: "agents" },
-      { kind: "page", page: "captain" },
-      { kind: "page", page: "skills" },
-      { kind: "page", page: "playbooks" },
-      { kind: "page", page: "memory" },
-      { kind: "section", section: "memory", label: "Memory rules" },
-      { kind: "page", page: "wiki" },
-      { kind: "section", section: "wiki", label: "Wiki settings" },
-      { kind: "section", section: "turns" },
-      { kind: "section", section: "context" },
+    entries: [
+      {
+        id: "agents",
+        label: "Agents",
+        page: "agents",
+        parts: [page("agents", "Agents"), page("captain", "Captain")],
+      },
+      { id: "approvals", label: "Approvals", page: "approvals", parts: [section("approvals")] },
+      {
+        id: "skills",
+        label: "Skills and tools",
+        page: "skills",
+        parts: [page("skills", "Skills and tools")],
+      },
+      { id: "playbooks", label: "Playbooks", page: "playbooks", parts: [page("playbooks", "Playbooks")] },
+      {
+        id: "limits",
+        label: "Limits",
+        page: "limits",
+        parts: [section("turns"), section("context"), page("limits", "Limits")],
+      },
     ],
   },
   {
-    label: "Control",
-    items: [
-      { kind: "page", page: "limits" },
-      { kind: "section", section: "approvals" },
-      { kind: "section", section: "decisions" },
-      { kind: "page", page: "watch" },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { kind: "page", page: "usage" },
-      { kind: "section", section: "containers" },
-      { kind: "section", section: "backups" },
-      { kind: "section", section: "history" },
-      { kind: "page", page: "audit" },
+    label: "App",
+    entries: [
+      {
+        id: "look",
+        label: "Look and alerts",
+        page: "look",
+        parts: [section("appearance"), section("notifications")],
+      },
+      { id: "editor", label: "Editor", page: "editor", parts: [section("editor")] },
+      { id: "local-model", label: "Local model", page: "laya", parts: [section("decisions")] },
+      {
+        id: "system",
+        label: "System",
+        page: "system",
+        parts: [section("containers"), section("backups"), section("history")],
+      },
     ],
   },
 ];
 
-export function settingsItemLabel(item: SettingsItem): string {
-  return item.kind === "page" ? PAGE_LABEL[item.page] : (item.label ?? SECTION_TITLE[item.section]);
+export const SETTINGS_ENTRIES: readonly SettingsEntry[] = SETTINGS_GROUPS.flatMap((g) => g.entries);
+
+export function settingsEntry(id: string | undefined): SettingsEntry | undefined {
+  return SETTINGS_ENTRIES.find((e) => e.id === id);
 }
 
-/** Overview is Hub setup's own address; every other section adds `?section=`. */
-export function settingsItemPath(item: SettingsItem): string {
-  if (item.kind === "page") return PAGE_PATH[item.page];
-  return item.section === "overview" ? PAGE_PATH.setup : `${PAGE_PATH.setup}?section=${item.section}`;
+export function settingsEntryPath(entry: SettingsEntry): string {
+  return `${PAGE_PATH.setup}/${entry.id}`;
+}
+
+/** Where a Hub setup section lives now. `/setup?section=x` redirects here. */
+export type SectionHome =
+  | { to: "entry"; entry: string }
+  | { to: "console" }
+  | { to: "wiki"; search: { tab: "memory"; rules: true } | { tab: "pages"; settings: true } };
+
+export const SECTION_HOME: Record<SetupSection | "overview" | "skills", SectionHome> = {
+  overview: { to: "console" },
+  roots: { to: "entry", entry: "projects" },
+  ssh: { to: "entry", entry: "git" },
+  decisions: { to: "entry", entry: "local-model" },
+  memory: { to: "wiki", search: { tab: "memory", rules: true } },
+  wiki: { to: "wiki", search: { tab: "pages", settings: true } },
+  context: { to: "entry", entry: "limits" },
+  turns: { to: "entry", entry: "limits" },
+  approvals: { to: "entry", entry: "approvals" },
+  notifications: { to: "entry", entry: "look" },
+  editor: { to: "entry", entry: "editor" },
+  containers: { to: "entry", entry: "system" },
+  appearance: { to: "entry", entry: "look" },
+  backups: { to: "entry", entry: "system" },
+  history: { to: "entry", entry: "system" },
+  skills: { to: "entry", entry: "skills" },
+};
+
+/** Where a link that names a Hub setup section (`captain`, `notifications`, `mcp`) opens now. */
+export function sectionTarget(section: string): {
+  to: PagePath;
+  search?: { tab?: string; rules?: true; settings?: true };
+} {
+  if (section === "captain") return { to: PAGE_PATH.captain };
+  if (section.startsWith("mcp")) return { to: PAGE_PATH.skills, search: { tab: "mcp" } };
+  const key = section === "skills" || section === "overview" || isSetupSection(section) ? section : undefined;
+  const home = key === undefined ? undefined : SECTION_HOME[key];
+  if (home === undefined || home.to === "console") return { to: PAGE_PATH.board };
+  if (home.to === "wiki") return { to: PAGE_PATH.wiki, search: home.search };
+  const entry = settingsEntry(home.entry);
+  return { to: PAGE_PATH[entry?.page ?? "orgs"] };
 }
 
 /** How a message names a page: its name and its address, like "Watch (/watch)". */
 export function pageRef(page: PageName): string {
-  return `${pageLabel(page)} (${PAGE_PATH[page]})`;
+  const { to, tab } = pageTarget(page);
+  return `${pageLabel(page)} (${to}${tab === undefined ? "" : `?tab=${tab}`})`;
 }
 
 /**
- * Every screen, one line each: the console, then the Settings list, then the pages only the palette
+ * Every screen, one line each: Home, the places, then the Settings list, then the pages only the palette
  * (Cmd K, which lists every page) opens.
  */
 export const SCREEN_MAP: string = (() => {
-  const settingsPages = new Set<PageName>(["setup"]);
   const lines = [
-    "Console (/) > Needs you, Work and Chat, side by side. The old addresses /decisions, /today and /chats open it",
+    "Home (/) > Needs you, Work and Chat, side by side. The old addresses /decisions, /today and /chats open it",
+    "Places (top bar) > Watch (/watch), Wiki (/wiki, tabs Pages and Memory), Usage (/usage, tabs Health and cost, and Activity)",
     ...SETTINGS_GROUPS.flatMap((group) =>
-      group.items.map((item) => {
-        if (item.kind === "page") settingsPages.add(item.page);
-        return `Settings > ${group.label} > ${settingsItemLabel(item)} (${settingsItemPath(item)})`;
-      }),
+      group.entries.map(
+        (entry) =>
+          `Settings > ${group.label} > ${entry.label} (${settingsEntryPath(entry)})${
+            entry.parts.length > 1 ? `: ${entry.parts.map((p) => p.title).join(", ")}` : ""
+          }`,
+      ),
     ),
+    "Wiki > Memory > Rules button: who writes each task record, briefs and lessons. Wiki > Pages > Settings button: the wiki's own settings",
+    "The old addresses /accounts, /agents, /captain, /orgs, /projects, /connections, /skills, /playbooks, /limits, /memory, /audit and /setup open the new place of the same thing",
   ];
-  const placed = new Set<PageName>(["board", ...settingsPages]);
-  const others = (Object.keys(PAGE_PATH) as PageName[]).filter((page) => !placed.has(page));
-  return [...lines, ...others.map((page) => `Palette (Cmd K) > ${pageRef(page)}`)].join("\n");
+  return lines.join("\n");
 })();

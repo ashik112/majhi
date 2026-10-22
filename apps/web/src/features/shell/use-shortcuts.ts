@@ -135,7 +135,10 @@ export function useShortcuts(onNewTask: () => void): {
         default:
           if (action.go) {
             event.preventDefault();
-            void navigate({ to: action.go, search: orgSearch(filter) });
+            void navigate({
+              to: action.go,
+              search: { ...orgSearch(filter), ...(action.goTab === undefined ? {} : { tab: action.goTab }) },
+            });
           }
       }
     }

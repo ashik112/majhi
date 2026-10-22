@@ -1,5 +1,6 @@
 import type { WikiStatus } from "@majhi/shared";
 import { RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
@@ -7,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pick, type PickOption } from "@/components/ui/pick";
 import { badgeLetters, plural } from "@/lib/format";
 import { COPY } from "./copy";
+import { WikiSettingsButton } from "./settings-button";
 import { SignInButton } from "./sign-in-button";
 import type { WikiWorkspace } from "./use-wiki-switch";
 
@@ -33,6 +35,8 @@ interface Props {
   /** The commit each project's pages were built from, shown for the whole workspace. */
   commits: readonly { project: string; commit: string }[] | undefined;
   onUpdate: (() => void) | undefined;
+  /** The Pages and Memory tabs of the Wiki place. */
+  tabs: ReactNode;
 }
 
 /** The top bar: the workspace and project pickers, what the pages were built from, and Update. */
@@ -46,6 +50,7 @@ export function WikiHeader({
   status,
   commits,
   onUpdate,
+  tabs,
 }: Props) {
   const orgOptions: PickOption[] = workspaces.map((w) => ({
     value: w.org.id,
@@ -65,7 +70,7 @@ export function WikiHeader({
   ];
   return (
     <PageHeader
-      title="Wiki"
+      tabs={tabs}
       subtitle={
         <span className="flex items-center gap-2">
           <Pick
@@ -89,6 +94,7 @@ export function WikiHeader({
       }
     >
       <StatusLine status={status} commits={commits} unbuilt={unbuilt} />
+      <WikiSettingsButton />
       {onUpdate !== undefined && (
         <>
           <Button

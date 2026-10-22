@@ -10,6 +10,11 @@ import { ProcessContainerSchema } from "./containers.ts";
 /** `p1`, `p2`: unique within a task. */
 export const ProcessIdSchema = z.string().regex(/^p[1-9][0-9]*$/, "Process ids look like p1");
 
+/** The room item of one run of a process. The same however often the run is reported, so a restart never doubles it. */
+export function processItemId(p: Pick<ProcessInfo, "id" | "startedAt">): string {
+  return `process:${p.id}:${p.startedAt}`;
+}
+
 export const ProcessStatusSchema = z.enum(["running", "exited", "stopped"]);
 export type ProcessStatus = z.infer<typeof ProcessStatusSchema>;
 

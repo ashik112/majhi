@@ -1,4 +1,5 @@
 import { RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
@@ -22,7 +23,7 @@ import { useCheckAll } from "./use-check-all";
  * fixed shell at every width. "Run health check" checks everything in one go, and the page runs it by
  * itself when the last full run is old.
  */
-export function HealthView() {
+export function HealthView({ tabs }: { tabs: ReactNode }) {
   const accounts = useAccounts();
   const orgs = useOrgs();
   const tools = useTools();
@@ -42,7 +43,7 @@ export function HealthView() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Health & usage"
+        tabs={tabs}
         subtitle={
           check.running ? (
             <span>{progress}</span>

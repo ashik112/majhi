@@ -10,7 +10,7 @@ import { workspaceOf } from "@/features/decisions/model";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { useConversations } from "@/lib/conversation-queries";
 import { useDecisions } from "@/lib/decision-queries";
-import { useHomeFacts } from "@/lib/home-queries";
+import { type DoingFact, useHomeFacts } from "@/lib/home-queries";
 import { useNotices } from "@/lib/notice-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
@@ -38,7 +38,7 @@ export interface ConsoleData {
   work: WorkspaceGroup[];
   rails: Rails;
   /** What each agent does now, for a task whose agent has not set Now. */
-  doing: ReadonlyMap<string, { text: string }>;
+  doing: ReadonlyMap<string, DoingFact>;
   /** Decisions waiting per workspace, before the workspace filter. */
   waitingByOrg: ReadonlyMap<string, number>;
   /** The question of the card that waits on a task, for the line under a case in Work. */
@@ -112,13 +112,7 @@ export function useConsoleData(now: number): ConsoleData {
   );
   const rails = useMemo(() => buildRails(taskList.data ?? [], org, now), [taskList.data, org, now]);
 
-  const doing = useMemo(
-    () =>
-      new Map(
-        [...doingFacts].flatMap(([id, d]) => (d.text === undefined ? [] : [[id, { text: d.text }] as const])),
-      ),
-    [doingFacts],
-  );
+  const doing = doingFacts;
 
   const counts = useMemo(
     () => ({

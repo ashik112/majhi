@@ -1,16 +1,15 @@
 import { type KeyboardEvent, useRef } from "react";
 import { cn } from "@/lib/cn";
 
-export type TaskTab = "room" | "changes" | "report" | "context" | "memory" | "terminal";
+export type TaskTab = "room" | "brief" | "changes" | "report" | "terminal";
 
 export const TAB_PANEL_ID = "task-tab-panel";
 
 const LABEL: Record<TaskTab, string> = {
   room: "Room",
+  brief: "Brief",
   changes: "Changes",
   report: "Report",
-  context: "Context",
-  memory: "Memory",
   terminal: "Terminal",
 };
 
@@ -19,8 +18,8 @@ export function tabId(tab: TaskTab): string {
 }
 
 /**
- * The task's tab bar, set along the bottom edge of the header: the selected tab sits on an accent
- * underline. Arrow keys move between tabs, as in any tab list.
+ * The task's tabs, in the middle of its one-row header: the selected tab is a pill. Arrow keys move
+ * between tabs, as in any tab list.
  */
 export function TaskTabs({
   tabs,
@@ -44,7 +43,12 @@ export function TaskTabs({
   }
 
   return (
-    <div role="tablist" aria-label="Task views" onKeyDown={onKeyDown} className="flex items-end gap-1">
+    <div
+      role="tablist"
+      aria-label="Task views"
+      onKeyDown={onKeyDown}
+      className="flex shrink-0 items-center gap-0.5"
+    >
       {tabs.map((tab) => {
         const on = tab === value;
         return (
@@ -62,9 +66,10 @@ export function TaskTabs({
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(tab)}
             className={cn(
-              "relative h-9 cursor-pointer px-2.5 text-base transition-colors duration-150",
-              "after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors",
-              on ? "font-medium text-fg after:bg-accent" : "text-fg-muted after:bg-transparent hover:text-fg",
+              "h-7 cursor-pointer rounded-md px-2.5 text-base transition-colors duration-150",
+              on
+                ? "bg-selected font-medium text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
+                : "text-fg-muted hover:bg-raised hover:text-fg",
             )}
           >
             {LABEL[tab]}

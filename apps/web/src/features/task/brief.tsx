@@ -11,8 +11,8 @@ import { useUpdateTask } from "@/lib/task-queries";
  * What the owner wrote under the title, as markdown, folded to one line. File paths in it open in
  * the viewer, from the task's project. More unfolds it; Edit turns it into a text box.
  */
-export function Brief({ text, task }: { text: string; task: Task }) {
-  const [open, setOpen] = useState(false);
+export function Brief({ text, task, startOpen = false }: { text: string; task: Task; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(text);
   const [folds, setFolds] = useState(false);
@@ -87,10 +87,14 @@ export function Brief({ text, task }: { text: string; task: Task }) {
           !open && folds && "[mask-image:linear-gradient(to_right,black_85%,transparent)]",
         )}
       >
-        <Markdown text={source} task={files} />
+        {text.trim() === "" ? (
+          <p className="m-0 text-base text-fg-faint">No description yet.</p>
+        ) : (
+          <Markdown text={source} task={files} />
+        )}
       </div>
       <div className={cn("flex shrink-0 items-center gap-1", open ? "-ml-1.5" : "")}>
-        {(folds || open) && (
+        {!startOpen && (folds || open) && (
           <button
             type="button"
             aria-expanded={open}

@@ -16,7 +16,9 @@ import {
   Wrench,
 } from "lucide-react";
 import { type ComponentType, memo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { useNow } from "@/lib/use-now";
 import { DiffView } from "./diff-view";
 import { hasToolDetail, isQuietTool, oneLine, shortPath, toolLabel, toolTarget, trimOutput } from "./model";
 
@@ -39,8 +41,36 @@ const STATUS_LABEL: Record<ToolItem["status"], string> = {
   failed: "failed",
 };
 
-/** One tool call as a compact row: icon by kind, title, status and target. Expands to its output. */
-export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem; folder: string }) {
+/** "0:12", "2:14", "1:02:03": how long something has run. */
+export function clockSince(from: string, now: number): string {
+  const total = Math.max(0, Math.floor((now - Date.parse(from)) / 1000));
+  const s = total % 60;
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+/** A live timer from the moment the call began. */
+function Running({ since }: { since: string }) {
+  const now = useNow(1000);
+  return <span className="tnum font-mono text-xs text-amber">{clockSince(since, now)}</span>;
+}
+
+/**
+ * One tool call as a compact row: icon by kind, title, target, then its status right after the text. A call in
+ * progress shows how long it has run and a Stop that stops the run. Expands to its output.
+ */
+export const ToolRow = memo(function ToolRow({
+  item,
+  folder,
+  onStop,
+}: {
+  item: ToolItem;
+  folder: string;
+  /** Stops the agent's run; the row in progress offers it. */
+  onStop?: (() => void) | undefined;
+}) {
   const [open, setOpen] = useState(false);
   if (isQuietTool(item.title)) {
     return (
@@ -76,10 +106,11 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
         </span>
       )}
       {item.skill === undefined && target && target !== item.title && (
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-faint" title={full}>
+        <span className="min-w-0 truncate font-mono text-xs text-fg-faint" title={full}>
           {target}
         </span>
       )}
+      <StatusMark status={item.status} since={item.at} />
       {expandable && (
         <ChevronRight
           aria-hidden="true"
@@ -89,27 +120,33 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
           )}
         />
       )}
-      <StatusMark status={item.status} />
     </>
   );
-  const row =
-    "-ml-1.5 flex h-6 w-[calc(100%+0.375rem)] min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-sm";
+  const row = "-ml-1.5 flex h-6 min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-sm";
+  const working = item.status === "in_progress" && onStop !== undefined;
 
   // A compact row at the gutter, like a line in a log; its output opens underneath.
   return (
     <div className="group/tool pl-[34px]">
-      {expandable ? (
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className={cn(row, "cursor-pointer text-left hover:bg-raised")}
-        >
-          {head}
-        </button>
-      ) : (
-        <div className={row}>{head}</div>
-      )}
+      <div className="flex min-w-0 items-center gap-2">
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className={cn(row, "min-w-0 cursor-pointer text-left hover:bg-raised")}
+          >
+            {head}
+          </button>
+        ) : (
+          <div className={row}>{head}</div>
+        )}
+        {working && (
+          <Button size="sm" className="h-5 shrink-0 px-2 text-xs" onClick={onStop}>
+            Stop
+          </Button>
+        )}
+      </div>
       {open && (
         <div className="mt-1 mb-1.5 ml-5 flex flex-col gap-2">
           {item.content.map((content, i) => (
@@ -122,14 +159,17 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
   );
 });
 
-function StatusMark({ status }: { status: ToolItem["status"] }) {
+function StatusMark({ status, since }: { status: ToolItem["status"]; since: string }) {
   const label = STATUS_LABEL[status];
   const cls = "size-3.5 shrink-0";
   return (
-    <span className="ml-auto flex shrink-0 items-center" title={label}>
+    <span className="flex shrink-0 items-center gap-1.5" title={label}>
       <span className="sr-only">{label}</span>
       {status === "in_progress" ? (
-        <Loader2 aria-hidden="true" className={cn(cls, "animate-spin text-amber")} />
+        <>
+          <Loader2 aria-hidden="true" className={cn(cls, "animate-spin text-amber")} />
+          <Running since={since} />
+        </>
       ) : status === "completed" ? (
         <Check aria-hidden="true" className={cn(cls, "text-fg-dim")} />
       ) : status === "failed" ? (

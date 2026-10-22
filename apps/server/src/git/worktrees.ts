@@ -143,7 +143,7 @@ export function fetchFailureNote(base: string, remote: string, raw: string): str
       "access denied",
     ].some((w) => text.includes(w))
   ) {
-    return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Settings > Connections and sign in to this project's Git account again, or reload your keys in Settings > SSH keys.`;
+    return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Settings > Connections and sign in to this project's Git account again, or reload your keys in Settings > Git and SSH.`;
   }
   if (
     ["could not resolve host", "timed out", "unable to access", "connection"].some((w) => text.includes(w))

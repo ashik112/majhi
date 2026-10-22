@@ -1,9 +1,4 @@
-import { Sun } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { useAnchoredPanel } from "@/components/ui/anchored";
 import { cn } from "@/lib/cn";
-import { GLASS_STRONG } from "@/lib/glass";
 import {
   DENSITIES,
   DENSITY_LABEL,
@@ -17,61 +12,6 @@ import {
   type ThemeId,
   useLook,
 } from "@/lib/look";
-
-/** The top bar's sun button: a popover with the theme, the mode and the density. Saved in this browser. */
-export function AppearanceButton() {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const id = useId();
-  const close = useCallback(() => setOpen(false), []);
-  // The panel renders in a portal in the top layer: the glass panes of the console each form a
-  // stacking context, and a panel inside the top bar would be painted under them.
-  const { panel, style, container } = useAnchoredPanel({ open, close, trigger, align: "right" });
-
-  useEffect(() => {
-    if (open) panel.current?.querySelector<HTMLElement>("[aria-pressed='true']")?.focus();
-  }, [open, panel]);
-
-  return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        aria-label="Appearance"
-        onClick={() => setOpen((v) => !v)}
-        className="cs-iconbtn"
-      >
-        <Sun aria-hidden="true" className="size-[15px]" />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={panel}
-            popover="manual"
-            id={id}
-            role="dialog"
-            aria-label="Appearance"
-            style={style}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.stopPropagation();
-              setOpen(false);
-              trigger.current?.focus();
-            }}
-            className={cn(
-              "z-[var(--z-float)] flex w-[248px] flex-col gap-2.5 rounded-xl p-2.5",
-              GLASS_STRONG,
-            )}
-          >
-            <AppearanceControls hint={false} />
-          </div>,
-          container,
-        )}
-    </>
-  );
-}
 
 function Segment<T extends string>({
   label,

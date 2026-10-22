@@ -97,6 +97,66 @@
   font: 400 11px var(--font-mono);
   color: var(--c-fg-faint);
 }
+/* Places: where the owner checks things every day. */
+.cs-places {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.cs-place {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--c-fg-muted);
+  white-space: nowrap;
+}
+.cs-place:hover {
+  color: var(--c-fg);
+  background: var(--c-raised);
+}
+.cs-place[aria-current="page"] {
+  color: var(--c-fg);
+  font-weight: 500;
+  background: var(--c-selected);
+  box-shadow: inset 0 0 0 1px var(--c-line-control);
+}
+/* The workspace filter: buttons from 1300 px, one select below. */
+.cs-ws-narrow {
+  display: none;
+  position: relative;
+  flex: none;
+  color: var(--c-fg-muted);
+}
+.cs-ws-narrow select {
+  appearance: none;
+  height: 30px;
+  min-width: 128px;
+  padding: 0 28px 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-field);
+  color: var(--c-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cs-ws-narrow svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+@media (max-width: 1299px) {
+  .cs-ws-wide {
+    display: none;
+  }
+  .cs-ws-narrow {
+    display: block;
+  }
+}
 .cs-conn {
   display: flex;
   align-items: center;
@@ -112,13 +172,17 @@
   margin-left: auto;
   flex: none;
 }
-.cs-tele > span {
+.cs-tele > span,
+.cs-tele > a {
   white-space: nowrap;
   display: flex;
   align-items: baseline;
   gap: 5px;
   color: var(--c-fg-muted);
   font-size: 12px;
+}
+.cs-tele > a:hover {
+  color: var(--c-fg);
 }
 .cs-tele b {
   font: 500 15px var(--font-mono);
@@ -238,7 +302,7 @@
 /* Panes ------------------------------------------------------------------- */
 .cs-console {
   display: grid;
-  grid-template-columns: minmax(0, 34fr) minmax(0, 36fr) minmax(0, 30fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.6fr);
   gap: 10px;
   /* Takes what the bars above it leave (Update ready, a stale build), never more. */
   flex: 1 1 0;
@@ -602,14 +666,254 @@
   background: var(--c-red-wash);
   color: var(--c-lamp-needs);
 }
-.cs-unread {
-  font: 500 10px / 16px var(--font-mono);
-  min-width: 18px;
+/* Every unread count and the bell's count: a solid red badge with white text. */
+:root {
+  --c-badge: #e5383b;
+  --c-badge-ink: #fff;
+}
+.cs-unread,
+.cs-badge {
+  font: 700 11px / 17px var(--font-sans);
+  min-width: 17px;
+  height: 17px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--c-selected);
-  color: var(--c-fg-soft);
+  background: var(--c-badge);
+  color: var(--c-badge-ink);
   text-align: center;
+  font-feature-settings: "tnum";
+  flex: none;
+}
+.cs-bell {
+  position: relative;
+}
+.cs-bell-n {
+  position: absolute;
+  top: -8px;
+  right: -9px;
+  box-shadow: 0 0 0 2px var(--c-base);
+}
+
+/* Work cards: each state looks different. No stripe on the left edge. */
+.cs-card {
+  --cc: var(--c-line-control);
+  --cc-bg: var(--c-card);
+  margin: 0 12px 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--cc);
+  background: var(--cc-bg);
+  position: relative;
+  cursor: pointer;
+}
+.cs-card[aria-selected="true"] {
+  outline: 1px solid var(--c-line-hover);
+  outline-offset: 2px;
+}
+.cs-card[data-card="incident"] {
+  --cc: var(--c-red);
+  --cc-bg: var(--c-red-wash);
+  box-shadow:
+    0 0 0 1px var(--c-red-line),
+    0 0 24px -8px var(--c-red);
+}
+.cs-card[data-card="working"] {
+  --cc: var(--c-amber);
+  --cc-bg: var(--c-amber-wash);
+  box-shadow:
+    0 0 0 1px var(--c-amber-line),
+    0 0 24px -8px var(--c-amber);
+}
+.cs-card[data-card="needs"] {
+  --cc: var(--c-blue);
+  --cc-bg: var(--c-blue-wash);
+}
+.cs-card[data-card="blocked"],
+.cs-card[data-card="paused"],
+.cs-card[data-card="mr"] {
+  --cc: var(--c-line-strong);
+  --cc-bg: transparent;
+}
+.cs-card[data-card="blocked"] {
+  opacity: 0.62;
+}
+.cs-card-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cs-card-t {
+  font: 600 15px / 21px var(--font-sans);
+  color: var(--c-fg);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-card-who {
+  color: var(--c-fg-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cs-card-clock {
+  font: 400 12px var(--font-mono);
+  font-feature-settings: "tnum";
+}
+.cs-tag {
+  font: 600 11px / 18px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 8px;
+  border-radius: 9px;
+  flex: none;
+  background: var(--c-raised);
+  color: var(--c-fg-muted);
+}
+.cs-tag[data-card="incident"] {
+  background: var(--c-red-wash);
+  color: var(--c-red-soft);
+}
+.cs-tag[data-card="working"] {
+  background: var(--c-amber-wash);
+  color: var(--c-amber-soft);
+}
+.cs-tag[data-card="needs"] {
+  background: var(--c-blue-wash);
+  color: var(--c-blue-soft);
+}
+.cs-card-l {
+  margin-top: 6px;
+  font: 13.5px / 20px var(--font-sans);
+  color: var(--c-fg-soft);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.cs-card-l .cs-lbl {
+  color: var(--c-fg-muted);
+  margin-right: 2px;
+}
+.cs-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-red);
+  flex: none;
+  align-self: center;
+}
+.cs-card-run {
+  margin-top: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font: 13.5px / 20px var(--font-sans);
+  color: var(--c-fg-soft);
+}
+.cs-card-ru {
+  color: var(--c-amber-soft);
+  white-space: nowrap;
+  flex: none;
+}
+.cs-cmd {
+  font: 12.5px var(--font-mono);
+  background: var(--c-raised);
+  padding: 1px 6px;
+  border-radius: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-card-run .cs-card-clock {
+  color: var(--c-fg-muted);
+  flex: none;
+}
+.cs-card-acts {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cs-done .cs-tick {
+  color: var(--c-green);
+  width: 14px;
+  text-align: center;
+  flex: none;
+}
+.cs-addproj {
+  margin: 4px 12px 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--c-line-control);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--c-fg-soft);
+}
+.cs-addproj > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Needs you under 1300 px: a 52 px rail with its count, and the whole list over Work when it is clicked. */
+.cs-nrail {
+  align-items: stretch;
+}
+.cs-nrail-b {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  height: 100%;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 14px;
+}
+.cs-nrail-b:hover {
+  background: var(--c-raised);
+}
+.cs-nrail-w,
+.cs-nrail-i {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+.cs-nrail-w {
+  font: 600 13px var(--font-sans);
+  color: var(--c-fg);
+  letter-spacing: 0.02em;
+}
+.cs-nrail-i {
+  font: 600 11px var(--font-sans);
+  color: var(--c-red-soft);
+}
+.cs-nrail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-red);
+  box-shadow: 0 0 0 4px var(--c-red-wash);
+}
+.cs-needs-over {
+  position: absolute;
+  left: 62px;
+  top: 0;
+  bottom: 0;
+  width: min(430px, 46%);
+  z-index: var(--z-pane-over);
+  display: flex;
+  box-shadow: var(--c-shadow-pop);
+  border-radius: 14px;
+  background: var(--c-glass-strong);
+}
+.cs-needs-over > .cs-pane {
+  flex: 1;
 }
 
 /* Buttons: one filled primary on screen, on the selected row. Others are outlined. */
@@ -887,10 +1191,10 @@
 
 /* A folded pane is a 44px rail (Needs you also when nothing is in it); Chat takes the room. */
 .cs-console[data-needs-rail="true"] {
-  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.6fr);
 }
 .cs-console[data-work-rail="true"] {
-  grid-template-columns: minmax(0, 34fr) 44px minmax(0, 66fr);
+  grid-template-columns: minmax(0, 0.85fr) 44px minmax(0, 2.6fr);
 }
 .cs-console[data-needs-rail="true"][data-work-rail="true"] {
   grid-template-columns: 44px 44px minmax(0, 1fr);
@@ -1276,47 +1580,14 @@
   padding: 12px;
 }
 
-/* Under 1240px Chat slides over the right when a task opens. */
-@media (max-width: 1240px) {
-  .cs-console {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  }
-  .cs-console[data-needs-rail="true"] {
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-  .cs-console[data-work-rail="true"] {
-    grid-template-columns: minmax(0, 1fr) 44px;
-  }
+/* Under 1300px Needs you is a rail and the chat stays next to Work (about 1 : 1.35). */
+@media (max-width: 1299px) {
+  .cs-console,
+  .cs-console[data-needs-rail="true"],
+  .cs-console[data-work-rail="true"],
   .cs-console[data-chat-main="true"] {
-    grid-template-columns: 44px 44px minmax(0, 1fr);
-  }
-  .cs-console[data-chat-main="true"] .cs-pane[data-pane="chat"] {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.35fr);
     position: relative;
-    inset: auto;
-    width: auto;
-    z-index: auto;
-    transform: none;
-    visibility: visible;
-    transition: none;
-    background: var(--c-panel, var(--c-glass));
-    box-shadow: var(--c-shadow-glass);
-  }
-  .cs-pane[data-pane="chat"] {
-    position: fixed;
-    right: 10px;
-    top: 62px;
-    bottom: 10px;
-    width: min(460px, 46vw);
-    z-index: var(--z-pane-over);
-    background: var(--c-glass-strong);
-    box-shadow: var(--c-shadow-pop);
-    transform: translateX(calc(100% + 20px));
-    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-    visibility: hidden;
-  }
-  .cs-pane[data-pane="chat"][data-open="true"] {
-    transform: none;
-    visibility: visible;
   }
   .cs-search {
     width: 132px;

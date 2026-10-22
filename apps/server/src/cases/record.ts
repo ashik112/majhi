@@ -165,8 +165,8 @@ export function toldOut(record: CaseRecord, max: number): boolean {
   return record.told >= max;
 }
 
-export function withTold(record: CaseRecord): CaseRecord {
-  return { ...record, told: record.told + 1 };
+export function withTold(record: CaseRecord, at: string, text: string): CaseRecord {
+  return { ...record, told: record.told + 1, toldAt: at, toldText: text.trim().slice(0, 300) };
 }
 
 // ---------------------------------------------------------------------------

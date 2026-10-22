@@ -168,13 +168,8 @@ export class Crew {
       const i = doingBy(plan, agent, task.team);
       if (i !== undefined) {
         const result = plan.steps[i]?.result ?? oneLine(text);
-        const done = this.deps.plans.update(taskId, (p) => finish(p, i, result === "" ? "done" : result));
-        if (done !== undefined)
-          this.say(
-            taskId,
-            "info",
-            `Step ${i + 1} of ${done.steps.length} done by @${agent}: ${done.steps[i]?.result ?? "done"}`,
-          );
+        // The step's result is kept in the plan. The agent's own message already says it, so no line goes in the room.
+        this.deps.plans.update(taskId, (p) => finish(p, i, result === "" ? "done" : result));
       }
       await this.advance(task, agent);
     });

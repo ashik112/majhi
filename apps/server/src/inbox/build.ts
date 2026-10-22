@@ -6,6 +6,7 @@ import {
   type DecisionOption,
   type DecisionSuggestion,
   draftDecisionId,
+  healsItself,
   incidentDecisionId,
   OPTION_LABEL_MAX,
   OUTBOUND_CHANNEL_LABEL,
@@ -137,6 +138,11 @@ interface Draft {
   suggestion?: DecisionSuggestion;
 }
 
+/** Who asks, as the owner reads it: "Captain" for the captain, `@name` for any other agent. */
+function askerOf(agent: string, subject: Subject): string {
+  return subject.lane === true || subject.captain === agent ? "Captain" : `@${agent}`;
+}
+
 /** The first option is the primary one, the rest follow in their order. */
 function withPrimary(options: readonly DecisionOption[], primary: string | undefined): DecisionOption[] {
   const at = options.findIndex((o) => o.id === primary);
@@ -168,8 +174,9 @@ function draftOf(
     case "ask": {
       if (item.state !== "pending") return undefined;
       const first = item.questions[0];
-      const title = `@${item.agent} asks: ${oneLine(first?.question ?? "a question")}`;
-      const sentence = `@${item.agent} asks: ${first?.question ?? "a question"}`;
+      const asker = askerOf(item.agent, subject);
+      const title = `${asker} asks: ${oneLine(first?.question ?? "a question")}`;
+      const sentence = `${asker} asks: ${first?.question ?? "a question"}`;
       // Several questions need the card; one question is answered here.
       if (item.questions.length !== 1 || first === undefined)
         return { kind: "question", title, sentence, options: [] };
@@ -200,8 +207,8 @@ function draftOf(
       return item.state === "pending"
         ? {
             kind: "question",
-            title: oneLine(item.text ?? `@${item.agent} is asking you something`),
-            sentence: item.text ?? `@${item.agent} is asking you something`,
+            title: oneLine(item.text ?? `${askerOf(item.agent, subject)} is asking you something`),
+            sentence: item.text ?? `${askerOf(item.agent, subject)} is asking you something`,
             options: withPrimary(
               item.choices.map((label, i) => ({ id: `c${i}`, label })),
               undefined,
@@ -215,8 +222,8 @@ function draftOf(
         item.options.find((o) => o.kind.startsWith("allow"));
       return {
         kind: "approval",
-        title: `@${item.agent} needs approval: ${oneLine(item.title)}`,
-        sentence: `@${item.agent} needs your approval: ${item.title}`,
+        title: `${askerOf(item.agent, subject)} needs approval: ${oneLine(item.title)}`,
+        sentence: `${askerOf(item.agent, subject)} needs your approval: ${item.title}`,
         options: withPrimary(
           item.options.map((o) => ({
             id: o.id,
@@ -359,10 +366,14 @@ function draftOf(
         return undefined;
       // A task paused only because its subtasks are open waits for them, not for the owner.
       if ((status !== undefined && status !== "paused") || (subject.openSubtasks ?? 0) > 0) return undefined;
+      // A captain lane that majhi is bringing back by itself is no decision until that has failed for ten minutes.
+      if (subject.lane === true && healsItself(item.reason, item.at, Date.now())) return undefined;
+      // An error's own text is for the room, not for a line the owner reads: the reason says it.
+      const why = item.reason === "error" ? undefined : item.why;
       return {
         kind: "paused",
-        title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
-        sentence: `"${subject.title}" ${item.why === undefined ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : `is paused: ${item.why}`}`,
+        title: why === undefined ? title : oneLine(`${title.split(":")[0]}: ${why}`),
+        sentence: `"${subject.title}" ${why === undefined ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : `is paused: ${why}`}`,
         options: [{ id: "resume", label: "Resume", primary: true, effect: "approve" }],
       };
     }

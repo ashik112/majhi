@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/toast";
 import { looksLikeSecret, SECRET_WARNING } from "@/features/boss/model";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { cmd } from "@/lib/api";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
@@ -167,6 +168,7 @@ export function Composer({
   const hasContent = text.trim() !== "" || attachmentIds(attachments.items).length > 0;
   const canSend = hasContent && !attachments.uploading;
   const addressed = task ? addressedAgent(text, task.team) : undefined;
+  const captain = useCaptainStatus().data?.captain;
   // On a task's page the captain is the default recipient; an @mention of an agent still addresses that agent.
   const toCaptain =
     task !== undefined &&
@@ -397,7 +399,9 @@ export function Composer({
                     ? "Enter queues, Shift Enter new line, Esc stops"
                     : "Enter sends, Shift Enter new line, @ mention, / commands"
                   : task?.kind === "chat" && addressed
-                    ? `Message @${addressed}`
+                    ? addressed === captain
+                      ? "Message the captain"
+                      : `Message @${addressed}`
                     : "Talk to the room"
             }
             spellCheck={false}

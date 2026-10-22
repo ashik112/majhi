@@ -9,7 +9,7 @@ import { actionCopy } from "./model";
 import { Ship, useDirectShip } from "./ship";
 import { CloseUnshippedDialog, unshippedCount } from "./unshipped";
 
-/** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
+/** The task's one main action in the header: Start, Resume or Stop. What it does is in the tooltip; the pause reason is in the room's Paused card. */
 export function TaskAction({
   task,
   yourTurn,
@@ -53,7 +53,6 @@ export function TaskAction({
   return (
     <>
       {canShip && <Ship task={task} run={ship} openAsk={shipAsk} />}
-      {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-lamp-paused">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button
           variant="primary"
@@ -119,7 +118,7 @@ export function TaskAction({
           onClick={() => stop.mutate(task.id, { onError: fail("Could not stop") })}
         >
           <OctagonX aria-hidden="true" />
-          Stop all
+          Stop
         </Button>
       )}
     </>

@@ -771,7 +771,7 @@ export function createHandlers({
         const current = (await services.projects.infos()).find((p) => p.id === input.id);
         if (current?.protected === true) {
           throw new UserError(
-            `Only the owner can turn protection off for ${input.id}, on the Projects and links page.`,
+            `Only the owner can turn protection off for ${input.id}, under Settings > Projects.`,
             409,
           );
         }
@@ -864,12 +864,16 @@ export function createHandlers({
       }
       return {
         mrs: services.store.tasks.openMrs(),
-        doing: services.room.workingNow().map(({ task, live }) => ({
-          task,
-          agent: live.agent,
-          ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
-          ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
-        })),
+        doing: services.room.workingNow().map(({ task, live }) => {
+          const tool = live.nowDoing === undefined ? undefined : services.store.room.runningTool(task);
+          return {
+            task,
+            agent: live.agent,
+            ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
+            ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
+            ...(tool === undefined ? {} : { toolSince: tool.at }),
+          };
+        }),
         checks,
         background,
         deploys: await services.deploy.board(),

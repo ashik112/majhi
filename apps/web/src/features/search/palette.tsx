@@ -1,4 +1,4 @@
-import { canWorkIn, PAGE_LABEL, PAGE_PATH, type PageName, type TaskSummary } from "@majhi/shared";
+import { canWorkIn, PAGE_LABEL, PAGE_PATH, type PageName, pageTarget, type TaskSummary } from "@majhi/shared";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronLeft, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -124,6 +124,10 @@ export function Palette({ onClose }: { onClose: () => void }) {
     (page.kind === "root" || page.kind === "memory") && settled.length >= MIN_SEARCH_LENGTH ? settled : "",
   );
 
+  const tabOf = (name: PageName): Record<string, string> => {
+    const { tab } = pageTarget(name);
+    return tab === undefined ? {} : { tab };
+  };
   const go = (to: string, search: Record<string, string> = {}) => {
     onClose();
     // The page paths are the router's own; the extra keys are search params every page may carry.
@@ -221,9 +225,9 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "audit",
-      name: "Open the audit log",
-      keywords: "history pushes merges approvals who did what",
-      run: () => go(PAGE_PATH.audit),
+      name: "Open the activity log",
+      keywords: "audit history pushes merges approvals who did what",
+      run: () => go(PAGE_PATH.usage, { tab: "activity" }),
     },
     {
       id: "budgets",
@@ -279,8 +283,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
       id: `page:${name}`,
       name: PAGE_LABEL[name],
       keywords: `page go open ${PAGE_KEYWORDS[name]}`,
-      hint: chordOf(PAGE_PATH[name]) ?? "Page",
-      run: () => go(PAGE_PATH[name]),
+      hint: chordOf(pageTarget(name).to, pageTarget(name).tab) ?? "Page",
+      run: () => go(pageTarget(name).to, tabOf(name)),
     }));
 
   const entries = ((): Entry[] => {
@@ -344,9 +348,10 @@ export function Palette({ onClose }: { onClose: () => void }) {
           key: `fact:${fact.id}`,
           section: "Memory",
           run: () =>
-            go(PAGE_PATH.memory, {
+            go(PAGE_PATH.wiki, {
+              tab: "memory",
               project: fact.scope.startsWith("project:") ? fact.scope.slice("project:".length) : GLOBAL,
-              tab: "lessons",
+              mtab: "lessons",
             }),
           node: (
             <span className="flex w-full min-w-0 flex-col gap-0.5">

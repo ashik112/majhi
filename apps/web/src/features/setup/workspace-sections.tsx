@@ -1,4 +1,3 @@
-import type { SetupSection } from "@majhi/shared";
 import {
   collapseHome,
   type HostInfo,
@@ -10,15 +9,12 @@ import {
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/list-detail";
-import { PageLink } from "@/components/ui/page-link";
 import { Dot, type DotTone, toneText } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
 import { SshNotice } from "@/features/repos/ssh-notice";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/format";
 import { useSshReload } from "@/lib/queries";
-import { reopenOnboarding } from "@/onboarding/reopen";
-import { SetupJourneyList } from "@/onboarding/setup-list";
 import type { CardState, Tone } from "./model";
 
 const DOT: Record<Tone, DotTone> = { green: "green", coral: "coral", blue: "neutral", neutral: "neutral" };
@@ -35,75 +31,6 @@ export function StateWord({ state, className }: { state: CardState; className?: 
 
 export function stateText(tone: Tone): string {
   return tone === "green" ? toneText("green") : tone === "coral" ? "text-coral" : "text-fg-faint";
-}
-
-export interface ReadinessRow {
-  section: SetupSection | undefined;
-  title: string;
-  state: CardState;
-  action: ReactNode;
-}
-
-/** Each part majhi needs, as one row: its state, what it has, and the one step it offers. */
-export function OverviewSection({
-  rows,
-  ready,
-  onOpen,
-}: {
-  rows: readonly ReadinessRow[];
-  ready: number;
-  onOpen: (section: SetupSection) => void;
-}) {
-  return (
-    <>
-      <DetailSection title="Ready to work" note={`${ready} of ${rows.length} ready`} className="border-t-0">
-        <SshNotice />
-        <ul aria-label="Setup" className="m-0 flex max-w-[860px] list-none flex-col p-0">
-          {rows.map((row) => (
-            <li
-              key={row.title}
-              aria-label={row.title}
-              className="flex min-h-12 items-center gap-4 border-t border-line py-2 first:border-t-0"
-            >
-              <div className="flex w-[150px] shrink-0 flex-col gap-0.5">
-                {row.section ? (
-                  <button
-                    type="button"
-                    onClick={() => row.section && onOpen(row.section)}
-                    className="w-fit cursor-pointer text-left text-base font-medium text-fg hover:underline"
-                  >
-                    {row.title}
-                  </button>
-                ) : (
-                  <span className="text-base font-medium text-fg">{row.title}</span>
-                )}
-                <StateWord state={row.state} />
-              </div>
-              <p className="min-w-0 flex-1 truncate text-sm text-fg-muted" title={row.state.detail}>
-                {row.state.detail.replace(/\n/g, " · ")}
-              </p>
-              <div className="flex shrink-0 items-center gap-1.5">{row.action}</div>
-            </li>
-          ))}
-        </ul>
-      </DetailSection>
-      <DetailSection
-        title="First-time setup"
-        note="The guided steps from the first start, with what is set now"
-      >
-        <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">
-          majhi reads config files and public keys only. API keys are stored encrypted, and passphrases never
-          go to a file.
-        </p>
-        <SetupJourneyList />
-        <div>
-          <Button size="sm" onClick={() => reopenOnboarding("welcome")}>
-            Run first-time setup again
-          </Button>
-        </div>
-      </DetailSection>
-    </>
-  );
 }
 
 /** Each root with whether majhi can see it and what the last scan found, then Edit and Mount. */
@@ -242,13 +169,4 @@ function keysNote(info: HostInfo | undefined): string {
   const nowhere =
     "Until a keyring answers, a passphrase is kept nowhere, and its key locks again when the SSH agent stops.";
   return `${start} ${info.keyring.reason} ${nowhere}`;
-}
-
-/** Links out of Hub setup, for the overview rows. */
-export function PageButton({ page, children }: { page: "accounts" | "agents"; children: ReactNode }) {
-  return (
-    <Button asChild size="sm">
-      <PageLink page={page}>{children}</PageLink>
-    </Button>
-  );
 }

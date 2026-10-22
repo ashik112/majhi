@@ -70,6 +70,30 @@ function CodeBlock({ node, children }: { node: Hast; children?: ReactNode }) {
   );
 }
 
+/** Code up to this long never breaks across lines. */
+const SHORT_CODE = 40;
+
+/** A span of code: short ones stay whole, long ones may wrap only at spaces and after a slash. */
+function InlineCode({ text }: { text: string }) {
+  if (text.length <= SHORT_CODE) return <code className="md-ic-short">{text}</code>;
+  const parts = text.split("/");
+  return (
+    <code className="md-ic-long">
+      {parts.map((part, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one span keep their order
+        <span key={i}>
+          {part}
+          {i < parts.length - 1 && (
+            <>
+              /<wbr />
+            </>
+          )}
+        </span>
+      ))}
+    </code>
+  );
+}
+
 function buildComponents({ task, baseDir, cites }: Scope): Components {
   return {
     a({ href, children }) {
@@ -174,6 +198,18 @@ function buildComponents({ task, baseDir, cites }: Scope): Components {
     },
     pre({ node, children }) {
       return <CodeBlock node={node}>{children}</CodeBlock>;
+    },
+    code({ className, children, ...rest }) {
+      const text = typeof children === "string" ? children : undefined;
+      // A block's code has a language or a line end; a span of code is one line.
+      if (className !== undefined || text === undefined || text.includes("\n")) {
+        return (
+          <code className={className} {...rest}>
+            {children}
+          </code>
+        );
+      }
+      return <InlineCode text={text} />;
     },
     table({ children }) {
       return (

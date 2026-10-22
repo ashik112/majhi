@@ -20,7 +20,6 @@ import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
 import { preloadOpenOnDemand } from "@/lib/preload";
 import { useServerEvents } from "@/lib/use-server-events";
-import { useArrivalNewTask } from "@/onboarding/arrive";
 
 // What opens on demand is read when it first opens, so the first screen carries only the console.
 const loadPalette = () => import("@/features/search/palette").then((m) => ({ default: m.Palette }));
@@ -39,15 +38,7 @@ const ShortcutsDialog = lazy(() =>
 );
 
 /** Pages that lay out their own panes to fit the viewport. */
-const PINNED: ReadonlySet<string> = new Set([
-  PAGE_PATH.limits,
-  PAGE_PATH.agents,
-  PAGE_PATH.connections,
-  PAGE_PATH.skills,
-  PAGE_PATH.usage,
-  PAGE_PATH.audit,
-  PAGE_PATH.orgs,
-]);
+const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.watch, PAGE_PATH.wiki, PAGE_PATH.usage]);
 
 export function AppShell() {
   useServerEvents();
@@ -78,7 +69,6 @@ export function AppShell() {
 function Frame() {
   const newTask = useNewTask();
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
-  useArrivalNewTask(newTask.open);
   useAdoptOrgParam();
   useEffect(preloadOpenOnDemand, []);
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });

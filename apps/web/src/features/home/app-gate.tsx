@@ -1,25 +1,17 @@
-import { type OnboardingStepId, onboardingStepId } from "@majhi/shared";
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/lib/queries";
-import { openNewTaskOnArrival } from "@/onboarding/arrive";
-import { gateStep } from "@/onboarding/model";
+import { setupOpen } from "@/onboarding/model";
 import { clearOnboardingRequest, useOnboardingRequest } from "@/onboarding/reopen";
-import {
-  endJourney,
-  finishLater,
-  savedPlace,
-  setupSkipped,
-  skippedSteps,
-  unskipStep,
-} from "@/onboarding/skip";
+import { endSetup, finishLater, savedPlace, setupSkipped } from "@/onboarding/skip";
+import type { SetupStepId } from "@/onboarding/steps";
 import { useJourney } from "@/onboarding/use-journey";
 import { ConfigError } from "./config-error";
 import { ServerError } from "./server-error";
 
-const OnboardingFlow = lazy(() =>
-  import("@/onboarding/onboarding-flow").then((module) => ({ default: module.OnboardingFlow })),
+const SetupFlow = lazy(() =>
+  import("@/onboarding/setup-flow").then((module) => ({ default: module.SetupFlow })),
 );
 
 /** Stands in for the whole app while the config loads: a sidebar and a board of blocks. */
@@ -46,29 +38,27 @@ function AppLoading() {
 }
 
 /**
- * Decides what the whole window shows from the config state: the onboarding journey on first run,
- * a broken config, or the app (children). The journey also opens while an essential step (the
- * folder, an AI account, the captain) is neither done nor skipped, comes back after a reload at
- * the step it was on, and opens at any step Hub setup asks for. The roots settings page stays
- * reachable in every state.
+ * Decides what the whole window shows from the config state: setup on first run, a broken config, or the app
+ * (children). Setup also opens while no account can run agents or no captain is set, comes back after a reload at
+ * the step it was on, and opens when the palette asks for it. "Finish later" puts it off; Home's "Add a
+ * project" still opens its second step as a dialog. The folder settings page stays reachable in every state.
  */
 export function AppGate({ children }: { children: ReactNode }) {
   const config = useConfig();
   const state = config.data;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The step the journey is open at, or null for the app. A reload resumes where it was.
-  const [open, setOpen] = useState<OnboardingStepId | null>(savedPlace);
+  const navigate = useNavigate();
+  // The step setup is open at, or null for the app. A reload resumes where it was.
+  const [open, setOpen] = useState<SetupStepId | null>(savedPlace);
   const [session, setSession] = useState(0);
   const [later, setLater] = useState(setupSkipped);
   const appShown = useRef(false);
   const journey = useJourney();
-  // Hub setup can ask for the journey again. The request is taken once.
+  // The palette can ask for setup again. The request is taken once.
   const reopen = useOnboardingRequest();
   useEffect(() => {
     if (!reopen) return;
-    const id = onboardingStepId(reopen.step);
-    unskipStep(id);
-    setOpen(id);
+    setOpen(reopen.step);
     setSession((n) => n + 1);
     clearOnboardingRequest();
   }, [reopen]);
@@ -91,18 +81,19 @@ export function AppGate({ children }: { children: ReactNode }) {
   if (state.status === "first-run" || open) {
     return (
       <Suspense fallback={<AppLoading />}>
-        <OnboardingFlow
+        <SetupFlow
           key={session}
-          start={state.status === "first-run" ? "welcome" : (open ?? "welcome")}
+          start={open ?? "signin"}
           onLater={() => {
             finishLater();
             setLater(true);
             setOpen(null);
           }}
-          onArrive={() => {
-            endJourney();
-            openNewTaskOnArrival();
+          onArrive={(task) => {
+            endSetup();
+            setLater(false);
             setOpen(null);
+            if (task !== undefined) void navigate({ to: "/t/$taskId", params: { taskId: task } });
           }}
         />
       </Suspense>
@@ -122,12 +113,11 @@ export function AppGate({ children }: { children: ReactNode }) {
   }
 
   if (!later && !appShown.current) {
-    // Wait for the status, so a reload resumes at the right step instead of flashing the board.
+    // Wait for the status, so a reload resumes at the right step instead of flashing Home.
     // Once the app shows it stays: a status refetch never swaps it for a loading screen.
     if (!journey.status) return <AppLoading />;
-    const step = gateStep(journey.status, skippedSteps());
-    if (step) {
-      setOpen(step);
+    if (setupOpen(journey.status)) {
+      setOpen("signin");
       return null;
     }
   }

@@ -3151,3 +3151,20 @@ How to try it: `WALK_PORT=7790 WALK_SLOW_MS=3000 WALK_BRIEF_AT=23:59 MAJHI_E2E_R
 Checked: `pnpm -r typecheck`, `biome check .` (no errors), `tsc -p e2e`, the full unit suite (102 files, 417 tests), and the journey walk, one after the other. Numbers are in captain.md section 7.
 
 Left: nothing from the note. Known: the walk's Telegram step shows the fake bot's "cannot see group messages" row, which is the fake's, not a bug. The server's RSS is measured under tsx (219 MB idle, 234 MB with four tasks), above what a built image uses.
+
+## UI reset, 2026-10-22 (branch feat/ui-reset, not merged)
+
+Plan: the brief is `docs/briefs/ui-reset.md`, built in its order: (1) places in the top bar, (2) Settings in 14 entries, (3) the task page, (4) the chat, (5) one writing of the room, (6) setup in three steps, (7) Home's cards, the bell and the narrow layout. Tests: the two the brief names (`packages/shared/src/setup-ids.test.ts`, `apps/server/src/room/process-items.test.ts`), rows 104g and 104h of `docs/briefs/test-guarantees.md`. The rest is typecheck and the browser.
+
+What works:
+- Top bar: Home, Watch, Wiki, Usage as places, Settings at the right, the bell with a red count, counters for incidents and need you only, one "All workspaces" select below 1300 px. Wiki has Pages and Memory, Usage has Health and cost and Activity. Every old address opens the new place of the same thing (checked in a browser: `/accounts`, `/agents`, `/captain`, `/orgs`, `/projects`, `/connections`, `/skills`, `/playbooks`, `/limits`, `/memory`, `/audit`, `/repos`, `/studio`, `/automations`, `/settings`, `/decisions`, `/today`, `/chats`, and `/setup?section=` for every old section).
+- Settings: 14 entries in four groups; entries that merge old pages show them one after another under their own headings; Memory rules and Wiki settings open as dialogs.
+- Task page: one header row, Brief tab, side panel (Incident card, Task card), the incident line above the composer, Details in the menu below 1300 px.
+- Chat: full width, name and time on each message, steps folded into one line, a running turn open with a live timer and Stop, processes as room items that survive a restart, one Needs you card per task, "Captain asks", inline code that never breaks when short.
+- One text for how agents write in the room (`packages/shared/src/room-writing.ts`), read by TASK.md, the captain, the autonomy lane and the setup captain.
+- Setup in three steps (Sign in, Projects, First task); the workspace, account id, lead agent and captain are made by majhi; git sign-in is asked in the room.
+- Home: cards by state (incident, working, needs you, blocked, done line), red unread badges, the 52 px Needs you rail under 1300 px with the chat beside Work.
+
+Checked: `pnpm -r typecheck`; biome (no errors); the two tests; `pnpm exec vitest run` (119 files, 595 tests passed, 1 skipped); first-load JS: main chunk 147.3 KB gzip (budget 150); the old addresses in a browser; shots of every approved mockup at 1440 and 1100, dark.
+
+Left and known: the walk of every place in light and dark was skipped on the owner's order; the account id is `<tool>-me` (recorded in DECISIONS); the "Client told ..." line on an incident card shows only for a real case; setup's host-sign-in and folder suggestions need a real host helper to see.

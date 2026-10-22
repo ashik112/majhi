@@ -58,7 +58,7 @@ export async function checkDestination(home: string, input: string, env: Destina
   }
   if (env.container && !isMounted(path, mountPoints(env.mountinfo ?? ""))) {
     throw new UserError(
-      "majhi cannot reach that folder from its container. Add it as a workspace folder in Hub setup, then choose it again.",
+      "majhi cannot reach that folder from its container. Add it as a project folder under Settings > Projects, then choose it again.",
     );
   }
   await probeWritable(path);

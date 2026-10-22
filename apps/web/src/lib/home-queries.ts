@@ -37,6 +37,8 @@ export interface DoingFact {
   text?: string | undefined;
   /** When the turn started (UTC ISO). */
   since?: string | undefined;
+  /** When the tool call in progress began (UTC ISO). */
+  toolSince?: string | undefined;
 }
 
 export interface HomeFacts {
