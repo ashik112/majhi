@@ -120,6 +120,7 @@ export async function rig(
       tip: async () => tip.value,
       whyNoTip: async () => "majhi could not read the project's base branch.",
       file: async () => undefined,
+      list: async () => [],
     },
     repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
     checksConfigured: () => checks.configured,
