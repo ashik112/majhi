@@ -310,8 +310,7 @@ async function main(): Promise<void> {
       await row.getByRole("button", { name: "Make it a task" }).first().click();
       await until(
         "the new task",
-        async () =>
-          ((await cmd("tasks.list", { includeDone: true })) as any[]).length > before ? true : false,
+        async () => ((await cmd("tasks.list", { includeDone: true })) as any[]).length > before,
         20_000,
       );
       await sleep(800);
