@@ -179,6 +179,8 @@ export interface CaseDeps {
   laneOrg: (chat: string) => string | undefined;
   captain: () => Promise<string | undefined>;
   level: (org: string) => Promise<AuthorityLevel>;
+  /** The workspace's Fix switch: only "ships" lets the captain deploy a case's fix itself. */
+  fixShips: (org: string) => Promise<boolean>;
   tz: (org: string) => Promise<string>;
   /** The captain's History: one line for each thing it did. */
   history?: ((entry: { text: string; org: string; task?: string | undefined }) => void) | undefined;
@@ -708,9 +710,9 @@ export class CaseService {
     this.activate(lane, found.task.id);
     this.guard(lane, "case.deploy");
     const task = found.task.id;
-    if ((await this.deps.level(found.org)) === "ask") {
+    if ((await this.deps.level(found.org)) === "ask" || !(await this.deps.fixShips(found.org))) {
       throw new UserError(
-        "This workspace is at Ask me, so a deploy asks the owner. Ask once with case_ask, with the branch and the project in the question, and keep working on what does not need the answer.",
+        "In this workspace a deploy asks the owner (its level is Ask me, or its Fix switch is not Captain ships). Ask once with case_ask, with the branch and the project in the question, and keep working on what does not need the answer.",
         409,
       );
     }

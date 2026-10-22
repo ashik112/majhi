@@ -57,7 +57,7 @@ async function replayWorld(remote: RemoteRunFn) {
   const { h } = w;
   const services = h.majhi.services;
   const parts = services.chatParts;
-  await h.cmd("authority.set", { org: "acme", level: "routine" });
+  await h.cmd("authority.set", { org: "acme", level: "routine", fix: "ships" });
   const made = await h.cmd("connections.create", {
     org: "acme",
     id: "acme-host",
@@ -577,6 +577,12 @@ describe("the case replay when the fix needs code", () => {
     await writeFile(join(worktree, "sweep-fix.txt"), "skip a missing carrier\n");
     await git(worktree, "add", "-A");
     await git(worktree, "commit", "-m", "fix(courier): skip a missing carrier");
+
+    // The owner's Fix switch is the off switch: at Ask me the captain cannot deploy, whatever the level.
+    await w?.h.cmd("authority.set", { org: "acme", fix: "ask" });
+    await expect(services.cases.deploy(r.lane.id, { case: caseId, branch })).rejects.toThrow("Fix switch");
+    expect(deployed).toEqual([]);
+    await w?.h.cmd("authority.set", { org: "acme", fix: "ships" });
 
     // The helper reports back in the case; the captain deploys what it wrote, reads the symptom and closes.
     await writeFile(
