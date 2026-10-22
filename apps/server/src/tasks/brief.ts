@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import { type Attachment, type BranchType, MODE_LABELS, type Task } from "@majhi/shared";
+import {
+  type Attachment,
+  type BranchType,
+  MODE_LABELS,
+  type Task,
+  WRITING_IN_THE_ROOM_LINES,
+  WRITING_IN_THE_ROOM_TITLE,
+} from "@majhi/shared";
 import { hasRelated, type Related } from "./relations.ts";
 import { leadPlanLines, type TeamFacts, teamFactsLines } from "./team-facts.ts";
 
@@ -132,6 +139,10 @@ export function renderTaskMd(
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
   }
   lines.push(
+    `## ${WRITING_IN_THE_ROOM_TITLE}`,
+    "",
+    ...WRITING_IN_THE_ROOM_LINES,
+    "",
     "## Rules",
     "",
     "- Work inside the worktrees above. Commit on the task branch.",

@@ -74,6 +74,7 @@ export * from "./queue.ts";
 export * from "./release-package.ts";
 export * from "./remote-repos.ts";
 export * from "./risk-kinds.ts";
+export * from "./room-writing.ts";
 export * from "./rooms.ts";
 export * from "./schedule-time.ts";
 export * from "./scorecard.ts";

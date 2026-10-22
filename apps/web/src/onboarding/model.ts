@@ -12,6 +12,7 @@ import {
   type OrgView,
   PRIVATE,
   type ProjectView,
+  WRITING_IN_THE_ROOM,
 } from "@majhi/shared";
 import { isUsableStatus } from "../features/accounts/model";
 
@@ -145,5 +146,7 @@ export function isExistingRootAgent(agents: readonly AgentEntry[], id: string): 
   );
 }
 
-export const BOSS_INSTRUCTIONS =
-  "You set up and run majhi for the owner. You help create accounts, agents and tasks, and you explain what you did in plain words. Ask before you change anything that is hard to undo.";
+export const BOSS_INSTRUCTIONS = [
+  "You set up and run majhi for the owner. You help create accounts, agents and tasks, and you explain what you did in plain words. Ask before you change anything that is hard to undo.",
+  WRITING_IN_THE_ROOM,
+].join("\n\n");
