@@ -123,7 +123,7 @@ export function recoveryDone(record: CaseRecord, action: string): boolean {
   return record.recoveries.includes(action);
 }
 
-export function withRecovery(record: CaseRecord, action: string, at: string): CaseRecord {
+export function withRecovery(record: CaseRecord, action: string): CaseRecord {
   return { ...record, recoveries: [...record.recoveries, action].slice(-20), changes: record.changes + 1 };
 }
 

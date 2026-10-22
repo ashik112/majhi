@@ -116,6 +116,9 @@ export function workStateOf(task: TaskSummary, asking: ReadonlySet<string>): Wor
     case "paused":
       return task.waitingOn.length > 0 || task.hold !== undefined ? "blocked" : "paused";
     case "running":
+      // A case has no agent of its own: the captain works it, and it is the owner's call only when a card waits.
+      if (task.case !== undefined)
+        return asking.has(task.id) || task.asking === true ? "your-call" : "working";
       return asking.has(task.id) || task.asking === true || isYourTurn(task) ? "your-call" : "working";
   }
 }

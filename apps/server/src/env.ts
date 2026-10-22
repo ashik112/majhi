@@ -92,6 +92,8 @@ const EnvSchema = z.object({
   MAJHI_CHATS: z.enum(["on", "off"]).optional(),
   /** Where Telegram's Bot API is. Only a test or a trial against a fake bot server sets it. */
   MAJHI_TELEGRAM_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
+  /** Where a Claude sign-in's token is asked who it belongs to. Only for walks with a fake: default Anthropic's own. */
+  MAJHI_CLAUDE_PROFILE_URL: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Where Slack's Web API is. Only a test or a trial against a fake Slack sets it. */
   MAJHI_SLACK_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Memory cap per run, when the owner has not set one in Settings. Unset: a share of the machine (see defaultHandoffMemory). */
@@ -175,6 +177,8 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   if (env.MAJHI_ADAPTER_CODEX !== undefined) adapters.codex = env.MAJHI_ADAPTER_CODEX;
   const usage: NonNullable<RuntimeOptions["usage"]> = {};
   if (env.MAJHI_USAGE_CLAUDE !== undefined) usage.claude = env.MAJHI_USAGE_CLAUDE;
+  const claudeProfile =
+    env.MAJHI_CLAUDE_PROFILE_URL === undefined ? {} : { claudeProfile: { url: env.MAJHI_CLAUDE_PROFILE_URL } };
   return {
     host: env.MAJHI_HOST,
     port: env.MAJHI_PORT,
@@ -185,7 +189,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     commit: env.MAJHI_COMMIT ?? "dev",
     secretsKeyFile: env.MAJHI_SECRETS_KEY_FILE,
     sshAgentOff: env.MAJHI_SSH_AGENT === "off",
-    runtime: { base: baseEnv(source), adapters, usage },
+    runtime: { base: baseEnv(source), adapters, usage, ...claudeProfile },
     ...(env.MAJHI_NET_PROBE === undefined ? {} : { netProbe: env.MAJHI_NET_PROBE }),
     ...(env.MAJHI_NET_PROBE_MS === undefined ? {} : { netProbeMs: env.MAJHI_NET_PROBE_MS }),
     ...(env.MAJHI_LAYA_URL === undefined

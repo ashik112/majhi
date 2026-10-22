@@ -1,3 +1,32 @@
+## One client problem, one case, and a captain that heals, 2026-10-22
+
+Branch `feat/case-flow`, brief `docs/briefs/case-flow.md` (design note at the top, "Self-healing" at the end). Not merged.
+
+**Plan (kept for the record).** Classifier first, then the case model and the engine, the desk and the ssh bounds, the captain's tools and cuts, the two replays, the web line, the watchdog and its two replays, a walk in a throwaway majhi, and the DECISIONS and test-guarantees rows.
+
+**What works.**
+- A client's report opens one case (an incident task with a case record in its `fields`), worked by the captain from its on-call lane. A second message of the same chat the same day joins it by code; a case of an older day is never joined; a client report no longer joins a watch's incident.
+- Reads on a connected host never ask (typed tables in `connections/remote-command.ts`; an unparsable command is a write). One restart or recreate of a service or container runs once per case with no card at Routine and Full. Deploying code, config or env changes, database writes, deleting data and money are asked once with `case_ask`, as one Needs-you card.
+- The captain has `case_status`, `case_followUp`, `case_ask`, `case_close` and `case_stop`. A case closes only when a read exited 0 after the last change and its summary has 3 to 6 lines. 20 tool calls and 30 minutes per case, then only `case_stop`. The same command never runs twice unless something changed since. The client hears twice before the close message.
+- Cut from this path (kept for other flows): team plans, plan steps, hand-offs, send-backs, captain-made tasks, `captain.reportBug`, per-command cards for reads. Named in DECISIONS.
+- Home: an open case is one line in Work (lamp, client, title, age) with Now under it and Needs you only when a card waits; a closed case is in Done today with its summary; its follow-ups have Make it a task.
+- The lane watchdog (once a minute) resumes a lane held by an error up to 3 times, switches an account that is signed out or at its limit to the fallback and then any healthy allowed account, never resumes a lane the owner stopped, writes `majhi restarted the captain: <cause>`, and at 10 minutes tells the owner once through `ops.tellOwner` and the client "We're looking into it."
+
+**Tests** (rows 46p and 104c to 104f of `docs/briefs/test-guarantees.md`): `connections/remote-command.test.ts` and four replays in `cases/replay.test.ts`. Two existing tests changed: `chat/incident-update.test.ts` opens its incident from a deploy (it tests the status update of a lead's incident, no longer a client's report), `runs/lane-account.test.ts` expects the extra account tier.
+
+**Walked** (`e2e/case-walk/walk.ts`: a throwaway majhi on port 7520, a fake Slack, the scripted captain, a fake `ssh` whose worker is stuck until `docker restart`, a browser driven by Playwright; run it with `WALK_PORT=7520 WALK_SHOTS=<folder> node --import tsx e2e/case-walk/walk.ts`; it needs `pnpm --filter @majhi/web build` first). All six stages pass:
+- Two client messages open one case; Home shows one Work line (client, title, age) with Now under it while the slow log read runs (`01-case-open.png`).
+- The case closes with no card in Needs you, no other task, and two messages to the client; Done today opens in place with the 5 line summary, its follow-up and Make it a task (`02-case-closed-done-today.png`).
+- A second chat whose fix needs a deploy: exactly one card "Deploy fix X to Acme?" with Deploy and Not now, shown under its Work line as Needs you and in the Needs you pane (`03-card-waits.png`).
+- Pressing Not now in the Needs you pane answers it, the card goes and the captain is told (`04-card-answered.png`).
+- Pressing Make it a task on the follow-up makes one task, and nothing before the press (`05-made-a-task.png`).
+- Screenshots of this run: `/private/tmp/claude-501/-Users-ashik-Work-majhi/df980e00-a983-4b76-8837-cab6fc90e8ba/scratchpad/shots/`.
+- What the walk showed and was fixed: an open case read "your call" with no card (a case has no agent, so it is "working" until a card waits); the incident bar of a case showed the old status words and "not told yet" (it now shows the case's own line and how many times the client was told); the same follow-up written twice is one line; the throwaway server reached Anthropic to confirm a fake sign-in, so `MAJHI_CLAUDE_PROFILE_URL` (an env setting like `MAJHI_SLACK_API`) points that one read at a fake in a walk.
+
+**Known gaps.** The account switch is implemented and covered by the unit that picks the account, but no replay drives a lane held by a signed-out account (a wake alone already lifts that hold). The watchdog's attempt counters are in memory: a restart starts the count again. A heal line before a case exists is in the lane's room.
+
+**What only the owner can check.** A real captain on a real host: the wording of its replies and summaries, and the real `ssh` aliases and docker names.
+
 ## The host helper in Go, 2026-10-21
 
 Branch `feat/host-go`, brief `docs/briefs/host-go.md`. The TypeScript helper (8.9k lines under `apps/host/src`) is replaced by a Go program in the same branch; the server and the web app are unchanged.

@@ -325,6 +325,8 @@ export class CaseService {
     const found = this.resolve(lane, input.case);
     this.activate(lane, found.task.id);
     this.guard(lane, "case.followUp");
+    // The same line twice is one line.
+    if (found.record.followUps.some((f) => f.text === input.text)) return { ok: true };
     if (found.record.followUps.length >= 10) {
       throw new UserError("The case has ten follow-ups already. The owner reads them, not you.", 409);
     }
@@ -570,7 +572,7 @@ export class CaseService {
     this.outputs.set(this.outputKey(task, done.key), done.output.slice(0, 4000));
     this.update(task, (r) => {
       let next = withCommand(r, { key: done.key, at, result: fingerprint(done.output), ok: done.ok });
-      if (done.kind === "recovery" && done.action !== undefined) next = withRecovery(next, done.action, at);
+      if (done.kind === "recovery" && done.action !== undefined) next = withRecovery(next, done.action);
       else if (done.kind === "write") next = withChange(next);
       else if (done.ok) next = withCheck(next, done.command, at);
       return next;
@@ -593,7 +595,7 @@ export class CaseService {
   }
 
   /** The owner answered an ask card of a case: the captain's lane hears it, and a stopped case gets its answer applied. */
-  async answered(task: string, item: string, said: string, pick: Record<string, string>): Promise<boolean> {
+  async answered(task: string, _item: string, said: string, pick: Record<string, string>): Promise<boolean> {
     const record = this.recordOf(task);
     if (record === undefined) return false;
     const org = this.deps.store.tasks.get(task)?.org;

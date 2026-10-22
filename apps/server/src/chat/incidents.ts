@@ -1,4 +1,5 @@
 import {
+  type CaseRecord,
   CLIENT_STATUSES,
   type ClientStatus,
   caseOf,
@@ -217,12 +218,48 @@ export class ClientIncidents {
     return parts.join(" · ");
   }
 
+  /**
+   * What a case shows in its incident bar: this case's own facts, never another incident's. It is open or resolved;
+   * what the client was told is how many times the captain wrote, which is all the case counts.
+   */
+  private caseView(task: Task, record: CaseRecord, rooms: RoomRow[]): IncidentView {
+    const closed = record.closedAt !== undefined;
+    const steps: IncidentView["steps"] = CLIENT_STATUSES.map((status) =>
+      status === "investigating"
+        ? { status, at: record.openedAt }
+        : status === "resolved" && record.closedAt !== undefined
+          ? { status, at: record.closedAt }
+          : { status },
+    );
+    const told =
+      record.told === 0 ? "not told yet" : `told ${record.told} time${record.told === 1 ? "" : "s"}`;
+    const line = closed ? (record.summary?.split("\n")[0] ?? "Closed") : (task.now ?? "Looking into it");
+    return {
+      task: task.id as TaskId,
+      status: closed ? "resolved" : "investigating",
+      steps,
+      facts: `${clip(line, 120)} · ${told}`,
+      rooms: rooms.map(
+        (room): IncidentRoomView => ({
+          room: room.id as TaskId,
+          title: room.chat.title,
+          app: room.chat.app,
+          ...(record.told === 0
+            ? {}
+            : { sees: closed ? ("resolved" as const) : ("investigating" as const), toldAt: record.openedAt }),
+        }),
+      ),
+    };
+  }
+
   /** What the task page shows. Null for a task no client room is linked to. */
   async view(taskId: string): Promise<IncidentView | null> {
     const task = this.deps.store.tasks.get(taskId);
     const rooms = this.rooms(taskId);
     // An incident no client room is told about still has its status, its quiet reason and its report.
     if (task === undefined || (rooms.length === 0 && task.typing?.type !== "incident")) return null;
+    const record = caseOf(task);
+    if (record !== undefined) return this.caseView(task, record, rooms);
     const read = await this.read(task);
     const result = clientStatus(read.facts);
     const tz = await this.deps.tz(read.org);
