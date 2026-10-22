@@ -1,4 +1,3 @@
-import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { CONN, envelope } from "./testing/world.ts";
@@ -33,12 +32,31 @@ describe("an incident update", () => {
     const found = parts.rooms.find("telegram", conn.account, "-700");
     if (found === undefined) throw new Error("no room");
     const room = await parts.rooms.link(found.id, "acme");
-    const item = services.store.room
-      .page(room.id, 10)
-      .items.find((i): i is Extract<RoomItem, { type: "client" }> => i.type === "client");
-    if (item === undefined) throw new Error("no client message");
-
-    const { task: id } = await parts.incidents.claim(room, item, undefined, "A watch is firing on checkout");
+    // A failed production deploy opens an incident its lead works, and the chat follows it.
+    const record = (n: number) =>
+      ({
+        id: n,
+        org: "acme",
+        project: "acme-api",
+        env: "production",
+        commit: "f".repeat(40),
+        state: "failed",
+        by: "captain",
+        runs: [],
+        handles: [],
+        seq: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }) as never;
+    const { task: id } = await services.incidentEngine.open({
+      kind: "deploy",
+      org: "acme",
+      record: record(1),
+      title: "Deploy of acme-api to production failed",
+      text: "The pipeline failed",
+      tier: "production",
+    });
+    services.store.tasks.putLink({ task: id, type: "client", other: room.id });
     // The title and branch the task would carry once the lead named the work.
     services.store.raw
       .prepare("UPDATE tasks SET title = ? WHERE id = ?")
@@ -69,22 +87,7 @@ describe("an incident update", () => {
       expect([internal, handed.includes(internal)]).toEqual([internal, false]);
     }
 
-    // A failed production deploy of the same project opens an urgent incident; another one joins it.
-    const record = (n: number) =>
-      ({
-        id: n,
-        org: "acme",
-        project: "acme-api",
-        env: "production",
-        commit: "f".repeat(40),
-        state: "failed",
-        by: "captain",
-        runs: [],
-        handles: [],
-        seq: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }) as never;
+    // Another failed production deploy of the same project joins that incident.
     const first = await services.incidentEngine.open({
       kind: "deploy",
       org: "acme",

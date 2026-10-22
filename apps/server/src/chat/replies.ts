@@ -1,5 +1,6 @@
 import {
   type AuthorityChoice,
+  type AuthorityLevel,
   CHAT_APP_LABEL,
   type ChatApp,
   chatRoomSettings,
@@ -75,6 +76,12 @@ export interface ReplyInput {
   note?: string | undefined;
   /** The incident it is about. */
   about?: string | undefined;
+  /**
+   * The reply is about the open case of this chat, at this workspace level. At Routine or Full it goes without the
+   * owner, and the two holds about the relationship (a first message to them, a gap) do not apply: the client wrote
+   * to us about a problem and waits. What the text says (a time, money, a security matter, several clients) still holds.
+   */
+  caseLevel?: AuthorityLevel | undefined;
 }
 
 /** What a reply that waits answers: shown in Needs you so the owner can decide without opening the chat. */
@@ -187,16 +194,17 @@ export class ClientReplies {
     if (room.chat.holder !== "captain" && update === undefined && input.weekly === undefined) {
       throw new UserError("You hold this chat, so the captain does not write in it.", 409);
     }
+    const caseAsks = input.caseLevel === "ask";
     const rails = {
-      tell: update === "ask" ? ("ask" as const) : await this.deps.tell(org),
+      tell: update === "ask" || caseAsks ? ("ask" as const) : await this.deps.tell(org),
       internal: this.deps.internalMarks?.(room.id) ?? [],
       // The chat's own Ask-me cases over the workspace's list.
       holds: holdsForRoom(await this.deps.holds(org), room.chat),
 
       flags: input.flags,
       others: await this.others(room),
-      firstContact: this.firstContact(room.id, input.to),
-      afterGap: this.afterGap(room.id),
+      firstContact: input.caseLevel === undefined && this.firstContact(room.id, input.to),
+      afterGap: input.caseLevel === undefined && this.afterGap(room.id),
       ...(input.report === true || input.weekly !== undefined ? { report: true } : {}),
     };
     let verdict = railsFor({ ...rails, text: input.text });

@@ -178,6 +178,8 @@ export interface RunDeps {
    * the team.
    */
   onTurnEnd?: (turn: { task: string; agent: string; text: string; refused?: boolean }) => Promise<void>;
+  /** A session made a tool call (counted once per call): a captain working a case spends it against the case. */
+  onToolCall?: (task: string) => void;
   /**
    * Called right before a prompt is sent, not for slash commands. A returned text is added after
    * the prompt. `brief` is true when the agent reads TASK.md with this prompt: the first prompt,
@@ -2486,6 +2488,7 @@ export class RunManager {
         this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
         if (event.type === "tool" && run.prompting && !run.turnTools.has(event.toolCallId)) {
           run.turnTools.add(event.toolCallId);
+          this.deps.onToolCall?.(run.task);
           if (run.turnLimits?.maxToolCalls !== undefined) this.checkTurnLimit(run);
           if (this.deps.overCap !== undefined) {
             const check = this.checkCap(run).finally(() => this.capChecks.delete(check));

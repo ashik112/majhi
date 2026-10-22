@@ -5,6 +5,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { AgentStore } from "../agents/store.ts";
+import { commandKey } from "../cases/record.ts";
+import type { CaseService } from "../cases/service.ts";
 import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
@@ -76,6 +78,8 @@ export interface ConnectionsMcpDeps {
   remote?: RemoteRunFn | undefined;
   /** Results of commands the owner answered, for the agent's next call or wake. One for the whole server. */
   deferred: DeferredResults;
+  /** The cases: what a command of a captain working one may do, and what it leaves on the case. */
+  cases?: Pick<CaseService, "activeOf" | "beforeCommand" | "afterCommand" | "allowsRecovery"> | undefined;
   now?: () => Date;
 }
 
@@ -235,10 +239,53 @@ async function ssh(
     return {
       text: `${args.connection}: ${args.command} (${status})\n${output === "" ? "(no output)" : output}`,
       failed: result.code !== 0,
+      output,
     };
   };
   const verdict = classifyRemote(args.command, gate);
-  if (verdict.kind !== "write") return ok((await run()).text);
+  // In a case (docs/briefs/case-flow.md) every command counts: a repeat is answered from the record, a restart
+  // runs once without a card at Routine or Full, and what ran is kept on the case as evidence.
+  const caseTask = deps.cases?.activeOf(caller.task);
+  const first = verdict.kind === "write" ? verdict.writes[0] : undefined;
+  const kind = verdict.kind === "read" ? "read" : first?.recovery !== undefined ? "recovery" : "write";
+  const caseKey = commandKey(args.connection, args.command);
+  const keep = async (): Promise<{ text: string; failed: boolean }> => {
+    const done = await run();
+    if (caseTask !== undefined && deps.cases !== undefined)
+      deps.cases.afterCommand(caseTask, {
+        key: caseKey,
+        command: args.command,
+        kind,
+        action: first?.recovery?.action,
+        output: done.output,
+        ok: !done.failed,
+      });
+    return done;
+  };
+  if (caseTask !== undefined && deps.cases !== undefined) {
+    const plan = deps.cases.beforeCommand(caller.task, caseKey, kind, first?.recovery?.action);
+    if (plan.how === "refuse") return fail(plan.text);
+    if (plan.how === "again") return ok(plan.text);
+    if (plan.how === "run" && kind === "recovery" && (await deps.cases.allowsRecovery(caller.task))) {
+      const done = await keep();
+      const org = held.uses.find((u) => u.id === args.connection)?.org;
+      deps.store.permissions.log({
+        task: caller.task,
+        agent: caller.agent,
+        kind: "connection-write",
+        title: redactSecrets(`ssh ${alias} ${args.command}`, held.secrets),
+        decision: "allow",
+        by: "rule",
+        at: (deps.now?.() ?? new Date()).toISOString(),
+        ...(org === undefined ? {} : { org }),
+        detail: `${args.connection}: ${first?.action ?? args.command} (a recovery: once for the case ${caseTask})`,
+      });
+      return ok(
+        `${done.text}\nThis restart was done without asking: the workspace allows one recovery per case. Check that the symptom is gone with a read.`,
+      );
+    }
+  }
+  if (verdict.kind !== "write") return ok((await keep()).text);
   const ask: PermissionAsk = {
     title: `ssh ${alias} ${args.command}`,
     kind: "execute",
@@ -251,11 +298,11 @@ async function ssh(
   if (answer === undefined) return fail("Your session is not open, so majhi cannot ask the owner.");
   if (verdict.writes.every((w) => w.allowed)) {
     await answer;
-    return ok((await run()).text);
+    return ok((await keep()).text);
   }
   // Attached in the same step that made the card, so an answer that comes at once is never missed.
   void answer
-    .then((option) => settle(caller, deps, args, alias, option, run))
+    .then((option) => settle(caller, deps, args, alias, option, keep))
     .catch((err) => {
       // The answer must never vanish: the room and the agent hear what went wrong.
       deferredNote(
