@@ -349,7 +349,7 @@ describe("the case replay when the captain's lane is down", () => {
     const said = [...(await items(caseId)), ...(await items(r.lane.id))].flatMap((i) =>
       i.type === "system" && i.text.startsWith("majhi restarted the captain") ? [i.text] : [],
     );
-    expect(said).toEqual(["majhi restarted the captain: It stopped with an error."]);
+    expect(said).toEqual([expect.stringContaining("majhi restarted the captain: The sign-in check failed")]);
   });
 
   it("tells the owner once at ten minutes when the heals keep failing, and tells the client we are looking into it", async () => {
@@ -388,7 +388,7 @@ describe("the case replay when the captain's lane is down", () => {
     expect(starts.filter((by) => by === "boss")).toHaveLength(3);
     expect(told).toEqual([
       expect.stringContaining(
-        "Ana wrote 10 min ago in Orders for Initech; the captain could not start: It stopped with an error",
+        "Ana wrote 10 min ago in Orders for Initech; the captain could not start: docker refused",
       ),
     ]);
     expect(told[0]).toContain("tried: resume ×3");

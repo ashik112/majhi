@@ -41,6 +41,8 @@ export interface WatchdogDeps {
     holdOf(id: string): lifecycle.Hold | undefined;
     start(id: string, by: string): Promise<unknown>;
   };
+  /** Why the lane stopped, in the words its own card gives (the error, the sign-in), or undefined when it has none. */
+  stoppedBecause: (chat: string) => string | undefined;
   /** Whether a captain turn runs in this lane chat now. */
   turnRunning: (chat: string) => boolean;
   room: Pick<RoomService, "post" | "get">;
@@ -68,6 +70,8 @@ interface Tried {
   lastAt: number;
   /** Why the lane cannot take the message, in the owner's words. */
   cause: string;
+  /** The hold the cause was read for: another hold is another cause. */
+  holdCause: string;
 }
 
 export class LaneWatchdog {
@@ -120,7 +124,14 @@ export class LaneWatchdog {
   }
 
   private triedOf(org: string): Tried {
-    const found = this.tried.get(org) ?? { resumes: 0, switches: 0, nudges: 0, lastAt: 0, cause: "" };
+    const found = this.tried.get(org) ?? {
+      resumes: 0,
+      switches: 0,
+      nudges: 0,
+      lastAt: 0,
+      cause: "",
+      holdCause: "",
+    };
     this.tried.set(org, found);
     return found;
   }
@@ -199,7 +210,12 @@ export class LaneWatchdog {
     tried: Tried,
     at: Date,
   ): Promise<void> {
-    tried.cause = lifecycle.sentenceOf(hold);
+    // The hold's cause says what to do; the lane's own card says why, in words. Read once per hold, so what a failed
+    // resume added to it stays.
+    if (tried.holdCause !== hold.cause) {
+      tried.holdCause = hold.cause;
+      tried.cause = this.deps.stoppedBecause(lane) ?? lifecycle.sentenceOf(hold);
+    }
     const lifters = lifecycle.liftersOf(hold);
     if (hold.cause === "error") {
       if (boss === undefined || !lifters.includes("captain") || !this.due(tried, tried.resumes, at)) return;

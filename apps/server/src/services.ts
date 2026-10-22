@@ -3123,6 +3123,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store,
     lanes,
     tasks: { holdOf: (id) => tasks.holdOf(id), start: (id, by) => tasks.start(id, by) },
+    stoppedBecause: (chat) => {
+      const card = store.room.pendingOfType(chat, "paused").at(-1);
+      return card?.type === "paused" && card.why !== undefined && card.why !== "" ? card.why : undefined;
+    },
     turnRunning: (chat) => runs.working(chat).length > 0,
     room,
     caseOf: async (roomId) => (await cases?.openToday(roomId))?.task,
