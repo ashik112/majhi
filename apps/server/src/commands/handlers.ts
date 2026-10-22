@@ -771,7 +771,7 @@ export function createHandlers({
         const current = (await services.projects.infos()).find((p) => p.id === input.id);
         if (current?.protected === true) {
           throw new UserError(
-            `Only the owner can turn protection off for ${input.id}, on the Projects and links page.`,
+            `Only the owner can turn protection off for ${input.id}, under Settings > Projects.`,
             409,
           );
         }

@@ -4,7 +4,9 @@ import {
   type DecisionLink,
   type OwnerDecision,
   type OwnerDecisionKind,
+  PAGE_PATH,
   PRIVATE,
+  sectionTarget,
   type WorkCounts,
 } from "@majhi/shared";
 import type { BannerAction } from "../shell/model";
@@ -141,25 +143,23 @@ export function actionOf(link: DecisionLink): BannerAction {
     case "chat":
       return { kind: "chat", id: link.id };
     case "captain":
-      return link.org === undefined
-        ? { kind: "page", to: "/captain" }
-        : { kind: "page", to: "/captain", search: { thread: link.org } };
+      return { kind: "chat", id: "captain" };
     case "limits":
-      return { kind: "page", to: "/limits" };
+      return { kind: "page", to: PAGE_PATH.limits };
     case "account":
-      return { kind: "page", to: "/accounts", search: { account: link.id, signin: "start" } };
+      return { kind: "page", to: PAGE_PATH.accounts, search: { account: link.id, signin: "start" } };
     case "playbooks":
-      return { kind: "page", to: "/playbooks" };
+      return { kind: "page", to: PAGE_PATH.playbooks };
     case "watch":
-      return { kind: "page", to: "/watch" };
+      return { kind: "page", to: PAGE_PATH.watch };
     case "connections":
-      return { kind: "page", to: "/connections" };
+      return { kind: "page", to: PAGE_PATH.connections };
     case "decision":
-      return { kind: "page", to: "/decisions", search: { id: link.id } };
+      return { kind: "page", to: PAGE_PATH.decisions, search: { id: link.id } };
     case "add-account":
-      return { kind: "page", to: "/accounts", search: { create: link.org } };
+      return { kind: "page", to: PAGE_PATH.accounts, search: { create: link.org } };
     case "setup":
-      return { kind: "page", to: "/setup", search: { section: link.section } };
+      return { kind: "page", ...sectionTarget(link.section) };
   }
 }
 

@@ -4,6 +4,7 @@ import {
   collapseHome,
   type HealthCheck,
   type OrgView,
+  PAGE_PATH,
   type TaskSummary,
   type UsageBreakdown,
   type UsageTotals,
@@ -277,7 +278,7 @@ function AccountBlock({ account, now }: { account: AccountView; now: number }) {
       <AccountMeters account={account} now={now} />
       {account.status === "needs-login" && account.auth === "login" && (
         <Button asChild size="sm" className="self-start">
-          <Link to="/accounts" search={{ account: account.id, signin: "start" }}>
+          <Link to={PAGE_PATH.accounts} search={{ account: account.id, signin: "start" }}>
             Sign in
           </Link>
         </Button>

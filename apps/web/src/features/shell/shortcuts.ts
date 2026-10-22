@@ -1,4 +1,4 @@
-import { PAGE_PATH, type PagePath } from "@majhi/shared";
+import { PAGE_PATH, PAGE_TAB, type PageName, type PagePath } from "@majhi/shared";
 
 export type GoTarget = PagePath;
 
@@ -30,17 +30,23 @@ export interface ShortcutDef {
   /** Where the page that handles it is. Matching ignores this; the handler checks it. */
   scope?: "task";
   go?: GoTarget;
+  /** The tab the page opens on, when it is a tab of another page (Memory, Activity). */
+  goTab?: string;
 }
 
-const go = (letter: string, to: GoTarget, what: string): ShortcutDef => ({
-  id: `go-${letter}`,
-  keys: ["g", letter],
-  what,
-  group: "Go to",
-  press: { key: letter },
-  afterG: true,
-  go: to,
-});
+const go = (letter: string, page: PageName, what: string): ShortcutDef => {
+  const tab = PAGE_TAB[page];
+  return {
+    id: `go-${letter}`,
+    keys: ["g", letter],
+    what,
+    group: "Go to",
+    press: { key: letter },
+    afterG: true,
+    go: PAGE_PATH[page],
+    ...(tab === undefined ? {} : { goTab: tab }),
+  };
+};
 
 export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   {
@@ -68,21 +74,22 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     group: "Go to",
     press: { key: "g" },
   },
-  go("b", PAGE_PATH.board, "Go to the console"),
-  go("a", PAGE_PATH.agents, "Go to agents"),
-  go("u", PAGE_PATH.accounts, "Go to accounts"),
-  go("n", PAGE_PATH.connections, "Go to connections"),
-  go("h", PAGE_PATH.usage, "Go to health and usage"),
-  go("k", PAGE_PATH.skills, "Go to skills and MCP servers"),
-  go("m", PAGE_PATH.memory, "Go to memory"),
-  go("t", PAGE_PATH.playbooks, "Go to playbooks (timers)"),
-  go("s", PAGE_PATH.setup, "Go to hub setup"),
-  go("p", PAGE_PATH.projects, "Go to projects and links"),
-  go("o", PAGE_PATH.orgs, "Go to workspaces"),
-  go("l", PAGE_PATH.audit, "Go to the audit log"),
-  go("j", PAGE_PATH.captain, "Go to the captain page (history, results, findings)"),
-  go("w", PAGE_PATH.watch, "Go to watch (services and incidents)"),
-  go("r", PAGE_PATH.playbooks, "Go to playbooks"),
+  go("b", "board", "Go to Home"),
+  go("a", "agents", "Go to agents"),
+  go("u", "accounts", "Go to AI accounts"),
+  go("n", "connections", "Go to connections"),
+  go("h", "usage", "Go to usage (health and cost)"),
+  go("k", "skills", "Go to skills and tools"),
+  go("m", "memory", "Go to memory"),
+  go("t", "playbooks", "Go to playbooks (timers)"),
+  go("s", "setup", "Go to settings"),
+  go("p", "projects", "Go to projects"),
+  go("o", "orgs", "Go to workspaces"),
+  go("l", "audit", "Go to activity (the audit log)"),
+  go("j", "captain", "Go to the captain page (history, results, findings)"),
+  go("w", "watch", "Go to watch (services and incidents)"),
+  go("i", "wiki", "Go to the wiki"),
+  go("r", "playbooks", "Go to playbooks"),
   { id: "next-task", keys: ["]"], what: "Next task", group: "Task", press: { key: "]" }, scope: "task" },
   { id: "prev-task", keys: ["["], what: "Previous task", group: "Task", press: { key: "[" }, scope: "task" },
   {
@@ -145,8 +152,8 @@ export const GO_KEYS: Record<string, GoTarget> = Object.fromEntries(
 );
 
 /** The keys that go to this page, as printed ("g y"), or undefined when none does. */
-export function chordOf(path: GoTarget): string | undefined {
-  const def = SHORTCUT_TABLE.find((s) => s.go === path);
+export function chordOf(path: GoTarget, tab?: string): string | undefined {
+  const def = SHORTCUT_TABLE.find((s) => s.go === path && s.goTab === tab);
   return def === undefined ? undefined : def.keys.join(" ");
 }
 
@@ -208,6 +215,7 @@ export function isSendPress(event: ShortcutKey): boolean {
 export interface ShortcutAction {
   id: string;
   go?: GoTarget;
+  goTab?: string;
 }
 
 /**
@@ -220,7 +228,10 @@ export function resolveShortcut(event: ShortcutKey, afterG: boolean, typing: boo
     if (typing && !def.typing) continue;
     if (!pressMatches(def.press, event)) continue;
     if (def.id === "chord") return { id: "wait-for-go" };
-    return def.go ? { id: def.id, go: def.go } : { id: def.id };
+    if (def.go === undefined) return { id: def.id };
+    return def.goTab === undefined
+      ? { id: def.id, go: def.go }
+      : { id: def.id, go: def.go, goTab: def.goTab };
   }
   return { id: "none" };
 }

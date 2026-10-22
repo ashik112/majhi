@@ -190,8 +190,7 @@ export function useConsoleActions(openChat: (id: string) => void) {
         });
       } else if (action.kind === "chat") openChat(action.id);
       else if (action.kind === "page") {
-        if (action.to === PAGE_PATH.captain) openChat("captain");
-        else void navigate({ to: action.to, search: { ...action.search } });
+        void navigate({ to: action.to, search: { ...action.search } });
       }
     },
     [navigate, openChat],

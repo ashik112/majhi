@@ -1,7 +1,6 @@
-import { PAGE_PATH, PRIVATE, PRIVATE_NAME } from "@majhi/shared";
+import { PAGE_LABEL, PAGE_PATH, PLACES, type Place, PRIVATE, PRIVATE_NAME } from "@majhi/shared";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Search, Settings } from "lucide-react";
-import { AppearanceButton } from "@/components/shell/appearance";
+import { ChevronDown, Search, Settings } from "lucide-react";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { Menu } from "@/components/ui/menu";
 import { isSettingsPath } from "@/features/settings/settings-frame";
@@ -15,13 +14,19 @@ import { ConsoleLamp, Kbd, wsStyle } from "./parts";
 /** How many workspaces get a button before the rest go under "N more". */
 const SHOWN = 5;
 
-function Workspaces() {
-  const { orgs, hues, waitingByOrg } = useConsole();
-  const { org, setOrg } = useOrgFilter();
-  const all = [
+function useWorkspaceChoices() {
+  const { orgs } = useConsole();
+  return [
     ...(orgs ?? []).filter((o) => o.id !== PRIVATE).map((o) => ({ id: o.id, name: o.name })),
     { id: PRIVATE, name: PRIVATE_NAME },
   ];
+}
+
+/** The workspace filter as buttons, from 1300 px up. */
+function Workspaces() {
+  const { hues, waitingByOrg } = useConsole();
+  const { org, setOrg } = useOrgFilter();
+  const all = useWorkspaceChoices();
   const several = all.length > SHOWN + 1;
   const shown = several ? all.slice(0, SHOWN) : all;
   // The picked workspace always shows, even when it would fall under "more".
@@ -30,7 +35,7 @@ function Workspaces() {
   const rest = all.filter((w) => !shown.includes(w));
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring its own box and legend
-    <div className="cs-seg" role="group" aria-label="Workspace">
+    <div className="cs-seg cs-ws-wide" role="group" aria-label="Workspace">
       <button type="button" aria-pressed={org === undefined} onClick={() => setOrg(undefined)}>
         All
       </button>
@@ -67,7 +72,59 @@ function Workspaces() {
   );
 }
 
-/** The bar above every screen: workspace filter, what is going on, search, appearance, Settings. */
+/** Below 1300 px the same filter is one select: "All workspaces". */
+function WorkspaceSelect() {
+  const { waitingByOrg } = useConsole();
+  const { org, setOrg } = useOrgFilter();
+  const all = useWorkspaceChoices();
+  return (
+    <label className="cs-ws-narrow">
+      <span className="sr-only">Workspace</span>
+      <select
+        value={org ?? ""}
+        onChange={(event) => setOrg(event.target.value === "" ? undefined : event.target.value)}
+      >
+        <option value="">All workspaces</option>
+        {all.map((w) => {
+          const waiting = waitingByOrg.get(w.id) ?? 0;
+          return (
+            <option key={w.id} value={w.id}>
+              {w.name}
+              {waiting > 0 ? ` (${waiting})` : ""}
+            </option>
+          );
+        })}
+      </select>
+      <ChevronDown aria-hidden="true" width={12} height={12} />
+    </label>
+  );
+}
+
+/** Where the owner checks things every day, after the boat mark. */
+function Places() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const on = (place: Place) =>
+    place === "board"
+      ? path === PAGE_PATH.board || path.startsWith("/t/")
+      : path.startsWith(PAGE_PATH[place]);
+  return (
+    <nav className="cs-places" aria-label="Places">
+      {PLACES.map((place) => (
+        <Link
+          key={place}
+          to={PAGE_PATH[place]}
+          search={{}}
+          className="cs-place"
+          aria-current={on(place) ? "page" : undefined}
+        >
+          {PAGE_LABEL[place]}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/** The bar above every screen: places, workspace filter, what needs the owner, search, Settings. */
 export function TopBar({ onSearch }: { onSearch: () => void }) {
   const { counts } = useConsole();
   const lost = useFeedLost();
@@ -75,10 +132,12 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
   const inSettings = isSettingsPath(path);
   return (
     <header className="cs-top cs-glass">
-      <Link to="/" className="cs-mark" aria-label="majhi: back to the console">
+      <Link to="/" className="cs-mark" aria-label="majhi: back to Home">
         <MajhiMark />
       </Link>
+      <Places />
       <Workspaces />
+      <WorkspaceSelect />
       {lost && (
         <div className="cs-conn" role="status">
           <ConsoleLamp state="paused" />
@@ -98,14 +157,6 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
         <span className={counts.needYou > 0 ? "cs-on" : undefined}>
           <b>{counts.needYou}</b>need you
         </span>
-        <i />
-        <span className={counts.working > 0 ? "cs-on" : undefined}>
-          <b>{counts.working}</b>working
-        </span>
-        <i className="cs-q" />
-        <span className={`cs-q ${counts.queued > 0 ? "cs-on" : ""}`}>
-          <b>{counts.queued}</b>queued
-        </span>
       </div>
       <AutonomousSwitch />
       <button type="button" className="cs-search" onClick={onSearch} aria-label="Search or ask">
@@ -115,7 +166,6 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
           {MOD_KEY}K
         </span>
       </button>
-      <AppearanceButton />
       <Link
         to={PAGE_PATH.setup}
         className="cs-iconbtn"

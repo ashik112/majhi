@@ -2,7 +2,6 @@ import type { SetupSection } from "@majhi/shared";
 
 /** One line under the title in the detail head. */
 export const SECTION_ABOUT: Record<SetupSection, string> = {
-  overview: "What majhi needs before agents can work, and the one step each part may still need.",
   roots: "The folders majhi scans for git repos. It can only see folders that are mounted.",
   ssh: "The keys majhi's git uses to reach your hosts. Passphrases stay on this computer.",
   decisions: "The small local model that makes cheap, frequent calls, and how well each one is doing.",

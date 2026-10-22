@@ -39,15 +39,7 @@ const ShortcutsDialog = lazy(() =>
 );
 
 /** Pages that lay out their own panes to fit the viewport. */
-const PINNED: ReadonlySet<string> = new Set([
-  PAGE_PATH.limits,
-  PAGE_PATH.agents,
-  PAGE_PATH.connections,
-  PAGE_PATH.skills,
-  PAGE_PATH.usage,
-  PAGE_PATH.audit,
-  PAGE_PATH.orgs,
-]);
+const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.watch, PAGE_PATH.wiki, PAGE_PATH.usage]);
 
 export function AppShell() {
   useServerEvents();

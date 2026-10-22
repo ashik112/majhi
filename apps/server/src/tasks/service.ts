@@ -4418,7 +4418,7 @@ export class TaskService {
     for (const [m, account] of signedOut)
       this.warn(
         id,
-        `@${m} cannot run: its account ${account} needs a new sign-in. Sign it in on the Accounts page, or write to another teammate.`,
+        `@${m} cannot run: its account ${account} needs a new sign-in. Sign it in under Settings > AI accounts, or write to another teammate.`,
       );
     if (targets.length === 0) return item;
     this.deps.runs.inOrder(id, async () => {

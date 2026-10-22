@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { ListDetail, ListPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
 import { describeError } from "@/lib/errors";
@@ -11,6 +11,7 @@ import { MemoryDetail } from "./memory-detail";
 import { MemoryList } from "./memory-list";
 import { GLOBAL, MEMORY_TABS, type MemoryTab, memoryCounts } from "./model";
 import { MemoryReviewActions } from "./review-actions";
+import { RulesButton } from "./rules-button";
 import { readStored, writeStored } from "./storage";
 
 const PROJECT_KEY = "majhi.memory.project";
@@ -23,7 +24,7 @@ const RECORDS = 200;
  * memory holds for it; the picked one on the right with its brief, task records, threads and
  * lessons. The URL keeps the project and tab (`?project=&tab=`), so a link can open a review.
  */
-export function MemoryView() {
+export function MemoryView({ tabs }: { tabs: ReactNode }) {
   const orgs = useOrgs();
   const projects = useProjects();
   const facts = useFacts();
@@ -54,7 +55,7 @@ export function MemoryView() {
       ? stored
       : (projectList[0]?.id ?? GLOBAL);
   const tab: MemoryTab =
-    MEMORY_TABS.find((t) => t === search.tab) ?? (selected === GLOBAL ? "lessons" : "brief");
+    MEMORY_TABS.find((t) => t === search.mtab) ?? (selected === GLOBAL ? "lessons" : "brief");
 
   useEffect(() => {
     if (projects.data !== undefined) writeStored(PROJECT_KEY, selected);
@@ -66,7 +67,7 @@ export function MemoryView() {
     const nextTab = next.tab ?? (project === GLOBAL ? "lessons" : selected === GLOBAL ? "brief" : tab);
     void navigate({
       to: ".",
-      search: (prev: AppSearch): AppSearch => ({ ...prev, project, tab: nextTab }),
+      search: (prev: AppSearch): AppSearch => ({ ...prev, project, mtab: nextTab }),
       replace: true,
     });
   };
@@ -75,10 +76,10 @@ export function MemoryView() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Memory"
-        wrapSubtitle
-        subtitle="What majhi keeps per project: a short brief, a record of each finished task, what those tasks left open, and lessons."
+        tabs={tabs}
+        subtitle="What majhi keeps per project: a brief, a record of each task, open items and lessons."
       >
+        <RulesButton />
         <MemoryReviewActions
           facts={facts.data ?? []}
           projectOrgs={projectOrgs}

@@ -924,9 +924,7 @@ function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
           </Button>
         ) : item.action === "runner-memory" ? (
           <Button asChild size="sm" variant="ghost" className="h-6 px-2">
-            <PageLink page="setup" search={{ section: "containers" }}>
-              Raise memory
-            </PageLink>
+            <PageLink page="system">Raise memory</PageLink>
           </Button>
         ) : undefined
       }

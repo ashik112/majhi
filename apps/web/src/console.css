@@ -97,6 +97,66 @@
   font: 400 11px var(--font-mono);
   color: var(--c-fg-faint);
 }
+/* Places: where the owner checks things every day. */
+.cs-places {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.cs-place {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--c-fg-muted);
+  white-space: nowrap;
+}
+.cs-place:hover {
+  color: var(--c-fg);
+  background: var(--c-raised);
+}
+.cs-place[aria-current="page"] {
+  color: var(--c-fg);
+  font-weight: 500;
+  background: var(--c-selected);
+  box-shadow: inset 0 0 0 1px var(--c-line-control);
+}
+/* The workspace filter: buttons from 1300 px, one select below. */
+.cs-ws-narrow {
+  display: none;
+  position: relative;
+  flex: none;
+  color: var(--c-fg-muted);
+}
+.cs-ws-narrow select {
+  appearance: none;
+  height: 30px;
+  min-width: 128px;
+  padding: 0 28px 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-field);
+  color: var(--c-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cs-ws-narrow svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+@media (max-width: 1299px) {
+  .cs-ws-wide {
+    display: none;
+  }
+  .cs-ws-narrow {
+    display: block;
+  }
+}
 .cs-conn {
   display: flex;
   align-items: center;

@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 
@@ -5,7 +6,7 @@ import { Button } from "@/components/ui/button";
 export function SignInButton({ account, primary = false }: { account: string; primary?: boolean }) {
   return (
     <Button asChild size="sm" variant={primary ? "primary" : "secondary"}>
-      <Link to="/accounts" search={{ account, signin: "start" }}>
+      <Link to={PAGE_PATH.accounts} search={{ account, signin: "start" }}>
         Sign in
       </Link>
     </Button>

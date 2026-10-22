@@ -1,4 +1,11 @@
-import { PAGE_PATH, TaskIdSchema } from "@majhi/shared";
+import {
+  isSetupSection,
+  PAGE_PATH,
+  SECTION_HOME,
+  SETTINGS_ENTRIES,
+  settingsEntry,
+  TaskIdSchema,
+} from "@majhi/shared";
 import {
   createRootRoute,
   createRoute,
@@ -41,6 +48,11 @@ export interface AppSearch {
   pane?: "needs" | "work";
   /** On Skills: the skill whose detail opens. */
   skill?: string;
+  /** On the Wiki place: open the Memory rules dialog, or the Wiki settings dialog. */
+  rules?: true;
+  settings?: true;
+  /** On Memory (the Wiki place, tab Memory): its own tab (brief, tasks, threads, lessons). */
+  mtab?: string;
   /** On Memory: the project shown (or `global`), and its tab. */
   project?: string;
   tab?: string;
@@ -85,6 +97,9 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const skill = text(search.skill);
   const project = text(search.project);
   const tab = text(search.tab);
+  const mtab = text(search.mtab);
+  const rules = search.rules === true || search.rules === "true" ? true : undefined;
+  const settings = search.settings === true || search.settings === "true" ? true : undefined;
   const thread = text(search.thread);
   const urgent = (thread && search.urgent === true) || search.urgent === "true" ? true : undefined;
   const section = text(search.section);
@@ -114,6 +129,9 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(skill ? { skill } : {}),
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
+    ...(mtab ? { mtab } : {}),
+    ...(rules ? { rules } : {}),
+    ...(settings ? { settings } : {}),
     ...(thread ? { thread } : {}),
     ...(urgent ? { urgent } : {}),
     ...(section ? { section } : {}),
@@ -171,16 +189,7 @@ const taskRoute = createRoute({
 });
 
 // Pages, the task screen and chats load on demand, so the main chunk holds only the shell and the board.
-const captainRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.captain,
-  component: lazyRouteComponent(() => import("@/pages/captain-page"), "CaptainPage"),
-});
-const playbooksRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.playbooks,
-  component: lazyRouteComponent(() => import("@/pages/playbooks-page"), "PlaybooksPage"),
-});
+// The places in the top bar.
 const watchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.watch,
@@ -191,53 +200,112 @@ const wikiRoute = createRoute({
   path: PAGE_PATH.wiki,
   component: lazyRouteComponent(() => import("@/pages/wiki-page"), "WikiPage"),
 });
-const agentsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.agents,
-  component: lazyRouteComponent(() => import("@/pages/agents-page"), "AgentsPage"),
-});
-const accountsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.accounts,
-  component: lazyRouteComponent(() => import("@/pages/accounts-page"), "AccountsPage"),
-});
-const healthRoute = createRoute({
+const usageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.usage,
-  component: lazyRouteComponent(() => import("@/pages/health-page"), "HealthPage"),
+  component: lazyRouteComponent(() => import("@/pages/usage-page"), "UsagePage"),
 });
-const connectionsRoute = createRoute({
+
+const FIRST_ENTRY = SETTINGS_ENTRIES[0]?.id ?? "workspaces";
+
+// Settings: 14 entries, one address each. `/settings` opens the first.
+const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.connections,
-  component: lazyRouteComponent(() => import("@/pages/connections-page"), "ConnectionsPage"),
-});
-const auditRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.audit,
-  component: lazyRouteComponent(() => import("@/pages/audit-page"), "AuditPage"),
-});
-const skillsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.skills,
-  component: lazyRouteComponent(() => import("@/pages/skills-page"), "SkillsPage"),
-});
-const memoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.memory,
-  component: lazyRouteComponent(() => import("@/pages/memory-page"), "MemoryPage"),
-});
-// Automations were folded into Playbooks (schedules) and Watch (triggers): old links land on Playbooks.
-const automationsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/automations",
-  beforeLoad: () => {
-    throw redirect({ to: PAGE_PATH.playbooks });
+  path: PAGE_PATH.setup,
+  beforeLoad: ({ search }) => {
+    throw toEntry(FIRST_ENTRY, search);
   },
 });
-const limitsRoute = createRoute({
+const SettingsPage = lazyRouteComponent(() => import("@/pages/settings-page"), "SettingsPage");
+const entryRoute = <const P extends string>(path: P) =>
+  createRoute({ getParentRoute: () => rootRoute, path, component: SettingsPage });
+const entryRoutes = [
+  entryRoute(PAGE_PATH.orgs),
+  entryRoute(PAGE_PATH.projects),
+  entryRoute(PAGE_PATH.accounts),
+  entryRoute(PAGE_PATH.git),
+  entryRoute(PAGE_PATH.connections),
+  entryRoute(PAGE_PATH.agents),
+  entryRoute(PAGE_PATH.approvals),
+  entryRoute(PAGE_PATH.skills),
+  entryRoute(PAGE_PATH.playbooks),
+  entryRoute(PAGE_PATH.limits),
+  entryRoute(PAGE_PATH.look),
+  entryRoute(PAGE_PATH.editor),
+  entryRoute(PAGE_PATH.laya),
+  entryRoute(PAGE_PATH.system),
+];
+
+// Old addresses. Each one opens the new place of the same thing and keeps its search params.
+function toEntry(id: string, search: AppSearch) {
+  const entry = settingsEntry(id) ?? SETTINGS_ENTRIES[0];
+  return redirect({ to: PAGE_PATH[entry?.page ?? "orgs"], search, replace: true });
+}
+const legacy = (path: string, entry: string) =>
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    beforeLoad: ({ search }) => {
+      throw toEntry(entry, search);
+    },
+  });
+const accountsRoute = legacy("/accounts", "accounts");
+const agentsRoute = legacy("/agents", "agents");
+const captainRoute = legacy("/captain", "agents");
+const orgsRoute = legacy("/orgs", "workspaces");
+const projectsRoute = legacy("/projects", "projects");
+const skillsRoute = legacy("/skills", "skills");
+const playbooksRoute = legacy("/playbooks", "playbooks");
+const limitsRoute = legacy("/limits", "limits");
+// Automations were folded into Playbooks (schedules) and Watch (triggers): old links land on Playbooks.
+const automationsRoute = legacy("/automations", "playbooks");
+const reposRoute = legacy("/repos", "projects");
+const connectionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.limits,
-  component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
+  path: "/connections",
+  beforeLoad: ({ search }) => {
+    // MCP servers moved to Skills and tools.
+    throw toEntry(search.tab === "mcp" ? "skills" : "connections", search);
+  },
+});
+// Memory is the Wiki's second tab. Its own tab (brief, tasks, threads, lessons) is `mtab` there.
+const memoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/memory",
+  beforeLoad: ({ search }) => {
+    const { tab, ...rest } = search;
+    throw redirect({
+      to: PAGE_PATH.wiki,
+      search: { ...rest, tab: "memory", ...(tab ? { mtab: tab } : {}) },
+      replace: true,
+    });
+  },
+});
+// The audit log is Usage's second tab; its filters stay in the address.
+const auditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/audit",
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: PAGE_PATH.usage, search: { ...search, tab: "activity" }, replace: true });
+  },
+});
+// Hub setup's sections went to the entry (or the place) that holds them.
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/setup",
+  beforeLoad: ({ search }) => {
+    const { section, ...rest } = search;
+    const mcp = section?.startsWith("mcp") === true;
+    const key = mcp ? "skills" : section;
+    const home =
+      key === "skills" || key === "overview" || isSetupSection(key) ? SECTION_HOME[key] : undefined;
+    if (home === undefined) throw toEntry(FIRST_ENTRY, rest);
+    if (home.to === "console") throw redirect({ to: PAGE_PATH.board, search: rest, replace: true });
+    if (home.to === "wiki") {
+      throw redirect({ to: PAGE_PATH.wiki, search: { ...rest, ...home.search }, replace: true });
+    }
+    throw toEntry(home.entry, mcp ? { ...rest, tab: "mcp" } : rest);
+  },
 });
 const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -253,21 +321,6 @@ const decisionsRoute = createRoute({
     throw redirect({ to: PAGE_PATH.board, search: search.id === undefined ? {} : { id: search.id } });
   },
 });
-const setupRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.setup,
-  component: lazyRouteComponent(() => import("@/pages/setup-page"), "SetupPage"),
-});
-const projectsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.projects,
-  component: lazyRouteComponent(() => import("@/pages/projects-page"), "ProjectsPage"),
-});
-const orgsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.orgs,
-  component: lazyRouteComponent(() => import("@/pages/orgs-page"), "OrgsPage"),
-});
 
 const editRootsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -276,18 +329,11 @@ const editRootsRoute = createRoute({
 });
 
 // Old addresses from the three-column design.
-const reposRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/repos",
-  beforeLoad: () => {
-    throw redirect({ to: PAGE_PATH.projects });
-  },
-});
 const studioIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio",
   beforeLoad: () => {
-    throw redirect({ to: PAGE_PATH.agents });
+    throw toEntry("agents", {});
   },
 });
 const studioTabRoute = createRoute({
@@ -295,9 +341,9 @@ const studioTabRoute = createRoute({
   path: "/studio/$tab",
   beforeLoad: ({ params, search }) => {
     if (params.tab === "accounts") {
-      throw redirect({ to: PAGE_PATH.accounts, search: search.account ? { account: search.account } : {} });
+      throw toEntry("accounts", search.account ? { account: search.account } : {});
     }
-    throw redirect({ to: PAGE_PATH.agents, search: search.agent ? { agent: search.agent } : {} });
+    throw toEntry("agents", search.agent ? { agent: search.agent } : {});
   },
 });
 
@@ -307,26 +353,28 @@ export const router = createRouter({
     chatsRoute,
     chatRoute,
     taskRoute,
-    agentsRoute,
-    accountsRoute,
-    connectionsRoute,
-    healthRoute,
-    auditRoute,
-    skillsRoute,
-    memoryRoute,
-    automationsRoute,
-    captainRoute,
-    playbooksRoute,
-    wikiRoute,
     watchRoute,
+    wikiRoute,
+    usageRoute,
+    settingsRoute,
+    ...entryRoutes,
+    editRootsRoute,
+    accountsRoute,
+    agentsRoute,
+    captainRoute,
+    orgsRoute,
+    projectsRoute,
+    skillsRoute,
+    playbooksRoute,
     limitsRoute,
+    automationsRoute,
+    reposRoute,
+    connectionsRoute,
+    memoryRoute,
+    auditRoute,
+    setupRoute,
     todayRoute,
     decisionsRoute,
-    setupRoute,
-    projectsRoute,
-    orgsRoute,
-    editRootsRoute,
-    reposRoute,
     studioIndexRoute,
     studioTabRoute,
   ]),

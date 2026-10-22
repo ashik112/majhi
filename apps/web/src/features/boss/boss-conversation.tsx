@@ -1,4 +1,5 @@
 import type { Task } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { RoomPane } from "@/features/room/room-pane";
@@ -65,7 +66,7 @@ export function BossConversation({ empty }: { empty?: React.ReactNode }) {
     return (
       <div className="m-auto flex max-w-[320px] flex-col items-center gap-2 text-center">
         <p className="text-base text-fg-muted text-pretty">{describeError(chat.error)}</p>
-        <Link to="/agents" className="text-sm text-blue hover:underline">
+        <Link to={PAGE_PATH.agents} className="text-sm text-blue hover:underline">
           Open Agents
         </Link>
       </div>

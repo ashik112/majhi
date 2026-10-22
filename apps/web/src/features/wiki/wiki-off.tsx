@@ -36,7 +36,7 @@ export function WikiOff({ workspace }: { workspace: WikiWorkspace }) {
             Turn on for {name}
           </Button>
           <Button asChild>
-            <Link to="/setup" search={{ section: "wiki" }}>
+            <Link to="/wiki" search={{ settings: true }}>
               Open settings
             </Link>
           </Button>

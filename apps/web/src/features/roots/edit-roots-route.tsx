@@ -1,4 +1,4 @@
-import type { WorkspacesUpdateResult } from "@majhi/shared";
+import { PAGE_PATH, type WorkspacesUpdateResult } from "@majhi/shared";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { CenteredPage } from "@/components/centered-page";
@@ -18,7 +18,7 @@ export function EditRootsRoute() {
   const toast = useToast();
   const [pending, setPending] = useState<WorkspacesUpdateResult | null>(null);
   const state = config.data;
-  const goHome = () => void navigate({ to: "/repos" });
+  const goHome = () => void navigate({ to: PAGE_PATH.projects });
 
   if (pending) {
     return (
