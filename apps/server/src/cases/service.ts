@@ -23,6 +23,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import {
   badSummary,
+  checksSinceChange,
   dayOf,
   fingerprint,
   notClosable,
@@ -193,7 +194,7 @@ export class CaseService {
       record.recoveries.length === 0
         ? "No recovery done."
         : `Recoveries done (each once per case): ${record.recoveries.join("; ")}.`,
-      `Reads that show it works since the last change: ${record.checks.filter((c) => record.changedAt === undefined || c.at > record.changedAt).length}.`,
+      `Reads that show it works since the last change: ${checksSinceChange(record)}.`,
       cards === 0 ? "No card waits for the owner." : "A card waits for the owner.",
       record.stopped === undefined ? "" : `It stopped: ${record.stopped.why}`,
     ]
@@ -570,7 +571,7 @@ export class CaseService {
     this.update(task, (r) => {
       let next = withCommand(r, { key: done.key, at, result: fingerprint(done.output), ok: done.ok });
       if (done.kind === "recovery" && done.action !== undefined) next = withRecovery(next, done.action, at);
-      else if (done.kind === "write") next = withChange(next, at);
+      else if (done.kind === "write") next = withChange(next);
       else if (done.ok) next = withCheck(next, done.command, at);
       return next;
     });

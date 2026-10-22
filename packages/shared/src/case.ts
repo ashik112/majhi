@@ -7,7 +7,9 @@ import { TaskIdSchema } from "./ids.ts";
  * the captain works it itself, here, with no lead, no plan steps and no new tasks. Each tool names the case.
  */
 
-const CaseRef = TaskIdSchema.describe("The case: the task id chat_openIncident gave you");
+const CaseRef = TaskIdSchema.optional().describe(
+  "The case: the task id chat_openIncident gave you. Left out, it is the case this turn is about",
+);
 
 /** The one live line the owner reads under the case in Work. */
 export const CaseStatusInputSchema = z.object({

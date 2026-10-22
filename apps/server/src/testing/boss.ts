@@ -27,12 +27,14 @@ export async function bossWorld(
     runClock?: () => Date;
     opsProbes?: WorldOptions["opsProbes"];
     ntfyFetch?: WorldOptions["ntfyFetch"];
+    connectionsRemote?: WorldOptions["connectionsRemote"];
   } = {},
 ): Promise<BossWorld> {
   const w = await taskWorld({
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(options.opsProbes === undefined ? {} : { opsProbes: options.opsProbes }),
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
+    ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
   });
   const { h } = w;
   if (options.real !== false) {

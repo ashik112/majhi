@@ -150,7 +150,9 @@ export const CaseCommandSchema = z.object({
   /** The connection and the command line. */
   key: z.string().max(600),
   at: z.string(),
-  /** A hash of the output: the same command is run again only when something changed since. */
+  /** How many changes the case had made when it ran: the same command runs again only after another one. */
+  change: z.number().int().min(0),
+  /** A hash of the output. */
   result: z.string().max(64),
   ok: z.boolean(),
 });
@@ -167,7 +169,12 @@ export const CaseFollowUpSchema = z.object({
 export type CaseFollowUp = z.infer<typeof CaseFollowUpSchema>;
 
 /** A read that exited 0 after the last change: what the case rests "fixed" on. */
-export const CaseCheckSchema = z.object({ at: z.string(), what: z.string().max(300) });
+export const CaseCheckSchema = z.object({
+  at: z.string(),
+  /** How many changes the case had made when the read ran. */
+  change: z.number().int().min(0),
+  what: z.string().max(300),
+});
 
 export const CaseRecordSchema = z.object({
   /** The client chat that reported it. */
@@ -186,8 +193,8 @@ export const CaseRecordSchema = z.object({
   commands: z.array(CaseCommandSchema).max(100),
   /** The recoveries done, by action: each runs once per case. */
   recoveries: z.array(z.string().max(500)).max(20),
-  /** When the last recovery or write ran. */
-  changedAt: z.string().optional(),
+  /** How many recoveries and writes ran in the case. Reads and checks are counted against it. */
+  changes: z.number().int().min(0),
   checks: z.array(CaseCheckSchema).max(30),
   /** Messages told to the client about it. */
   told: z.number().int().min(0),

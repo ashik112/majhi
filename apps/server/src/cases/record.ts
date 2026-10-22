@@ -31,6 +31,7 @@ export function newCase(input: {
     ms: 0,
     commands: [],
     recoveries: [],
+    changes: 0,
     checks: [],
     told: 0,
     followUps: [],
@@ -110,11 +111,11 @@ export function commandKey(connection: string, command: string): string {
 export function repeatOf(record: CaseRecord, key: string): CaseCommand | undefined {
   const last = record.commands.findLast((c) => c.key === key);
   if (last === undefined) return undefined;
-  return record.changedAt === undefined || record.changedAt <= last.at ? last : undefined;
+  return last.change === record.changes ? last : undefined;
 }
 
-export function withCommand(record: CaseRecord, command: CaseCommand): CaseRecord {
-  return { ...record, commands: [...record.commands, command].slice(-100) };
+export function withCommand(record: CaseRecord, command: Omit<CaseCommand, "change">): CaseRecord {
+  return { ...record, commands: [...record.commands, { ...command, change: record.changes }].slice(-100) };
 }
 
 /** A recovery runs once per case: the same action a second time asks the owner. */
@@ -123,17 +124,25 @@ export function recoveryDone(record: CaseRecord, action: string): boolean {
 }
 
 export function withRecovery(record: CaseRecord, action: string, at: string): CaseRecord {
-  return { ...record, recoveries: [...record.recoveries, action].slice(-20), changedAt: at };
+  return { ...record, recoveries: [...record.recoveries, action].slice(-20), changes: record.changes + 1 };
 }
 
 /** A write that was not a recovery (the owner allowed it): later runs of a command may differ. */
-export function withChange(record: CaseRecord, at: string): CaseRecord {
-  return { ...record, changedAt: at };
+export function withChange(record: CaseRecord): CaseRecord {
+  return { ...record, changes: record.changes + 1 };
 }
 
 /** A read that exited 0: the evidence a case closes on. */
 export function withCheck(record: CaseRecord, what: string, at: string): CaseRecord {
-  return { ...record, checks: [...record.checks, { at, what: what.slice(0, 300) }].slice(-30) };
+  return {
+    ...record,
+    checks: [...record.checks, { at, change: record.changes, what: what.slice(0, 300) }].slice(-30),
+  };
+}
+
+/** Reads that exited 0 since the last change. */
+export function checksSinceChange(record: CaseRecord): number {
+  return record.checks.filter((c) => c.change >= record.changes).length;
 }
 
 /**
@@ -142,9 +151,8 @@ export function withCheck(record: CaseRecord, what: string, at: string): CaseRec
  */
 export function notClosable(record: CaseRecord): string | undefined {
   if (record.closedAt !== undefined) return "The case is closed already.";
-  const after = record.checks.filter((c) => record.changedAt === undefined || c.at > record.changedAt);
-  if (after.length > 0) return undefined;
-  return record.changedAt === undefined
+  if (checksSinceChange(record) > 0) return undefined;
+  return record.changes === 0
     ? "Nothing was checked yet. Read the thing the client said fails, on the host, and close when it works."
     : "Something was changed after the last check. Read the thing the client said fails again, and close when it works.";
 }
