@@ -228,7 +228,6 @@ const DOCKER_GLOBAL = {
 };
 const DOCKER_READS = set(
   "ps",
-  "inspect",
   "logs",
   "stats",
   "top",
@@ -241,16 +240,31 @@ const DOCKER_READS = set(
   "diff",
 );
 const DOCKER_READ_GROUPS: Readonly<Record<string, ReadonlySet<string>>> = {
-  container: set("ls", "ps", "inspect", "logs", "top", "stats", "port", "diff"),
-  image: set("ls", "inspect", "history"),
+  container: set("ls", "ps", "logs", "top", "stats", "port", "diff"),
+  image: set("ls", "history"),
   volume: set("ls", "inspect"),
   network: set("ls", "inspect"),
   system: set("df", "info", "events"),
-  node: set("ls", "ps", "inspect"),
-  service: set("ls", "ps", "inspect", "logs"),
+  node: set("ls", "ps"),
+  service: set("ls", "ps", "logs"),
   stack: set("ls", "ps", "services"),
-  context: set("ls", "inspect", "show"),
+  context: set("ls", "show"),
 };
+/**
+ * `docker inspect` prints a container's env, which holds the client's secrets. It is a read only with a
+ * `--format` that names fields from this list and nothing else (`$` is refused before this is asked).
+ */
+const INSPECT_FIELDS = [
+  ".State",
+  ".Name",
+  ".Id",
+  ".Image",
+  ".RestartCount",
+  ".Created",
+  ".Config.Image",
+  ".HostConfig.RestartPolicy",
+];
+const INSPECT_WORDS = set("json", "-");
 /** `docker restart` and `docker start`: they keep the container's image and config. */
 const DOCKER_RECOVERY = set("restart", "start");
 const COMPOSE_GLOBAL = {
@@ -269,7 +283,22 @@ const COMPOSE_GLOBAL = {
   ),
   plain: set("--compatibility", "--verbose", "--dry-run", "--all-resources"),
 };
-const COMPOSE_READS = set("ps", "logs", "ls", "config", "images", "top", "version", "events", "port");
+/** Not `config`: it prints the resolved env, secrets included. */
+const COMPOSE_READS = set("ps", "logs", "ls", "images", "top", "version", "events", "port");
+/**
+ * Global flags a compose recovery may carry. Never `-H` or `--context` (another engine). `up` recreates from
+ * the file, so it also never takes `-f`, `--env-file` or `--project-directory`: only the project's own config.
+ */
+const COMPOSE_RESTART_GLOBALS = set(
+  "-f",
+  "--file",
+  "-p",
+  "--project-name",
+  "--project-directory",
+  "--env-file",
+  "--ansi",
+);
+const COMPOSE_UP_GLOBALS = set("-p", "--project-name", "--ansi");
 const COMPOSE_RECOVERY = set("restart", "start", "unpause");
 /** What `compose up` may carry and still keep the image and config: it never builds, pulls or removes. */
 const COMPOSE_UP_FLAGS = {
@@ -305,6 +334,8 @@ function dockerCommand(
   if (sub === undefined) return write("docker with no command");
   if (sub === "compose") return composeCommand(after, depth);
   if (sub === "exec") return execRead(after, depth, "container");
+  if (sub === "inspect" || (sub === "container" && plain(after)[0] === "inspect"))
+    return hasVariableIn(after) ? write("it uses a variable") : inspectRead(after);
   if (DOCKER_READS.has(sub)) return hasVariableIn(after) ? write("it uses a variable") : READ;
   const group = DOCKER_READ_GROUPS[sub];
   if (group !== undefined) {
@@ -314,6 +345,7 @@ function dockerCommand(
     return write(`docker ${sub} ${verb ?? ""} may change something`.trim());
   }
   if (DOCKER_RECOVERY.has(sub)) {
+    if (at !== 0) return write(`docker ${sub} with a global option may reach another engine`);
     const flags = strip(after, { valued: set("-t", "--time"), plain: new Set() });
     const names = flags?.filter((w) => !w.startsWith("-"));
     const name = names?.[0];
@@ -322,6 +354,42 @@ function dockerCommand(
     return { kind: "recovery", target: name, action: `docker ${sub} ${name}` };
   }
   return write(`docker ${sub} may change something`);
+}
+
+/** `docker inspect` with a `--format` that names only status fields. Anything else may print the env. */
+function inspectRead(args: readonly string[]): RemoteVerdict {
+  const templates: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "-f" || arg === "--format") templates.push(args[++i] ?? "");
+    else if (arg.startsWith("--format=")) templates.push(arg.slice("--format=".length));
+  }
+  if (templates.length === 0) return write("docker inspect without --format prints the env");
+  return templates.every(safeTemplate)
+    ? READ
+    : write("docker inspect --format names a field that may hold a secret");
+}
+
+/** Whether every action of a Go template names only a status field or `json`. */
+function safeTemplate(template: string): boolean {
+  let rest = template;
+  let actions = 0;
+  for (;;) {
+    const open = rest.indexOf("{{");
+    if (open < 0) return actions > 0 && !rest.includes("}}");
+    const close = rest.indexOf("}}", open);
+    if (close < 0) return false;
+    const words = rest
+      .slice(open + 2, close)
+      .split(" ")
+      .filter((w) => w !== "");
+    const fine = words.every(
+      (w) => INSPECT_WORDS.has(w) || INSPECT_FIELDS.some((f) => w === f || w.startsWith(`${f}.`)),
+    );
+    if (!fine || words.length === 0) return false;
+    actions++;
+    rest = rest.slice(close + 2);
+  }
 }
 
 /** The index of the first word that is not a global flag or a flag's value. */
@@ -353,7 +421,14 @@ function composeCommand(args: readonly string[], depth: number): RemoteVerdict {
   if (hasVariableIn(args)) return write("it uses a variable");
   if (sub === "exec") return execRead(after, depth, "service");
   if (COMPOSE_READS.has(sub)) return READ;
+  // The global flags before the command (their values are the words without a dash).
+  const globalNames = args
+    .slice(0, at)
+    .filter((w) => w.startsWith("-"))
+    .map((w) => (w.includes("=") ? w.slice(0, w.indexOf("=")) : w));
   if (COMPOSE_RECOVERY.has(sub)) {
+    if (!globalNames.every((g) => COMPOSE_RESTART_GLOBALS.has(g)))
+      return write(`docker compose ${sub} with that option may reach another engine`);
     const names = plain(after);
     const flags = after.filter((w) => w.startsWith("-"));
     const name = names[0];
@@ -362,6 +437,8 @@ function composeCommand(args: readonly string[], depth: number): RemoteVerdict {
     return { kind: "recovery", target: name, action: `docker compose ${sub} ${name}` };
   }
   if (sub === "up") {
+    if (!globalNames.every((g) => COMPOSE_UP_GLOBALS.has(g)))
+      return write("docker compose up recreates only from the project's own file and env");
     const names = strip(after, COMPOSE_UP_FLAGS);
     const services = names?.filter((w) => !w.startsWith("-"));
     // Only a named service and only `-d`: `up` with no service applies every change in the file.
@@ -824,7 +901,11 @@ function filtersRead(args: readonly string[]): boolean {
 }
 
 function classifyOne(cmd: SimpleCommand, depth: number): RemoteVerdict {
-  if (cmd.redirects.some((r) => r.op.includes(">") && r.target !== "/dev/null" && !r.target.startsWith("&")))
+  if (
+    cmd.redirects.some(
+      (r) => (r.op.includes(">") || r.op === "<>") && r.target !== "/dev/null" && !r.target.startsWith("&"),
+    )
+  )
     return write("it writes to a file");
   if (cmd.redirects.some((r) => r.op.startsWith("<") && r.target !== "" && secretPath(r.target)))
     return write("it reads a login or key file");

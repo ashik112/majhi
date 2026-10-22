@@ -16,6 +16,8 @@ describe("a command run on a connected host", () => {
     "sudo docker logs --since 1h acme-worker",
     "docker stats --no-stream",
     "docker compose -f /srv/acme/docker-compose.yml ps",
+    "docker inspect --format '{{json .State}}' acme-worker",
+    "docker container inspect -f '{{.State.Health.Status}} {{.RestartCount}}' acme-worker",
     "docker compose logs --tail 50 worker",
     "docker exec acme-worker celery -A app inspect active",
     "docker exec -it acme-redis redis-cli llen celery",
@@ -46,6 +48,8 @@ describe("a command run on a connected host", () => {
     ["docker restart -t 10 acme-worker && docker ps", "docker restart acme-worker"],
     ["docker compose restart worker", "docker compose restart worker"],
     ["docker compose up -d --force-recreate --no-deps worker", "docker compose up worker"],
+    ["docker compose -p acme up -d worker", "docker compose up worker"],
+    ["docker compose -f /srv/acme/docker-compose.prod.yml restart worker", "docker compose restart worker"],
     ["systemctl restart acme-api", "systemctl restart acme-api"],
     ["service acme-api restart", "service acme-api restart"],
     ["supervisorctl restart acme-worker", "supervisorctl restart acme-worker"],
@@ -55,6 +59,24 @@ describe("a command run on a connected host", () => {
   });
 
   it.each([
+    // A recovery never reaches another engine, file or env.
+    "docker -H tcp://10.0.0.9:2375 restart acme-worker",
+    "docker --context other restart acme-worker",
+    "docker compose -f /tmp/other.yml up -d worker",
+    "docker compose --env-file /tmp/other.env up -d --force-recreate worker",
+    "docker compose --project-directory /tmp/other up -d worker",
+    "docker compose -H tcp://10.0.0.9:2375 restart worker",
+    // Reads that print the env, where the client's secrets live.
+    "docker inspect acme-worker",
+    "docker container inspect acme-worker",
+    "docker inspect --format '{{json .Config.Env}}' acme-worker",
+    "docker inspect -f '{{range .Config.Env}}{{.}} {{end}}' acme-worker",
+    "docker image inspect acme/api:1.2",
+    "docker service inspect acme_api",
+    "docker compose config",
+    "docker exec acme-worker cat /app/.env",
+    // A file opened to read and write.
+    "cat <> /var/log/acme/app.log",
     // Nothing that stops, removes, builds, pulls or changes what runs.
     "docker stop acme-worker",
     "docker kill acme-worker",
