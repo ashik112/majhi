@@ -79,10 +79,14 @@ import {
 import {
   CaseAskInputSchema,
   CaseCloseInputSchema,
+  CaseDeployInputSchema,
+  CaseDeployResultSchema,
   CaseFollowUpInputSchema,
+  CaseHelpInputSchema,
   CaseMadeTaskSchema,
   CaseMakeTaskInputSchema,
   CaseOkSchema,
+  CaseRollbackInputSchema,
   CaseStatusInputSchema,
   CaseStopInputSchema,
 } from "./case.ts";
@@ -1657,6 +1661,27 @@ export const commands = {
     summary:
       "The captain stops a case it cannot move on, and writes the one card for the owner: what it knows, what it tried, the one thing it needs. Also the only call allowed once the case used its 20 tool calls or 30 minutes",
     input: CaseStopInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.help": {
+    risk: "read",
+    summary:
+      "The captain gives one job to one helper, inside a client case: an agent of the workspace (its lead by default) works the job in the case's own room and folder and reports back to you there. Give the job in one line. For a code fix, name the project: the helper gets a branch and a worktree of it. One helper at a time: a second call while it works is refused. A helper never writes to the client, never asks the owner and never files a task. Its tool calls count against the case, which then has 60 calls and 90 minutes",
+    input: CaseHelpInputSchema,
+    output: CaseOkSchema,
+  },
+  "case.deploy": {
+    risk: "read",
+    summary:
+      "The captain deploys the fix a helper wrote, at Routine or Full (at Ask me a deploy asks the owner with case_ask). It goes only through the project's own deploy, the way majhi deployed it before, and only when the branch's checks passed. majhi notes the version it replaces. It answers once the environment's own check says live or failed. Then check the client's symptom with a read. Refused when the project has no known deploy to repeat: ask the owner once with case_ask",
+    input: CaseDeployInputSchema,
+    output: CaseDeployResultSchema,
+  },
+  "case.rollback": {
+    risk: "read",
+    summary:
+      "The captain puts back the version its case deploy replaced, through the same deploy. Allowed once per case and without asking: use it when the symptom is worse after the deploy, and say so in the case",
+    input: CaseRollbackInputSchema,
     output: CaseOkSchema,
   },
   "case.makeTask": {

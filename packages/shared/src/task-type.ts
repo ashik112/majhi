@@ -142,8 +142,54 @@ export type PostFields = z.infer<typeof PostFieldsSchema>;
 /** What the captain may spend on one case before it stops and writes one card for the owner. */
 export const CASE_MAX_CALLS = 20;
 export const CASE_MAX_MS = 30 * 60_000;
+/** What a case may spend once a helper works in it: the helper's calls count too, and a fix takes longer. */
+export const CASE_HELPER_MAX_CALLS = 60;
+export const CASE_HELPER_MAX_MS = 90 * 60_000;
 /** Messages the captain may send the client about one open case; the closing message is on top of them. */
 export const CASE_MAX_TOLD = 2;
+
+/**
+ * The helper of a case: one agent of the workspace, working in the case's own room and folder on a job the captain
+ * gave it. It never writes to the client and never asks the owner. `endedAt` is set when it reported back.
+ */
+export const CaseHelperSchema = z.object({
+  agent: z.string().min(1).max(100),
+  job: z.string().max(400),
+  startedAt: z.string(),
+  /** The project it changes, when the job is a code fix, and the branch it works on. */
+  project: z.string().max(100).optional(),
+  branch: z.string().max(200).optional(),
+  endedAt: z.string().optional(),
+  /** What it said last, for the line on the case. */
+  report: z.string().max(600).optional(),
+});
+export type CaseHelper = z.infer<typeof CaseHelperSchema>;
+
+/** One deploy of a case's fix through the project's own deploy: where, what, and the version it replaced. */
+export const CaseDeploySchema = z.object({
+  at: z.string(),
+  project: z.string().max(100),
+  env: z.string().max(80),
+  /** The deploy record the deploy service made. Absent while the deploy is only noted, before it starts. */
+  record: z.number().int().positive().optional(),
+  branch: z.string().max(200),
+  /** The commit the environment ran before this deploy: where a rollback goes. Noted before anything is deployed. */
+  previous: z.string().max(64),
+  /** The commit deployed: the head of the base branch once the fix landed in it. Empty before it landed. */
+  commit: z.string().max(64),
+  /** `deploying` is written first, with the version it replaces, so a crash in between still says what to go back to. */
+  state: z.enum(["deploying", "live", "failed"]),
+});
+export type CaseDeploy = z.infer<typeof CaseDeploySchema>;
+
+/** The one rollback a case may make by itself, to the version the last deploy replaced. */
+export const CaseRollbackSchema = z.object({
+  at: z.string(),
+  record: z.number().int().positive(),
+  to: z.string().max(64),
+  ok: z.boolean(),
+});
+export type CaseRollback = z.infer<typeof CaseRollbackSchema>;
 
 /** One command the captain ran on a connected host: its key, when, and a hash of what it answered. */
 export const CaseCommandSchema = z.object({
@@ -202,6 +248,11 @@ export const CaseRecordSchema = z.object({
   toldAt: z.string().optional(),
   toldText: z.string().max(300).optional(),
   followUps: z.array(CaseFollowUpSchema).max(10),
+  /** The helper working in the case, or that worked in it. Present for good: the case keeps its higher bound. */
+  helper: CaseHelperSchema.optional(),
+  /** The deploys of the case's fix, and the one rollback. Both show in the summary. */
+  deploys: z.array(CaseDeploySchema).max(5).optional(),
+  rollback: CaseRollbackSchema.optional(),
   /** It ran out of calls or time, or the captain gave up: the one card says what it needs. */
   stopped: z.object({ at: z.string(), why: z.string().max(300) }).optional(),
   /** Three to six lines, written when the case closes: the one thing the owner reads in the morning. */
@@ -234,6 +285,16 @@ export function caseViewOf(record: CaseRecord): CaseView {
     openedAt: record.openedAt,
     ...(record.toldAt === undefined ? {} : { toldAt: record.toldAt }),
     ...(record.toldText === undefined ? {} : { toldText: record.toldText }),
+    ...(record.helper === undefined
+      ? {}
+      : {
+          helper: {
+            agent: record.helper.agent,
+            job: record.helper.job,
+            startedAt: record.helper.startedAt,
+            ...(record.helper.endedAt === undefined ? {} : { endedAt: record.helper.endedAt }),
+          },
+        }),
   };
 }
 
@@ -248,6 +309,10 @@ export const CaseViewSchema = z.object({
   openedAt: z.string(),
   toldAt: z.string().optional(),
   toldText: z.string().optional(),
+  /** The helper of the case: its line on Home reads "@agent: job, 4:12" while it works. */
+  helper: z
+    .object({ agent: z.string(), job: z.string(), startedAt: z.string(), endedAt: z.string().optional() })
+    .optional(),
 });
 export type CaseView = z.infer<typeof CaseViewSchema>;
 

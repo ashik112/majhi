@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ReplyFlagsSchema } from "./chat.ts";
-import { TaskIdSchema } from "./ids.ts";
+import { IdSchema, TaskIdSchema } from "./ids.ts";
 
 /**
  * The captain's tools for one case (docs/briefs/case-flow.md). A case is the incident task a client's report opened;
@@ -66,6 +66,37 @@ export const CaseStopInputSchema = z.object({
   needs: z.string().trim().min(1).max(300).describe("The one thing you need from the owner"),
 });
 
+/**
+ * One helper for a case: an agent of the workspace works the job inside the case, in its room and folder, and
+ * reports back to the captain. For a code fix, name the project: the helper gets a branch and a worktree of it.
+ */
+export const CaseHelpInputSchema = z.object({
+  case: CaseRef,
+  agent: IdSchema.optional().describe("The agent to ask. Left out, the workspace's own lead"),
+  project: IdSchema.optional().describe(
+    "The project the helper changes, when the job is a code fix: it gets a branch and a worktree of it",
+  ),
+  job: z.string().trim().min(1).max(400).describe("The job in one line"),
+});
+
+/** Deploys the fix a helper wrote: the branch of the case's project, through the project's own deploy. */
+export const CaseDeployInputSchema = z.object({
+  case: CaseRef,
+  branch: z.string().trim().min(1).max(200).describe("The helper's branch, as the case's helper reported it"),
+});
+
+/** Puts the version the last deploy of the case replaced back. Once per case. */
+export const CaseRollbackInputSchema = z.object({ case: CaseRef });
+
+export const CaseDeployResultSchema = z.object({
+  ok: z.literal(true),
+  note: z.string().optional(),
+  env: z.string(),
+  commit: z.string(),
+  previous: z.string(),
+  state: z.enum(["live", "failed"]),
+});
+
 /** The owner presses Make it a task on a follow-up. */
 export const CaseMakeTaskInputSchema = z.object({
   case: TaskIdSchema,
@@ -80,6 +111,10 @@ export type CaseFollowUpInput = z.infer<typeof CaseFollowUpInputSchema>;
 export type CaseAskInput = z.infer<typeof CaseAskInputSchema>;
 export type CaseCloseInput = z.infer<typeof CaseCloseInputSchema>;
 export type CaseStopInput = z.infer<typeof CaseStopInputSchema>;
+export type CaseHelpInput = z.infer<typeof CaseHelpInputSchema>;
+export type CaseDeployInput = z.infer<typeof CaseDeployInputSchema>;
+export type CaseRollbackInput = z.infer<typeof CaseRollbackInputSchema>;
+export type CaseDeployResult = z.infer<typeof CaseDeployResultSchema>;
 export type CaseMakeTaskInput = z.infer<typeof CaseMakeTaskInputSchema>;
 
 /** The option ids of the card a stopped case writes, and what each does. */
