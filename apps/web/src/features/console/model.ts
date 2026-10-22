@@ -245,7 +245,8 @@ export function buildWork(
       .map(([project, list]): ProjectGroup => {
         const sorted = list.toSorted(
           (a, b) =>
-            Number(cardKindOf(b.task, b.state) === "incident") - Number(cardKindOf(a.task, a.state) === "incident") ||
+            Number(cardKindOf(b.task, b.state) === "incident") -
+              Number(cardKindOf(a.task, a.state) === "incident") ||
             STATE_RANK[a.state] - STATE_RANK[b.state] ||
             b.task.updatedAt.localeCompare(a.task.updatedAt),
         );

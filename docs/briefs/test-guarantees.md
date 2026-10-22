@@ -130,7 +130,7 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 80 | When an account hits its limit mid-run, another agent continues from the last checkpoint (lead replaced by the worker with most headroom; a worker's step finished by another); the task does not pause. | `server/tasks/crew.test.ts`: is replaced by the worker with the most headroom, who carries on with the plan | add the worker case 'has its step finished by another agent from the last checkpoint' as a second row; replaces e2e/phase7-limits.spec.ts |
 | 81 | A task is paused after three answers with no progress. | `server/captain/loop-guard.test.ts`: pauses a task after three answers with no progress, and not before |  |
 
-## 4 Core state machines (27)
+## 4 Core state machines (29)
 
 | # | Guarantee | Test kept (file: title) | Table rows |
 |---|---|---|---|
@@ -164,6 +164,8 @@ Source: origin/main 065031af (388 test files, 1841 test cases by `it`/`test` cou
 | 104d | The replay where the fix needs a code deploy ends with exactly one Needs-you card ("Deploy fix X to Acme?") with its buttons, the client told it is being worked on, a second card and a repeated read refused, a later message joining the same case with no reply of its own, and the owner's answer reaching the captain. | `server/cases/replay.test.ts`: ends with one card, tells the client it is being worked on, and takes a later message into the same case |  |
 | 104e | A captain lane that is held by an error and has lost its folder is resumed by the watchdog, the waiting messages are woken, the client is answered, and the owner is told nothing. | `server/cases/replay.test.ts`: heals a lane that is paused with a sign-in error and has lost its folder, answers the client, and never tells the owner |  |
 | 104f | When the heals keep failing, a client message that waited ten minutes gets exactly one message to the owner (what was tried) and the client's fixed words once; the lane is resumed three times and no more. | `server/cases/replay.test.ts`: tells the owner once at ten minutes when the heals keep failing, and tells the client we are looking into it |  |
+| 104g | Setup's automatic ids (the workspace, the account, the lead agent, the captain) never replace an existing one: a clash gets the next free id, and a captain that is set is kept. | `packages/shared/src/setup-ids.test.ts`: never replace an existing account, workspace or agent: a clash gets a new id |  |
+| 104h | A background process stays one room item per run and its end sets the exit and the end time, also when the same end is reported again after a restart; a run still recorded as running when majhi starts is ended with its time. | `server/room/process-items.test.ts`: stays one item per run, takes its exit and end time, and survives a restart |  |
 
 ## Cut that you may want back
 

@@ -122,32 +122,33 @@ function Stages({ view }: { view: IncidentView }) {
     view.steps.findIndex((s) => s.status === view.status),
   );
   return (
-    <ol className="m-0 grid list-none grid-cols-4 gap-1 p-0" aria-label="Where the incident is">
-      {view.steps.map((step, i) => {
-        const reached = i <= current;
-        return (
-          <li key={step.status} className="flex min-w-0 flex-col gap-1">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "h-[3px] rounded-full",
-                i === current ? "bg-lamp-needs" : reached ? "bg-fg-faint" : "bg-line-strong",
-              )}
-            />
-            <span
-              className={cn(
-                "truncate text-xs",
-                i === current ? "font-medium text-fg" : reached ? "text-fg-muted" : "text-fg-faint",
-              )}
-              title={`${CLIENT_STATUS_LABEL[step.status]}${step.at === undefined ? "" : ` ${clock(step.at)}`}`}
-            >
-              {CLIENT_STATUS_LABEL[step.status]}
-              {i === current && step.at !== undefined ? ` ${clock(step.at)}` : ""}
-            </span>
+    <div className="flex flex-col gap-1">
+      <ol className="m-0 grid list-none grid-cols-4 gap-1 p-0" aria-label="Where the incident is">
+        {view.steps.map((step, i) => (
+          <li
+            key={step.status}
+            aria-hidden="true"
+            className={cn(
+              "h-[3px] rounded-full",
+              i === current ? "bg-lamp-needs" : i < current ? "bg-fg-faint" : "bg-line-strong",
+            )}
+          />
+        ))}
+      </ol>
+      <ul className="m-0 flex list-none justify-between gap-1 p-0 text-[11px] whitespace-nowrap">
+        {view.steps.map((step, i) => (
+          <li
+            key={step.status}
+            className={cn(
+              i === current ? "font-medium text-fg" : i < current ? "text-fg-muted" : "text-fg-faint",
+            )}
+          >
+            {CLIENT_STATUS_LABEL[step.status]}
+            {i === current && step.at !== undefined ? ` ${clock(step.at)}` : ""}
           </li>
-        );
-      })}
-    </ol>
+        ))}
+      </ul>
+    </div>
   );
 }
 
