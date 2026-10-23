@@ -763,7 +763,7 @@ function Permission({
       }
       line={
         item.connection === undefined
-          ? toolLabel(item.title)
+          ? (item.hint ?? toolLabel(item.title))
           : destructive
             ? "This deletes or destroys something. Only you can approve it."
             : `This is a write: ${item.connection.why}.`

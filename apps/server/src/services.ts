@@ -76,8 +76,9 @@ import { StepGuard } from "./captain/step.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { LaneWatchdog } from "./captain/watchdog.ts";
 import { captainWorld } from "./captain/world.ts";
-import { CaseDeployer } from "./cases/deploy.ts";
+import { CaseDeployer, type CaseDeployPorts } from "./cases/deploy.ts";
 import { CaseService } from "./cases/service.ts";
+import { TaskDeploy } from "./cases/task-deploy.ts";
 import { waitsForCaptain } from "./chat/desk.ts";
 import type { ClientChat } from "./chat/service.ts";
 import { SlackAdapter } from "./chat/slack/adapter.ts";
@@ -223,6 +224,7 @@ import { IdleWatch } from "./rooms/idle-watch.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
 import { DEFAULT_IDENTITY } from "./runs/checkpoint.ts";
+import { deployFactsOf, deployWayOf } from "./runs/deploy-way.ts";
 import { processLaunch, repoMounts } from "./runs/launch.ts";
 import { limitPauseText } from "./runs/limit.ts";
 import { RunManager } from "./runs/manager.ts";
@@ -291,6 +293,8 @@ const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
 const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+/** How often the base branch of every project is looked at for a CI that was not read yet. */
+const DEPLOY_READ_MS = 5 * 60_000;
 const BRIEF_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
@@ -1052,6 +1056,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // The owner's Allow on a captain's card runs the very command, in the captain's own sandbox.
     runAllowed: async (task, agent, command) =>
       (await processes.start({ task, agent, command, wait: true, allowed: true })).id,
+    // A raw push or job play to a project majhi deploys from its CI: the card names the one-click deploy.
+    deployWay: async (task, command) => {
+      const found = store.tasks.get(task);
+      if (found === undefined) return undefined;
+      for (const repo of found.repos) {
+        const info = await projects.get(repo.project).catch(() => undefined);
+        const way = deployWayOf(command, deployFactsOf(info?.deploy ?? []));
+        if (way !== undefined) return way;
+      }
+      return undefined;
+    },
     store,
     projectEnv,
     onEnvReady: (task) => tasks.refreshBriefs([task]),
@@ -1262,6 +1277,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let wikiService: WikiService | undefined;
   let findingsStore: FindingsService | undefined;
   let discoverDeploys: ((project: string) => Promise<unknown>) | undefined;
+  /** A finished task's whole deploy plan; built with the case deployer below. */
+  let taskDeploy: TaskDeploy | undefined;
   const cards = createCards({
     store,
     projects,
@@ -2014,7 +2031,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           mode: "queue",
           by: "majhi",
         }),
+      // One click, the whole plan: every target of the task in order, not the one step the card names. A plan
+      // that names its own runs (no recipe) goes one step at a time, as before.
       runDeployStep: async (task, project, env) => {
+        if (taskDeploy === undefined) throw new UserError("Deploys are not ready yet.", 409);
+        if ((await taskDeploy.start(task, "owner")) !== undefined) return;
         const found = store.tasks.get(task);
         if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
         const step = (await deployWorld.planner.stepsOf(found)).find(
@@ -2628,6 +2649,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     remote: options.deploy?.remote ?? options.connectionsRemote,
     vercelApi: options.deploy?.vercelApi,
     timing: options.deploy?.timing,
+    runTask: (task) => {
+      if (taskDeploy === undefined) return Promise.reject(new UserError("Deploys are not ready yet.", 409));
+      return taskDeploy.start(task, "captain");
+    },
     // The owner's own deploy is the owner's say. The captain's reaches the owner's remotes only as far as the
     // workspace's authority goes: a push of the base branch is a merge into main, which Full and "Captain ships" allow.
     publish: async ({ project, remote, branch, commit, actor, incidentFix }) => {
@@ -2649,6 +2674,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   discoverDeploys = (project) => deployWorld.discovery.run(project);
+  // How a project deploys is read for every project with a checkout, not only after a scan: at start, and again each
+  // time its base branch is at a commit the CI was not read at (a merge, a fetch, the owner's own commit).
+  const readDeploys = async () => {
+    for (const project of await projectList()) {
+      await deployWorld.discovery
+        .refresh(project.id)
+        .catch((err: unknown) => console.error(`deploys: ${project.id}: ${String(err)}`));
+    }
+  };
+  background.run(readDeploys);
+  const deployReadSweep = setInterval(() => background.run(readDeploys), DEPLOY_READ_MS);
+  deployReadSweep.unref();
   /** The merge request timer, the lane and the chore merge a task's requests only when this says so. */
   async function captainMerges(task: string): Promise<{ yes: true } | { yes: false; why: string }> {
     const plan = await shipPlanner.plan(task);
@@ -3234,6 +3271,87 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     log: (line) => console.log(line),
   });
   clientChat = chatParts;
+  // The deploy a case's fix goes through. A finished task's deploy goes through the same one: its own changes,
+  // no second look at the hand-off checks (the task merged by them), and the owner's click or the captain as actor.
+  const caseDeployPorts: CaseDeployPorts = {
+    environments: async (project) => (await projects.get(project).catch(() => undefined))?.deploy ?? [],
+    discover: async (project) => (await deployWorld.discovery.run(project)).added,
+    remember: async (project, env, answers) => {
+      const info = await projects.get(project);
+      const next = info.deploy.map((e) =>
+        e.env === env && e.recipe !== undefined
+          ? { ...e, recipe: { ...e.recipe, answers: { ...e.recipe.answers, ...answers } } }
+          : e,
+      );
+      await projects.setEnvironments(project, next, "projects.setEnvironments", {
+        actor: { kind: "owner" },
+        reason: "majhi kept the owner's answer about how the environment deploys",
+      });
+    },
+    current: (project, env, opts) => deployWorld.service.current(project, env, opts),
+    hostChoices: (project, env, connection) => deployWorld.service.hostChoices(project, env, connection),
+    nextVersion: (project, env) => deployWorld.service.nextVersion(project, env),
+    changedPaths: async (project, branch) => {
+      const info = await projects.get(project).catch(() => undefined);
+      if (info?.base === undefined) return undefined;
+      try {
+        const out = await git(info.path, ["diff", "--name-only", `${info.base}...${branch}`]);
+        return out.split("\n").filter((p) => p !== "");
+      } catch {
+        return undefined;
+      }
+    },
+    latestLive: (project, env) => store.deploys.latestLive(project, env),
+    repeatable: (runs) => deployWorld.service.repeatable(runs),
+    onHost: (project) => deployWorld.service.onHost(project),
+    checks: async (task) => {
+      // The hand-off checks of the case's head, run once per head, and the merge rule the merge itself will read.
+      const checked = await handoffService?.ensure(task, { force: false });
+      if (checked === undefined) return { ok: false, why: "the hand-off check is not ready yet" };
+      if (checked.verdict === "red") {
+        const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
+        return { ok: false, why: first.split("\n")[0] ?? first };
+      }
+      const rule = await tasks.mergeChecks(task);
+      return rule.verdict.kind === "ok" ? { ok: true } : { ok: false, why: mergeVerdictLine(rule.verdict) };
+    },
+    land: async (task, project, push) => {
+      // The same merge every ship goes through: its rule refuses a head whose checks did not pass.
+      const landed = push
+        ? await mrs.mergeAndPush({ id: task, project, done: false, by: "captain" })
+        : await tasks.merge({ id: task, project, done: false, settle: false, by: "captain" });
+      const failed = landed.results.find((r) => !r.ok && r.skipped !== true);
+      if (failed !== undefined) throw new UserError(`${failed.project}: ${failed.detail}`, 409);
+    },
+    deploy: (input, actor, hint) => deployWorld.service.deploy(input, actor, undefined, hint),
+    rollback: (id, actor) => deployWorld.service.rollback(id, actor),
+    record: (id) => store.deploys.get(id),
+    rollingBack: (id) => deployWorld.service.rollingBackIds().includes(id),
+    now: () => options.runClock?.() ?? new Date(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    pollMs: options.deploy?.timing?.pollMs ?? 2_000,
+    waitMs: 30 * 60_000,
+  };
+  const caseDeployer = new CaseDeployer(caseDeployPorts);
+  taskDeploy = new TaskDeploy({
+    deployer: new CaseDeployer({
+      ...caseDeployPorts,
+      changedPaths: (project, _branch, task) => deployWorld.changed(task, project),
+      checks: async () => ({ ok: true }),
+      deploy: async (input, actor, hint) => {
+        const out = await deployWorld.service.deploy(input, actor, undefined, hint);
+        taskDeploy?.recorded(out.record);
+        return out;
+      },
+    }),
+    tasks: { get: (id) => store.tasks.get(id) },
+    hasRecipe: async (project, env) =>
+      (await projects.get(project).catch(() => undefined))?.deploy.find((e) => e.env === env)?.recipe !==
+      undefined,
+    repo: store.deploys,
+    note: (task, key, level, text) => room.post(task as TaskId, key, { type: "system", level, text }),
+    background: (run) => background.run(run, (err) => console.error(`task deploy: ${errorMessage(err)}`)),
+  });
   cases = new CaseService({
     store,
     room,
@@ -3248,65 +3366,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
       busy: (task) => runs.busy(task),
     },
-    deployer: new CaseDeployer({
-      environments: async (project) => (await projects.get(project).catch(() => undefined))?.deploy ?? [],
-      discover: async (project) => (await deployWorld.discovery.run(project)).added,
-      remember: async (project, env, answers) => {
-        const info = await projects.get(project);
-        const next = info.deploy.map((e) =>
-          e.env === env && e.recipe !== undefined
-            ? { ...e, recipe: { ...e.recipe, answers: { ...e.recipe.answers, ...answers } } }
-            : e,
-        );
-        await projects.setEnvironments(project, next, "projects.setEnvironments", {
-          actor: { kind: "owner" },
-          reason: "majhi kept the owner's answer about how the environment deploys",
-        });
-      },
-      current: (project, env, opts) => deployWorld.service.current(project, env, opts),
-      hostChoices: (project, env, connection) => deployWorld.service.hostChoices(project, env, connection),
-      nextVersion: (project, env) => deployWorld.service.nextVersion(project, env),
-      changedPaths: async (project, branch) => {
-        const info = await projects.get(project).catch(() => undefined);
-        if (info?.base === undefined) return undefined;
-        try {
-          const out = await git(info.path, ["diff", "--name-only", `${info.base}...${branch}`]);
-          return out.split("\n").filter((p) => p !== "");
-        } catch {
-          return undefined;
-        }
-      },
-      latestLive: (project, env) => store.deploys.latestLive(project, env),
-      repeatable: (runs) => deployWorld.service.repeatable(runs),
-      onHost: (project) => deployWorld.service.onHost(project),
-      checks: async (task) => {
-        // The hand-off checks of the case's head, run once per head, and the merge rule the merge itself will read.
-        const checked = await handoffService?.ensure(task, { force: false });
-        if (checked === undefined) return { ok: false, why: "the hand-off check is not ready yet" };
-        if (checked.verdict === "red") {
-          const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
-          return { ok: false, why: first.split("\n")[0] ?? first };
-        }
-        const rule = await tasks.mergeChecks(task);
-        return rule.verdict.kind === "ok" ? { ok: true } : { ok: false, why: mergeVerdictLine(rule.verdict) };
-      },
-      land: async (task, project, push) => {
-        // The same merge every ship goes through: its rule refuses a head whose checks did not pass.
-        const landed = push
-          ? await mrs.mergeAndPush({ id: task, project, done: false, by: "captain" })
-          : await tasks.merge({ id: task, project, done: false, settle: false, by: "captain" });
-        const failed = landed.results.find((r) => !r.ok && r.skipped !== true);
-        if (failed !== undefined) throw new UserError(`${failed.project}: ${failed.detail}`, 409);
-      },
-      deploy: (input, actor, hint) => deployWorld.service.deploy(input, actor, undefined, hint),
-      rollback: (id, actor) => deployWorld.service.rollback(id, actor),
-      record: (id) => store.deploys.get(id),
-      rollingBack: (id) => deployWorld.service.rollingBackIds().includes(id),
-      now: () => options.runClock?.() ?? new Date(),
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      pollMs: options.deploy?.timing?.pollMs ?? 2_000,
-      waitMs: 30 * 60_000,
-    }),
+    deployer: caseDeployer,
     tasks: {
       setStatusLines: (id, lines) => tasks.setStatusLines(id, lines),
       close: (id, opts) => tasks.close(id, opts),
@@ -4014,6 +4074,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       conversations.stop();
       chatParts.hub.stop();
       clearInterval(limitSweep);
+      clearInterval(deployReadSweep);
       clearInterval(briefSweep);
       clearInterval(reportSweep);
       clearInterval(pruneSweep);

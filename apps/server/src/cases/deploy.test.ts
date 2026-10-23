@@ -2,12 +2,12 @@ import type { DeployEnvironment } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { discoverEnvironments } from "../deploy/discover.ts";
 import {
-  ACME_SHOP_GITLAB_FILES,
   ACME_SHOP_MONO_FILES,
   ACME_SHOP_MONO_FOLDERS,
   acmeShopCi,
   memoryCi,
 } from "../deploy/testing/acme-shop.ts";
+import { gitlabWorld, portsOf, reads, type Target } from "../deploy/testing/gitlab-shop.ts";
 import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
 import {
@@ -135,34 +135,6 @@ async function shop(): Promise<DeployEnvironment[]> {
     folders: ["backend", "frontend"],
   });
   return found.environments.map((e) => ({ ...e, check: `https://${e.env}.acme.example/health` }));
-}
-
-function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): CaseDeployPorts {
-  return {
-    environments: async () => r.project.environments,
-    discover: async () => [],
-    remember: async () => undefined,
-    current: (project, env, opts) => r.service.current(project, env, opts),
-    hostChoices: (project, env, connection) => r.service.hostChoices(project, env, connection),
-    nextVersion: (project, env) => r.service.nextVersion(project, env),
-    changedPaths: async () => paths,
-    latestLive: (project, env) => r.store.deploys.latestLive(project, env),
-    repeatable: (runs) => r.service.repeatable(runs),
-    onHost: (project) => r.service.onHost(project),
-    checks: async () => ({ ok: true }),
-    land: async (_task, project) => {
-      landed.push(project);
-      pushTo(r, C2);
-    },
-    deploy: (input, actor, hint) => r.service.deploy(input, actor, undefined, hint),
-    rollback: (id, actor) => r.service.rollback(id, actor),
-    record: (id) => r.store.deploys.get(id),
-    rollingBack: (id) => r.service.rollingBackIds().includes(id),
-    now: () => new Date(),
-    sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
-    pollMs: 1,
-    waitMs: 60_000,
-  };
 }
 
 const fix = { task: "ACM-1", project: "storefront", branch: "fix/slips" };
@@ -331,59 +303,6 @@ describe("a case deploy through the recipe of the project's CI", () => {
 });
 
 describe("a case deploy to every production target through GitLab", () => {
-  const remotes = { origin: "github", gitlab: "gitlab" } as const;
-  const slug = "acme/storefront";
-  /** The manual jobs of the sample project's GitLab pipeline. */
-  const JOBS = [
-    "image:build:production",
-    "image:build:globex",
-    "app:deploy:acme",
-    "app:deploy:globex",
-    "app:deploy:initech",
-    "app:status:acme",
-    "app:status:globex",
-    "app:status:initech",
-  ];
-
-  /** The sample project on GitHub (where fixes merge) and GitLab (where production deploys), both at the first commit. */
-  async function gitlabWorld(): Promise<Rig> {
-    const found = await discoverEnvironments({
-      files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
-      base: "main",
-      provider: "gitlab",
-      remote: "gitlab",
-      folders: ["backend", "frontend"],
-      read: memoryCi(ACME_SHOP_GITLAB_FILES).read,
-    });
-    const r = await rig(
-      found.environments.map((e) => ({ ...e, check: `https://${e.env}.acme.example/health` })),
-      "github",
-      remotes,
-    );
-    r.hosts.gitlabJobs = JOBS;
-    r.sshHosts.push(
-      { id: "globex-host", name: "Globex host", alias: "deploy@203.0.113.8" },
-      { id: "initech-host", name: "Initech host", alias: "deploy@203.0.113.9" },
-    );
-    // What each target's containers run: acme and initech share the production registry, globex has its own.
-    r.remoteRun.byAlias = {
-      "deploy@203.0.113.7": "registry.acme.example/acme-shop/backend:1.4.7\npostgres:16",
-      "deploy@203.0.113.8": "registry.globex.example/acme-shop/backend:globex-2.0.3",
-      "deploy@203.0.113.9": "registry.acme.example/acme-shop/backend:1.4.7",
-    };
-    pushTo(r, C1);
-    r.hosts.branches.set(`gitlab:${slug}:main`, C1);
-    return r;
-  }
-
-  const HOST = {
-    acme: "deploy@203.0.113.7",
-    globex: "deploy@203.0.113.8",
-    initech: "deploy@203.0.113.9",
-  } as const;
-  type Target = keyof typeof HOST;
-  const reads = (r: Rig, env: string) => r.remote.filter((c) => c.alias === HOST[env as Target]).length;
-
   /**
    * What the case saw: each environment as it started (what it replaces, how many jobs were played already, and
    * whether its host was read again after the plan) and how it ended.

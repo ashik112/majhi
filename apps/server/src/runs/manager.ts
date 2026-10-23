@@ -181,6 +181,8 @@ export interface RunDeps {
   deferred?: DeferredResults | undefined;
   /** Runs a command the owner allowed on a captain's card, in the captain's own sandbox. Resolves with the process id. */
   runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
+  /** A better way to do what a raw push or job play asks, when the task's project has a deploy majhi runs. */
+  deployWay?: ((task: string, command: string) => Promise<string | undefined>) | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**

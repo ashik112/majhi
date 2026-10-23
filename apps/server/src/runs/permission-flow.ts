@@ -110,6 +110,11 @@ export class PermissionFlow {
        * about when it ends. Resolves with the process id; rejects when it cannot start.
        */
       runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
+      /**
+       * A better way to do what a raw command asks, in a sentence, when the project has one: a push or a job play
+       * where majhi deploys the whole task with one click. Shown on the card and told to the captain.
+       */
+      deployWay?: ((task: string, command: string) => Promise<string | undefined>) | undefined;
       /** Wakes an agent with a message from majhi (`RunManager.notify`). */
       notify?: ((task: string, agent: string, text: string, claim?: () => boolean) => void) | undefined;
     },
@@ -144,6 +149,10 @@ export class PermissionFlow {
     const keptForTask =
       !go.go && isAlwaysKind(kind) && store.permissions.allowed(run.task, riskAllowKey(kind));
     const id = `perm:${run.runId ?? "x"}:${++run.permSeq}`;
+    const hint =
+      ask.kind === "execute" && ask.command !== undefined
+        ? await this.deps.deployWay?.(run.task, ask.command).catch(() => undefined)
+        : undefined;
     const base = {
       type: "permission" as const,
       agent: run.agent,
@@ -151,6 +160,7 @@ export class PermissionFlow {
       ...(ask.toolCallId === undefined ? {} : { toolCallId: ask.toolCallId }),
       risk: kind,
       options: ask.options,
+      ...(hint === undefined ? {} : { hint }),
     };
     if (once !== undefined && !go.go && !keptForTask && this.takeGrant(run, ask)) {
       room.post(run.task, id, { ...base, state: "auto", chosen: once.id });
@@ -177,7 +187,7 @@ export class PermissionFlow {
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
-    if (captains) return this.askCaptain(run, { ...ask, options }, id, kind);
+    if (captains) return this.askCaptain(run, { ...ask, options }, id, kind, undefined, hint);
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
@@ -196,13 +206,14 @@ export class PermissionFlow {
     id: string,
     kind: RiskKind,
     write?: { writes: readonly GateWrite[]; tool: ToolWrite | undefined },
+    hint?: string,
   ): Promise<string | undefined> {
     const command = ask.command ?? ask.title;
     const shown = redactSecrets(command, run.connections?.secrets ?? []);
     const told = this.deps.deferred?.add(
       run.task,
       run.agent,
-      `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
+      `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.${hint === undefined ? "" : ` ${hint}`}`,
     );
     this.captainCards.set(id, {
       task: run.task,

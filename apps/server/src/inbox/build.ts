@@ -225,7 +225,7 @@ function draftOf(
       return {
         kind: "approval",
         title: `${askerOf(item.agent, subject)} needs approval: ${oneLine(item.title)}`,
-        sentence: `${askerOf(item.agent, subject)} needs your approval: ${item.title}`,
+        sentence: `${askerOf(item.agent, subject)} needs your approval: ${item.title}${item.hint === undefined ? "" : ` ${item.hint}`}`,
         options: withPrimary(
           item.options.map((o) => ({
             id: o.id,

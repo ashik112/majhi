@@ -80,6 +80,8 @@ const DEPLOY_VIA = "deploy-via";
 
 export class DeployDiscovery {
   private readonly running = new Map<string, Promise<DiscoveryResult>>();
+  /** The commit of the base branch each project's CI was last read at. */
+  private readonly readAt = new Map<string, string>();
 
   constructor(private readonly deps: DiscoveryDeps) {}
 
@@ -126,6 +128,18 @@ export class DeployDiscovery {
     };
   }
 
+  /**
+   * Reads the CI again only when the project's base branch is at a commit it was not read at: the environments are
+   * known without a scan or a case, and cost one git read while nothing moved. Undefined when nothing was read.
+   */
+  async refresh(projectId: string): Promise<DiscoveryResult | undefined> {
+    const project = await this.deps.projects.get(projectId);
+    if (!project.exists || project.base === undefined) return undefined;
+    const tip = await this.deps.git.tip(project.path, project.base);
+    if (tip === undefined || this.readAt.get(projectId) === tip) return undefined;
+    return this.run(projectId);
+  }
+
   /** Reads the CI of the project and saves its new environments. One read per project at a time. */
   run(projectId: string): Promise<DiscoveryResult> {
     const going = this.running.get(projectId);
@@ -158,6 +172,7 @@ export class DeployDiscovery {
       read: (rel) => this.deps.git.file(project.path, tip, rel),
       list: (rel) => this.deps.git.list(project.path, tip, rel),
     });
+    this.readAt.set(projectId, tip);
     const folders = await foldersOf(this.deps.git, project.path, tip);
     const found: Discovered = { environments: [], notes: [] };
     // What each remote says about each environment, in the order the environments first appear.
