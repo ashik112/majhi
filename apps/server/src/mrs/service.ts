@@ -586,9 +586,12 @@ export class MrService {
       const mergedBefore = repo.mr?.state === "merged";
       if (
         mergedBefore &&
-        (await commitsAhead(repo.source, targets.get(repo.project) ?? repo.base, ctx.remote, repo.branch).catch(
-          () => 0,
-        )) === 0
+        (await commitsAhead(
+          repo.source,
+          targets.get(repo.project) ?? repo.base,
+          ctx.remote,
+          repo.branch,
+        ).catch(() => 0)) === 0
       ) {
         plans.push({ ctx, skip: "Its merge request is already merged." });
         continue;
