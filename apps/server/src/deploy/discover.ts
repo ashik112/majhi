@@ -696,7 +696,7 @@ function componentsFrom(
   return { all, parts, ...(none.length === 0 ? {} : { versionless: none }) };
 }
 
-/** The names a part of a project goes by in a folder name: `backend` is `ecom-backend`, `frontend` is `pulse-fe`. */
+/** The names a part of a project goes by in a folder name: `backend` is `shop-backend`, `frontend` is `store-fe`. */
 const PART_ALIASES: Record<string, readonly string[]> = {
   backend: ["backend", "back", "be", "api", "server"],
   frontend: ["frontend", "front", "fe", "web", "ui", "client", "spa"],

@@ -260,7 +260,7 @@ export interface CaseBlock {
 
 const ARM_CHARS = new Set(["-", ".", "*", "|", " ", "/", "_", '"', "'"]);
 
-/** `kinbe | nbr) FOO=1` is the arm of `kinbe` and `nbr` with `FOO=1` in it. Undefined when the line is not an arm head. */
+/** `acme | globex) FOO=1` is the arm of `acme` and `globex` with `FOO=1` in it. Undefined when the line is not an arm head. */
 function armHead(line: string): { patterns: string[]; rest: string } | undefined {
   const close = line.indexOf(")");
   if (close <= 0) return undefined;
