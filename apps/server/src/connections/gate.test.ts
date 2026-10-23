@@ -62,7 +62,7 @@ describe("copies of a repo", () => {
   const gitlab: GateConnection = { id: "acme-gitlab", type: "git", clis: ["glab", "gh", "git"], allow: [] };
   it.each<[line: string, kind: "read" | "write" | "other"]>([
     [
-      'D=$(mktemp -d); cd $D && glab repo clone acme/shop gl -- --bare -q 2>&1 | tail -3; cd gl; git fetch -q https://example.com/acme/shop.git main:refs/gh/main 2>&1|tail -2; git log --oneline -3 main; git diff --stat main refs/gh/main | tail -3',
+      "D=$(mktemp -d); cd $D && glab repo clone acme/shop gl -- --bare -q 2>&1 | tail -3; cd gl; git fetch -q https://example.com/acme/shop.git main:refs/gh/main 2>&1|tail -2; git log --oneline -3 main; git diff --stat main refs/gh/main | tail -3",
       "other",
     ],
     ["gh repo clone acme/shop shop", "read"],
