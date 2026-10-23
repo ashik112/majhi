@@ -7,6 +7,7 @@ import {
   currentRules,
   DEFAULT_LEVEL,
   isAlwaysKind,
+  isCaptainThread,
   MAJHI_OPTION_PREFIX,
   PRIVATE,
   RISK_LABEL,
@@ -18,6 +19,7 @@ import {
 } from "@majhi/shared";
 import { incidentShipsOf, levelOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
+import type { DeferredResult, DeferredResults } from "../connections/deferred.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { UserError } from "../errors.ts";
@@ -36,6 +38,21 @@ import { riskScopeOfTask } from "./shell-risk.ts";
 const TASK_OPTION = `${MAJHI_OPTION_PREFIX}task`;
 const ALWAYS_OPTION = `${MAJHI_OPTION_PREFIX}always`;
 const READS_OPTION = `${MAJHI_OPTION_PREFIX}reads`;
+
+/** How long the owner's Allow on a captain's card lets the same command through once. */
+const GRANT_MS = 60 * 60_000;
+
+/** A card the captain does not wait on: the owner's answer reaches the captain's next turn. */
+interface CaptainCard {
+  task: string;
+  agent: string;
+  /** The command the captain asked to run, as the owner's Allow names it. */
+  command: string;
+  ask: PermissionAsk;
+  risk: RiskKind;
+  /** What the captain was told when the call was refused: dropped once the answer says it all. */
+  told: DeferredResult | undefined;
+}
 
 /** The part of the connections service a card's "Always allow" and "It only reads" use. */
 export interface ConnectionToolRules {
@@ -56,9 +73,16 @@ export interface ConnectionToolRules {
  * joins the connection's `allow`) and "It only reads" (it joins the connection's read tools). A destructive
  * write is never allowed by `allow` or a remembered choice, its card offers only Allow once and Deny.
  * The captain answers no permission card: a card exists because the level does not cover it.
+ * The captain itself never waits on a card (`askCaptain`): its call is refused at once and says so, the card stays
+ * for the owner, and the owner's answer wakes the captain. An Allow lets that same command run once when the
+ * captain asks again, so it runs in the captain's own sandbox and not in majhi.
  */
 export class PermissionFlow {
   private readonly sandbox: SandboxLog;
+  /** Cards of the captain that wait for the owner, by item id. Lost with a restart, which ends the cards too. */
+  private readonly captainCards = new Map<string, CaptainCard>();
+  /** Commands the owner allowed on a captain's card, until the captain asks again: `task agent command` to when. */
+  private readonly grants = new Map<string, number>();
 
   constructor(
     private readonly deps: {
@@ -69,6 +93,10 @@ export class PermissionFlow {
       config?: ConfigService | undefined;
       /** A card for the owner appeared or went: the captain's status (what a waiting message waits on) is read again. */
       onCardChange?: (() => void) | undefined;
+      /** What the owner said on a captain's card, for the captain's next tool call or turn. */
+      deferred?: DeferredResults | undefined;
+      /** Wakes an agent with a message from majhi (`RunManager.notify`). */
+      notify?: ((task: string, agent: string, text: string, claim?: () => boolean) => void) | undefined;
     },
     private readonly live: RunLive,
     private readonly now: () => Date,
@@ -104,6 +132,11 @@ export class PermissionFlow {
       risk: kind,
       options: ask.options,
     };
+    if (once !== undefined && !go.go && !keptForTask && this.takeGrant(run, ask)) {
+      room.post(run.task, id, { ...base, state: "auto", chosen: once.id });
+      this.log(run, ask, "allow", "owner", "The owner allowed it on its card");
+      return Promise.resolve(once.id);
+    }
     if (once !== undefined && (go.go || keptForTask)) {
       if (kind === "sandbox") {
         this.sandbox.note({
@@ -124,11 +157,103 @@ export class PermissionFlow {
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
+    if (task !== undefined && isCaptainThread(task) && task.team[0] === run.agent) {
+      return this.askCaptain(run, { ...ask, options }, id, kind);
+    }
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
       signal.addEventListener("abort", () => this.cancelOne(run, id), { once: true });
     });
+  }
+
+  /**
+   * The captain never waits on a card: its call is refused at once with the reject option, and the next majhi
+   * call it makes says why. The card stays for the owner and is not tied to this run, so the end of the turn, a
+   * fresh session or a stop does not take it away. `answerCaptainCard` wakes the captain with the answer.
+   */
+  private askCaptain(
+    run: AgentRun,
+    ask: PermissionAsk,
+    id: string,
+    kind: RiskKind,
+  ): Promise<string | undefined> {
+    const command = ask.command ?? ask.title;
+    const shown = redactSecrets(command, run.connections?.secrets ?? []);
+    const told = this.deps.deferred?.add(
+      run.task,
+      run.agent,
+      `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
+    );
+    this.captainCards.set(id, { task: run.task, agent: run.agent, command, ask, risk: kind, told });
+    const no =
+      ask.options.find((o) => o.kind === "reject_once") ??
+      ask.options.find((o) => o.kind === "reject_always");
+    return Promise.resolve(no?.id);
+  }
+
+  /** Whether the owner's answer on this card is still to come, though no run waits on it. */
+  keeps(itemId: string): boolean {
+    return this.captainCards.has(itemId);
+  }
+
+  /** The command the owner allowed runs once, when the captain asks for it again. */
+  private takeGrant(run: AgentRun, ask: PermissionAsk): boolean {
+    const key = grantKey(run.task, run.agent, ask.command ?? ask.title);
+    const until = this.grants.get(key);
+    if (until === undefined) return false;
+    this.grants.delete(key);
+    return until > this.now().getTime();
+  }
+
+  /**
+   * The owner answered a card the captain does not wait on. Allow lets the same command through once when the
+   * captain asks again, and both answers wake the captain with a line that says so.
+   */
+  private answerCaptainCard(held: CaptainCard, itemId: string, option: string): RoomItem {
+    const { store, room } = this.deps;
+    const item = room.get(held.task, itemId);
+    if (item === undefined || item.type !== "permission") throw new UserError("That card is gone.", 404);
+    const chosen = held.ask.options.find((o) => o.id === option);
+    if (chosen === undefined) {
+      throw new UserError(
+        `"${option}" is not one of the options: ${held.ask.options.map((o) => o.id).join(", ")}.`,
+      );
+    }
+    const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
+    this.captainCards.delete(itemId);
+    store.permissions.log({
+      task: held.task,
+      agent: held.agent,
+      kind: held.ask.kind ?? "other",
+      title: redactSecrets(held.ask.title, []),
+      decision: allowed ? "allow" : "deny",
+      by: "owner",
+      at: this.now().toISOString(),
+    });
+    if (allowed && isAlwaysKind(held.risk)) {
+      if (chosen.id === ALWAYS_OPTION) this.keepRule(held.task, held.risk);
+      else if (chosen.kind === "allow_always") store.permissions.allow(held.task, riskAllowKey(held.risk));
+    }
+    if (allowed)
+      this.grants.set(grantKey(held.task, held.agent, held.command), this.now().getTime() + GRANT_MS);
+    room.post(item.task, itemId, permissionPayload(item, { state: "answered", chosen: option }));
+    const text = allowed
+      ? `The owner allowed \`${held.command}\`. Run it again now: it goes ahead once without asking.`
+      : `The owner did not allow \`${held.command}\`. It did not run. Go on without it.`;
+    this.tellCaptain(held, text);
+    this.deps.onCardChange?.();
+    const updated = room.get(held.task, itemId);
+    if (updated === undefined) throw new Error("The prompt was not stored");
+    return updated;
+  }
+
+  /** The captain hears it with its next majhi call, or in a message of its own, whichever comes first. */
+  private tellCaptain(held: CaptainCard, text: string): void {
+    const { deferred, notify } = this.deps;
+    if (held.told !== undefined) deferred?.discard(held.task, held.agent, held.told);
+    const result = deferred?.add(held.task, held.agent, text);
+    notify?.(held.task, held.agent, text, result?.claim);
   }
 
   /**
@@ -258,6 +383,13 @@ export class PermissionFlow {
   /** The owner picked one of the prompt's options. */
   answer(run: AgentRun | undefined, task: string, itemId: string, option: string, captain = false): RoomItem {
     const { store, room } = this.deps;
+    const held = this.captainCards.get(itemId);
+    if (held !== undefined && held.task === task) {
+      // A card is there because the workspace's level does not cover the action: the owner answers it.
+      if (captain)
+        throw new UserError("This is above the workspace's level. Only the owner answers it.", 409);
+      return this.answerCaptainCard(held, itemId, option);
+    }
     const pending = run?.pending.get(itemId);
     const item = room.get(task, itemId);
     if (run === undefined || pending === undefined || item === undefined || item.type !== "permission") {
@@ -295,7 +427,7 @@ export class PermissionFlow {
     } else {
       this.log(run, pending.ask, allowed ? "allow" : "deny", "owner");
       if (allowed && kind !== undefined && isAlwaysKind(kind)) {
-        if (chosen.id === ALWAYS_OPTION) this.keepRule(run, kind);
+        if (chosen.id === ALWAYS_OPTION) this.keepRule(task, kind);
         else if (chosen.kind === "allow_always") store.permissions.allow(task, riskAllowKey(kind));
       }
     }
@@ -309,10 +441,10 @@ export class PermissionFlow {
   }
 
   /** Saves "Always" for the kind in the task's workspace: one rule per workspace and kind. If it cannot be saved, the next one asks again. */
-  private keepRule(run: AgentRun, kind: RiskKind): void {
+  private keepRule(task: string, kind: RiskKind): void {
     const config = this.deps.config;
     if (config === undefined || !isAlwaysKind(kind)) return;
-    const org = this.deps.store.tasks.get(run.task)?.org ?? PRIVATE;
+    const org = this.deps.store.tasks.get(task)?.org ?? PRIVATE;
     void (async () => {
       const { policy } = await config.settings();
       const rules = currentRules(policy);
@@ -324,7 +456,7 @@ export class PermissionFlow {
           meta: {
             actor: { kind: "owner" },
             reason: "Owner chose Always on a card",
-            task: run.task,
+            task,
           },
           summary: `always ${RISK_LABEL[kind]} in ${org}`,
         },
@@ -368,7 +500,7 @@ export class PermissionFlow {
     let dropped = false;
     for (const item of store.room.pendingPermissions()) {
       if (item.type !== "permission" || item.task !== run.task || item.agent !== run.agent) continue;
-      if (run.pending.has(item.id)) continue;
+      if (run.pending.has(item.id) || this.captainCards.has(item.id)) continue;
       room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
       dropped = true;
     }
@@ -465,3 +597,6 @@ function toolWriteOf(writes: readonly GateWrite[]): ToolWrite | undefined {
 }
 
 const toolKey = (tool: ToolWrite): string => connectionToolKey(tool.connection, tool.name);
+
+const grantKey = (task: string, agent: string, command: string): string =>
+  `${task}\u0000${agent}\u0000${command}`;

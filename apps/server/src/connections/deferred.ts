@@ -12,9 +12,10 @@ export interface DeferredResult {
 const MAX_HELD = 20;
 
 /**
- * Results of commands the owner answered for an agent (ssh through majhi-connections), kept until the
- * agent reads them. Two ways reach the agent and the first one wins: the next majhi-connections tool
- * call while its turn runs (`take`), and a message that wakes it or goes with its next turn (`claim`).
+ * Results of commands the owner answered for an agent (ssh through majhi-connections), and what the owner said
+ * on a card the captain waits for, kept until the agent reads them. Two ways reach the agent and the first one
+ * wins: the next majhi tool call while its turn runs (`take`), and a message that wakes it or goes with its next
+ * turn (`claim`).
  */
 export class DeferredResults {
   private readonly open = new Map<string, { result: DeferredResult; by?: "tool" | "message" }[]>();
@@ -45,6 +46,13 @@ export class DeferredResults {
       this.drop(key, entry);
     }
     return taken.map((e) => e.result.text);
+  }
+
+  /** Forgets a result nobody read, because a newer one says everything it did (the owner answered the card it was about). */
+  discard(task: string, agent: string, result: DeferredResult): void {
+    const key = `${task}\u0000${agent}`;
+    const entry = (this.open.get(key) ?? []).find((e) => e.result === result);
+    if (entry !== undefined) this.drop(key, entry);
   }
 
   private drop(key: string, entry: object): void {

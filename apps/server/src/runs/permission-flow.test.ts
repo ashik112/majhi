@@ -99,3 +99,38 @@ describe("a card whose prompt is gone", () => {
     expect(() => t.permissions.answer(stale, "ACM-9", "perm:4:1", "once")).toThrow(/ended/);
   });
 });
+
+describe("the captain never waits on a card", () => {
+  it("is refused at once and told why, keeps the card for the owner, and an Allow lets the command run once and wakes it", async () => {
+    const t = flow();
+    const run = t.runOf("CAP-1");
+    const line = "git push origin main";
+
+    // The call is answered now with the reject option; no prompt holds the run.
+    expect(await t.permissions.ask(run, t.shell(line), signal)).toBe("no");
+    expect(run.pending.size).toBe(0);
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending", risk: "merge-main" });
+    // The captain's next majhi call says why, and a task agent in the same spot would still wait.
+    expect(t.deferred.take("CAP-1", "acme-claude")).toEqual([
+      `\`${line}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
+    ]);
+    const agent = t.runOf("ACM-8", { runId: 5 });
+    void t.permissions.ask(agent, t.shell(line), signal);
+    await tick();
+    expect(agent.pending.size).toBe(1);
+
+    // A new session does not take the card away; the captain cannot answer it; the owner's Allow wakes the captain.
+    t.permissions.dropOrphans(t.runOf("CAP-1"));
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending" });
+    expect(() => t.permissions.answer(undefined, "CAP-1", "perm:4:1", "once", true)).toThrow(/owner/);
+    t.permissions.answer(undefined, "CAP-1", "perm:4:1", "once");
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "answered", chosen: "once" });
+    expect(t.woken).toEqual([
+      `The owner allowed \`${line}\`. Run it again now: it goes ahead once without asking.`,
+    ]);
+
+    // The same command goes ahead once, without a card, and the next one asks again.
+    expect(await t.permissions.ask(t.runOf("CAP-1"), t.shell(line), signal)).toBe("once");
+    expect(await t.permissions.ask(t.runOf("CAP-1"), t.shell(line), signal)).toBe("no");
+  });
+});

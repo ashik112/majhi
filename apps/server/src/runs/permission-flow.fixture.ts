@@ -1,6 +1,7 @@
 import type { PermissionAsk } from "@majhi/acp";
-import type { RoomItem } from "@majhi/shared";
+import { CAPTAIN_LANE_BRIEF, type RoomItem } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
+import { DeferredResults } from "../connections/deferred.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { RunLive } from "./live.ts";
@@ -27,6 +28,10 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
     tasks: {
       get: (task: string) => ({
         org: orgOf(task),
+        // A task named `CAP-...` is the captain's lane: its lead is the agent of the runs below.
+        ...(task.startsWith("CAP")
+          ? { kind: "chat", brief: CAPTAIN_LANE_BRIEF, team: ["acme-claude"] }
+          : { kind: "task", brief: "", team: ["acme-claude"] }),
         folder: `/Users/owner/tasks/${task}`,
         repos: [
           {
@@ -61,8 +66,19 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
       rules.splice(0, rules.length, ...patch.policy.rules);
     },
   } as unknown as ConfigService;
+  const deferred = new DeferredResults();
+  const woken: string[] = [];
   const permissions = new PermissionFlow(
-    { store, room, connections, config },
+    {
+      store,
+      room,
+      connections,
+      config,
+      deferred,
+      notify: (_task, _agent, text, claim) => {
+        if (claim?.() !== false) woken.push(text);
+      },
+    },
     live,
     () => new Date("2026-10-04T12:00:00Z"),
   );
@@ -97,5 +113,5 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
         secrets: [],
       },
     });
-  return { permissions, runOf, ask, shell, items, held, added, rules, logged };
+  return { permissions, runOf, ask, shell, items, held, added, rules, logged, deferred, woken };
 }

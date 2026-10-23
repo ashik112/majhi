@@ -95,6 +95,7 @@ import { assertHostAllowed, type Lookup } from "./connect/self-host.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
 import { failingConnectionDecisions } from "./connections/decisions.ts";
+import { DeferredResults } from "./connections/deferred.ts";
 import { GitLink } from "./connections/git-link.ts";
 import { ConnectionHealthService } from "./connections/health.ts";
 import { probePort } from "./connections/host-probe.ts";
@@ -360,6 +361,8 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
+  /** Results the owner answered for an agent, read by its next majhi tool call or sent in a message. */
+  deferred: DeferredResults;
   /** Re-reads the run memory limit from Settings, for the next run. */
   applyRunMemory: () => Promise<void>;
   /** Deploy environments, deploy records and what follows a deploy. */
@@ -1039,7 +1042,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     facts: async (id) => projectEnvRef.current?.facts(id) ?? [],
     lines: async (id) => projectEnvRef.current?.lines(id) ?? {},
   };
+  // What the owner said on a card the captain does not wait on: one list for the whole server.
+  const deferred = new DeferredResults();
   const runs = new RunManager({
+    deferred,
     store,
     projectEnv,
     onEnvReady: (task) => tasks.refreshBriefs([task]),
@@ -1795,7 +1801,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     waitsOnProcess: (task) => processes.waiting(task).length > 0,
     delayMs: options.idleWatchMs,
   });
-  const admin = new AdminService({ config, room, store, secrets, tasks });
+  const admin = new AdminService({ config, room, store, secrets, tasks, deferred });
   const scheduleRows = new ScheduleRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
   loopGuard = new LoopGuard({
@@ -3839,6 +3845,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
 
   return {
+    deferred,
     config,
     applyRunMemory,
     runtime,
