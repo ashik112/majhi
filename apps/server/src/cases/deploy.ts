@@ -463,7 +463,7 @@ export class CaseDeployer {
     const lack = goesBackBy(recipe, replaces, components);
     // Several hosts could be this environment's: which one is asked before the version is.
     const hosts =
-      lack !== undefined && recipe.running !== undefined
+      lack !== undefined && !versionless && recipe.running !== undefined
         ? await this.ports.hostChoices(input.project, env.env, answers.connection).catch(() => [])
         : [];
     if (lack !== undefined && hosts.length > 1) {
@@ -474,6 +474,7 @@ export class CaseDeployer {
       });
     } else if (lack !== undefined) {
       if (
+        !versionless &&
         replaces?.version === undefined &&
         bindsOf(recipe.rollback?.runs ?? [], "previous-version").length > 0
       ) {
