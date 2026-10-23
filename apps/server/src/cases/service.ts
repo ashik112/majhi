@@ -40,7 +40,7 @@ import {
   overWords,
   recoveryDone,
   repeatOf,
-  rollbackTarget,
+  rollbackTargets,
   shortVersion,
   summaryLines,
   toldOut,
@@ -926,8 +926,9 @@ export class CaseService {
     this.activate(lane, found.task.id);
     this.guard(lane, "case.rollback");
     const task = found.task.id;
-    const target = rollbackTarget(found.record);
-    if (target === undefined || target.record === undefined) {
+    const targets = rollbackTargets(found.record).flatMap((t) => (t.record === undefined ? [] : [{ ...t, record: t.record }]));
+    const [first, ...rest] = targets;
+    if (first === undefined) {
       throw new UserError(
         found.record.rollback === undefined
           ? "This case has no live deploy to roll back."
@@ -935,35 +936,58 @@ export class CaseService {
         409,
       );
     }
+    // Every attempt is written before it runs, so a repeat call or a crash in the middle never makes a second one.
     const at = this.at();
     this.update(task, (r) =>
-      withRollback(r, { at, record: target.record ?? 0, to: target.previous, ok: false }),
+      withRollback(r, {
+        at,
+        record: first.record,
+        to: first.previous,
+        ok: false,
+        ...(rest.length === 0
+          ? {}
+          : { also: rest.map((t) => ({ env: t.env, record: t.record, to: t.previous, ok: false })) }),
+      }),
     );
-    this.line(task, `Rolling ${target.project} ${target.env} back to ${shortVersion(target.previous)}.`);
-    try {
-      const back = await this.deps.deployer.rollback(target.record);
-      const run = back.rollback?.run;
-      if (run !== undefined) {
-        this.line(
-          task,
-          `Rollback run${run.url === undefined ? "" : `: ${run.url}`} ${back.rollback?.ok === true ? "done" : "failed"}.`,
-        );
+    // Each environment the case put live goes back, the last one first. One that does not go back does not stop the others.
+    const failures: string[] = [];
+    for (const [i, target] of targets.entries()) {
+      this.line(task, `Rolling ${target.project} ${target.env} back to ${shortVersion(target.previous)}.`);
+      try {
+        const back = await this.deps.deployer.rollback(target.record);
+        const run = back.rollback?.run;
+        if (run !== undefined) {
+          this.line(
+            task,
+            `Rollback run${run.url === undefined ? "" : `: ${run.url}`} ${back.rollback?.ok === true ? "done" : "failed"}.`,
+          );
+        }
+      } catch (err) {
+        const why = errorMessage(err);
+        this.line(task, `The rollback of ${target.env} did not work: ${why}`, "warn");
+        failures.push(`${target.env}: ${why}`);
+        continue;
       }
-    } catch (err) {
-      const why = errorMessage(err);
-      this.line(task, `The rollback did not work: ${why}`, "warn");
-      throw new UserError(`${why} A rollback is made once per case: ask the owner once with case_ask.`, 409);
+      this.update(task, (r) => {
+        if (r.rollback === undefined) return r;
+        if (i === 0) return { ...r, rollback: { ...r.rollback, ok: true } };
+        const also = (r.rollback.also ?? []).map((x) => (x.record === target.record ? { ...x, ok: true } : x));
+        return { ...r, rollback: { ...r.rollback, also } };
+      });
+      this.line(task, `${target.project} ${target.env} is back at ${shortVersion(target.previous)}.`);
+      this.deps.history?.({
+        text: `Rolled ${target.project} ${target.env} back after a case deploy`,
+        org: found.org,
+        task,
+      });
     }
-    this.update(task, (r) =>
-      r.rollback === undefined ? r : { ...r, rollback: { ...r.rollback, ok: true } },
-    );
-    this.line(task, `${target.project} ${target.env} is back at ${shortVersion(target.previous)}.`);
-    this.deps.history?.({
-      text: `Rolled ${target.project} ${target.env} back after a case deploy`,
-      org: found.org,
-      task,
-    });
     this.deps.changed();
+    if (failures.length > 0) {
+      throw new UserError(
+        `${failures.join(" ")} A rollback is made once per case: ask the owner once with case_ask.`,
+        409,
+      );
+    }
     return { ok: true, note: "It is back. Read the client's symptom again before you close the case." };
   }
 

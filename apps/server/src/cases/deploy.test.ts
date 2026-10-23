@@ -4,7 +4,7 @@ import { discoverEnvironments } from "../deploy/discover.ts";
 import { ACME_SHOP_GITLAB_FILES, acmeShopCi, memoryCi } from "../deploy/testing/acme-shop.ts";
 import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
-import { closingLines, newCase, rollbackTarget, withDeploy, withRollback } from "./record.ts";
+import { closingLines, newCase, rollbackTarget, rollbackTargets, withDeploy, withRollback } from "./record.ts";
 
 /**
  * The captain's deploy of a case's fix (docs/briefs/instructions.md). The deploy service is the real one, on the
@@ -499,6 +499,35 @@ describe("a case deploy to every production target through GitLab", () => {
       ]);
       // The incident and the owner's word say which target went back.
       expect(r.incidents.map((i) => i.record.env)).toEqual(["acme"]);
+
+      // The case's rollback reaches the target that stayed live: each environment the case put live, the last first.
+      const at = new Date().toISOString();
+      const entry = (env: string, record: number, previous: string, state: "live" | "failed") => ({
+        at,
+        project: fix.project,
+        env,
+        branch: fix.branch,
+        previous,
+        commit: C2,
+        record,
+        state,
+      });
+      let kase = newCase({ room: "r1", client: "Ana", symptom: "no slips", at, day: "2026-10-22" });
+      for (const target of done.targets) {
+        const live = target.record.state === "live";
+        kase = withDeploy(kase, entry(target.path.env.env, target.record.id, target.path.previous, live ? "live" : "failed"));
+      }
+      expect(rollbackTargets(kase).map((d) => d.env)).toEqual(["globex"]);
+      const globex = done.targets[0];
+      if (globex === undefined) throw new Error("no first target");
+      await deployer.rollback(globex.record.id);
+      expect(r.store.deploys.get(globex.record.id)?.state).toBe("rolled-back");
+      expect(played(r).slice(7)).toEqual([
+        ["app:deploy:globex", sent("globex", "globex-2.0.3")],
+        ["app:status:globex", { TARGET: "globex" }],
+      ]);
+      kase = withRollback(kase, { at, record: globex.record.id, to: globex.path.previous, ok: true });
+      expect(rollbackTargets(kase)).toEqual([]);
     } finally {
       await r.service.idle();
       await r.hosts.close();
