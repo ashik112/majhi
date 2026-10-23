@@ -21,8 +21,8 @@ import {
 import type { z } from "zod";
 import { classifyRemoteCommand } from "../connections/remote-command.ts";
 import { errorMessage, UserError } from "../errors.ts";
-import type { DeployRepo } from "../store/deploys.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
+import type { DeployRepo } from "../store/deploys.ts";
 import { type DeployGit, type DeployHead, envKeys, type SyncHead, syncFact } from "./git.ts";
 import { gitlabVariableKeys } from "./gitlab.ts";
 import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";

@@ -137,7 +137,7 @@ export class DeployPlanner {
           ...base,
           who,
           state: "preparing",
-          why: `${ev.why} The task's own agent is bringing them in; the deploy goes when the task lands again.`,
+          why: `${ev.why} The deploy goes when the task has them and lands again.`,
           ...(ev.sync === undefined ? {} : { sync: ev.sync }),
         };
       }

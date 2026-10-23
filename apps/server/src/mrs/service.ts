@@ -1092,7 +1092,11 @@ export class MrService {
    * now. Local branches never move. A sentence when one could not be read (sign-in, no route); a remote with no such
    * branch is not a problem. A remote reached with the computer's saved login is read from the last copy only.
    */
-  async refreshRemotes(projectId: string, remotes: readonly string[], branch: string): Promise<string | undefined> {
+  async refreshRemotes(
+    projectId: string,
+    remotes: readonly string[],
+    branch: string,
+  ): Promise<string | undefined> {
     const project = await this.deps.projects.get(projectId);
     const problems: string[] = [];
     for (const remote of new Set(remotes)) {

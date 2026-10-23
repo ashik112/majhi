@@ -2,9 +2,9 @@ import type { DeployEnvironment, DeployRecord, DeployRunStep } from "@majhi/shar
 import type { RemoteRunFn } from "../../connections/remote.ts";
 import { Store } from "../../store/index.ts";
 import { createBitbucketProvider } from "../bitbucket.ts";
+import type { DeployGit } from "../git.ts";
 import { createGitHubProvider } from "../github.ts";
 import { createGitLabProvider } from "../gitlab.ts";
-import type { DeployGit } from "../git.ts";
 import { type DeployDeps, type DeployProject, DeployService } from "../service.ts";
 import { createSshProvider } from "../ssh.ts";
 import type { DeployCredentials, ProviderDeps, Providers } from "../types.ts";

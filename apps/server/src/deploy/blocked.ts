@@ -17,7 +17,10 @@ interface Outcome {
 
 export const BLOCKS: Record<BlockKind, Outcome> = {
   // The project's deploy setup is wrong or missing, or the host answered with a problem (a sign-in, a route).
-  setup: { clears: "owner", action: "Fix it under the project's Deploys or the workspace's Git accounts, and majhi reads it again." },
+  setup: {
+    clears: "owner",
+    action: "Fix it under the project's Deploys or the workspace's Git accounts, and majhi reads it again.",
+  },
   // No copy of the base branch to read, or a remote that cannot be reached.
   unreadable: {
     clears: "owner",
@@ -26,7 +29,8 @@ export const BLOCKS: Record<BlockKind, Outcome> = {
   // The head is a commit no task of majhi merged: only the owner may deploy what nobody checked.
   unverified: {
     clears: "owner",
-    action: "Look at that commit. If it is fine, deploy it from the project's Deploys and confirm it was not checked.",
+    action:
+      "Look at that commit. If it is fine, deploy it from the project's Deploys and confirm it was not checked.",
   },
   // The host that deploys lacks the commit and majhi may only push it to a GitLab host.
   unpushed: { clears: "owner", action: "Push the base branch to that remote, and majhi reads it again." },

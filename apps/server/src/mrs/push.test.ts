@@ -30,6 +30,30 @@ async function repo() {
   return { dir: t.dir, work, bare };
 }
 
+describe("pushBranch with a commit to send", () => {
+  it("sends that commit, not the local branch of the same name, and never forces", async () => {
+    const { work, bare } = await repo();
+    await git(work, "remote", "add", "origin", bare);
+    // The host has main at the first commit; the owner's local main is left there too (stale).
+    await pushBranch({ worktree: work, remote: "origin", branch: "main" });
+    const head = (await git(work, "rev-parse", "task/x")).trim();
+    await pushBranch({ worktree: work, remote: "origin", branch: "main", from: head });
+    expect((await git(bare, "rev-parse", "main")).trim()).toBe(head);
+    expect((await git(work, "rev-parse", "main")).trim()).not.toBe(head);
+
+    // A commit that does not contain what the host has is refused: the host's main stays.
+    await git(work, "checkout", "--quiet", "-b", "other", "main");
+    await writeFile(join(work, "c.txt"), "c\n");
+    await git(work, "add", ".");
+    await git(work, "commit", "--quiet", "-m", "other");
+    const other = (await git(work, "rev-parse", "HEAD")).trim();
+    await expect(
+      pushBranch({ worktree: work, remote: "origin", branch: "main", from: other }),
+    ).rejects.toBeInstanceOf(PushProblem);
+    expect((await git(bare, "rev-parse", "main")).trim()).toBe(head);
+  });
+});
+
 describe("pushBranch", () => {
   it("never forces: a diverged branch is refused", async () => {
     const { work, bare } = await repo();

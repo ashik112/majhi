@@ -796,7 +796,9 @@ export const PlanDeployResultSchema = z.object({
    * merge", "waits for you", "preparing", or why it is blocked. The caller says this to the owner, never a promise.
    */
   steps: z
-    .array(z.object({ project: IdSchema, env: EnvNameSchema, state: DeployStepStateSchema, line: z.string() }))
+    .array(
+      z.object({ project: IdSchema, env: EnvNameSchema, state: DeployStepStateSchema, line: z.string() }),
+    )
     .optional(),
 });
 export type PlanDeployResult = z.infer<typeof PlanDeployResultSchema>;

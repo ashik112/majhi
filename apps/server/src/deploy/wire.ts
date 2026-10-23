@@ -236,7 +236,10 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     git: deployGit,
     ...(deps.refresh === undefined
       ? {}
-      : { refresh: (p: DeployProject, remotes: readonly string[], base: string) => deps.refresh?.(p.id, remotes, base) ?? Promise.resolve(undefined) }),
+      : {
+          refresh: (p: DeployProject, remotes: readonly string[], base: string) =>
+            deps.refresh?.(p.id, remotes, base) ?? Promise.resolve(undefined),
+        }),
     repoRef,
     checksConfigured: deps.checksConfigured,
     providers,

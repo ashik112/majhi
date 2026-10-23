@@ -22,7 +22,9 @@ export function waitingDeployDecisions(
     const blocked = deploy.steps.filter((s) => s.state === "blocked" && s.clears === "owner");
     const first = blocked[0];
     if (found !== undefined && first !== undefined) {
-      const reasons = [...new Set(blocked.map((s) => `${s.project} ${s.env}: ${s.why ?? "it cannot run yet"}`))];
+      const reasons = [
+        ...new Set(blocked.map((s) => `${s.project} ${s.env}: ${s.why ?? "it cannot run yet"}`)),
+      ];
       out.push({
         id: deployBlockDecisionId(deploy.task),
         kind: "ship",

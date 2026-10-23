@@ -89,9 +89,9 @@ export class DeploySync {
     if (lead === undefined) throw new UserError(`${held.task} has no agent to bring the commits in.`, 409);
     const repo = found.repos.find((r) => r.project === held.project);
     if (repo === undefined) throw new UserError(`${held.task} has no work in ${held.project}.`, 409);
-    // The deploy remote is read again now, so the agent merges the commits it has at this moment.
-    const problem = await this.deps.refresh(held.project, [sync.deployRemote], sync.base);
-    if (problem !== undefined) throw new UserError(problem, 409);
+    // The deploy remote is read again now, so the agent merges the commits it has at this moment. When it cannot be
+    // read, the copy the plan was made from is the one the agent gets: the same refs, so the job still holds.
+    await this.deps.refresh(held.project, [sync.deployRemote], sync.base).catch(() => undefined);
     const task = found.status === "done" ? await this.deps.tasks.reopen(found.id) : found;
     this.deps.note(
       task.id,

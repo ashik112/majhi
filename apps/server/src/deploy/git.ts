@@ -85,7 +85,10 @@ export async function readHeads(
     }
     return { kind: "ready", commit: head };
   } catch (err) {
-    return { kind: "unreadable", why: `majhi could not read the project's base branch: ${errorMessage(err)}` };
+    return {
+      kind: "unreadable",
+      why: `majhi could not read the project's base branch: ${errorMessage(err)}`,
+    };
   }
 }
 
