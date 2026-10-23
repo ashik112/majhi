@@ -23,7 +23,7 @@ export const JOBS = [
 ];
 
 /** The sample project on GitHub (where fixes merge) and GitLab (where production deploys), both at the first commit. */
-export async function gitlabWorld(): Promise<Rig> {
+export async function gitlabWorld(real?: Parameters<typeof rig>[3]): Promise<Rig> {
   const found = await discoverEnvironments({
     files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
     base: "main",
@@ -36,6 +36,7 @@ export async function gitlabWorld(): Promise<Rig> {
     found.environments.map((e) => ({ ...e, check: `https://${e.env}.acme.example/health` })),
     "github",
     remotes,
+    real,
   );
   r.hosts.gitlabJobs = JOBS;
   r.sshHosts.push(

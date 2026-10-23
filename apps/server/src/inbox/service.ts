@@ -575,6 +575,7 @@ export class InboxService {
     else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
     else if (parsed.kind === "mrci") await actions.fixMrChecks?.(parsed.task);
     else if (parsed.kind === "dwait") await actions.runDeployStep?.(parsed.task, parsed.project, parsed.env);
+    else if (parsed.kind === "dblock") throw new UserError("This has no button: open the task.", 400);
     else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
     else if (parsed.kind === "publish") await actions.approvePost?.(parsed.task);
     else if (parsed.kind === "ccant") await actions.answerCaptainCannotRun?.(parsed.org);

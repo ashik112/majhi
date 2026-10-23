@@ -1043,21 +1043,38 @@ export class MrService {
   ): Promise<{ ok: true; pushed: boolean } | { ok: false; why: string }> {
     try {
       const project = await this.deps.projects.get(projectId);
-      const here = await git(project.path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(
-        (s) => s.trim(),
-        () => undefined,
-      );
-      if (here !== commit) {
+      // What is sent is the commit the source remote has as its base (where the task landed), or a local merge not
+      // pushed yet: never a stale branch of the owner's checkout.
+      const read = (ref: string) =>
+        git(project.path, ["rev-parse", "--verify", "--quiet", ref]).then(
+          (s) => s.trim(),
+          () => undefined,
+        );
+      const source = mrRemoteName(project.remotes);
+      const there = await read(`refs/remotes/${source}/${branch}`);
+      const here = await read(`refs/heads/${branch}`);
+      if (commit !== there && commit !== here) {
         return {
           ok: false,
-          why: `${project.id} has ${branch} at ${here?.slice(0, 7) ?? "nothing"} here, not at ${commit.slice(0, 7)}, so majhi cannot push ${commit.slice(0, 7)} to ${remote}.`,
+          why: `${source}/${branch} is at ${there?.slice(0, 7) ?? "nothing"} here, not at ${commit.slice(0, 7)}, so majhi cannot push ${commit.slice(0, 7)} to ${remote}.`,
         };
       }
       const target = await this.pushTarget({ project: projectId, source: project.path }, remote);
+      // The deploy remote is read again and must be an ancestor of what is sent: a fast-forward, never forced.
+      if (!target.viaHost && (await this.fetchTracking(project.path, target, branch))) {
+        const theirs = `refs/remotes/${target.remote}/${branch}`;
+        if (!(await gitOk(project.path, ["merge-base", "--is-ancestor", theirs, commit]))) {
+          return {
+            ok: false,
+            why: `${target.remote}/${branch} has commits ${commit.slice(0, 7)} lacks, so it cannot be a fast-forward. The task's own agent merges them in first.`,
+          };
+        }
+      }
       const request = {
         worktree: project.path,
         remote: target.remote,
         branch,
+        from: commit,
         url: target.pushUrl,
         viaHost: this.hostPusher(target.viaHost, project.path, target.org),
         reloadKeys: this.deps.reloadKeys,
@@ -1068,6 +1085,29 @@ export class MrService {
     } catch (err) {
       return { ok: false, why: pushFailure(err, remote, branch) };
     }
+  }
+
+  /**
+   * Reads the base branch of these remotes again into their tracking refs, so a deploy decides from what they have
+   * now. Local branches never move. A sentence when one could not be read (sign-in, no route); a remote with no such
+   * branch is not a problem. A remote reached with the computer's saved login is read from the last copy only.
+   */
+  async refreshRemotes(
+    projectId: string,
+    remotes: readonly string[],
+    branch: string,
+  ): Promise<string | undefined> {
+    const project = await this.deps.projects.get(projectId);
+    const problems: string[] = [];
+    for (const remote of new Set(remotes)) {
+      try {
+        const target = await this.pushTarget({ project: projectId, source: project.path }, remote);
+        if (!target.viaHost) await this.fetchTracking(project.path, target, branch);
+      } catch (err) {
+        problems.push(`${remote}: ${errorMessage(err)}`);
+      }
+    }
+    return problems.length === 0 ? undefined : problems.join(" ");
   }
 
   /** The push function for an https route, or undefined for SSH and plain remotes. */

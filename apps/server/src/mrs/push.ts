@@ -12,6 +12,8 @@ export interface PushRequest {
   worktree: string;
   remote: string;
   branch: string;
+  /** What to send, when it is not the local branch of that name: a commit or a ref (a deploy sends the source remote's head). */
+  from?: string | undefined;
   /**
    * Where to push instead of the remote: the same repo through the SSH alias of the workspace's git account. git pushes
    * straight to it, so a `pushurl` the remote already has cannot add a second destination. The git
@@ -45,16 +47,12 @@ export async function remoteUrl(repo: string, remote: string): Promise<string> {
  */
 export async function pushBranch(req: PushRequest): Promise<void> {
   // Read before the push: if the branch moves meanwhile, the tracking branch lags, never leads.
-  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", `refs/heads/${req.branch}`]).then(
+  const from = req.from ?? `refs/heads/${req.branch}`;
+  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", from]).then(
     (s) => s.trim(),
     () => undefined,
   );
-  const args = [
-    "push",
-    "--quiet",
-    req.url ?? req.remote,
-    `refs/heads/${req.branch}:refs/heads/${req.branch}`,
-  ];
+  const args = ["push", "--quiet", req.url ?? req.remote, `${from}:refs/heads/${req.branch}`];
   if (req.viaHost !== undefined && req.url !== undefined) {
     try {
       await req.viaHost(req.url, req.branch);
@@ -88,7 +86,7 @@ export async function pushBranch(req: PushRequest): Promise<void> {
 export async function remoteHasTip(req: PushRequest): Promise<boolean> {
   if (req.viaHost !== undefined && req.url !== undefined) return false;
   const ref = `refs/heads/${req.branch}`;
-  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", ref]).then(
+  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", req.from ?? ref]).then(
     (s) => s.trim(),
     () => undefined,
   );

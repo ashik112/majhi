@@ -1,13 +1,116 @@
+import { errorMessage } from "../errors.ts";
 import { git, gitOk, refIsThere } from "../git/git.ts";
+import { conflictsBetween } from "../git/merge.ts";
+
+/**
+ * What a deploy decides from. The head is the base branch as the source remote has it (where the task landed): the
+ * owner's local branch never decides, so a stale or diverged checkout blocks nothing. A local branch counts only when
+ * it is strictly ahead of the source remote (a merge that was not pushed yet), because then it is the head.
+ * `sync`: a deploy remote has commits the head lacks, so pushing the head there would not be a fast-forward.
+ */
+export type DeployHead =
+  | { kind: "ready"; commit: string }
+  | {
+      kind: "sync";
+      base: string;
+      sourceRemote: string;
+      deployRemote: string;
+      sourceTip: string;
+      deployTip: string;
+      /** Commits the deploy remote has that the source lacks, and up to three of them. */
+      deployOnly: number;
+      deployOnlyLines: string[];
+      /** Commits the source has that the deploy remote lacks. */
+      sourceOnly: number;
+      /** Files a test merge of the deploy remote's base into the source's conflicts in. Empty when it merges cleanly. */
+      conflicts: string[];
+    }
+  | { kind: "unreadable"; why: string };
+
+export type SyncHead = Extract<DeployHead, { kind: "sync" }>;
+
+const SAMPLE = 3;
+
+/** The head of the base branch for a deploy that runs on the `deploy` remotes, read from the remote refs as fetched. */
+export async function readHeads(
+  path: string,
+  base: string,
+  source: string,
+  deploy: readonly string[],
+): Promise<DeployHead> {
+  try {
+    const sourceRef = `refs/remotes/${source}/${base}`;
+    const localRef = `refs/heads/${base}`;
+    const rev = async (ref: string): Promise<string> => (await git(path, ["rev-parse", ref])).trim();
+    let head: string | undefined;
+    if (await refIsThere(path, sourceRef)) {
+      head = await rev(sourceRef);
+      if (await refIsThere(path, localRef)) {
+        const local = await rev(localRef);
+        if (local !== head && (await gitOk(path, ["merge-base", "--is-ancestor", head, local]))) head = local;
+      }
+    } else if (await refIsThere(path, localRef)) {
+      head = await rev(localRef);
+    }
+    if (head === undefined) {
+      return {
+        kind: "unreadable",
+        why: `majhi cannot read ${base} of ${source}: this project has no copy of it here.`,
+      };
+    }
+    for (const remote of [...new Set(deploy)]) {
+      if (remote === source) continue;
+      const ref = `refs/remotes/${remote}/${base}`;
+      if (!(await refIsThere(path, ref))) continue;
+      const tip = await rev(ref);
+      if (tip === head || (await gitOk(path, ["merge-base", "--is-ancestor", tip, head]))) continue;
+      const count = async (range: string): Promise<number> =>
+        Number((await git(path, ["rev-list", "--count", range])).trim()) || 0;
+      const lines = (await git(path, ["log", "--format=%h %s", `-${SAMPLE}`, `${head}..${tip}`]))
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "");
+      return {
+        kind: "sync",
+        base,
+        sourceRemote: source,
+        deployRemote: remote,
+        sourceTip: head,
+        deployTip: tip,
+        deployOnly: await count(`${head}..${tip}`),
+        deployOnlyLines: lines,
+        sourceOnly: await count(`${tip}..${head}`),
+        conflicts: await conflictsBetween(path, head, tip).catch(() => []),
+      };
+    }
+    return { kind: "ready", commit: head };
+  } catch (err) {
+    return {
+      kind: "unreadable",
+      why: `majhi could not read the project's base branch: ${errorMessage(err)}`,
+    };
+  }
+}
+
+const plural = (count: number): string => `${count} commit${count === 1 ? "" : "s"}`;
+
+/** What is the matter with a deploy remote that is ahead, in a sentence. */
+export function syncFact(h: SyncHead): string {
+  const theirs = `${h.deployRemote}/${h.base}`;
+  const ours = `${h.sourceRemote}/${h.base}`;
+  const what = h.deployOnlyLines.length === 0 ? "" : ` (${h.deployOnlyLines.join("; ")})`;
+  const other = h.sourceOnly === 0 ? "" : `, and ${ours} has ${plural(h.sourceOnly)} ${theirs} lacks`;
+  return `${theirs} has ${plural(h.deployOnly)} ${ours} lacks${what}${other}`;
+}
 
 /** What a deploy reads from a project's repository. Read only. */
 export interface DeployGit {
-  /** The newest tip of the base branch: the local branch and each remote's copy, whichever contains the others. */
+  /** The head a deploy ships, read from the source remote's base and checked against each deploy remote's. */
+  heads(path: string, base: string, source: string, deploy: readonly string[]): Promise<DeployHead>;
+  /** The newest tip of the base branch: the local branch and each remote's copy, whichever contains the others. For reading files only: a deploy decides from `heads`. */
   tip(path: string, base: string): Promise<string | undefined>;
   /** The base branch as one remote has it, or undefined when that copy is not there. For reading files, never for deploying. */
   remoteTip?(path: string, base: string, remote: string): Promise<string | undefined>;
-  /** Why there is no tip, in a sentence: the copies of the base branch differ (and which commits), or git cannot be read. */
-  whyNoTip(path: string, base: string): Promise<string>;
   /** A file at a commit, or undefined when the commit has none. */
   file(path: string, commit: string, name: string): Promise<string | undefined>;
   /** The entries of a folder at a commit (`""` is the root); empty when it has none. Symlinks are left out. */
@@ -34,9 +137,8 @@ export function envKeys(text: string): string[] {
   return [...new Set(keys)];
 }
 
-const PLAIN = "majhi could not read the project's base branch.";
-
 export const deployGit: DeployGit = {
+  heads: readHeads,
   async file(path, commit, name) {
     return git(path, ["show", `${commit}:${name}`]).catch(() => undefined);
   },
@@ -92,31 +194,5 @@ export const deployGit: DeployGit = {
     } catch {
       return undefined;
     }
-  },
-  async whyNoTip(path, base) {
-    try {
-      const remotes = (await git(path, ["remote"])).split("\n").filter((r) => r.trim() !== "");
-      const refs = [`refs/heads/${base}`, ...remotes.map((r) => `refs/remotes/${r.trim()}/${base}`)];
-      const there: string[] = [];
-      for (const ref of refs) if (await refIsThere(path, ref)) there.push(ref);
-      for (const [i, a] of there.entries()) {
-        for (const b of there.slice(i + 1)) {
-          if (
-            (await gitOk(path, ["merge-base", "--is-ancestor", a, b])) ||
-            (await gitOk(path, ["merge-base", "--is-ancestor", b, a]))
-          )
-            continue;
-          const short = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "");
-          const only = async (from: string, other: string) => {
-            const lines = (await git(path, ["log", "--format=%h %s", "-3", `${other}..${from}`])).trim();
-            return lines === "" ? "none" : lines.split("\n").join("; ");
-          };
-          return `${short(a)} and ${short(b)} each have commits the other lacks, so there is no one head to deploy. ${short(a)} only: ${await only(a, b)}. ${short(b)} only: ${await only(b, a)}. Merge them in the project, then deploy.`;
-        }
-      }
-    } catch {
-      return PLAIN;
-    }
-    return PLAIN;
   },
 };

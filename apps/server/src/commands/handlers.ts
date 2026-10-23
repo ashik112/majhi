@@ -46,6 +46,7 @@ import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
+import { stepLine } from "../deploy/blocked.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -815,7 +816,16 @@ export function createHandlers({
       );
       // The ship chore asked for this plan and waits for it: it looks again now, not at the next hourly check.
       services.captain.planWritten(org);
-      return planned;
+      // What happens to each step now, from the answer the trail and the cards read: the captain repeats this, and
+      // never promises a card the step does not have.
+      const task = services.tasks.get(input.task);
+      const steps = (await services.deploy.planner.stepsOf(task).catch(() => [])).map((s) => ({
+        project: s.project,
+        env: s.env,
+        state: s.state,
+        line: stepLine(s),
+      }));
+      return { ...planned, steps };
     },
     // A deploy leaves the machine: the owner's click, or the captain by a rule the owner wrote (never through here).
     "projects.deploy": async (input, ctx) => {

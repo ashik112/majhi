@@ -310,6 +310,10 @@ export function mrCiDecisionId(task: string): string {
 export function deployWaitDecisionId(task: string, project: string, env: string): string {
   return `deploy:${task}:${project}:${env}`;
 }
+/** A task's deploy that only the owner can clear: the card says why and the one thing to do. It has no button. */
+export function deployBlockDecisionId(task: string): string {
+  return `dblock:${task}`;
+}
 /**
  * What waits for the owner in a client chat: an unread claim, a message the captain left for a person, a "who is
  * this?". `ref` is a message id of the chat, or `who:<sender>` for the who-is card.
@@ -341,6 +345,7 @@ export type ParsedDecisionId =
   | { kind: "notify" }
   | { kind: "mrci"; task: string }
   | { kind: "dwait"; task: string; project: string; env: string }
+  | { kind: "dblock"; task: string }
   | { kind: "cwait"; room: string; ref: string }
   | { kind: "ccant"; org: string }
   | { kind: "publish"; task: string };
@@ -374,6 +379,9 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
     return { kind: "mrci", task: rest[0] as string };
   if (head === "deploy" && rest.length === 3 && rest.every((p) => p !== "")) {
     return { kind: "dwait", task: rest[0] as string, project: rest[1] as string, env: rest[2] as string };
+  }
+  if (head === "dblock" && rest.length === 1 && rest[0] !== "") {
+    return { kind: "dblock", task: rest[0] as string };
   }
   if (head === "cwait" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "cwait", room: rest[0] as string, ref: rest.slice(1).join(":") };

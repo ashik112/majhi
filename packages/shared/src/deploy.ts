@@ -528,6 +528,8 @@ export const DeployStepStateSchema = z.enum([
   "captain-next",
   "waits-for-owner",
   "waits-for-previous",
+  /** The deploy remote has commits the source lacks: the task's own agent is bringing them in, then the task lands again. */
+  "preparing",
   "blocked",
   ...DEPLOY_STATES,
 ]);
@@ -541,6 +543,7 @@ export function deployTone(state: DeployStepState): "done" | "working" | "needs"
     case "queued":
     case "running":
     case "verifying":
+    case "preparing":
       return "working";
     case "waits-for-owner":
     case "failed":
@@ -564,6 +567,7 @@ export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   "captain-next": "next",
   "waits-for-owner": "waits for you",
   "waits-for-previous": "waiting",
+  preparing: "preparing",
   blocked: "cannot run yet",
   held: "held",
   queued: "queued",
@@ -616,6 +620,11 @@ export const DeployStepViewSchema = z.object({
   run: z.string().optional(),
   /** What blocks it or why it failed, in a sentence. */
   why: z.string().optional(),
+  /**
+   * Who clears a blocked step: `owner` (a card in Needs you with the reason), or `majhi` (it clears with time or by
+   * itself: a line in the captain's log). Set on every `blocked` step, so none is silent.
+   */
+  clears: z.enum(["owner", "majhi"]).optional(),
   /** The incident task a failure opened. */
   incident: TaskIdSchema.optional(),
 });
@@ -652,7 +661,17 @@ export function deployPhase(steps: readonly Pick<DeployStepView, "state">[]): De
   if (has("failed", "rolled-back")) return "failed";
   if (has("waits-for-owner")) return "asks";
   if (
-    has("planned", "queued", "running", "verifying", "captain-next", "waits-for-previous", "blocked", "none")
+    has(
+      "planned",
+      "queued",
+      "running",
+      "verifying",
+      "captain-next",
+      "waits-for-previous",
+      "preparing",
+      "blocked",
+      "none",
+    )
   ) {
     return "moving";
   }
@@ -770,5 +789,16 @@ export const PlanDeployInputSchema = z.object({
 });
 export type PlanDeployInput = z.infer<typeof PlanDeployInputSchema>;
 
-export const PlanDeployResultSchema = z.object({ records: z.array(DeployRecordSchema) });
+export const PlanDeployResultSchema = z.object({
+  records: z.array(DeployRecordSchema),
+  /**
+   * What happens to each step now, read from the same answer the trail and the cards read: "waits for the task to
+   * merge", "waits for you", "preparing", or why it is blocked. The caller says this to the owner, never a promise.
+   */
+  steps: z
+    .array(
+      z.object({ project: IdSchema, env: EnvNameSchema, state: DeployStepStateSchema, line: z.string() }),
+    )
+    .optional(),
+});
 export type PlanDeployResult = z.infer<typeof PlanDeployResultSchema>;

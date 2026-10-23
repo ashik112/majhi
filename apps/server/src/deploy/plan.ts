@@ -9,6 +9,8 @@ import {
 } from "@majhi/shared";
 import type { ShipPlan } from "../ship/plan.ts";
 import type { DeployRepo } from "../store/deploys.ts";
+import { BLOCKS, blockedWhy } from "./blocked.ts";
+import type { SyncHead } from "./git.ts";
 import type { DeployService } from "./service.ts";
 
 /**
@@ -31,6 +33,8 @@ export interface DeployPlanDeps {
 export interface DeployStep extends DeployStepView {
   /** The project's id again, for a caller that only holds the step. */
   task: string;
+  /** For a `preparing` step: what the deploy remote has that the source lacks. Never sent to a screen. */
+  sync?: SyncHead;
 }
 
 export class DeployPlanner {
@@ -126,15 +130,29 @@ export class DeployPlanner {
         (r) => r.kind === "gitlab-job" || r.kind === "gitlab-pipeline" || r.kind === "gitlab-merge",
       );
     if (!ev.ok && !pushes) {
+      if (ev.kind === "previous") return { ...base, who, state: "waits-for-previous", why: ev.why };
+      // The deploy remote has commits the source lacks: not a block. majhi brings them into the task's own branch.
+      if (ev.kind === "sync") {
+        return {
+          ...base,
+          who,
+          state: "preparing",
+          why: `${ev.why} The deploy goes when the task has them and lands again.`,
+          ...(ev.sync === undefined ? {} : { sync: ev.sync }),
+        };
+      }
       return {
         ...base,
         who,
-        state: ev.kind === "previous" ? "waits-for-previous" : "blocked",
-        why: ev.why,
+        state: "blocked",
+        why: blockedWhy(ev.kind, ev.why),
+        clears: BLOCKS[ev.kind].clears,
       };
     }
     const commit = ev.ok ? ev.ctx.commit : ev.commit;
-    if (commit === undefined) return { ...base, who, state: "blocked", why: ev.ok ? "" : ev.why };
+    if (commit === undefined) {
+      return { ...base, who, state: "blocked", why: ev.ok ? "" : ev.why, clears: "owner" };
+    }
     // Another task's deploy of the same head is this task's step too.
     const existing = this.deps.repo.find(rec.project, rec.env, commit);
     if (existing !== undefined && existing.id !== rec.id) return deployStepOfRecord(existing, tier);

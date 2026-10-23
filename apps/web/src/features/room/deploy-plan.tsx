@@ -18,6 +18,7 @@ const NOT_STARTED: readonly DeployStepState[] = [
   "captain-next",
   "waits-for-owner",
   "waits-for-previous",
+  "preparing",
   "blocked",
 ];
 

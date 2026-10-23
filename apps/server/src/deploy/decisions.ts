@@ -1,4 +1,9 @@
-import { deployWaitDecisionId, type HomeDeploy, type OwnerDecision } from "@majhi/shared";
+import {
+  deployBlockDecisionId,
+  deployWaitDecisionId,
+  type HomeDeploy,
+  type OwnerDecision,
+} from "@majhi/shared";
 
 /**
  * A deploy that waits for the owner is a decision like any other: it counts in Needs you and the bell and opens
@@ -11,8 +16,30 @@ export function waitingDeployDecisions(
 ): OwnerDecision[] {
   const out: OwnerDecision[] = [];
   for (const deploy of board) {
-    const step = deploy.steps.find((s) => s.state === "waits-for-owner");
     const found = task(deploy.task);
+    // A block only the owner can clear: one card with the reason and the one thing to do. majhi's own blocks are lines
+    // in the captain's log, and a deploy remote that is ahead is the task's own agent's job, never a card.
+    const blocked = deploy.steps.filter((s) => s.state === "blocked" && s.clears === "owner");
+    const first = blocked[0];
+    if (found !== undefined && first !== undefined) {
+      const reasons = [
+        ...new Set(blocked.map((s) => `${s.project} ${s.env}: ${s.why ?? "it cannot run yet"}`)),
+      ];
+      out.push({
+        id: deployBlockDecisionId(deploy.task),
+        kind: "ship",
+        ...(found.org === undefined ? {} : { org: found.org }),
+        task: deploy.task,
+        taskTitle: found.title,
+        title: `Deploy cannot go: ${found.title}`.slice(0, 300),
+        sentence: reasons.join(" ").slice(0, 500),
+        blocked: (first.why ?? "It cannot run yet.").slice(0, 300),
+        options: [],
+        at: found.updatedAt,
+        link: { kind: "task", id: deploy.task },
+      });
+    }
+    const step = deploy.steps.find((s) => s.state === "waits-for-owner");
     if (step === undefined || found === undefined) continue;
     const targets = deploy.steps
       .filter((s) => s.state === "waits-for-owner" || s.state === "waits-for-previous")

@@ -2,9 +2,10 @@ import type { DeployEnvironment, DeployRecord, DeployRunStep } from "@majhi/shar
 import type { RemoteRunFn } from "../../connections/remote.ts";
 import { Store } from "../../store/index.ts";
 import { createBitbucketProvider } from "../bitbucket.ts";
+import type { DeployGit } from "../git.ts";
 import { createGitHubProvider } from "../github.ts";
 import { createGitLabProvider } from "../gitlab.ts";
-import { type DeployProject, DeployService } from "../service.ts";
+import { type DeployDeps, type DeployProject, DeployService } from "../service.ts";
 import { createSshProvider } from "../ssh.ts";
 import type { DeployCredentials, ProviderDeps, Providers } from "../types.ts";
 import { createVercelProvider } from "../vercel.ts";
@@ -61,6 +62,18 @@ export async function rig(
   provider: "github" | "gitlab" = "github",
   /** The host each remote of the project is on, when it has several (`origin` on GitHub, `gitlab` on GitLab). */
   remotes: Readonly<Record<string, "github" | "gitlab">> = {},
+  /** A project with real repositories on disk (the deploy reads them as it does in majhi) instead of the stub. */
+  real?: {
+    path: string;
+    git: DeployGit;
+    refresh?: DeployDeps["refresh"];
+    /** The push of the base branch to a remote that deploys: a real push, so a non-fast-forward is refused. */
+    push?: (input: {
+      remote: string;
+      branch: string;
+      commit: string;
+    }) => Promise<{ ok: true } | { ok: false; why: string }>;
+  },
 ): Promise<Rig> {
   const hosts = await startFakeHosts();
   const store = new Store(":memory:");
@@ -79,7 +92,7 @@ export async function rig(
   const project: DeployProject = {
     id: "storefront",
     org: "acme",
-    path: "/work/storefront",
+    path: real?.path ?? "/work/storefront",
     base: "main",
     remotes: {},
     environments,
@@ -133,12 +146,13 @@ export async function rig(
     repo: store.deploys,
     projects: { get: async () => ({ ...project }) },
     tasks: { get: (id) => tasks.get(id), landedCommits: () => landed },
-    git: {
+    git: real?.git ?? {
       tip: async () => tip.value,
-      whyNoTip: async () => "majhi could not read the project's base branch.",
+      heads: async () => ({ kind: "ready", commit: tip.value }),
       file: async () => undefined,
       list: async () => [],
     },
+    ...(real?.refresh === undefined ? {} : { refresh: real.refresh }),
     repoRef: async (_project, remote) => ({
       provider: remotes[remote ?? "origin"] ?? provider,
       slug: "acme/storefront",
@@ -148,6 +162,8 @@ export async function rig(
     publish: async ({ remote, branch, commit, actor }) => {
       published.push({ remote, commit, actor });
       if (refusePush.why !== undefined) return { ok: false, why: refusePush.why };
+      const pushed = await real?.push?.({ remote, branch, commit });
+      if (pushed !== undefined && !pushed.ok) return pushed;
       hosts.branches.set(`gitlab:acme/storefront:${branch}`, commit);
       hosts.addPipeline("acme/storefront", commit);
       return { ok: true };

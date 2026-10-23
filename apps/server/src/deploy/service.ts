@@ -21,8 +21,9 @@ import {
 import type { z } from "zod";
 import { classifyRemoteCommand } from "../connections/remote-command.ts";
 import { errorMessage, UserError } from "../errors.ts";
+import { mrRemoteName } from "../mrs/remote.ts";
 import type { DeployRepo } from "../store/deploys.ts";
-import { type DeployGit, envKeys } from "./git.ts";
+import { type DeployGit, type DeployHead, envKeys, type SyncHead, syncFact } from "./git.ts";
 import { gitlabVariableKeys } from "./gitlab.ts";
 import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
@@ -83,6 +84,11 @@ export interface DeployDeps {
   projects: { get(id: string): Promise<DeployProject> };
   tasks: { get(id: string): DeployTask | undefined; landedCommits(project: string): ReadonlySet<string> };
   git: DeployGit;
+  /**
+   * Reads the base branch of these remotes again from where they live, so a deploy decides from what they have now.
+   * A sentence when one could not be read (no sign-in, no route). Absent: the refs the project has are used as they are.
+   */
+  refresh?: (project: DeployProject, remotes: readonly string[], base: string) => Promise<string | undefined>;
   /** The host and repo of one of the project's remotes (default: the one merge requests go to). Undefined when it is not a host a provider reaches. */
   repoRef(project: DeployProject, remote?: string): Promise<RepoRef | undefined>;
   /** The project's card sets a test, build or lint command, so a commit no merge produced is unverified. */
@@ -156,6 +162,8 @@ export interface DeployRequest {
   confirmUnchecked?: boolean | undefined;
   /** The record this is a step of, when it is one. */
   record?: DeployRecord | undefined;
+  /** A deploy about to start: the remotes are read again first and waited for. A look at the plan never waits. */
+  fresh?: boolean | undefined;
 }
 
 /** What the caller already knows about a deploy, from the owner or from the case: kept on the record. */
@@ -171,9 +179,11 @@ export type Evaluated =
   | {
       ok: false;
       why: string;
-      kind: DeployRefusal["kind"] | "setup" | "unpushed";
+      kind: DeployRefusal["kind"] | "setup" | "unpushed" | "sync";
       /** For `unpushed`: the commit the host lacks, which `deploy` sends first. */
       commit?: string;
+      /** For `sync`: the deploy remote has commits the source lacks, and what they are. */
+      sync?: SyncHead;
     }
   | { ok: true; project: DeployProject; env: DeployEnvironment; ctx: DeployContext; unchecked: boolean };
 
@@ -181,6 +191,8 @@ export type Evaluated =
 const MAX_POLL_ERRORS = 5;
 /** How long the host's answer about a commit is kept: a board that reads every few seconds asks the host once. */
 const PREFLIGHT_KEEP_MS = 30_000;
+/** How old the remotes' refs may be before a look at the plan (not a click) reads them again in the background. */
+const BACKGROUND_REFRESH_MS = 5 * 60_000;
 
 const reasonOf = (err: unknown): string => {
   const text = err instanceof DeployProblem ? err.message : errorMessage(err);
@@ -236,11 +248,18 @@ export class DeployService {
     }
     const base = project.base;
     if (base === undefined) return { ok: false, kind: "setup", why: `${project.id} has no base branch.` };
-    const tip = await this.deps.git.tip(project.path, base);
-    const commit = req.commit ?? tip;
-    if (commit === undefined) {
-      return { ok: false, kind: "unreadable", why: await this.deps.git.whyNoTip(project.path, base) };
+    const head = await this.headOf(project, base, req.runs, req.fresh === true);
+    if (head.kind === "unreadable") return { ok: false, kind: "unreadable", why: head.why };
+    if (head.kind === "sync") {
+      return {
+        ok: false,
+        kind: "sync",
+        sync: head,
+        why: `${syncFact(head)}, so the merged work cannot be pushed there as it is.`,
+      };
     }
+    const tip = head.commit;
+    const commit = req.commit ?? tip;
     // The steps of the current plan before this one go first, each live. A step of an older plan does not count:
     // one that went out at another commit of this project, or that a later step of the same environment replaced.
     const before =
@@ -258,7 +277,6 @@ export class DeployService {
       actor,
       commit,
       tip,
-      tipWhy: tip === undefined ? await this.deps.git.whyNoTip(project.path, base) : undefined,
       landed: this.deps.tasks.landedCommits(project.id).has(commit),
       checksConfigured: await this.deps.checksConfigured(project.id),
       confirmUnchecked: req.confirmUnchecked === true,
@@ -272,6 +290,51 @@ export class DeployService {
     const missing = await this.hostLacks(ctx, req.runs);
     if (missing !== undefined) return { ok: false, ...missing, commit };
     return { ok: true, project, env, unchecked: deployIsUnchecked(facts), ctx };
+  }
+
+  /**
+   * The head a deploy ships: the base branch of the remote the task landed on, checked against the remotes the runs
+   * deploy on. The remotes are read again first (at most once in a while), never the owner's local branch.
+   */
+  private async headOf(
+    project: DeployProject,
+    base: string,
+    runs: readonly DeployRunStep[],
+    wait: boolean,
+  ): Promise<DeployHead> {
+    const source = mrRemoteName(project.remotes);
+    const deploy = [...new Set(runs.flatMap((r) => ("remote" in r ? [r.remote] : [])))];
+    const problem = await this.refreshed(project, [source, ...deploy], base, wait);
+    const head = await this.deps.git.heads(project.path, base, source, deploy);
+    // A remote that could not be read and has no copy here: say why, not only that the copy is missing.
+    return head.kind === "unreadable" && problem !== undefined ? { kind: "unreadable", why: problem } : head;
+  }
+
+  private readonly refreshing = new Map<string, { at: number; running: Promise<string | undefined> }>();
+
+  /**
+   * Reads the remotes' base again, once at a time. A deploy (the click) and the push wait for it, at most once every
+   * 30 seconds. A look at the plan (the board, the chores) never waits: it starts the read when the last one is five
+   * minutes old and goes on with the refs it has, so a slow or unreachable host never holds a screen.
+   */
+  private refreshed(
+    project: DeployProject,
+    remotes: readonly string[],
+    base: string,
+    wait: boolean,
+  ): Promise<string | undefined> {
+    const refresh = this.deps.refresh;
+    if (refresh === undefined) return Promise.resolve(undefined);
+    const names = [...new Set(remotes)];
+    const key = `${project.id}:${base}:${names.join(",")}`;
+    const at = this.deps.now().getTime();
+    const seen = this.refreshing.get(key);
+    if (seen !== undefined && at - seen.at < (wait ? PREFLIGHT_KEEP_MS : BACKGROUND_REFRESH_MS)) {
+      return wait ? seen.running : Promise.resolve(undefined);
+    }
+    const running = refresh(project, names, base).catch((err: unknown) => reasonOf(err));
+    this.refreshing.set(key, { at, running });
+    return wait ? running : Promise.resolve(undefined);
   }
 
   /** Asks the providers whether the host has the commit, once in a while for the same environment and commit. */
@@ -502,13 +565,13 @@ export class DeployService {
     ) {
       return { record: rec, repeat: true };
     }
-    let evaluated = await this.evaluate(req, actor, rest);
+    let evaluated = await this.evaluate({ ...req, fresh: true }, actor, rest);
     // A GitLab pipeline only has the commit once it is pushed there: send it, then look again.
     if (!evaluated.ok && evaluated.kind === "unpushed") {
       const sent = await this.publish(req, actor, hint.incidentFix === true);
       if (sent !== undefined) {
         if (!sent.ok) throw new UserError(sent.why, 409);
-        evaluated = await this.evaluate(req, actor, rest);
+        evaluated = await this.evaluate({ ...req, fresh: true }, actor, rest);
       }
     }
     if (!evaluated.ok) throw new UserError(evaluated.why, 409);
@@ -600,7 +663,9 @@ export class DeployService {
     if (publish === undefined) return undefined;
     const project = await this.deps.projects.get(req.project);
     if (project.base === undefined) return undefined;
-    const commit = req.commit ?? (await this.deps.git.tip(project.path, project.base));
+    const head =
+      req.commit === undefined ? await this.headOf(project, project.base, req.runs, true) : undefined;
+    const commit = req.commit ?? (head?.kind === "ready" ? head.commit : undefined);
     if (commit === undefined) return undefined;
     const remotes = new Set<string>();
     for (const run of req.runs) {

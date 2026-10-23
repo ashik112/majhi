@@ -127,16 +127,14 @@ export async function mergeBranch(req: MergeRequest): Promise<MergeOutcome> {
  * The files that would conflict if `branch` merged into `into` now, from `git merge-tree`, which
  * touches no checkout and no ref. Empty when it merges cleanly.
  */
-export async function mergeConflicts(source: string, branch: string, into: string): Promise<string[]> {
+export function mergeConflicts(source: string, branch: string, into: string): Promise<string[]> {
+  return conflictsBetween(source, `refs/heads/${into}`, `refs/heads/${branch}`);
+}
+
+/** The same for any two refs or commits: the files that conflict when `theirs` merges into `ours`. */
+export async function conflictsBetween(source: string, ours: string, theirs: string): Promise<string[]> {
   try {
-    await git(source, [
-      "merge-tree",
-      "--write-tree",
-      "--name-only",
-      "--no-messages",
-      `refs/heads/${into}`,
-      `refs/heads/${branch}`,
-    ]);
+    await git(source, ["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs]);
     return [];
   } catch (err) {
     // Exit 1 is "conflicts": the tree id, then one conflicted file per line. Anything else failed.
