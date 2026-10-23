@@ -7,8 +7,12 @@ import { parseLine, ShellParseError } from "../connections/shell.ts";
  * words), never from the text around it.
  */
 
-export const ONE_CLICK_DEPLOY =
-  "This project has a deploy majhi can run: plan the task's deploy with projects.planDeploy, and the owner deploys every target with one click (push, build, deploy, check), so do not push or play jobs one by one.";
+/** The card's line for the owner, and the sentence the captain hears with its refusal. */
+export const ONE_CLICK_DEPLOY = {
+  card: "This project deploys from the task with one click. Ask the captain to plan the deploy, and deploy every target from there.",
+  captain:
+    "This project has a deploy majhi can run: plan the task's deploy with projects.planDeploy, and the owner deploys every target with one click (push, build, deploy, check), so do not push or play jobs one by one.",
+} as const;
 
 /** What a project's deploy recipes go through: the remotes their runs name, and whether they play jobs. */
 export interface DeployFacts {
@@ -30,7 +34,7 @@ export function deployFactsOf(environments: readonly DeployEnvironment[]): Deplo
 }
 
 /** The sentence for a command that pushes to a remote the project deploys through, or plays a job; else undefined. */
-export function deployWayOf(command: string, facts: DeployFacts): string | undefined {
+export function deployWayOf(command: string, facts: DeployFacts): typeof ONE_CLICK_DEPLOY | undefined {
   if (facts.remotes.size === 0 && !facts.jobs) return undefined;
   let parsed: ReturnType<typeof parseLine>;
   try {

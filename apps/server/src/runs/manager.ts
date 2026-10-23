@@ -131,9 +131,10 @@ const LIMIT_CHECK_MS = 15_000;
 export const STREAMING_MS = 30_000;
 /**
  * A turn that heard nothing from its agent for this long is hung, not working: an update that waits for idle does
- * not wait for it. A tool that runs this long without a word is rare, and a cut turn continues after the update.
+ * not wait for it. Well above the longest wait majhi itself holds a tool call for (a case deploy waits up to 30
+ * minutes with the agent silent), and a cut turn continues after the update anyway.
  */
-export const HUNG_TURN_MS = 30 * 60_000;
+export const HUNG_TURN_MS = 2 * 60 * 60_000;
 
 export interface RunDeps {
   store: Store;
@@ -182,7 +183,9 @@ export interface RunDeps {
   /** Runs a command the owner allowed on a captain's card, in the captain's own sandbox. Resolves with the process id. */
   runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
   /** A better way to do what a raw push or job play asks, when the task's project has a deploy majhi runs. */
-  deployWay?: ((task: string, command: string) => Promise<string | undefined>) | undefined;
+  deployWay?:
+    | ((task: string, command: string) => Promise<{ card: string; captain: string } | undefined>)
+    | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**

@@ -505,7 +505,9 @@ export class TaskService {
     const now = this.now().getTime();
     const seen = new Set<string>();
     for (const { id, status } of this.deps.store.tasks.list(false)) {
-      if (status !== "running" || this.workingOf(id).length > 0 || !quiet(id)) continue;
+      // A task inside `start` (worktrees, memory) has no run yet: it is starting, not stale.
+      if (status !== "running" || this.starting.has(id) || this.workingOf(id).length > 0 || !quiet(id))
+        continue;
       seen.add(id);
       const since = this.stalledSince.get(id) ?? now;
       this.stalledSince.set(id, since);

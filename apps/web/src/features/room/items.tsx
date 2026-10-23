@@ -763,7 +763,7 @@ function Permission({
       }
       line={
         item.connection === undefined
-          ? (item.hint ?? toolLabel(item.title))
+          ? toolLabel(item.title)
           : destructive
             ? "This deletes or destroys something. Only you can approve it."
             : `This is a write: ${item.connection.why}.`
@@ -781,6 +781,7 @@ function Permission({
       ))}
       details={
         <>
+          {item.hint !== undefined && <p>{item.hint}</p>}
           {item.connection === undefined ? (
             <code className="font-mono break-words text-fg-soft">{toolLabel(item.title)}</code>
           ) : (
