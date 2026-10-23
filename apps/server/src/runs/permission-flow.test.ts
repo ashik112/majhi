@@ -167,3 +167,35 @@ describe("the captain never waits on a card", () => {
     expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("no");
   });
 });
+
+describe("a request majhi ends without an answer", () => {
+  const woken = (why: string) =>
+    `Your open permission request ended without an answer (${why}). Run it again if you still need it: majhi's rules may have changed, so it may now run without asking. If you no longer need it, answer in a line.`;
+
+  it("wakes the agent that asked once, in a task room when its session is replaced", async () => {
+    const t = flow();
+    void t.permissions.ask(t.runOf("ACM-8"), t.shell("git push origin main"), signal);
+    await tick();
+    expect(t.woken).toEqual([]);
+
+    t.permissions.dropOrphans(t.runOf("ACM-8"));
+    t.permissions.dropOrphans(t.runOf("ACM-8"));
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "cancelled" });
+    expect(t.woken).toEqual([woken("its session was replaced")]);
+  });
+
+  it("wakes the captain in its lane after a restart, once, though it never waited on the card", async () => {
+    const t = flow();
+    expect(await t.permissions.ask(t.runOf("CAP-1"), t.shell("git push origin main"), signal)).toBe("no");
+    void t.permissions.ask(t.runOf("ACM-8", { runId: 5 }), t.shell("git push origin main"), signal);
+    await tick();
+
+    t.permissions.recover();
+    expect(t.woken).toEqual([]);
+    t.permissions.wakeAfterRestart();
+    t.permissions.wakeAfterRestart();
+    // The lane's card and the task's card each end, and each agent is told once for its own room.
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "cancelled" });
+    expect(t.woken).toEqual([woken("majhi restarted"), woken("majhi restarted")]);
+  });
+});

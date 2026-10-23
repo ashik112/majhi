@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PermissionAsk } from "@majhi/acp";
 import {
   type AllowRule,
@@ -34,6 +35,9 @@ import { requestRisk } from "./request-risk.ts";
 import type { AgentRun } from "./run.ts";
 import { SandboxLog } from "./sandbox-log.ts";
 import { riskScopeOfTask } from "./shell-risk.ts";
+
+/** A permission card in the room. */
+type PermissionItem = Extract<RoomItem, { type: "permission" }>;
 
 /** The options majhi adds to a card, beside the agent's own. */
 const TASK_OPTION = `${MAJHI_OPTION_PREFIX}task`;
@@ -87,6 +91,8 @@ export class PermissionFlow {
   private readonly captainCards = new Map<string, CaptainCard>();
   /** Commands the owner allowed on a captain's card, until the captain asks again: `task agent command` to when. */
   private readonly grants = new Map<string, number>();
+  /** Requests the restart ended, until their agents are woken. */
+  private readonly restarted: PermissionItem[] = [];
 
   constructor(
     private readonly deps: {
@@ -471,6 +477,7 @@ export class PermissionFlow {
       if (item?.type === "permission" && item.state === "pending") {
         room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
         this.deps.onCardChange?.();
+        this.wake([item], "its run had ended");
       }
       throw new UserError("That question ended: the agent moved on. The card is closed.", 409);
     }
@@ -571,14 +578,62 @@ export class PermissionFlow {
    */
   dropOrphans(run: AgentRun): void {
     const { store, room } = this.deps;
-    let dropped = false;
+    const dropped: PermissionItem[] = [];
     for (const item of store.room.pendingPermissions()) {
       if (item.type !== "permission" || item.task !== run.task || item.agent !== run.agent) continue;
       if (run.pending.has(item.id) || this.captainCards.has(item.id)) continue;
       room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
-      dropped = true;
+      dropped.push(item);
     }
-    if (dropped) this.deps.onCardChange?.();
+    if (dropped.length === 0) return;
+    this.deps.onCardChange?.();
+    this.wake(dropped, "its session was replaced");
+  }
+
+  /**
+   * At server start: requests nobody can answer any more end, with one line per task in the room. The agents that
+   * asked are woken by `wakeAfterRestart` once everything is built.
+   */
+  recover(): void {
+    const { store, room } = this.deps;
+    const told = new Set<string>();
+    for (const item of store.room.pendingPermissions()) {
+      if (item.type !== "permission") continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      this.restarted.push(item);
+      // One line per task: why the request vanished.
+      if (told.has(item.task)) continue;
+      told.add(item.task);
+      room.post(item.task, `restart:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "majhi restarted, so the open permission request ended. The agent is told to ask again if it still needs it.",
+      });
+    }
+  }
+
+  /** Wakes the agents whose request the restart ended, once each. */
+  wakeAfterRestart(): void {
+    this.wake(this.restarted.splice(0), "majhi restarted");
+  }
+
+  /**
+   * An open request ended and nobody answered it: the agent that asked is woken with one line, through the same
+   * `notify` as any other wake. Once per agent and task; the cards are closed first, so a request is never woken
+   * twice. Not for a task that is done. The agent may no longer need it, and majhi's rules may have changed, so
+   * the command may now run without asking.
+   */
+  private wake(items: readonly PermissionItem[], why: string): void {
+    const { store, notify } = this.deps;
+    const seen = new Set<string>();
+    for (const { task: id, agent } of items) {
+      const key = `${id}\u0000${agent}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const task = store.tasks.get(id);
+      if (task === undefined || task.status === "done" || !task.team.includes(agent)) continue;
+      notify?.(id, agent, endedRequestLine(why));
+    }
   }
 
   cancelAll(run: AgentRun): void {
@@ -671,6 +726,10 @@ function toolWriteOf(writes: readonly GateWrite[]): ToolWrite | undefined {
 }
 
 const toolKey = (tool: ToolWrite): string => connectionToolKey(tool.connection, tool.name);
+
+/** What an agent is told when its open request ended without an answer. */
+export const endedRequestLine = (why: string): string =>
+  `Your open permission request ended without an answer (${why}). Run it again if you still need it: majhi's rules may have changed, so it may now run without asking. If you no longer need it, answer in a line.`;
 
 const grantKey = (task: string, agent: string, command: string): string =>
   `${task}\u0000${agent}\u0000${command}`;

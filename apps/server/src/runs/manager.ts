@@ -65,7 +65,7 @@ import {
 } from "./context.ts";
 import { buildCarry, checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
-import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
+import { handoffPayload, ItemMapper, ownerPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
 import { handedOffLine, limitPauseText } from "./limit.ts";
 import { capacityOf, globalCap, type Limits, runsTotal, Slots } from "./limits.ts";
@@ -371,21 +371,13 @@ export class RunManager {
 
   /** At server start: runs that were live are over, and prompts nobody can answer any more are cancelled. */
   recover(): void {
-    const { store, room } = this.deps;
-    store.runs.endAllLive("server-restart", this.now().toISOString());
-    const told = new Set<string>();
-    for (const item of store.room.pendingPermissions()) {
-      if (item.type !== "permission") continue;
-      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
-      // One line per task: why the request vanished.
-      if (told.has(item.task)) continue;
-      told.add(item.task);
-      room.post(item.task, `restart:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: "majhi restarted, so the open permission request ended. The agent asks again if it still needs it.",
-      });
-    }
+    this.deps.store.runs.endAllLive("server-restart", this.now().toISOString());
+    this.permissions.recover();
+  }
+
+  /** The agents whose permission request the restart ended are woken, once each. Called when everything is built. */
+  wakeAfterRestart(): void {
+    this.permissions.wakeAfterRestart();
   }
 
   /** True when the agent is queued, starting, working or waiting in any task. */

@@ -1,9 +1,16 @@
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import type { Harness } from "../testing/harness.ts";
 
 let w: BossWorld | undefined;
+let extra: Harness | undefined;
 afterEach(async () => {
+  if (extra !== undefined) {
+    await extra.majhi.services.runs.closeAll();
+    await extra.majhi.close();
+    extra = undefined;
+  }
   await w?.cleanup();
   w = undefined;
 });
@@ -75,5 +82,48 @@ describe("the captain in a workspace lane never waits on a card", () => {
     const heard = JSON.stringify(h.runtime.sessions.map((s) => s.prompts));
     expect(heard).not.toContain("could not start it for you");
     expect(heard).not.toContain("Run it again now");
+  });
+
+  it("wakes the captain after a restart ended its open request, once", async () => {
+    w = await bossWorld({ real: false });
+    const { h } = w;
+    const { services } = h.majhi;
+    expect((await h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
+    expect((await h.cmd("autonomy.start", { until: null })).status).toBe(200);
+    const lane = await services.autonomy.laneChat("acme");
+    if (lane === undefined) throw new Error("no lane for Acme");
+    let outcome: string | undefined = "not asked";
+    h.runtime.onSession = (session) => {
+      session.script = async (turn) => {
+        if (JSON.stringify(turn.blocks).includes("run the check")) {
+          outcome = await turn.ask({
+            title: LINE,
+            kind: "execute",
+            command: LINE,
+            toolCallId: "t1",
+            options: [
+              { id: "allow", name: "Allow", kind: "allow_once" },
+              { id: "reject", name: "Deny", kind: "reject_once" },
+            ],
+          });
+        }
+        return "end_turn";
+      };
+    };
+    services.runs.notify(lane, "boss", "run the check");
+    await w.until(() => outcome !== "not asked", "the captain's call to be answered");
+    expect((await w.items(lane)).find((i) => i.type === "permission")).toMatchObject({ state: "pending" });
+
+    // majhi dies with the card open: a second server opens the same home.
+    const before = h.runtime.sessions.length;
+    extra = h.restart();
+    const heard = () => JSON.stringify(h.runtime.sessions.slice(before).map((s) => s.prompts));
+    await w.until(() => heard().includes("ended without an answer"), "the captain to be told");
+    await extra.majhi.services.runs.idle();
+    expect(heard().split("ended without an answer")).toHaveLength(2);
+    const page = await extra.cmd("room.items", { task: lane, limit: 500 });
+    expect((page.body.items as RoomItem[]).find((i) => i.type === "permission")).toMatchObject({
+      state: "cancelled",
+    });
   });
 });

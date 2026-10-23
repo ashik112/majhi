@@ -2828,6 +2828,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   captain.boot();
   // What waited on a task that finished or was removed while majhi was off closes now.
   staleCards?.sweep();
+  // The agents whose permission request the restart ended are told, now that everything a run needs is built.
+  runs.wakeAfterRestart();
   autonomy.prunePlan();
   background.run(
     () => autonomy.boot(),
