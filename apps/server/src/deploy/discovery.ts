@@ -1,7 +1,7 @@
 import type { CommandMeta, DeployEnvironment } from "@majhi/shared";
 import { readCiFiles } from "../ci/read.ts";
 import type { ProjectInfo } from "../projects/service.ts";
-import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
+import { type Discovered, type DiscoverInput, discoverEnvironments } from "./discover.ts";
 import type { DeployGit } from "./git.ts";
 import type { RepoRef } from "./types.ts";
 
@@ -26,6 +26,10 @@ export interface DiscoveryDeps {
   repoRef(project: ProjectInfo, remote?: string): Promise<RepoRef | undefined>;
   /** The remote the runs name: the one merge requests go to. */
   remoteOf(project: ProjectInfo): string;
+  /** The names of the project's git remotes. */
+  remotes(project: ProjectInfo): Promise<string[]>;
+  /** When the host that deploys an environment last deployed it successfully (an ISO time), read from that host. */
+  lastDeploy(project: ProjectInfo, env: DeployEnvironment): Promise<string | undefined>;
   /** One line for the workspace's log: what was found and where. */
   said(org: string, text: string): void;
 }
@@ -66,10 +70,59 @@ function sameRecipe(a: DeployEnvironment["recipe"], b: DeployEnvironment["recipe
   return bare(a) === bare(b);
 }
 
+/**
+ * An environment that two remotes both describe (a GitHub workflow and a GitLab job for the same target) is deployed by
+ * one of them. The owner's answer, kept on the environment, decides first; else the remote whose host has the most
+ * recent successful deploy of it; a host with no deploy of it loses to one that has. With no history on either side the
+ * environment keeps the first remote's recipe and asks once which one deploys it.
+ */
+const DEPLOY_VIA = "deploy-via";
+
 export class DeployDiscovery {
   private readonly running = new Map<string, Promise<DiscoveryResult>>();
 
   constructor(private readonly deps: DiscoveryDeps) {}
+
+  private async whichDeploys(
+    project: ProjectInfo,
+    name: string,
+    candidates: readonly { remote: string; env: DeployEnvironment }[],
+  ): Promise<DeployEnvironment> {
+    const [first] = candidates;
+    if (first === undefined) throw new Error("An environment has no remote");
+    if (candidates.length === 1) return first.env;
+    const kept = project.deploy.find((e) => e.env === name)?.recipe?.answers[DEPLOY_VIA];
+    const chosen = candidates.find((c) => c.remote === kept);
+    if (chosen !== undefined) return chosen.env;
+    const dated: { env: DeployEnvironment; at: number }[] = [];
+    for (const c of candidates) {
+      const when = await this.deps.lastDeploy(project, c.env).catch(() => undefined);
+      const at = when === undefined ? Number.NaN : Date.parse(when);
+      if (!Number.isNaN(at)) dated.push({ env: c.env, at });
+    }
+    const newest = dated.reduce<{ env: DeployEnvironment; at: number } | undefined>(
+      (best, d) => (best === undefined || d.at > best.at ? d : best),
+      undefined,
+    );
+    if (newest !== undefined) return newest.env;
+    const remotes = candidates.map((c) => c.remote);
+    const recipe = first.env.recipe;
+    if (recipe === undefined) return first.env;
+    return {
+      ...first.env,
+      recipe: {
+        ...recipe,
+        asks: [
+          ...recipe.asks,
+          {
+            key: DEPLOY_VIA,
+            question: `${name} is described by ${remotes.join(" and ")}, and neither has deployed it yet. Which one deploys it?`,
+            options: remotes.slice(0, 8),
+          },
+        ],
+      },
+    };
+  }
 
   /** Reads the CI of the project and saves its new environments. One read per project at a time. */
   run(projectId: string): Promise<DiscoveryResult> {
@@ -86,8 +139,16 @@ export class DeployDiscovery {
     if (!project.exists || project.base === undefined) {
       return { ...none, skipped: `${projectId} has no checkout or base branch to read` };
     }
-    const repo = await this.deps.repoRef(project);
-    if (repo === undefined)
+    // Every remote on a host majhi deploys through: a project can build on one host and deploy on another (its GitHub
+    // `origin` and a `gitlab` remote whose pipeline holds the production jobs). The merge request remote reads first.
+    const mr = this.deps.remoteOf(project);
+    const names = [mr, ...(await this.deps.remotes(project)).filter((n) => n !== mr)];
+    const hosts: { remote: string; provider: RepoRef["provider"] }[] = [];
+    for (const remote of names) {
+      const repo = await this.deps.repoRef(project, remote);
+      if (repo !== undefined) hosts.push({ remote, provider: repo.provider });
+    }
+    if (hosts.length === 0)
       return { ...none, skipped: `${projectId} has no remote on a host majhi deploys through` };
     const tip = await this.deps.git.tip(project.path, project.base);
     if (tip === undefined) return { ...none, skipped: `${projectId} has no single head on ${project.base}` };
@@ -95,14 +156,28 @@ export class DeployDiscovery {
       read: (rel) => this.deps.git.file(project.path, tip, rel),
       list: (rel) => this.deps.git.list(project.path, tip, rel),
     });
-    const input: DiscoverInput = {
-      files,
-      base: project.base,
-      provider: repo.provider,
-      remote: this.deps.remoteOf(project),
-      folders: await foldersOf(this.deps.git, project.path, tip),
-    };
-    const found = discoverEnvironments(input);
+    const folders = await foldersOf(this.deps.git, project.path, tip);
+    const found: Discovered = { environments: [], notes: [] };
+    // What each remote says about each environment, in the order the environments first appear.
+    const said = new Map<string, { remote: string; env: DeployEnvironment }[]>();
+    for (const host of hosts) {
+      const input: DiscoverInput = {
+        files,
+        base: project.base,
+        provider: host.provider,
+        remote: host.remote,
+        folders,
+        read: (rel) => this.deps.git.file(project.path, tip, rel),
+      };
+      const one = await discoverEnvironments(input);
+      for (const env of one.environments)
+        said.set(env.env, [...(said.get(env.env) ?? []), { remote: host.remote, env }]);
+      found.notes.push(...one.notes);
+    }
+    // An environment is listed once. When several remotes describe it, the one that deploys it wins.
+    for (const [name, candidates] of said) {
+      found.environments.push(await this.whichDeploys(project, name, candidates));
+    }
 
     const next = [...project.deploy];
     const added: string[] = [];

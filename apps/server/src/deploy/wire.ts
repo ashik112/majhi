@@ -9,6 +9,7 @@ import { auditActor, auditDetail } from "../audit.ts";
 import type { DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
+import { git } from "../git/git.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 import { remoteUrl } from "../mrs/push.ts";
 import { mrHostOf, mrRemoteName, realHostOf, repoSlug } from "../mrs/remote.ts";
@@ -25,7 +26,7 @@ import { createGitHubProvider } from "./github.ts";
 import { createGitLabProvider } from "./gitlab.ts";
 import type { NothingDeploys } from "./nothing.ts";
 import { DeployPlanner } from "./plan.ts";
-import { type DeployProject, DeployService } from "./service.ts";
+import { type DeployDeps, type DeployProject, DeployService } from "./service.ts";
 import { createSshProvider } from "./ssh.ts";
 import type { ProviderDeps, Providers, RepoRef } from "./types.ts";
 import { createVercelProvider } from "./vercel.ts";
@@ -80,6 +81,8 @@ export interface DeployWorldDeps {
   fetch?: Fetch | undefined;
   remote?: RemoteRunFn | undefined;
   vercelApi?: string | undefined;
+  /** Sends the base branch to a remote that deploys (a fast-forward, never forced) when it lacks the commit. */
+  publish?: DeployDeps["publish"] | undefined;
   timing?: Partial<DeployTiming> | undefined;
   now?: (() => Date) | undefined;
 }
@@ -199,6 +202,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     checksConfigured: deps.checksConfigured,
     providers,
     providerDeps,
+    ...(deps.publish === undefined ? {} : { publish: deps.publish }),
     looks: {
       health: async (url) => {
         try {
@@ -351,6 +355,12 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     git: deployGit,
     repoRef: (p, remote) => repoRef(projectOf(p), remote),
     remoteOf: (p) => mrRemoteName(p.remotes),
+    remotes: async (p) =>
+      (await git(p.path, ["remote"]).catch(() => ""))
+        .split("\n")
+        .map((n) => n.trim())
+        .filter((n) => n !== ""),
+    lastDeploy: (p, env) => service.lastDeployAt(projectOf(p), env),
     said: (org, text) => deps.said?.(org, text),
   });
 

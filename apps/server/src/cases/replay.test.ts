@@ -638,7 +638,7 @@ describe("the case replay when the project's deploy needs an answer", () => {
     const r = await replayWorld(codeBugHost({ value: false }));
     const { services } = r;
     // The project deploys from its CI, and nothing says which version the environment runs now.
-    const found = discoverEnvironments({
+    const found = await discoverEnvironments({
       files: await acmeShopCi(),
       base: "main",
       provider: "github",

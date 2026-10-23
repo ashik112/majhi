@@ -1030,6 +1030,46 @@ export class MrService {
     }
   }
 
+  /**
+   * Sends a project's base branch to one of its remotes, so the host that deploys has the commit. Never forced: the
+   * remote takes it as a fast-forward or the push is refused. The owner's checkout must have the branch at `commit`
+   * (what a merge left there), because a push sends the whole branch. A remote that has the commit already is not pushed to.
+   */
+  async pushBase(
+    projectId: string,
+    remote: string,
+    branch: string,
+    commit: string,
+  ): Promise<{ ok: true; pushed: boolean } | { ok: false; why: string }> {
+    try {
+      const project = await this.deps.projects.get(projectId);
+      const here = await git(project.path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).then(
+        (s) => s.trim(),
+        () => undefined,
+      );
+      if (here !== commit) {
+        return {
+          ok: false,
+          why: `${project.id} has ${branch} at ${here?.slice(0, 7) ?? "nothing"} here, not at ${commit.slice(0, 7)}, so majhi cannot push ${commit.slice(0, 7)} to ${remote}.`,
+        };
+      }
+      const target = await this.pushTarget({ project: projectId, source: project.path }, remote);
+      const request = {
+        worktree: project.path,
+        remote: target.remote,
+        branch,
+        url: target.pushUrl,
+        viaHost: this.hostPusher(target.viaHost, project.path, target.org),
+        reloadKeys: this.deps.reloadKeys,
+      };
+      if (await remoteHasTip(request)) return { ok: true, pushed: false };
+      await pushBranch(request);
+      return { ok: true, pushed: true };
+    } catch (err) {
+      return { ok: false, why: pushFailure(err, remote, branch) };
+    }
+  }
+
   /** The push function for an https route, or undefined for SSH and plain remotes. */
   private hostPusher(
     viaHost: boolean,

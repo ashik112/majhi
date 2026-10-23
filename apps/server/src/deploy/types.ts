@@ -1,4 +1,11 @@
-import type { DeployEnvironment, DeployKind, DeployRunStep, LiveSource, RunNamePart } from "@majhi/shared";
+import type {
+  DeployEnvironment,
+  DeployKind,
+  DeployRecipe,
+  DeployRunStep,
+  LiveSource,
+  RunNamePart,
+} from "@majhi/shared";
 import type { RemoteRunFn } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 
@@ -64,6 +71,11 @@ export interface DeployProvider {
   redeploy?(ctx: DeployContext, step: DeployRunStep, previous: PreviousDeploy): Promise<RunHandle>;
   /** What the environment runs now, read from the host, when the recipe says where to look. Absent: this host cannot say. */
   liveVersion?(ctx: DeployContext, source: LiveSource): Promise<LiveVersion | undefined>;
+  /**
+   * When the environment was last deployed successfully, as this host says (an ISO time), from the recipe's own pointers
+   * (its title or its environment). Absent: this host cannot say. Undefined: it has no deploy of it.
+   */
+  lastDeploy?(ctx: DeployContext, recipe: DeployRecipe): Promise<string | undefined>;
   /** The versions the build's recent runs were given, read from their titles. Absent: this host cannot say. */
   builtVersions?(
     ctx: DeployContext,

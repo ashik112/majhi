@@ -161,11 +161,27 @@ export function withRollback(record: CaseRecord, rollback: CaseRollback): CaseRe
   return { ...record, rollback, changes: record.changes + 1 };
 }
 
-/** The deploy a rollback goes back from: the last one of the case, when it went live and nothing rolled it back. */
+/**
+ * The deploys a rollback goes back from: each environment the case put live (its latest deploy that went live), the
+ * last one first. Empty once the case rolled back, and when nothing went live. An environment that failed was put back
+ * by the deploy service when it failed.
+ */
+export function rollbackTargets(record: CaseRecord): CaseDeploy[] {
+  if (record.rollback !== undefined) return [];
+  const seen = new Set<string>();
+  const out: CaseDeploy[] = [];
+  for (const deploy of [...(record.deploys ?? [])].reverse()) {
+    const key = `${deploy.project}:${deploy.env}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (deploy.state === "live" && deploy.record !== undefined) out.push(deploy);
+  }
+  return out;
+}
+
+/** The deploy a rollback goes back from first: the last environment the case put live. */
 export function rollbackTarget(record: CaseRecord): CaseDeploy | undefined {
-  if (record.rollback !== undefined) return undefined;
-  const last = record.deploys?.at(-1);
-  return last?.state === "live" && last.record !== undefined ? last : undefined;
+  return rollbackTargets(record)[0];
 }
 
 /** The version or the commit, short enough to read in a line: a whole commit is cut to seven letters, a tag is not. */
@@ -188,6 +204,13 @@ export function closingLines(record: CaseRecord): string[] {
         ? `Rolled back to ${shortVersion(record.rollback.to)}.`
         : `Tried to roll back to ${shortVersion(record.rollback.to)}: it did not work.`,
     );
+    for (const also of record.rollback.also ?? []) {
+      lines.push(
+        also.ok
+          ? `Rolled ${also.env} back to ${shortVersion(also.to)}.`
+          : `Tried to roll ${also.env} back to ${shortVersion(also.to)}: it did not work.`,
+      );
+    }
   }
   return lines;
 }

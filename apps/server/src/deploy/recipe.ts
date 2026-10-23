@@ -57,34 +57,90 @@ export function bindRuns(
 ): { runs: DeployRunStep[]; missing: string[] } {
   const missing: string[] = [];
   const out = runs.map((step): DeployRunStep => {
-    if (step.kind !== "github-workflow" || step.bind === undefined) return step;
-    const inputs: Record<string, string> = { ...step.inputs };
-    const left: Record<string, InputBinding> = {};
-    for (const [name, binding] of Object.entries(step.bind)) {
-      const value = bindingValue(binding, facts);
-      if (value === undefined) {
-        missing.push(`${name} needs ${binding}`);
-        left[name] = binding;
-      } else inputs[name] = value;
+    if (step.kind === "github-workflow") {
+      const filled = fillBinds(step.bind, step.inputs, facts, missing);
+      const { bind: _all, inputs: _old, ...rest } = step;
+      return {
+        ...rest,
+        ...(Object.keys(filled.values).length === 0 ? {} : { inputs: filled.values }),
+        ...(Object.keys(filled.left).length === 0 ? {} : { bind: filled.left }),
+      };
     }
-    const { bind: _all, inputs: _old, ...rest } = step;
-    return {
-      ...rest,
-      ...(Object.keys(inputs).length === 0 ? {} : { inputs }),
-      ...(Object.keys(left).length === 0 ? {} : { bind: left }),
-    };
+    if (step.kind === "gitlab-job") {
+      const filled = fillBinds(step.bind, step.variables, facts, missing);
+      const { bind: _all, variables: _old, ...rest } = step;
+      return {
+        ...rest,
+        ...(Object.keys(filled.values).length === 0 ? {} : { variables: filled.values }),
+        ...(Object.keys(filled.left).length === 0 ? {} : { bind: filled.left }),
+      };
+    }
+    return step;
   });
   return { runs: out, missing };
+}
+
+/** The values a run's binds give, and the binds the facts cannot fill yet. */
+function fillBinds(
+  bind: Readonly<Record<string, InputBinding>> | undefined,
+  given: Readonly<Record<string, string>> | undefined,
+  facts: BindFacts,
+  missing: string[],
+): { values: Record<string, string>; left: Record<string, InputBinding> } {
+  const values: Record<string, string> = { ...given };
+  const left: Record<string, InputBinding> = {};
+  for (const [name, binding] of Object.entries(bind ?? {})) {
+    const value = bindingValue(binding, facts);
+    if (value === undefined) {
+      missing.push(`${name} needs ${binding}`);
+      left[name] = binding;
+    } else values[name] = value;
+  }
+  return { values, left };
+}
+
+/** The binds of a run, whatever kind of run it is. */
+function bindOf(step: DeployRunStep): Readonly<Record<string, InputBinding>> | undefined {
+  return step.kind === "github-workflow" || step.kind === "gitlab-job" ? step.bind : undefined;
 }
 
 /** Every input name a recipe's runs bind to the given source, over its deploy and rollback runs. */
 export function bindsOf(runs: readonly DeployRunStep[], binding: InputBinding): string[] {
   const names: string[] = [];
   for (const step of runs) {
-    if (step.kind !== "github-workflow" || step.bind === undefined) continue;
-    for (const [name, b] of Object.entries(step.bind)) if (b === binding) names.push(name);
+    for (const [name, b] of Object.entries(bindOf(step) ?? {})) if (b === binding) names.push(name);
   }
   return names;
+}
+
+/** Whether a run builds the version majhi picks: it binds an input to `next-version`. */
+export function isBuild(step: DeployRunStep): boolean {
+  return Object.values(bindOf(step) ?? {}).includes("next-version");
+}
+
+/**
+ * The runs of a deploy with no build and no version sent: for the parts of a project that deploy no image (a front
+ * end).
+ */
+export function withoutVersion(runs: readonly DeployRunStep[]): DeployRunStep[] {
+  return runs
+    .filter((step) => !isBuild(step))
+    .map((step) => {
+      const bind = bindOf(step);
+      if (bind === undefined) return step;
+      const kept = Object.fromEntries(
+        Object.entries(bind).filter(([, b]) => b !== "built-version" && b !== "previous-version"),
+      );
+      if (step.kind === "github-workflow") {
+        const { bind: _b, ...rest } = step;
+        return Object.keys(kept).length === 0 ? rest : { ...rest, bind: kept };
+      }
+      if (step.kind === "gitlab-job") {
+        const { bind: _b, ...rest } = step;
+        return Object.keys(kept).length === 0 ? rest : { ...rest, bind: kept };
+      }
+      return step;
+    });
 }
 
 /** The version a set of dispatched inputs put live: the first input the runs bound to a version. */
@@ -93,8 +149,7 @@ export function versionPutLive(
   sent: readonly (Record<string, string> | undefined)[],
 ): string | undefined {
   for (const [i, step] of steps.entries()) {
-    if (step.kind !== "github-workflow" || step.bind === undefined) continue;
-    for (const [name, binding] of Object.entries(step.bind)) {
+    for (const [name, binding] of Object.entries(bindOf(step) ?? {})) {
       if (binding !== "built-version" && binding !== "previous-version" && binding !== "next-version")
         continue;
       const value = sent[i]?.[name];
@@ -102,6 +157,42 @@ export function versionPutLive(
     }
   }
   return undefined;
+}
+
+/** What a run sends: a workflow's inputs, a job's variables. */
+export function sentOf(run: DeployRunStep): Record<string, string> | undefined {
+  return run.kind === "github-workflow" ? run.inputs : run.kind === "gitlab-job" ? run.variables : undefined;
+}
+
+/** The version a deploy sent, wherever it was sent: any input the recipe binds to the version a build made. */
+export function versionSent(
+  recipe: DeployRecipe,
+  sent: readonly (Record<string, string> | undefined)[],
+): string | undefined {
+  const names = [...bindsOf(recipe.deploy, "built-version"), ...bindsOf(recipe.deploy, "next-version")];
+  for (const inputs of [...sent].reverse()) {
+    for (const name of names) {
+      const value = inputs?.[name];
+      if (value !== undefined && value !== "") return value;
+    }
+  }
+  return undefined;
+}
+
+/** The option of the recipe's parts input that a deploy sent, read back from what its runs sent. */
+export function deployedComponents(
+  recipe: DeployRecipe,
+  sent: readonly (Record<string, string> | undefined)[],
+): string | undefined {
+  for (const name of bindsOf(recipe.deploy, "components")) {
+    for (const inputs of sent) if (inputs?.[name] !== undefined) return inputs[name];
+  }
+  return undefined;
+}
+
+/** Whether the part is one that deploys no image: it has no version, so it goes back by commit. */
+export function isVersionless(recipe: DeployRecipe, option: string | undefined): boolean {
+  return option !== undefined && (recipe.components?.versionless ?? []).includes(option);
 }
 
 /**
@@ -199,37 +290,72 @@ export function commitOfVersion(recipe: DeployRecipe, version: string): string |
   return rest.length === 40 ? rest : undefined;
 }
 
-/** `1.4.7` as numbers; undefined for anything that is not exactly three numbers (a tag, a commit, `1.4`). */
-export function parseVersion(version: string): [number, number, number] | undefined {
-  const pieces = version.split(".");
-  if (pieces.length !== 3) return undefined;
-  const nums = pieces.map((p) =>
-    p !== "" && [...p].every((c) => c >= "0" && c <= "9") ? Number(p) : Number.NaN,
-  );
-  const [major, minor, patch] = nums;
-  if (major === undefined || minor === undefined || patch === undefined) return undefined;
-  return Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)
-    ? undefined
-    : [major, minor, patch];
+/** A version tag read by its characters: the text before its three numbers, the numbers, and the text after them. */
+export interface TagParts {
+  prefix: string;
+  numbers: [number, number, number];
+  suffix: string;
 }
 
-/** The next patch after the highest `X.Y.Z` among the versions. Undefined when none is one. */
+const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
+
+/**
+ * `pyzasoft-1.2.3` is `pyzasoft-`, 1, 2, 3 and nothing after. The numbers are the last three runs of digits that are
+ * joined by single dots; anything else in the tag is kept as it is. Undefined when the tag has no such three numbers
+ * (a commit, `1.4`, `latest`).
+ */
+export function parseTag(tag: string): TagParts | undefined {
+  const runs: { start: number; end: number }[] = [];
+  for (let i = 0; i < tag.length; i++) {
+    if (!isDigit(tag[i])) continue;
+    const start = i;
+    while (isDigit(tag[i + 1])) i++;
+    runs.push({ start, end: i + 1 });
+  }
+  for (let at = runs.length - 3; at >= 0; at--) {
+    const [x, y, z] = [runs[at], runs[at + 1], runs[at + 2]];
+    if (x === undefined || y === undefined || z === undefined) continue;
+    if (tag[x.end] !== "." || y.start !== x.end + 1 || tag[y.end] !== "." || z.start !== y.end + 1) continue;
+    return {
+      prefix: tag.slice(0, x.start),
+      numbers: [
+        Number(tag.slice(x.start, x.end)),
+        Number(tag.slice(y.start, y.end)),
+        Number(tag.slice(z.start, z.end)),
+      ],
+      suffix: tag.slice(z.end),
+    };
+  }
+  return undefined;
+}
+
+function newer(a: [number, number, number], b: [number, number, number]): boolean {
+  return a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+}
+
+/**
+ * The next patch after the highest version of the same shape: the tag keeps its prefix and suffix, so `pyzasoft-1.2.3`
+ * is followed by `pyzasoft-1.2.4`. The shape is the one of `like` (what the target runs now) when it has one; else the
+ * shape of the highest version known. Undefined when no known version has the shape.
+ */
 export function nextPatch(
   versions: readonly (string | undefined)[],
+  like?: string | undefined,
 ): { version: string; after: string } | undefined {
-  let best: { at: [number, number, number]; text: string } | undefined;
+  const shape = like === undefined ? undefined : parseTag(like);
+  let best: { parts: TagParts; text: string } | undefined;
   for (const text of versions) {
-    const at = text === undefined ? undefined : parseVersion(text);
-    if (text === undefined || at === undefined) continue;
-    const higher =
-      best === undefined ||
-      at[0] > best.at[0] ||
-      (at[0] === best.at[0] && (at[1] > best.at[1] || (at[1] === best.at[1] && at[2] > best.at[2])));
-    if (higher) best = { at, text };
+    const parts = text === undefined ? undefined : parseTag(text);
+    if (text === undefined || parts === undefined) continue;
+    if (shape !== undefined && (parts.prefix !== shape.prefix || parts.suffix !== shape.suffix)) continue;
+    if (best === undefined || newer(parts.numbers, best.parts.numbers)) best = { parts, text };
   }
-  return best === undefined
-    ? undefined
-    : { version: `${best.at[0]}.${best.at[1]}.${best.at[2] + 1}`, after: best.text };
+  if (best === undefined) return undefined;
+  const [major, minor, patch] = best.parts.numbers;
+  return {
+    version: `${best.parts.prefix}${major}.${minor}.${patch + 1}${best.parts.suffix}`,
+    after: best.text,
+  };
 }
 
 /**

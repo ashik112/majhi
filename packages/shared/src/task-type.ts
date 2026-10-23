@@ -182,12 +182,26 @@ export const CaseDeploySchema = z.object({
 });
 export type CaseDeploy = z.infer<typeof CaseDeploySchema>;
 
-/** The one rollback a case may make by itself, to the version the last deploy replaced. */
+/**
+ * The one rollback a case may make by itself: every environment the case put live goes back to what it replaced, the
+ * last one first. `record`, `to` and `ok` are the first of them; `also` holds the others, each with its own result.
+ */
 export const CaseRollbackSchema = z.object({
   at: z.string(),
   record: z.number().int().positive(),
   to: z.string().max(64),
   ok: z.boolean(),
+  also: z
+    .array(
+      z.object({
+        env: z.string().max(80),
+        record: z.number().int().positive(),
+        to: z.string().max(64),
+        ok: z.boolean(),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 export type CaseRollback = z.infer<typeof CaseRollbackSchema>;
 
