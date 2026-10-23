@@ -581,7 +581,15 @@ export class MrService {
           dirty.slice(0, 5),
         );
       }
-      if (repo.mr?.state === "merged") {
+      // A merged request with work on the branch after it (a reopened task, the deploy remote brought in) is not
+      // done: that work goes in a new request. Only a branch with nothing past the base is skipped.
+      const mergedBefore = repo.mr?.state === "merged";
+      if (
+        mergedBefore &&
+        (await commitsAhead(repo.source, targets.get(repo.project) ?? repo.base, ctx.remote, repo.branch).catch(
+          () => 0,
+        )) === 0
+      ) {
         plans.push({ ctx, skip: "Its merge request is already merged." });
         continue;
       }
@@ -595,7 +603,7 @@ export class MrService {
       }
       const base = targets.get(repo.project) ?? repo.base;
       const ahead = await commitsAhead(repo.source, base, ctx.remote, repo.branch).catch(() => 0);
-      const hasMr = repo.mr !== undefined;
+      const hasMr = repo.mr !== undefined && !mergedBefore;
       plans.push(
         ahead === 0 && !hasMr
           ? {
