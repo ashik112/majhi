@@ -93,15 +93,6 @@ export class DeploySync {
     // read, the copy the plan was made from is the one the agent gets: the same refs, so the job still holds.
     await this.deps.refresh(held.project, [sync.deployRemote], sync.base).catch(() => undefined);
     const task = found.status === "done" ? await this.deps.tasks.reopen(found.id) : found;
-    this.deps.note(
-      task.id,
-      `deploy-sync:${held.project}:${sync.sourceTip}:${sync.deployTip}`,
-      "info",
-      `${syncFact(sync)}. The deploy waits for them: @${lead} brings ${sync.deployRemote}/${sync.base} into ${repo.branch}, then the task lands again and deploys.`,
-    );
-    await this.deps.tasks.setStatusLines(task.id, {
-      now: `Bringing ${sync.deployRemote}/${sync.base} into ${repo.branch} so the work can deploy`,
-    });
     await this.deps.tasks.send({
       task: task.id,
       text: syncJob(sync, repo.branch),
@@ -109,5 +100,18 @@ export class DeploySync {
       mode: "queue",
       by: "majhi",
     });
+    // The room and the task's Now line say it only once the lead has the job: a send that failed says nothing here.
+    this.deps.note(
+      task.id,
+      `deploy-sync:${held.project}:${sync.sourceTip}:${sync.deployTip}`,
+      "info",
+      `${syncFact(sync)}. The deploy waits for them: @${lead} brings ${sync.deployRemote}/${sync.base} into ${repo.branch}, then the task lands again and deploys.`,
+    );
+    // Only a label: the job is sent, so a failure here must not make the caller send it again.
+    await this.deps.tasks
+      .setStatusLines(task.id, {
+        now: `Bringing ${sync.deployRemote}/${sync.base} into ${repo.branch} so the work can deploy`,
+      })
+      .catch(() => undefined);
   }
 }
