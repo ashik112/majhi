@@ -4208,7 +4208,9 @@ export class TaskService {
       return;
     }
     if (!task.team.includes(p.agent)) return;
-    if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
+    // A chat (the captain's lane too) has no running status: it stays in the inbox, and its agent is woken all the same.
+    const alive = task.kind === "chat" || task.status === "running" || task.status === "review";
+    if (!alive && task.status !== "paused") return;
     if (task.status === "paused" && this.waitsForOwner(task.id)) return;
     if (task.status === "review") {
       await this.lifecycle.apply(

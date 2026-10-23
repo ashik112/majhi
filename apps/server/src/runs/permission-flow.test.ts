@@ -148,4 +148,22 @@ describe("the captain never waits on a card", () => {
       expect(await t.permissions.ask(t.runOf(task), t.shell("git push origin release"), signal)).toBe("no");
     },
   );
+
+  it("is refused at once on a gated connection write too, keeps the card, and an Allow lets that call through once", async () => {
+    const t = flow();
+    const call = () => t.ask("mcp__acme-obs__restart_service");
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("no");
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending", risk: "client-server-write" });
+    expect(t.deferred.take("CAP-1", "acme-claude")).toHaveLength(1);
+
+    t.permissions.answer(undefined, "CAP-1", "perm:4:1", "once");
+    await tick();
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "answered", chosen: "once" });
+    // An MCP tool call has no command line for majhi to run, so the captain makes it again and it goes through once.
+    expect(t.woken).toEqual([
+      "The owner allowed `mcp__acme-obs__restart_service`. Make the call again now: it goes ahead once without asking.",
+    ]);
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("once");
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("no");
+  });
 });

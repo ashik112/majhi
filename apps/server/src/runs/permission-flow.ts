@@ -53,6 +53,9 @@ interface CaptainCard {
   risk: RiskKind;
   /** What the captain was told when the call was refused: dropped once the answer says it all. */
   told: DeferredResult | undefined;
+  /** Set for a write to a connection: what the gate found, and the one MCP tool when it is one. */
+  writes?: readonly GateWrite[] | undefined;
+  tool?: ToolWrite | undefined;
 }
 
 /** The part of the connections service a card's "Always allow" and "It only reads" use. */
@@ -117,13 +120,17 @@ export class PermissionFlow {
     // A run that holds connections never lets the CLI stop asking.
     const ask = held.length === 0 ? request : { ...request, options: withoutUnaskedModes(request.options) };
     const verdict = connectionVerdict(ask, held, (id) => run.mapper?.toolTitle(id));
-    if (verdict.kind === "write") return this.askWrite(run, ask, verdict.writes, signal);
-    const once = ask.options.find((o) => o.kind === "allow_once");
     const task = store.tasks.get(run.task);
+    const boss = (await this.deps.config?.sections())?.boss;
+    const captains =
+      task !== undefined &&
+      task.team[0] === run.agent &&
+      (isCaptainLane(task) || (boss !== undefined && isRootChat(task, boss)));
+    if (verdict.kind === "write") return this.askWrite(run, ask, verdict.writes, signal, captains);
+    const once = ask.options.find((o) => o.kind === "allow_once");
     const org = task?.org ?? PRIVATE;
     const kind = requestRisk(ask, riskScopeOfTask(task));
     const { level, rules, incident } = await this.policyOf(org);
-    const boss = (await this.deps.config?.sections())?.boss;
     const go = riskVerdict(level, rules, org, kind, {
       incident,
       incidentFix: task !== undefined && isIncidentTask(task),
@@ -164,13 +171,7 @@ export class PermissionFlow {
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
-    const captains =
-      task !== undefined &&
-      task.team[0] === run.agent &&
-      (isCaptainLane(task) || (boss !== undefined && isRootChat(task, boss)));
-    if (captains) {
-      return this.askCaptain(run, { ...ask, options }, id, kind);
-    }
+    if (captains) return this.askCaptain(run, { ...ask, options }, id, kind);
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
@@ -188,6 +189,7 @@ export class PermissionFlow {
     ask: PermissionAsk,
     id: string,
     kind: RiskKind,
+    write?: { writes: readonly GateWrite[]; tool: ToolWrite | undefined },
   ): Promise<string | undefined> {
     const command = ask.command ?? ask.title;
     const shown = redactSecrets(command, run.connections?.secrets ?? []);
@@ -196,7 +198,15 @@ export class PermissionFlow {
       run.agent,
       `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
     );
-    this.captainCards.set(id, { task: run.task, agent: run.agent, command, ask, risk: kind, told });
+    this.captainCards.set(id, {
+      task: run.task,
+      agent: run.agent,
+      command,
+      ask,
+      risk: kind,
+      told,
+      ...(write === undefined ? {} : { writes: write.writes, tool: write.tool }),
+    });
     const no =
       ask.options.find((o) => o.kind === "reject_once") ??
       ask.options.find((o) => o.kind === "reject_always");
@@ -233,15 +243,22 @@ export class PermissionFlow {
     }
     const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
     this.captainCards.delete(itemId);
-    store.permissions.log({
-      task: held.task,
-      agent: held.agent,
-      kind: held.ask.kind ?? "other",
-      title: redactSecrets(held.ask.title, []),
-      decision: allowed ? "allow" : "deny",
-      by: "owner",
-      at: this.now().toISOString(),
-    });
+    const decision = allowed ? "allow" : "deny";
+    for (const write of held.writes ?? [undefined]) {
+      store.permissions.log({
+        task: held.task,
+        agent: held.agent,
+        kind: write === undefined ? (held.ask.kind ?? "other") : "connection-write",
+        title: redactSecrets(write === undefined ? held.ask.title : write.action, []),
+        decision,
+        by: "owner",
+        at: this.now().toISOString(),
+      });
+    }
+    // majhi's own choices on a tool write: this task's memory, or the connection's own lists.
+    if (allowed && held.tool !== undefined && chosen.id.startsWith(MAJHI_OPTION_PREFIX)) {
+      this.remember(held.task, held.tool, chosen.id);
+    }
     if (allowed && isAlwaysKind(held.risk)) {
       if (chosen.id === ALWAYS_OPTION) this.keepRule(held.task, held.risk);
       else if (chosen.kind === "allow_always") store.permissions.allow(held.task, riskAllowKey(held.risk));
@@ -267,6 +284,15 @@ export class PermissionFlow {
   private async runAllowed(held: CaptainCard): Promise<void> {
     const { runAllowed, deferred } = this.deps;
     const shown = redactSecrets(held.command, []);
+    // majhi runs a command line; a call of an MCP tool has no line (and no arguments) here, so the captain makes it again.
+    if (held.ask.kind !== "execute" || held.ask.command === undefined) {
+      this.grants.set(grantKey(held.task, held.agent, held.command), this.now().getTime() + GRANT_MS);
+      this.tellCaptain(
+        held,
+        `The owner allowed \`${shown}\`. Make the call again now: it goes ahead once without asking.`,
+      );
+      return;
+    }
     try {
       if (runAllowed === undefined) throw new Error("majhi cannot run it for you here");
       const id = await runAllowed(held.task, held.agent, held.command);
@@ -372,6 +398,7 @@ export class PermissionFlow {
     ask: PermissionAsk,
     writes: readonly GateWrite[],
     signal: AbortSignal,
+    captains = false,
   ): Promise<string | undefined> {
     const { room } = this.deps;
     const id = `perm:${run.runId ?? "x"}:${++run.permSeq}`;
@@ -400,6 +427,11 @@ export class PermissionFlow {
       this.logWrites(run, writes, "allow", "rule");
       return Promise.resolve(once.id);
     }
+    if (captains && once !== undefined && this.takeGrant(run, ask)) {
+      room.post(run.task, id, { ...base, options: ask.options, state: "auto", chosen: once.id });
+      this.logWrites(run, writes, "allow", "owner");
+      return Promise.resolve(once.id);
+    }
     const refused = this.refusedInCase(run, ask, id, base);
     if (refused !== undefined) return refused;
     // The agent's own "allow always" is dropped: it would let the CLI run the call again without asking.
@@ -411,6 +443,10 @@ export class PermissionFlow {
         : kept.flatMap((o) => (o.id === once.id ? [o, ...TOOL_OPTIONS] : [o]));
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
+    // The captain does not wait on it, as on any card: its call is refused now and the owner's answer wakes it.
+    if (captains) {
+      return this.askCaptain(run, { ...ask, options }, id, "client-server-write", { writes, tool });
+    }
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, { ask: { ...ask, options }, resolve, writes });
@@ -459,7 +495,7 @@ export class PermissionFlow {
       ? (pending.ask.options.find((o) => o.kind === "allow_once")?.id ?? chosen.id)
       : chosen.id;
     run.pending.delete(itemId);
-    if (tool !== undefined) this.remember(run, tool, chosen.id);
+    if (tool !== undefined) this.remember(run.task, tool, chosen.id);
     if (pending.writes !== undefined) {
       this.logWrites(run, pending.writes, allowed ? "allow" : "deny", "owner");
     } else {
@@ -503,9 +539,9 @@ export class PermissionFlow {
   }
 
   /** What one of majhi's choices on a tool write keeps: this task's memory, or the connection's own lists. */
-  private remember(run: AgentRun, tool: ToolWrite, choice: string): void {
+  private remember(task: string, tool: ToolWrite, choice: string): void {
     if (choice === TASK_OPTION) {
-      this.deps.store.permissions.allow(run.task, toolKey(tool));
+      this.deps.store.permissions.allow(task, toolKey(tool));
       return;
     }
     const as = choice === ALWAYS_OPTION ? "allow" : choice === READS_OPTION ? "read" : undefined;
@@ -514,7 +550,7 @@ export class PermissionFlow {
       actor: { kind: "owner" },
       reason:
         as === "allow" ? "Owner chose Always allow this tool on a card" : "Owner said a tool only reads",
-      task: run.task,
+      task,
     };
     // The call is already let through. If the list cannot be saved, the next call asks again.
     void this.deps.connections
