@@ -200,6 +200,39 @@ export function createGitHubProvider(deps: ProviderDeps): DeployProvider {
       return undefined;
     },
 
+    // The newest successful run whose title names this environment: when the release last went out for it.
+    async lastDeploy(ctx, recipe) {
+      const source =
+        recipe.history ??
+        (recipe.live?.kind === "run-name"
+          ? {
+              remote: recipe.live.remote,
+              workflow: recipe.live.workflow,
+              parts: recipe.live.parts,
+              match: recipe.live.match,
+            }
+          : undefined);
+      if (source === undefined) return undefined;
+      const a = await access(
+        ctx,
+        { kind: "github-workflow", remote: source.remote, workflow: source.workflow, ref: "base" },
+        deps,
+      );
+      const listed = await api(
+        deps,
+        a,
+        `/repos/${a.slug}/actions/workflows/${segment(source.workflow)}/runs?status=success&event=workflow_dispatch&per_page=50`,
+      );
+      if (listed.status !== 200) return undefined;
+      for (const run of runsOf(listed.body).sort((x, y) => y.id - x.id)) {
+        const got = inputsFromTitle(source.parts, run.display_title);
+        if (got !== undefined && Object.entries(source.match).every(([name, value]) => got[name] === value)) {
+          return run.created_at;
+        }
+      }
+      return undefined;
+    },
+
     // The build is given its version as an input and shows it in its title: the versions of its recent runs are taken.
     async builtVersions(ctx, source, input) {
       const a = await access(

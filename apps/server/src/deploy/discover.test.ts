@@ -1,6 +1,9 @@
-import type { DeployRunStep } from "@majhi/shared";
+import type { DeployEnvironment, DeployRunStep } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
+import type { ProjectInfo } from "../projects/service.ts";
 import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
+import { DeployDiscovery } from "./discovery.ts";
+import { nextPatch } from "./recipe.ts";
 import {
   ACME_SHOP_FILES,
   ACME_SHOP_GITLAB_FILES,
@@ -8,6 +11,7 @@ import {
   BUILD_BY_COMMIT,
   memoryCi,
 } from "./testing/acme-shop.ts";
+import { C1, rig } from "./testing/rig.ts";
 
 /**
  * How a project deploys, read from its own CI files (docs/DECISIONS.md, "deploy from CI"): the sample `acme-shop` has a
@@ -75,6 +79,20 @@ describe("finding how a project deploys from its CI files", () => {
             },
           },
         ],
+      },
+      // The release's title names the target, so its successful runs say when this environment was last deployed from GitHub.
+      history: {
+        remote: "origin",
+        workflow: "release.yml",
+        parts: [
+          { kind: "text", text: "Deploy " },
+          { kind: "input", name: "target" },
+          { kind: "text", text: " " },
+          { kind: "input", name: "components" },
+          { kind: "text", text: " from " },
+          { kind: "input", name: "source_ref" },
+        ],
+        match: { target: "globex" },
       },
       // The build takes its version as an input, so majhi picks it; the titles of its runs hold the versions built.
       pick: {
@@ -252,5 +270,143 @@ describe("finding how a project deploys from its CI files", () => {
       "app:status:acme",
     ]);
     expect(asked?.builds).toEqual([buildOf("production"), buildOf("globex")]);
+  });
+
+  it("takes the recipe of the host that deploys an environment: the newest successful deploy wins, and with no history it asks once", async () => {
+    // The sample project builds on GitHub and deploys three targets from GitLab; both describe the same environments.
+    const files = { ...ACME_SHOP_FILES, ...ACME_SHOP_GITLAB_FILES };
+    const remotes = { origin: "github", gitlab: "gitlab" } as const;
+    const remoteOf = (env: DeployEnvironment) => env.recipe?.live?.remote ?? env.recipe?.history?.remote;
+
+    async function read(
+      lastDeploy: (remote: string | undefined) => string | undefined,
+      saved: DeployEnvironment[] = [],
+    ): Promise<DeployEnvironment[]> {
+      let written: DeployEnvironment[] = [];
+      // Only the fields discovery reads are given.
+      const project = {
+        id: "acme-shop",
+        org: "acme",
+        path: "/work/acme-shop",
+        base: "main",
+        exists: true,
+        deploy: saved,
+        deployDismissed: [],
+        remotes: {},
+      } as unknown as ProjectInfo;
+      const repo = memoryCi(files);
+      await new DeployDiscovery({
+        projects: {
+          get: async () => project,
+          setEnvironments: async (_id, environments) => {
+            written = [...environments];
+          },
+        },
+        git: {
+          tip: async () => C1,
+          file: async (_p, _c, rel) => files[rel],
+          list: async (_p, _c, dir) => repo.list(dir),
+        },
+        repoRef: async (_p, remote) => ({
+          provider: remotes[(remote ?? "origin") as keyof typeof remotes],
+          slug: "acme/acme-shop",
+          host: "example.test",
+        }),
+        remoteOf: () => "origin",
+        remotes: async () => ["origin", "gitlab"],
+        lastDeploy: async (_p, env) => lastDeploy(remoteOf(env)),
+        said: () => undefined,
+      }).run("acme-shop");
+      return written;
+    }
+    const remotesOf = (envs: DeployEnvironment[]) =>
+      envs.map((e) => [e.env, e.recipe?.deploy.map((r) => ("remote" in r ? r.remote : "")).at(-1)]);
+
+    // GitLab deployed most recently: its jobs deploy.
+    const gitlab = await read((remote) =>
+      remote === "gitlab" ? "2026-10-20T10:00:00Z" : "2026-10-01T10:00:00Z",
+    );
+    expect(remotesOf(gitlab)).toEqual([
+      ["acme", "gitlab"],
+      ["globex", "gitlab"],
+      ["initech", "gitlab"],
+    ]);
+    // Only GitHub has a deploy: GitHub's workflow does.
+    const github = await read((remote) => (remote === "origin" ? "2026-10-01T10:00:00Z" : undefined));
+    expect(remotesOf(github)).toEqual([
+      ["acme", "origin"],
+      ["globex", "origin"],
+      ["initech", "origin"],
+    ]);
+    // Neither has one: the first remote's recipe stands and asks which one, once.
+    const none = await read(() => undefined);
+    expect(none[0]?.recipe?.asks.find((a) => a.key === "deploy-via")).toMatchObject({
+      options: ["origin", "gitlab"],
+    });
+    // The owner's answer, kept on the environment, decides at every later read.
+    const [asked] = none;
+    if (asked?.recipe === undefined) throw new Error("no environment");
+    const answered = await read(
+      () => undefined,
+      [{ ...asked, recipe: { ...asked.recipe, answers: { "deploy-via": "gitlab" } } }],
+    );
+    expect(remotesOf(answered)[0]).toEqual(["acme", "gitlab"]);
+    expect(answered[0]?.recipe?.asks.some((a) => a.key === "deploy-via")).toBe(false);
+
+    // What each host says: GitLab's deployments of `app/<target>`, GitHub's successful release runs titled for the target.
+    const r = await rig([], "github", remotes);
+    try {
+      r.hosts.runNames.set("release.yml", (i) => `Deploy ${i.target} ${i.components} from ${i.source_ref}`);
+      r.hosts.seedRun({
+        slug: "acme/storefront",
+        workflow: "release.yml",
+        sha: C1,
+        inputs: { target: "globex", components: "both", source_ref: "main" },
+        at: "2026-10-03T08:00:00Z",
+      });
+      r.hosts.seedRun({
+        slug: "acme/storefront",
+        workflow: "release.yml",
+        sha: C1,
+        inputs: { target: "acme", components: "both", source_ref: "main" },
+        at: "2026-10-02T08:00:00Z",
+      });
+      r.hosts.deployments.set("app/acme", ["2026-10-04T09:00:00Z", "2026-09-01T09:00:00Z"]);
+      const fromGithub = (await discover()).environments.find((e) => e.env === "acme");
+      if (fromGithub === undefined) throw new Error("no acme");
+      const gitlabEnv = await discoverEnvironments({
+        files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
+        base: "main",
+        provider: "gitlab",
+        remote: "gitlab",
+        folders: FOLDERS,
+        read: memoryCi(ACME_SHOP_GITLAB_FILES).read,
+      });
+      const lastOn = (env: DeployEnvironment | undefined) =>
+        env === undefined ? undefined : r.service.lastDeployAt(r.project, env);
+      expect(await lastOn(fromGithub)).toBe("2026-10-02T08:00:00Z");
+      expect(await lastOn(gitlabEnv.environments.find((e) => e.env === "acme"))).toBe("2026-10-04T09:00:00Z");
+      // A target nothing has deployed has no history.
+      expect(await lastOn(gitlabEnv.environments.find((e) => e.env === "initech"))).toBeUndefined();
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+
+  it("picks the next version in the shape of the target's own tag", () => {
+    // A prefixed tag keeps its prefix, and the plain tags of the same registry do not count for it.
+    expect(nextPatch(["pyzasoft-1.2.3", "9.9.9", "pyzasoft-1.1.8"], "pyzasoft-1.2.0")).toEqual({
+      version: "pyzasoft-1.2.4",
+      after: "pyzasoft-1.2.3",
+    });
+    expect(nextPatch(["pyzasoft-1.2.3", "1.4.7", "1.4.2"], "1.4.0")).toEqual({
+      version: "1.4.8",
+      after: "1.4.7",
+    });
+    // A suffix is kept too, and a tag with no three numbers is not a version.
+    expect(nextPatch(["2.0.9-lts", "latest", "2.0"], "2.0.1-lts")?.version).toBe("2.0.10-lts");
+    expect(nextPatch(["latest", "sha-ab12cd"], undefined)).toBeUndefined();
   });
 });

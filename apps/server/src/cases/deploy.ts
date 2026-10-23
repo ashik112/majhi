@@ -330,10 +330,19 @@ export class CaseDeployer {
    * fill with certainty comes back as the questions of one card.
    */
   async prepare(input: PrepareInput): Promise<DeployPath> {
-    const chosen = await this.path(input.project, {
+    let chosen = await this.path(input.project, {
       env: input.env ?? input.answers?.env,
       about: input.about,
     });
+    // Two hosts describe the environment and the owner said which one deploys it: it is kept on the environment, the
+    // CI is read again with that answer, and the recipe of that host is the one used.
+    const via = input.answers?.["deploy-via"];
+    const picked = chosen.ok ? chosen.candidate : undefined;
+    if (via !== undefined && picked?.env.recipe?.asks.some((a) => a.key === "deploy-via") === true) {
+      await this.ports.remember(input.project, picked.env.env, { "deploy-via": via });
+      await this.ports.discover(input.project).catch(() => []);
+      chosen = await this.path(input.project, { env: picked.env.env, about: input.about });
+    }
     if (!chosen.ok) return chosen;
     const { candidate } = chosen;
     const notes = [...chosen.read];
@@ -435,7 +444,9 @@ export class CaseDeployer {
     const mine = replaces?.version === undefined ? undefined : parseTag(replaces.version);
     const theirs = built?.version === undefined ? undefined : parseTag(built.version);
     const sameShape =
-      mine === undefined || theirs === undefined || (mine.prefix === theirs.prefix && mine.suffix === theirs.suffix);
+      mine === undefined ||
+      theirs === undefined ||
+      (mine.prefix === theirs.prefix && mine.suffix === theirs.suffix);
     const reused = sameShape ? built : undefined;
     if (built !== undefined && reused === undefined) {
       notes.push(`${env.env} tags its images differently from ${built.version}: its own image is built.`);

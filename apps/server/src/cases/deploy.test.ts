@@ -4,7 +4,14 @@ import { discoverEnvironments } from "../deploy/discover.ts";
 import { ACME_SHOP_GITLAB_FILES, acmeShopCi, memoryCi } from "../deploy/testing/acme-shop.ts";
 import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
-import { closingLines, newCase, rollbackTarget, rollbackTargets, withDeploy, withRollback } from "./record.ts";
+import {
+  closingLines,
+  newCase,
+  rollbackTarget,
+  rollbackTargets,
+  withDeploy,
+  withRollback,
+} from "./record.ts";
 
 /**
  * The captain's deploy of a case's fix (docs/briefs/instructions.md). The deploy service is the real one, on the
@@ -515,7 +522,10 @@ describe("a case deploy to every production target through GitLab", () => {
       let kase = newCase({ room: "r1", client: "Ana", symptom: "no slips", at, day: "2026-10-22" });
       for (const target of done.targets) {
         const live = target.record.state === "live";
-        kase = withDeploy(kase, entry(target.path.env.env, target.record.id, target.path.previous, live ? "live" : "failed"));
+        kase = withDeploy(
+          kase,
+          entry(target.path.env.env, target.record.id, target.path.previous, live ? "live" : "failed"),
+        );
       }
       expect(rollbackTargets(kase).map((d) => d.env)).toEqual(["globex"]);
       const globex = done.targets[0];

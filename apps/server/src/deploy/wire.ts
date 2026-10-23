@@ -360,6 +360,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
         .split("\n")
         .map((n) => n.trim())
         .filter((n) => n !== ""),
+    lastDeploy: (p, env) => service.lastDeployAt(projectOf(p), env),
     said: (org, text) => deps.said?.(org, text),
   });
 

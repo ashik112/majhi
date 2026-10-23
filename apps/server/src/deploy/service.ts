@@ -882,6 +882,19 @@ export class DeployService {
     return found;
   }
 
+  /**
+   * When the host that deploys this environment last deployed it successfully, read from that host (an ISO time).
+   * Undefined when the recipe has no pointer to look at, the host has no such deploy, or it cannot be asked.
+   */
+  async lastDeployAt(project: DeployProject, env: DeployEnvironment): Promise<string | undefined> {
+    const recipe = env.recipe;
+    if (recipe === undefined || project.base === undefined) return undefined;
+    const github = recipe.history !== undefined || recipe.live?.kind === "run-name";
+    const provider = this.deps.providers[github ? "github-workflow" : "gitlab-job"];
+    const ctx = this.contextFor(project, env, "unknown", project.base);
+    return provider.lastDeploy?.(ctx, recipe).catch(() => undefined);
+  }
+
   /** The commit a version was built from, read from the titles of the build's recent runs. */
   private async builtCommit(
     project: DeployProject,
@@ -968,7 +981,9 @@ export class DeployService {
     }
     // The target keeps the shape of its own tag (a prefix, a suffix): what it runs now, else what it ran last.
     const like =
-      running ?? this.deps.repo.ofProject(projectId, 200).find((r) => r.env === envName && r.version !== undefined)?.version;
+      running ??
+      this.deps.repo.ofProject(projectId, 200).find((r) => r.env === envName && r.version !== undefined)
+        ?.version;
     return nextPatch(known, like);
   }
 

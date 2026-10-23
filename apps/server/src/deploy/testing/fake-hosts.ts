@@ -34,7 +34,16 @@ export interface FakeHosts {
   /** The title a workflow's runs have, from its inputs: what its `run-name` makes. Absent: the file name. */
   runNames: Map<string, (inputs: Record<string, string>) => string>;
   /** A run that ended before the test began: what the last release of an environment was. */
-  seedRun(run: { slug: string; workflow: string; sha: string; inputs: Record<string, string> }): number;
+  seedRun(run: {
+    slug: string;
+    workflow: string;
+    sha: string;
+    inputs: Record<string, string>;
+    /** When it ran (an ISO time). Default: now. */
+    at?: string;
+  }): number;
+  /** The successful deployments GitLab keeps for an environment (`app/acme`): when each finished. */
+  deployments: Map<string, string[]>;
   /** The manual jobs each new GitLab pipeline holds, by name. */
   gitlabJobs: string[];
   /** How a job ends each time it is played, one outcome per play. Played more often than listed: it succeeds. */
@@ -60,6 +69,8 @@ interface Run {
   inputs?: Record<string, string>;
   /** Ended before the test began. */
   done?: boolean;
+  /** When it ran, when the test says. */
+  at?: string;
   /** How this run ends, fixed when it was made: a run made to succeed succeeds again when it is run again. */
   result: string;
 }
@@ -124,12 +135,14 @@ export async function startFakeHosts(
         finished: true,
         workflow: seed.workflow,
         inputs: seed.inputs,
+        ...(seed.at === undefined ? {} : { at: seed.at }),
         done: true,
         result: "success",
       };
       runs.set(run.id, run);
       return run.id;
     },
+    deployments: new Map(),
     gitlabJobs: [],
     jobOutcomes: new Map(),
     played: [],
@@ -250,7 +263,7 @@ export async function startFakeHosts(
           workflow_runs: mine.map((r) => ({
             id: r.id,
             head_sha: r.sha,
-            created_at: new Date().toISOString(),
+            created_at: r.at ?? new Date().toISOString(),
             html_url: `http://${state.host}/${slug}/actions/runs/${r.id}`,
             display_title: state.runNames.get(r.workflow ?? "")?.(r.inputs ?? {}) ?? r.workflow ?? "",
           })),
@@ -319,6 +332,18 @@ export async function startFakeHosts(
           status: "pending",
           web_url: `http://${state.host}/${slug}/-/pipelines/${id}`,
         });
+      }
+      if (method === "GET" && rest === "deployments") {
+        const done = state.deployments.get(url.searchParams.get("environment") ?? "") ?? [];
+        return send(
+          res,
+          200,
+          [...done]
+            .sort()
+            .reverse()
+            .slice(0, 1)
+            .map((at) => ({ id: 1, status: "success", finished_at: at })),
+        );
       }
       if (method === "GET" && rest === "pipelines") {
         const sha = url.searchParams.get("sha");

@@ -926,7 +926,9 @@ export class CaseService {
     this.activate(lane, found.task.id);
     this.guard(lane, "case.rollback");
     const task = found.task.id;
-    const targets = rollbackTargets(found.record).flatMap((t) => (t.record === undefined ? [] : [{ ...t, record: t.record }]));
+    const targets = rollbackTargets(found.record).flatMap((t) =>
+      t.record === undefined ? [] : [{ ...t, record: t.record }],
+    );
     const [first, ...rest] = targets;
     if (first === undefined) {
       throw new UserError(
@@ -971,7 +973,9 @@ export class CaseService {
       this.update(task, (r) => {
         if (r.rollback === undefined) return r;
         if (i === 0) return { ...r, rollback: { ...r.rollback, ok: true } };
-        const also = (r.rollback.also ?? []).map((x) => (x.record === target.record ? { ...x, ok: true } : x));
+        const also = (r.rollback.also ?? []).map((x) =>
+          x.record === target.record ? { ...x, ok: true } : x,
+        );
         return { ...r, rollback: { ...r.rollback, also } };
       });
       this.line(task, `${target.project} ${target.env} is back at ${shortVersion(target.previous)}.`);

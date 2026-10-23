@@ -512,12 +512,14 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
     }
 
     const live = liveOf(release, roles, input.remote, option);
+    const history = historyOf(release, roles, input.remote, option);
     const recipe: DeployRecipe = {
       from: { file: release.file.path, ...optionalLine(lineOfTarget(release, roles.target)) },
       deploy: deploy as DeployRecipe["deploy"],
       rollback: { runs: [back.step], at: "deployed" },
       ...(tag === undefined ? {} : { build: tag }),
       ...(live === undefined ? {} : { live }),
+      ...(history === undefined ? {} : { history }),
       ...(pick === undefined ? {} : { pick }),
       ...(running === undefined ? {} : { running }),
       ...(components === undefined || components === "asks" ? {} : { components }),
@@ -573,6 +575,19 @@ function folderOf(option: string, folders: readonly string[]): string | undefine
   if (folders.includes(name)) return name;
   for (const parent of PARENT_FOLDERS) if (folders.includes(`${parent}/${name}`)) return `${parent}/${name}`;
   return undefined;
+}
+
+/** How the release's run titles name this environment, when they do: the target input is in the title. */
+function historyOf(
+  release: Flow,
+  roles: Roles,
+  remote: string,
+  option: string | undefined,
+): DeployRecipe["history"] {
+  const parts = release.runName;
+  if (parts === undefined || roles.target === undefined || option === undefined) return undefined;
+  if (!parts.some((p) => p.kind === "input" && p.name === roles.target)) return undefined;
+  return { remote, workflow: release.base, parts, match: { [roles.target]: option } };
 }
 
 function liveOf(

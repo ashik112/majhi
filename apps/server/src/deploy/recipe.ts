@@ -352,7 +352,10 @@ export function nextPatch(
   }
   if (best === undefined) return undefined;
   const [major, minor, patch] = best.parts.numbers;
-  return { version: `${best.parts.prefix}${major}.${minor}.${patch + 1}${best.parts.suffix}`, after: best.text };
+  return {
+    version: `${best.parts.prefix}${major}.${minor}.${patch + 1}${best.parts.suffix}`,
+    after: best.text,
+  };
 }
 
 /**

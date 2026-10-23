@@ -220,6 +220,19 @@ export const DeployRecipeSchema = z.object({
   build: z.array(TagPartSchema).min(1).max(10).optional(),
   live: LiveSourceSchema.optional(),
   /**
+   * How the release's run titles name this environment (the title holds the target, not always a version): the newest
+   * successful run whose title does is when it was last deployed from this host. Used to tell which of two hosts that
+   * both describe an environment is the one that deploys it.
+   */
+  history: z
+    .object({
+      remote: RemoteNameSchema,
+      workflow: FileName,
+      parts: z.array(RunNamePartSchema).min(1).max(20),
+      match: InputsSchema,
+    })
+    .optional(),
+  /**
    * The build makes the version it is given in `input`, so majhi picks it: the next patch after the highest version it
    * knows. `runs` says how the build's run titles hold the version, to read the versions already built.
    */
