@@ -1293,6 +1293,11 @@ export class TaskService {
         throw new UserError(`${taskNameOf(task)} is an idea: only the owner starts it.`, 409);
       this.deps.store.tasks.clearIdea(id);
     }
+    // Autonomous decides only what the captain starts on its own. When the owner asked the captain for this
+    // start, a pause that Autonomous placed is lifted as the owner would lift it, whatever mode it is in.
+    const ownerAsk = options.preempt?.by === "captain" && options.preempt.ownerAsked;
+    const cause = this.lifecycle.state(id)?.hold?.cause;
+    const starter = ownerAsk && (cause === "autonomous-off" || cause === "autonomous-stop") ? "owner" : by;
     const fresh = task.status === "inbox" || task.status === "ready" || task.status === "paused";
     const limits =
       fresh && task.kind !== "chat" && options.now !== true ? await this.gateLimits() : undefined;
@@ -1305,14 +1310,14 @@ export class TaskService {
           full.reason === "running-cap" && options.preempt !== undefined
             ? this.victimFor(task, options.preempt)
             : undefined;
-        if (victim === undefined) return this.queueStart(task, limits.tasks_running, by);
+        if (victim === undefined) return this.queueStart(task, limits.tasks_running, starter);
       }
     }
     this.starting.add(id);
     try {
       // The urgent task holds its place first, then the lowest-priority running task gives its own up.
       if (victim !== undefined) await this.preempt(victim, task);
-      return await this.startNow(id, task, by, options);
+      return await this.startNow(id, task, starter, options);
     } finally {
       this.starting.delete(id);
       this.startStopped.delete(id);

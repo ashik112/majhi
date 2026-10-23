@@ -1683,10 +1683,13 @@ export class AutonomyService {
     if (idea !== undefined) {
       return `Refused: ${idea.id} is an idea. Only the owner starts an idea, so the captain leaves it alone.`;
     }
-    // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
+    // What the owner asked for in the conversation is done whatever Autonomous says: the switch decides only
+    // what the captain starts on its own. The level, the hours and the limits still hold.
+    const ownerAsked = command === "tasks.start" && input.ownerAsked === true;
+    // The captain resumes what it or the Autonomous switch paused, never what the owner paused, unless the owner asks.
     if (command === "tasks.start") {
       const paused = touched.find((t) => t.id === str(input.id) && t.status === "paused");
-      const stays = paused === undefined ? undefined : await this.resumeRefusalFor(paused);
+      const stays = paused === undefined ? undefined : await this.resumeRefusalFor(paused, ownerAsked);
       if (stays !== undefined) return stays;
     }
     if (group === "tasks" || group === "team" || starts) {
@@ -1701,7 +1704,8 @@ export class AutonomyService {
     if (starts) {
       // Picking a task from the backlog is backlog work: it needs Autonomous. A reaction (an incident, a finding, a fix task) does not.
       const target = touched.find((t) => t.id === str(input.id));
-      const job: Job = command === "tasks.start" && target !== undefined ? jobOfStart(target) : "reacting";
+      const job: Job =
+        command === "tasks.start" && target !== undefined && !ownerAsked ? jobOfStart(target) : "reacting";
       const work = mayWork({ autonomous: state.mode, stopped: this.halted() }, job);
       if (!work.ok) return `Refused: ${work.why}.`;
       // Hours and freeze dates hold a start, as they hold every change.
@@ -1730,8 +1734,8 @@ export class AutonomyService {
   }
 
   /** Why the captain may not resume this paused task now, or undefined: see `resumeRefusal`. */
-  async resumeRefusalFor(task: Task): Promise<string | undefined> {
-    return resumeRefusal(task, await this.resumeEnv(task));
+  async resumeRefusalFor(task: Task, ownerAsked = false): Promise<string | undefined> {
+    return resumeRefusal(task, await this.resumeEnv(task), ownerAsked);
   }
 
   /** The current state of the causes a pause can wait on: the team's accounts and the workspace's budget. */
@@ -1775,7 +1779,8 @@ export class AutonomyService {
   /** While Autonomous is turning off, calls that start work are refused. */
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
-    if (mode !== "stopping" || !startsWork(command, input)) return undefined;
+    // Autonomous turning off stops what the captain starts on its own, not what the owner asked for.
+    if (mode !== "stopping" || !startsWork(command, input) || input.ownerAsked === true) return undefined;
     return "Autonomous is turning off: nothing new starts.";
   }
 
@@ -1831,7 +1836,8 @@ export class AutonomyService {
           ];
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
-    const atOnce = await this.captainFull(str(input.id));
+    // Autonomous's cap on its own tasks does not count a start the owner asked for.
+    const atOnce = input.ownerAsked === true ? undefined : await this.captainFull(str(input.id));
     // The owner's tasks come first: the captain takes a free running place, never a place in the line.
     const id = str(input.id);
     const running =
@@ -2101,7 +2107,13 @@ export class AutonomyService {
    * After a call of an autonomous caller ran (rule 2): tasks the captain creates, splits or starts from
    * its chat join, and so do tasks an agent of an autonomous task creates or splits.
    */
-  adopt(caller: AutonomyCaller, command: CommandName, output: unknown, reason = ""): void {
+  adopt(
+    caller: AutonomyCaller,
+    command: CommandName,
+    output: unknown,
+    reason = "",
+    ownerAsked = false,
+  ): void {
     if (caller === "boss" && (command === "tasks.create" || command === "tasks.start")) {
       const made =
         typeof output === "object" && output !== null ? (output as { id?: unknown }).id : undefined;
@@ -2109,6 +2121,8 @@ export class AutonomyService {
       if (task !== undefined) this.saidStaffing(command, task);
     }
     if (this.repo.state().mode !== "on") return;
+    // A task the owner asked the captain for is the owner's, not Autonomous's: the switch never pauses it or stops its ship.
+    if (caller === "boss" && ownerAsked) return;
     const ids: string[] = [];
     const id = (o: unknown) => (typeof o === "object" && o !== null ? (o as { id?: unknown }).id : undefined);
     if (command === "tasks.create" || (command === "tasks.start" && caller === "boss")) {
@@ -2487,6 +2501,7 @@ export class AutonomyService {
     command: CommandName,
     input: Record<string, unknown>,
     reason: string,
+    ownerAsked = false,
   ): Promise<ToolResult> {
     if ((await this.callerKind(caller)) !== "boss") {
       return fail(`${command} is a tool of the captain in its lanes.`);
@@ -2507,10 +2522,10 @@ export class AutonomyService {
     }
     const authority =
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
-    // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`).
+    // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`), unless the owner asked for a plan.
     const work = mayWork(
       { autonomous: mode, stopped: this.halted() },
-      command === "autonomy.plan" ? "backlog" : "reacting",
+      command === "autonomy.plan" && !ownerAsked ? "backlog" : "reacting",
     );
     if (!work.ok) return fail(`${work.why}.`);
     const refused = await this.refusal(caller, command, input, reason);

@@ -196,12 +196,19 @@ export interface AutonomyGate {
     reason: string,
     item: string,
   ): void;
-  adopt(caller: "boss" | "agent", command: CommandName, output: unknown, reason?: string): void;
+  adopt(
+    caller: "boss" | "agent",
+    command: CommandName,
+    output: unknown,
+    reason?: string,
+    ownerAsked?: boolean,
+  ): void;
   bossTool(
     caller: AdminCaller,
     command: CommandName,
     input: Record<string, unknown>,
     reason: string,
+    ownerAsked?: boolean,
   ): Promise<ToolResult>;
   /** What a captain lane may read (5.18): undefined when the task is no lane. */
   laneScope(task: string): Promise<LaneReads | undefined>;
@@ -358,7 +365,8 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why, ownerAsked === true)) ??
+          error("The captain's own tools are not available here.")
         );
       }
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
@@ -846,7 +854,7 @@ export class AdminService {
       }
       if (auto !== undefined && autonomy !== undefined) {
         autonomy.ran(caller, command, input, ask.reason, done);
-        if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
+        if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason, ask.ownerAsked);
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
@@ -875,7 +883,7 @@ export class AdminService {
     input: Record<string, unknown>,
     parsed: Record<string, unknown>,
     meta: CommandMeta,
-    ask: { reason: string; confirm?: boolean },
+    ask: { reason: string; confirm?: boolean; ownerAsked?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
     if (autonomy === undefined) return error("Autonomous is not available.");
@@ -921,7 +929,7 @@ export class AdminService {
       { command, input, reason: ask.reason, ok: done.ok, result },
     );
     autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
-    if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
+    if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason, ask.ownerAsked);
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 

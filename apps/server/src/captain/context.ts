@@ -49,7 +49,7 @@ export function renderTurnFacts(facts: TurnFacts, now: Date): string {
   lines.push(
     facts.autonomous.mode === "on"
       ? `Autonomous is on${facts.autonomous.until === undefined ? "" : ` until ${facts.autonomous.until}`}. It is ${now.toISOString().slice(0, 16)}Z.`
-      : "Autonomous is off: you work when asked, and you read and answer all the same.",
+      : "Autonomous is off. It decides only what you start on your own: take nothing from the backlog unasked. What the owner asks you for in this conversation you do now, within the workspace's level, and you set ownerAsked true on those calls. You read and answer all the same.",
   );
   const intent = clip(facts.intent, INTENT_CHARS);
   if (intent.length > 0) {

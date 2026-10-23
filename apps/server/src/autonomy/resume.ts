@@ -24,11 +24,15 @@ export interface ResumeEnv {
 const SIGNED_OUT: readonly AccountStatus[] = ["needs-login"];
 const UNREACHABLE: readonly AccountStatus[] = ["unreachable"];
 
-/** Why the captain may not resume the task now, in one line; undefined when it may. */
-export function resumeRefusal(task: PausedTask, env: ResumeEnv): string | undefined {
+/**
+ * Why the captain may not resume the task now, in one line; undefined when it may. When the owner asked for it,
+ * Autonomous's own stop (it failed twice or spent its budget) is no reason: Autonomous decides only what the captain
+ * starts on its own. What the owner paused, and the world (a limit, a sign-in), still hold.
+ */
+export function resumeRefusal(task: PausedTask, env: ResumeEnv, ownerAsked = false): string | undefined {
   if (task.status !== "paused") return undefined;
   if (task.pausedBy === "captain" || task.pausedBy === "autonomy-off") return undefined;
-  if (task.pausedBy === "autonomy-stop") {
+  if (task.pausedBy === "autonomy-stop" && !ownerAsked) {
     return `Refused: Autonomous stopped ${task.id} (it failed twice or spent its budget), so it stays stopped. Leave it as a decision for the owner.`;
   }
   const reason = task.pausedReason ?? "owner";
