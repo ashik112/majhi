@@ -340,12 +340,18 @@ export function createChores(
       const prefix = `deploy:sync:${held.task}:`;
       const key = `${prefix}${held.project}:${sync.sourceTip}:${sync.deployTip}`;
       if (run.times(prefix) >= MAX_SYNC_TRIES) {
-        run.note(
-          `${key}:gaveup`,
-          `${where} is not deployed: the task's agent did not bring ${sync.deployRemote}/${sync.base} in after ${MAX_SYNC_TRIES} tries`,
-          `Open ${held.task}: ${held.why}`,
-          held.task,
-        );
+        // majhi could not clear it: the owner sees it on the task's own card, never only in the log.
+        const gaveUp = `${where} is not deployed: the task's agent did not bring ${sync.deployRemote}/${sync.base} in after ${MAX_SYNC_TRIES} tries. ${held.why}`;
+        await run.act({
+          key: `${key}:gaveup`,
+          text: gaveUp,
+          reason: `Open ${held.task}: its agent's last message says what stopped it`,
+          task: held.task,
+          do: async () => {
+            await ports.shipFailed(org, held.task, gaveUp);
+            return { undoNote: "A line on the task's card: nothing to undo" };
+          },
+        });
         continue;
       }
       await run.act({
