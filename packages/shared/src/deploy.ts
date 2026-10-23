@@ -257,6 +257,11 @@ export const DeployRecipeSchema = z.object({
    * whose image is this one. `whole`: `repo` is the whole image name; else only its last part is known.
    */
   running: z.object({ repo: z.string().trim().min(1).max(300), whole: z.boolean() }).optional(),
+  /**
+   * The folders of the repo this environment deploys from, when no parts input says it (a job that builds and ships one
+   * service from its own folder). A change that touches none of them is not for this environment.
+   */
+  scope: z.array(z.string().trim().min(1).max(200)).max(8).optional(),
   /** The parts of the project a `components` input chooses between, and the folder each one is. */
   components: z
     .object({

@@ -159,6 +159,32 @@ export function versionPutLive(
   return undefined;
 }
 
+/**
+ * The folders of the repo an environment deploys from: those of the parts its recipe chooses between, else the folders
+ * the recipe says its job works in. Undefined when the recipe says nothing about which part of the project it is.
+ */
+export function scopeOf(recipe: DeployRecipe | undefined): string[] | undefined {
+  if (recipe === undefined) return undefined;
+  if (recipe.scope !== undefined) return recipe.scope;
+  return recipe.components === undefined ? undefined : recipe.components.parts.map((p) => p.folder);
+}
+
+/** The folders whose children are the parts of a project. */
+const PART_PARENTS = ["apps", "services", "packages"];
+
+/** The part a path is in (`apps/voice-service` for `apps/voice-service/main.go`), when it is in one. */
+export function partOf(path: string): string | undefined {
+  const [parent, child] = path.split("/");
+  return parent !== undefined && child !== undefined && PART_PARENTS.includes(parent) && child !== ""
+    ? `${parent}/${child}`
+    : undefined;
+}
+
+/** Whether a changed path is in one of the folders. */
+export function underFolders(path: string, folders: readonly string[]): boolean {
+  return folders.some((f) => path === f || path.startsWith(`${f}/`));
+}
+
 /** What a run sends: a workflow's inputs, a job's variables. */
 export function sentOf(run: DeployRunStep): Record<string, string> | undefined {
   return run.kind === "github-workflow" ? run.inputs : run.kind === "gitlab-job" ? run.variables : undefined;

@@ -92,7 +92,9 @@ export class DeployDiscovery {
     if (first === undefined) throw new Error("An environment has no remote");
     if (candidates.length === 1) return first.env;
     const kept = project.deploy.find((e) => e.env === name)?.recipe?.answers[DEPLOY_VIA];
-    const chosen = candidates.find((c) => c.remote === kept);
+    // A file says which one: the workflow or the pipeline file the recipe was read from.
+    const fileOf = (c: { env: DeployEnvironment }) => c.env.recipe?.from.file;
+    const chosen = candidates.find((c) => fileOf(c) === kept);
     if (chosen !== undefined) return chosen.env;
     const dated: { env: DeployEnvironment; at: number }[] = [];
     for (const c of candidates) {
@@ -105,7 +107,7 @@ export class DeployDiscovery {
       undefined,
     );
     if (newest !== undefined) return newest.env;
-    const remotes = candidates.map((c) => c.remote);
+    const files = candidates.flatMap((c) => fileOf(c) ?? []);
     const recipe = first.env.recipe;
     if (recipe === undefined) return first.env;
     return {
@@ -116,8 +118,8 @@ export class DeployDiscovery {
           ...recipe.asks,
           {
             key: DEPLOY_VIA,
-            question: `${name} is described by ${remotes.join(" and ")}, and neither has deployed it yet. Which one deploys it?`,
-            options: remotes.slice(0, 8),
+            question: `${name} is described by ${files.join(" and ")}, and none has deployed it yet. Which one deploys it?`,
+            options: files.slice(0, 8),
           },
         ],
       },
@@ -193,6 +195,12 @@ export class DeployDiscovery {
       if (have === undefined) {
         next.push(env);
         added.push(env.env);
+      } else if (env.recipe === undefined && have.recipe !== undefined) {
+        // The CI deploys it in a way majhi cannot play by itself (an earlier read saw something else): the recipe goes,
+        // the environment stays.
+        const { recipe: _gone, ...rest } = have;
+        next[at] = rest;
+        updated.push(env.env);
       } else if (env.recipe !== undefined && !sameRecipe(have.recipe, env.recipe)) {
         // The recipe is read from the CI, so it follows the CI. What the owner set on the environment stays, and so
         // do the answers the owner gave to its questions.

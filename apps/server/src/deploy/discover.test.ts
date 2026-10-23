@@ -7,6 +7,8 @@ import { nextPatch } from "./recipe.ts";
 import {
   ACME_SHOP_FILES,
   ACME_SHOP_GITLAB_FILES,
+  ACME_SHOP_MONO_FILES,
+  ACME_SHOP_MONO_FOLDERS,
   acmeShopCi,
   BUILD_BY_COMMIT,
   memoryCi,
@@ -341,14 +343,14 @@ describe("finding how a project deploys from its CI files", () => {
     // Neither has one: the first remote's recipe stands and asks which one, once.
     const none = await read(() => undefined);
     expect(none[0]?.recipe?.asks.find((a) => a.key === "deploy-via")).toMatchObject({
-      options: ["origin", "gitlab"],
+      options: [".github/workflows/release.yml", ".gitlab/ci/deploy.yml"],
     });
     // The owner's answer, kept on the environment, decides at every later read.
     const [asked] = none;
     if (asked?.recipe === undefined) throw new Error("no environment");
     const answered = await read(
       () => undefined,
-      [{ ...asked, recipe: { ...asked.recipe, answers: { "deploy-via": "gitlab" } } }],
+      [{ ...asked, recipe: { ...asked.recipe, answers: { "deploy-via": ".gitlab/ci/deploy.yml" } } }],
     );
     expect(remotesOf(answered)[0]).toEqual(["acme", "gitlab"]);
     expect(answered[0]?.recipe?.asks.some((a) => a.key === "deploy-via")).toBe(false);
@@ -393,6 +395,68 @@ describe("finding how a project deploys from its CI files", () => {
       await r.hosts.close();
       r.store.close();
     }
+  });
+
+  it("never takes a backfill, a status read or another product's deploy for the deploy, and reads what the scripts say", async () => {
+    const mono = (provider: "github" | "gitlab") => ({
+      files: acmeShopCi(ACME_SHOP_MONO_FILES),
+      base: "main",
+      provider,
+      remote: provider === "github" ? "origin" : "gitlab",
+      folders: ACME_SHOP_MONO_FOLDERS,
+      read: memoryCi(ACME_SHOP_MONO_FILES).read,
+    });
+    // GitHub: the release deploys. The backfill and the status read take a target too, and the media node's deploy takes none.
+    const github = await discoverEnvironments({ ...mono("github"), files: await mono("github").files });
+    expect(github.environments.map((e) => [e.env, e.recipe?.from.file])).toEqual([
+      ["acme", ".github/workflows/release.yml"],
+      ["globex", ".github/workflows/release.yml"],
+      ["initech", ".github/workflows/release.yml"],
+    ]);
+    expect(github.notes.join("\n")).toContain("deploy-media-node.yml");
+    // The build asks for an artifact: the environment's own name when it is one of the options, else a question.
+    const [acme, globex] = github.environments.map((e) => e.recipe);
+    expect(acme?.asks.map((a) => a.key)).toContain("input:registry");
+    expect(globex?.deploy[0]).toMatchObject({ workflow: "build.yml", inputs: { registry: "globex" } });
+
+    // GitLab: the parts are the values the deploy script accepts, folders found by the names they go by, the registry of
+    // each target is the one its image starts with (read from the arms of the scripts' `case`), and the media node's
+    // deploy, which asks for a confirmation nothing fills (and needs its own artifact job played first), is not one majhi plays.
+    const gitlab = await discoverEnvironments({ ...mono("gitlab"), files: await mono("gitlab").files });
+    expect(gitlab.environments.map((e) => [e.env, e.recipe === undefined ? "no recipe" : "recipe"])).toEqual([
+      ["acme", "recipe"],
+      ["globex", "recipe"],
+      ["initech", "recipe"],
+      ["media-eu-1", "no recipe"],
+    ]);
+    const jobs = (env: DeployEnvironment | undefined) =>
+      env?.recipe?.deploy.map((r) => (r.kind === "gitlab-job" ? r.job : r.kind));
+    expect(jobs(gitlab.environments[0])).toEqual([
+      "image:build:production",
+      "app:deploy:acme",
+      "app:status:acme",
+    ]);
+    expect(jobs(gitlab.environments[1])).toEqual([
+      "image:build:globex",
+      "app:deploy:globex",
+      "app:status:globex",
+    ]);
+    expect(gitlab.environments[0]?.recipe?.components).toEqual({
+      all: "both",
+      parts: [
+        { option: "backend", folder: "apps/acme-api" },
+        { option: "frontend", folder: "apps/acme-web" },
+      ],
+      versionless: ["frontend"],
+    });
+    expect(gitlab.environments[1]?.recipe?.running).toEqual({
+      repo: "registry.globex.example/own/acme-backend",
+      whole: true,
+    });
+    expect(gitlab.environments.flatMap((e) => e.recipe?.asks ?? [])).toEqual([]);
+    expect(gitlab.notes.join("\n")).toContain(
+      "media:deploy asks for CONFIRM_TARGET and nothing says what it must equal",
+    );
   });
 
   it("picks the next version in the shape of the target's own tag", () => {
