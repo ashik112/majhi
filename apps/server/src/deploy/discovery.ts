@@ -22,7 +22,7 @@ export interface DiscoveryDeps {
       meta: CommandMeta,
     ): Promise<unknown>;
   };
-  git: Pick<DeployGit, "tip" | "file" | "list">;
+  git: Pick<DeployGit, "tip" | "file" | "list"> & Partial<Pick<DeployGit, "remoteTip">>;
   repoRef(project: ProjectInfo, remote?: string): Promise<RepoRef | undefined>;
   /** The remote the runs name: the one merge requests go to. */
   remoteOf(project: ProjectInfo): string;
@@ -135,9 +135,20 @@ export class DeployDiscovery {
   async refresh(projectId: string): Promise<DiscoveryResult | undefined> {
     const project = await this.deps.projects.get(projectId);
     if (!project.exists || project.base === undefined) return undefined;
-    const tip = await this.deps.git.tip(project.path, project.base);
+    const tip = await this.ciTip(project, project.base);
     if (tip === undefined || this.readAt.get(projectId) === tip) return undefined;
     return this.run(projectId);
+  }
+
+  /**
+   * The commit whose CI files are read: the base branch's one head, else (the local branch and its remotes have gone
+   * different ways, so a deploy has no head) the merge request remote's copy, which is where the project's CI lives.
+   * Reading files deploys nothing, so a copy that is not the one head is fine here.
+   */
+  private async ciTip(project: ProjectInfo, base: string): Promise<string | undefined> {
+    const tip = await this.deps.git.tip(project.path, base);
+    if (tip !== undefined) return tip;
+    return this.deps.git.remoteTip?.(project.path, base, this.deps.remoteOf(project));
   }
 
   /** Reads the CI of the project and saves its new environments. One read per project at a time. */
@@ -166,7 +177,7 @@ export class DeployDiscovery {
     }
     if (hosts.length === 0)
       return { ...none, skipped: `${projectId} has no remote on a host majhi deploys through` };
-    const tip = await this.deps.git.tip(project.path, project.base);
+    const tip = await this.ciTip(project, project.base);
     if (tip === undefined) return { ...none, skipped: `${projectId} has no single head on ${project.base}` };
     const files = await readCiFiles({
       read: (rel) => this.deps.git.file(project.path, tip, rel),
