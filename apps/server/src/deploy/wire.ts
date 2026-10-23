@@ -6,7 +6,7 @@ import {
   type ProjectDeployView,
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
-import type { DeployNext, DeployPorts } from "../captain/ports.ts";
+import type { DeployHeld, DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
 import { git } from "../git/git.ts";
@@ -28,6 +28,7 @@ import type { NothingDeploys } from "./nothing.ts";
 import { DeployPlanner } from "./plan.ts";
 import { type DeployDeps, type DeployProject, DeployService } from "./service.ts";
 import { createSshProvider } from "./ssh.ts";
+import { DeploySync, type DeploySyncDeps, heldSteps } from "./sync.ts";
 import type { ProviderDeps, Providers, RepoRef } from "./types.ts";
 import { createVercelProvider } from "./vercel.ts";
 
@@ -83,6 +84,10 @@ export interface DeployWorldDeps {
   vercelApi?: string | undefined;
   /** Sends the base branch to a remote that deploys (a fast-forward, never forced) when it lacks the commit. */
   publish?: DeployDeps["publish"] | undefined;
+  /** Reads a project's remotes' base branch again from where they live. A sentence when one could not be read. */
+  refresh?: DeploySyncDeps["refresh"] | undefined;
+  /** What the task's own agent is woken with when a deploy remote is ahead. Absent: that step is only said. */
+  syncTasks?: DeploySyncDeps["tasks"] | undefined;
   /**
    * Runs a finished task's whole deploy plan as the captain, through the case deployer, and answers with the first
    * target's record once it exists. Absent: the captain starts one planned record at a time.
@@ -229,6 +234,9 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       landedCommits: (id) => new Set(deps.store.tasks.landings(id, 200).map((l) => l.commit)),
     },
     git: deployGit,
+    ...(deps.refresh === undefined
+      ? {}
+      : { refresh: (p: DeployProject, remotes: readonly string[], base: string) => deps.refresh?.(p.id, remotes, base) ?? Promise.resolve(undefined) }),
     repoRef,
     checksConfigured: deps.checksConfigured,
     providers,
@@ -312,8 +320,33 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     return [...out.values()];
   };
 
+  /** Steps of work merged lately that cannot go and that majhi clears itself: a deploy remote that is ahead, or a wait. */
+  const held = async (org: string): Promise<DeployHeld[]> => {
+    const since = new Date(now().getTime() - DEPLOY_WINDOW_MS).toISOString();
+    const out: DeployHeld[] = [];
+    for (const id of deps.store.tasks.landedSince(since)) {
+      const task = deps.store.tasks.get(id);
+      if (task === undefined || (task.org ?? PRIVATE) !== org) continue;
+      out.push(...heldSteps(task, await planner.stepsOf(task).catch(() => [])));
+    }
+    return out;
+  };
+
+  const sync =
+    deps.syncTasks === undefined || deps.refresh === undefined
+      ? undefined
+      : new DeploySync({
+          tasks: deps.syncTasks,
+          refresh: deps.refresh,
+          note: deps.taskNote,
+        });
+
   const ports: DeployPorts = {
     next,
+    held,
+    async prepare(_org, step) {
+      await sync?.prepare(step);
+    },
     async needsPlan(_org, id) {
       const task = deps.store.tasks.get(id);
       // Planned means it has deploy records, or the plan came back empty for this head of the work.
@@ -379,7 +412,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       if (task === undefined) continue;
       const steps = await planner.stepsOf(task).catch(() => []);
       if (steps.length === 0 || deployPhase(steps) === "done") continue;
-      value.push({ task: id, steps: steps.map(({ task: _task, ...step }) => step) });
+      value.push({ task: id, steps: steps.map(({ task: _task, sync: _sync, ...step }) => step) });
     }
     board = { at: now().getTime(), value };
     return value;

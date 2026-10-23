@@ -2653,6 +2653,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (taskDeploy === undefined) return Promise.reject(new UserError("Deploys are not ready yet.", 409));
       return taskDeploy.start(task, "captain");
     },
+    // The remotes a deploy decides from are read again from where they live, never judged from the owner's checkout.
+    refresh: (project, remotes, base) => mrs.refreshRemotes(project, remotes, base),
+    // A deploy remote that is ahead is the task's own agent's job, in the task's own room.
+    syncTasks: {
+      get: (id) => store.tasks.get(id),
+      reopen: (id) => tasks.reopen(id),
+      send: (input) => tasks.send(input),
+      setStatusLines: (id, lines) => tasks.setStatusLines(id, lines),
+    },
     // The owner's own deploy is the owner's say. The captain's reaches the owner's remotes only as far as the
     // workspace's authority goes: a push of the base branch is a merge into main, which Full and "Captain ships" allow.
     publish: async ({ project, remote, branch, commit, actor, incidentFix }) => {

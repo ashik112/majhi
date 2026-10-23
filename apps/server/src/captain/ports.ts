@@ -1,4 +1,5 @@
 import type { Authority, CaptainUndo, CommandName, DeployRecord, ShipFix, TaskPriority } from "@majhi/shared";
+import type { SyncHead } from "../deploy/git.ts";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { ShipPlan } from "../ship/plan.ts";
@@ -126,6 +127,21 @@ export interface DeployNext {
   who: "captain" | "owner";
 }
 
+/**
+ * A deploy step that cannot go now and that majhi clears itself: the deploy remote has commits the source lacks
+ * (`sync`, the task's own agent is woken), or it waits with time (working hours, a head that moved).
+ */
+export interface DeployHeld {
+  task: string;
+  title: string;
+  project: string;
+  env: string;
+  /** The reason, plain. */
+  why: string;
+  /** Set when the deploy remote is ahead: what it has, for the one job the task's agent is given. */
+  sync?: SyncHead | undefined;
+}
+
 /** A ready task that changes projects with deploy environments and has no deploy plan yet. */
 export interface DeployPlanNeed {
   task: string;
@@ -140,6 +156,14 @@ export interface DeployPorts {
   needsPlan(org: string, task: string): Promise<DeployPlanNeed | undefined>;
   /** The deploy steps of work merged lately in the workspace that are next, by the ship rules, guards read now. */
   next(org: string): Promise<DeployNext[]>;
+  /** The steps of work merged lately that cannot go and that majhi clears itself, read now. */
+  held(org: string): Promise<DeployHeld[]>;
+  /**
+   * Gets a held step ready: for a deploy remote that is ahead, wakes the task's own agent in the task's own room
+   * with one job (bring the deploy remote's base into the task's branch, resolve, check, report), and shows on the
+   * task that it prepares the deploy. Never makes a task.
+   */
+  prepare(org: string, held: DeployHeld): Promise<void>;
   /** Why the step may not go now, read again right before it, or undefined. */
   recheck(org: string, step: DeployNext): Promise<string | undefined>;
   /** Starts it as the captain. Answers at once; the run is followed in the background. */
