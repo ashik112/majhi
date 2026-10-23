@@ -57,3 +57,24 @@ describe("destructive writes", () => {
     });
   });
 });
+
+describe("copies of a repo", () => {
+  const gitlab: GateConnection = { id: "acme-gitlab", type: "git", clis: ["glab", "gh", "git"], allow: [] };
+  it.each<[line: string, kind: "read" | "write" | "other"]>([
+    [
+      'D=$(mktemp -d); cd $D && glab repo clone acme/shop gl -- --bare -q 2>&1 | tail -3; cd gl; git fetch -q https://example.com/acme/shop.git main:refs/gh/main 2>&1|tail -2; git log --oneline -3 main; git diff --stat main refs/gh/main | tail -3',
+      "other",
+    ],
+    ["gh repo clone acme/shop shop", "read"],
+    ["git clone --bare git@example.com:acme/shop.git shop.git", "read"],
+    ["glab repo clone acme/shop gl -- --upload-pack='touch /tmp/x'", "write"],
+    ["gh repo clone acme/shop shop -- -c core.sshCommand='touch /tmp/x'", "write"],
+    ["git clone -u 'touch /tmp/x' git@example.com:acme/shop.git", "write"],
+    ["git fetch --upload-pack=evil origin", "write"],
+    ["git clone --config core.hooksPath=/tmp git@example.com:acme/shop.git", "write"],
+    ["git push gitlab main", "write"],
+    ["glab repo delete acme/shop", "write"],
+  ])("a copy into a scratch folder reads, unless a flag runs a program: %s is a %s", (line, expected) => {
+    expect(kind(line, [gitlab])).toBe(expected);
+  });
+});
