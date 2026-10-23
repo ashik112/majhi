@@ -879,6 +879,11 @@ export class RunManager {
     );
   }
 
+  /** Whether the agent still waits on this permission card: a run of the task holds its prompt. */
+  promptOpen(item: { task: string; id: string }): boolean {
+    return [...this.runs.values()].some((r) => r.task === item.task && r.pending.has(item.id));
+  }
+
   /** Answers a pending permission prompt with one of its options, for the owner or the `captain`. */
   answerPermission(task: string, itemId: string, option: string, captain = false): RoomItem {
     const run = [...this.runs.values()].find((r) => r.task === task && r.pending.has(itemId));

@@ -152,6 +152,7 @@ import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
+import { StaleCards } from "./inbox/stale.ts";
 import { IncidentEngine, isIncidentTask } from "./incident/engine.ts";
 import { IncidentFacts } from "./incident/facts.ts";
 import { InstallRequests } from "./installs/service.ts";
@@ -1137,6 +1138,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   runs.recover();
+  let staleCards: StaleCards | undefined;
   // What runs held of their connections never reaches the room (5.14).
   room.redactWith((task, text) => redactSecrets(text, runs.secretsOf(task)));
   const uploads = new UploadStore(env.majhiHome);
@@ -1439,6 +1441,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
+    // Bound below: a task that is done or gone closes the cards and drops the plan steps that waited on it.
+    onSettled: () => {
+      staleCards?.sweep();
+      autonomy.prunePlan();
+    },
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
       void labelFinishedTask(id);
@@ -1840,8 +1847,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let opsWatch: OpsWatch | undefined;
   let opsEngine: WatchEngine | undefined;
   let incidentEngine: IncidentEngine | undefined;
+  // Cards that wait for nobody (their task is done or gone, their prompt is gone) close themselves.
+  staleCards = new StaleCards({
+    store,
+    room,
+    promptOpen: (item) => runs.promptOpen(item),
+    changed: () => events.emit(["captain"]),
+  });
   const inbox = new InboxService({
     outbound,
+    closeStale: () => staleCards?.sweep(),
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
     incidentOf: (task) => incidentEngine?.alertsOf(task),
@@ -2782,6 +2797,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   captain.boot();
+  // What waited on a task that finished or was removed while majhi was off closes now.
+  staleCards?.sweep();
+  autonomy.prunePlan();
   background.run(
     () => autonomy.boot(),
     (err) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`),

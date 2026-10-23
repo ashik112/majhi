@@ -120,6 +120,8 @@ export interface InboxDeps {
   warn?: (task: string, text: string) => void;
   /** Rebuilds or closes the pending proposals whose setting changed since. */
   supersedeProposals?: () => Promise<void>;
+  /** Closes the cards that wait for nobody (their task is done or gone, their prompt is gone) before the list is read. */
+  closeStale?: () => void;
   /** The agent's last message in the task. */
   lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
   /**
@@ -290,6 +292,7 @@ export class InboxService {
       deps.orgNames?.() ?? NO_NAMES,
     ]);
     await deps.supersedeProposals?.();
+    deps.closeStale?.();
     const items = deps.items();
     // One batched read names every task a row mentions; a task it did not cover falls back to the single read.
     const known = deps.subjects?.([...new Set(items.map((i) => i.task))]);

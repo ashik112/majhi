@@ -280,6 +280,11 @@ export interface TaskDeps {
   onOpened?: (task: Task) => void;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
+  /**
+   * A task changed status or was removed: what waited on it is read again (a card of a task that is done or gone
+   * is closed, and a plan step for it is dropped). Never awaited, never throws.
+   */
+  onSettled?: () => void;
   /** Throws when the task may not be closed or removed now: autonomous mode's chat while the mode is not off. */
   guardRemoval?: (task: Task, action: "close" | "remove") => void;
   /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
@@ -3669,9 +3674,19 @@ export class TaskService {
     if (parent !== undefined) await this.finishParentIfDone(parent);
     await this.plans.settle(task).catch(() => undefined);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
+    this.settled();
     this.deps.events.emit(["tasks"], {
       tasks: [id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])],
     });
+  }
+
+  /** Tells what waited on a task that it changed or went (`onSettled`). */
+  private settled(): void {
+    try {
+      this.deps.onSettled?.();
+    } catch {
+      // Closing stale cards must never fail the change that caused it.
+    }
   }
 
   /**
@@ -3810,6 +3825,7 @@ export class TaskService {
     held: readonly { task: string; type: TaskLink["type"] }[],
   ): Promise<void> {
     const { store } = this.deps;
+    this.settled();
     const touched: string[] = [];
     for (const l of held) {
       touched.push(l.task);
