@@ -17,6 +17,7 @@ import {
   isCaptainThread,
   isClientRoom,
   isOwnerChat,
+  levelAllows,
   type Job,
   type MrHost,
   mergeVerdictLine,
@@ -2601,6 +2602,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     remote: options.deploy?.remote ?? options.connectionsRemote,
     vercelApi: options.deploy?.vercelApi,
     timing: options.deploy?.timing,
+    // The owner's own deploy is the owner's say. The captain's reaches the owner's remotes only as far as the
+    // workspace's authority goes: a push of the base branch is a merge into main, which Full and "Captain ships" allow.
+    publish: async ({ project, remote, branch, commit, actor }) => {
+      if (actor === "captain") {
+        const autonomy = (await config.settings()).autonomy;
+        const allowed = levelAllows(levelOf(autonomy, project.org), "merge-main", {
+          incident: incidentShipsOf(autonomy, project.org),
+          incidentFix: true,
+        });
+        if (!allowed) {
+          return {
+            ok: false,
+            why: `${remote} does not have ${commit.slice(0, 7)} yet, and pushing ${branch} there is the owner's in this workspace.`,
+          };
+        }
+      }
+      const sent = await mrs.pushBase(project.id, remote, branch, commit);
+      return sent.ok ? { ok: true } : sent;
+    },
   });
   discoverDeploys = (project) => deployWorld.discovery.run(project);
   /** The merge request timer, the lane and the chore merge a task's requests only when this says so. */

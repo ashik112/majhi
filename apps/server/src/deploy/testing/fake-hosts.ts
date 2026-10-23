@@ -35,6 +35,14 @@ export interface FakeHosts {
   runNames: Map<string, (inputs: Record<string, string>) => string>;
   /** A run that ended before the test began: what the last release of an environment was. */
   seedRun(run: { slug: string; workflow: string; sha: string; inputs: Record<string, string> }): number;
+  /** The manual jobs each new GitLab pipeline holds, by name. */
+  gitlabJobs: string[];
+  /** How a job ends each time it is played, one outcome per play. Played more often than listed: it succeeds. */
+  jobOutcomes: Map<string, ("success" | "failed")[]>;
+  /** GitLab made a pipeline for a commit, as it does once the commit is pushed. Returns its id. */
+  addPipeline(slug: string, sha: string): number;
+  /** The manual jobs played so far, in order: which job, in which pipeline, with the variables it was sent. */
+  played: { job: string; pipeline: number; sha: string; variables: Record<string, string> }[];
   calls: FakeCall[];
   close(): Promise<void>;
 }
@@ -54,6 +62,16 @@ interface Run {
   done?: boolean;
   /** How this run ends, fixed when it was made: a run made to succeed succeeds again when it is run again. */
   result: string;
+}
+
+/** A manual job of a fake GitLab pipeline. */
+interface Job {
+  id: number;
+  name: string;
+  pipeline: number;
+  status: "manual" | "running" | "success" | "failed";
+  polls: number;
+  result: "success" | "failed";
 }
 
 function readBody(req: IncomingMessage): Promise<unknown> {
@@ -81,7 +99,9 @@ export async function startFakeHosts(
     vercel: init.tokens?.vercel ?? "vc-fake-token-3333",
   };
   const runs = new Map<number, Run>();
+  const jobs = new Map<number, Job>();
   let nextRun = 100;
+  let nextJob = 5_000;
   const state: FakeHosts = {
     port: 0,
     host: "",
@@ -110,8 +130,44 @@ export async function startFakeHosts(
       runs.set(run.id, run);
       return run.id;
     },
+    gitlabJobs: [],
+    jobOutcomes: new Map(),
+    played: [],
+    addPipeline: (slug, sha) => gitlabRun(slug, sha),
     calls: [],
     close: async () => undefined,
+  };
+
+  /** A GitLab pipeline with the manual jobs the test set. */
+  const gitlabRun = (slug: string, sha: string): number => {
+    const run: Run = {
+      id: nextRun++,
+      sha,
+      slug,
+      polls: 0,
+      attempt: 1,
+      provider: "gitlab",
+      finished: false,
+      result: state.outcome.gitlab,
+    };
+    runs.set(run.id, run);
+    for (const name of state.gitlabJobs) {
+      const id = nextJob++;
+      jobs.set(id, { id, name, pipeline: run.id, status: "manual", polls: 0, result: "success" });
+    }
+    return run.id;
+  };
+  /** Plays a job: it runs, and ends the way the test said for this play. */
+  const play = (job: Job, variables: Record<string, string>) => {
+    job.status = "running";
+    job.polls = 0;
+    job.result = state.jobOutcomes.get(job.name)?.shift() ?? "success";
+    state.played.push({
+      job: job.name,
+      pipeline: job.pipeline,
+      sha: runs.get(job.pipeline)?.sha ?? "",
+      variables,
+    });
   };
 
   const send = (res: ServerResponse, status: number, body?: unknown) => {
@@ -257,22 +313,62 @@ export async function startFakeHosts(
         const ref = (body as { ref?: string } | undefined)?.ref ?? "";
         const sha = state.branches.get(`gitlab:${slug}:${ref}`);
         if (sha === undefined) return send(res, 400, { message: "Reference not found" });
-        const run: Run = {
-          id: nextRun++,
-          sha,
-          slug,
-          polls: 0,
-          attempt: 1,
-          provider: "gitlab",
-          finished: false,
-          result: state.outcome.gitlab,
-        };
-        runs.set(run.id, run);
+        const id = gitlabRun(slug, sha);
         return send(res, 201, {
-          id: run.id,
+          id,
           status: "pending",
-          web_url: `http://${state.host}/${slug}/-/pipelines/${run.id}`,
+          web_url: `http://${state.host}/${slug}/-/pipelines/${id}`,
         });
+      }
+      if (method === "GET" && rest === "pipelines") {
+        const sha = url.searchParams.get("sha");
+        const mine = [...runs.values()]
+          .filter((r) => r.provider === "gitlab" && r.slug === slug && (sha === null || r.sha === sha))
+          .sort((a, b) => b.id - a.id);
+        return send(
+          res,
+          200,
+          mine.map((r) => ({ id: r.id, sha: r.sha, web_url: `http://${state.host}/${slug}/-/pipelines/${r.id}` })),
+        );
+      }
+      const pipeJobs = /^pipelines\/(\d+)\/jobs$/.exec(rest);
+      if (method === "GET" && pipeJobs !== null) {
+        return send(
+          res,
+          200,
+          [...jobs.values()]
+            .filter((j) => j.pipeline === Number(pipeJobs[1]))
+            .map((j) => ({
+              id: j.id,
+              name: j.name,
+              status: j.status,
+              web_url: `http://${state.host}/${slug}/-/jobs/${j.id}`,
+            })),
+        );
+      }
+      const jobCall = /^jobs\/(\d+)(?:\/(play|retry))?$/.exec(rest);
+      if (jobCall !== null) {
+        const job = jobs.get(Number(jobCall[1]));
+        if (job === undefined) return send(res, 404, { message: "Not found" });
+        const link = `http://${state.host}/${slug}/-/jobs/${job.id}`;
+        if (method === "POST" && jobCall[2] === "play") {
+          if (job.status !== "manual") return send(res, 400, { message: "Unplayable Job" });
+          const sent = (body as { job_variables_attributes?: { key: string; value: string }[] } | undefined)
+            ?.job_variables_attributes;
+          play(job, Object.fromEntries((sent ?? []).map((v) => [v.key, v.value])));
+          return send(res, 200, { id: job.id, status: "pending", web_url: link });
+        }
+        if (method === "POST" && jobCall[2] === "retry") {
+          play(job, {});
+          return send(res, 201, { id: job.id, status: "pending", web_url: link });
+        }
+        if (method === "GET") {
+          if (job.status === "running") {
+            job.polls += 1;
+            if (job.polls > state.pollsToFinish) job.status = job.result;
+          }
+          return send(res, 200, { id: job.id, status: job.status === "failed" ? "failed" : job.status, web_url: link });
+        }
       }
       const pipe = /^pipelines\/(\d+)$/.exec(rest);
       if (method === "GET" && pipe !== null) {

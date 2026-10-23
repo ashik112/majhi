@@ -49,11 +49,17 @@ export interface Rig {
   remoteRun: { code: number | null; output: string };
   /** The workspace's ssh connections. */
   sshHosts: { id: string; name: string; alias: string }[];
+  /** What was pushed to a remote that deploys, in order: the remote and the commit. */
+  published: { remote: string; commit: string; actor: string }[];
+  /** A sentence: the push is refused with it. Absent: the push works, and GitLab makes the commit's pipeline. */
+  refusePush: { why: string | undefined };
 }
 
 export async function rig(
   environments: DeployEnvironment[],
   provider: "github" | "gitlab" = "github",
+  /** The host each remote of the project is on, when it has several (`origin` on GitHub, `gitlab` on GitLab). */
+  remotes: Readonly<Record<string, "github" | "gitlab">> = {},
 ): Promise<Rig> {
   const hosts = await startFakeHosts();
   const store = new Store(":memory:");
@@ -67,6 +73,8 @@ export async function rig(
   const sshHosts: { id: string; name: string; alias: string }[] = [
     { id: "acme-host", name: "Acme host", alias: "deploy@203.0.113.7" },
   ];
+  const published: Rig["published"] = [];
+  const refusePush: Rig["refusePush"] = { why: undefined };
   const project: DeployProject = {
     id: "storefront",
     org: "acme",
@@ -130,7 +138,19 @@ export async function rig(
       file: async () => undefined,
       list: async () => [],
     },
-    repoRef: async () => ({ provider, slug: "acme/storefront", host: hosts.host }),
+    repoRef: async (_project, remote) => ({
+      provider: remotes[remote ?? "origin"] ?? provider,
+      slug: "acme/storefront",
+      host: hosts.host,
+    }),
+    // A push of the base branch to GitLab: it takes the commit on its default branch and starts the commit's pipeline.
+    publish: async ({ remote, branch, commit, actor }) => {
+      published.push({ remote, commit, actor });
+      if (refusePush.why !== undefined) return { ok: false, why: refusePush.why };
+      hosts.branches.set(`gitlab:acme/storefront:${branch}`, commit);
+      hosts.addPipeline("acme/storefront", commit);
+      return { ok: true };
+    },
     checksConfigured: () => checks.configured,
     providers,
     providerDeps,
@@ -167,6 +187,8 @@ export async function rig(
     signedIn,
     remoteRun,
     sshHosts,
+    published,
+    refusePush,
   };
 }
 

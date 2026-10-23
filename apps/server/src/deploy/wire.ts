@@ -26,7 +26,7 @@ import { createGitHubProvider } from "./github.ts";
 import { createGitLabProvider } from "./gitlab.ts";
 import type { NothingDeploys } from "./nothing.ts";
 import { DeployPlanner } from "./plan.ts";
-import { type DeployProject, DeployService } from "./service.ts";
+import { type DeployDeps, type DeployProject, DeployService } from "./service.ts";
 import { createSshProvider } from "./ssh.ts";
 import type { ProviderDeps, Providers, RepoRef } from "./types.ts";
 import { createVercelProvider } from "./vercel.ts";
@@ -81,6 +81,8 @@ export interface DeployWorldDeps {
   fetch?: Fetch | undefined;
   remote?: RemoteRunFn | undefined;
   vercelApi?: string | undefined;
+  /** Sends the base branch to a remote that deploys (a fast-forward, never forced) when it lacks the commit. */
+  publish?: DeployDeps["publish"] | undefined;
   timing?: Partial<DeployTiming> | undefined;
   now?: (() => Date) | undefined;
 }
@@ -200,6 +202,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     checksConfigured: deps.checksConfigured,
     providers,
     providerDeps,
+    ...(deps.publish === undefined ? {} : { publish: deps.publish }),
     looks: {
       health: async (url) => {
         try {

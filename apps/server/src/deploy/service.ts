@@ -30,10 +30,16 @@ import {
   bindRuns,
   bindsOf,
   commitOfVersion,
+  deployedComponents,
+  isBuild,
+  isVersionless,
   nextPatch,
+  sentOf,
   tagOf,
   tagsOfRunning,
   versionPutLive,
+  versionSent,
+  withoutVersion,
   wordsOf,
 } from "./recipe.ts";
 import {
@@ -82,6 +88,18 @@ export interface DeployDeps {
   checksConfigured(project: string): boolean | Promise<boolean>;
   providers: Providers;
   providerDeps: ProviderDeps;
+  /**
+   * Sends the base branch to a remote that deploys, when it lacks the commit: a fast-forward, never forced, and only
+   * what the actor may do (the owner's own deploy, or the workspace's authority for the captain's). Absent: nothing is
+   * pushed, and a commit the host lacks waits to be pushed.
+   */
+  publish?: (input: {
+    project: DeployProject;
+    remote: string;
+    branch: string;
+    commit: string;
+    actor: DeployActor;
+  }) => Promise<{ ok: true } | { ok: false; why: string }>;
   /** One look at an environment's check address. */
   looks: Pick<VerifyDeps, "health">;
   /** How long the check after the runs lasts. */
@@ -273,8 +291,36 @@ export class DeployService {
    * The rails are here, not in the captain's prompt: an environment the project has, no ssh run from the captain,
    * a task and projects of one workspace, a step once.
    */
-  plan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
-    return this.writePlan(input, actor);
+  async plan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
+    return this.writePlan({ ...input, steps: await this.withEveryTarget(input.steps) }, actor);
+  }
+
+  /**
+   * A plan that deploys a project to production deploys it to every production environment the project has that
+   * its CI deploys (those with a recipe), one after another: the steps the plan names first, in its order, then the
+   * rest in the project's order. A step the plan holds, or an environment the plan names, stays as it is.
+   */
+  private async withEveryTarget(steps: PlanDeployInput["steps"]): Promise<PlanDeployInput["steps"]> {
+    const out = [...steps];
+    for (const id of new Set(steps.map((s) => s.project))) {
+      const project = await this.deps.projects.get(id).catch(() => undefined);
+      if (project === undefined) continue;
+      const production = project.environments.filter((e) => e.tier === "production");
+      const goesToProduction = steps.some(
+        (s) => s.project === id && production.some((e) => e.env === s.env),
+      );
+      if (!goesToProduction) continue;
+      const last = out.map((s) => s.project).lastIndexOf(id);
+      const more = production
+        .filter((e) => e.recipe !== undefined && !steps.some((s) => s.project === id && s.env === e.env))
+        .map((e) => ({
+          project: id,
+          env: e.env,
+          note: "Every production environment of the project gets the change, one after another.",
+        }));
+      out.splice(last + 1, 0, ...more);
+    }
+    return out.slice(0, 20);
   }
 
   private async writePlan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
@@ -438,7 +484,15 @@ export class DeployService {
     ) {
       return { record: rec, repeat: true };
     }
-    const evaluated = await this.evaluate(req, actor, rest);
+    let evaluated = await this.evaluate(req, actor, rest);
+    // A GitLab pipeline only has the commit once it is pushed there: send it, then look again.
+    if (!evaluated.ok && evaluated.kind === "unpushed") {
+      const sent = await this.publish(req, actor);
+      if (sent !== undefined) {
+        if (!sent.ok) throw new UserError(sent.why, 409);
+        evaluated = await this.evaluate(req, actor, rest);
+      }
+    }
     if (!evaluated.ok) throw new UserError(evaluated.why, 409);
     const { ctx, project, env } = evaluated;
     const existing = this.deps.repo.find(project.id, env.env, ctx.commit);
@@ -513,6 +567,48 @@ export class DeployService {
     this.changed();
     this.kick(record.id);
     return { record, repeat: false };
+  }
+
+  /**
+   * Pushes the base branch to each GitLab remote the request's runs go through, when that host lacks the commit. Undefined
+   * when nothing here pushes (no pusher, no GitLab run, or the remotes have it). The host's answer is read again after.
+   */
+  private async publish(
+    req: DeployRequest,
+    actor: DeployActor,
+  ): Promise<{ ok: true } | { ok: false; why: string } | undefined> {
+    const publish = this.deps.publish;
+    if (publish === undefined) return undefined;
+    const project = await this.deps.projects.get(req.project);
+    if (project.base === undefined) return undefined;
+    const commit = req.commit ?? (await this.deps.git.tip(project.path, project.base));
+    if (commit === undefined) return undefined;
+    const remotes = new Set<string>();
+    for (const run of req.runs) {
+      if (run.kind === "gitlab-job" || run.kind === "gitlab-pipeline" || run.kind === "gitlab-merge") {
+        remotes.add(run.remote);
+      }
+    }
+    let sent = false;
+    for (const remote of remotes) {
+      const done = await publish({ project, remote, branch: project.base, commit, actor });
+      if (!done.ok) return done;
+      sent = true;
+    }
+    if (!sent) return undefined;
+    if (req.task !== undefined) {
+      this.deps.taskNote?.(
+        req.task,
+        `publish:${project.id}:${commit}`,
+        "info",
+        `Pushed ${project.base} to ${[...remotes].join(", ")}, so its pipeline has ${commit.slice(0, 7)}.`,
+      );
+    }
+    // The host's answer about the commit is not the one kept from before the push.
+    for (const key of [...this.preflights.keys()]) {
+      if (key.startsWith(`${project.id}:`)) this.preflights.delete(key);
+    }
+    return { ok: true };
   }
 
   /** The owner said hold: no rule deploys this step or commit until the owner does it. */
@@ -697,7 +793,10 @@ export class DeployService {
     });
     if (running === undefined) return undefined;
     this.changed();
-    const lacking = recipe === undefined ? undefined : goesBackBy(recipe, replaces);
+    const lacking =
+      recipe === undefined
+        ? undefined
+        : goesBackBy(recipe, replaces, deployedComponents(recipe, record.runs.map((r) => sentOf(r))));
     if (lacking !== undefined) {
       return this.fail(running, `majhi did not start the deploy: ${lacking}`, { rollback: false });
     }
@@ -844,7 +943,12 @@ export class DeployService {
     const pick = env?.recipe?.pick;
     if (env === undefined || pick === undefined) return undefined;
     const known: (string | undefined)[] = [];
-    for (const r of this.deps.repo.ofProject(projectId, 200)) known.push(r.version, r.replaces?.version);
+    // Targets of one registry share its versions; another registry has its own (its own pattern, its own numbers).
+    const sameRegistry = (name: string) =>
+      project.environments.find((e) => e.env === name)?.recipe?.pick?.registry === pick.registry;
+    for (const r of this.deps.repo.ofProject(projectId, 200)) {
+      if (sameRegistry(r.env)) known.push(r.version, r.replaces?.version);
+    }
     known.push((await this.current(projectId, envName).catch(() => undefined))?.version);
     if (pick.runs !== undefined && project.base !== undefined) {
       const ctx = this.contextFor(project, env, "unknown", project.base);
@@ -875,7 +979,8 @@ export class DeployService {
         : recipe?.pick === undefined
           ? undefined
           : handles.map((h) => h?.inputs?.[recipe.pick?.input ?? ""]).find((v) => v !== undefined);
-    if (built === undefined && recipe?.pick !== undefined && !resumed) {
+    // Only a deploy that builds the image picks a version: one that reuses the image of an earlier target has it filled in.
+    if (built === undefined && recipe?.pick !== undefined && record.runs.some(isBuild) && !resumed) {
       built = (await this.nextVersion(record.project, record.env).catch(() => undefined))?.version;
       if (built === undefined) {
         return this.fail(
@@ -893,10 +998,11 @@ export class DeployService {
       // A build that takes the version majhi picked may be refused because the version exists: once more, one patch up.
       let retried = false;
       let canStart = !resumed;
-      const picks =
-        step.kind === "github-workflow" && Object.values(step.bind ?? {}).includes("next-version");
-      // Failing the first of several runs is failing the build: nothing was deployed, so nothing goes back.
-      const goBack = !(recipe !== undefined && i === 0 && record.runs.length > 1);
+      const picks = isBuild(step);
+      // Failing the build is not failing a deploy: nothing was deployed, so nothing goes back. A recipe's first of
+      // several GitHub runs is its build, and a GitLab run that picks the version is.
+      const building = picks || (i === 0 && record.runs.length > 1 && step.kind === "github-workflow");
+      const goBack = !(recipe !== undefined && building);
       for (;;) {
         let outcome: RunHandle["outcome"];
         if (handle === undefined) {
@@ -914,16 +1020,21 @@ export class DeployService {
               return this.fail(record, `majhi cannot fill ${bound.missing.join(", ")}`, { rollback: i > 0 });
             }
             step = bound.runs[0] ?? planned;
+            // A build asked again with another version cannot be run again in the pipeline that ran it: it goes in a new one.
+            if (retried && step.kind === "gitlab-job") step = { ...step, fresh: true };
             const refused = await provider.preflight(ctx, step);
             // Nothing was deployed yet when the first run is refused or does not start, so there is nothing to roll back.
             if (refused !== undefined) return this.fail(record, refused, { rollback: i > 0 });
             const started = await provider.start(ctx, step);
             outcome = started.outcome;
             const { outcome: _over, ...made } = started;
-            const run =
-              step.kind === "github-workflow" && step.inputs !== undefined
-                ? { ...made, inputs: step.inputs }
-                : made;
+            const sent =
+              step.kind === "github-workflow"
+                ? step.inputs
+                : step.kind === "gitlab-job"
+                  ? step.variables
+                  : undefined;
+            const run = sent === undefined ? made : { ...made, inputs: sent };
             handle = run;
             handles[i] = run;
             this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
@@ -952,13 +1063,10 @@ export class DeployService {
     }
     // What the environment runs now is the version the recipe's inputs carried.
     const aligned = alignedRecipe(ctx.env.recipe, record.runs);
+    const sentInputs = handles.map((h) => h?.inputs);
     const version =
-      aligned === undefined
-        ? undefined
-        : versionPutLive(
-            aligned.deploy,
-            handles.map((h) => h?.inputs),
-          );
+      (aligned === undefined ? undefined : versionPutLive(aligned.deploy, sentInputs)) ??
+      (ctx.env.recipe === undefined ? undefined : versionSent(ctx.env.recipe, sentInputs));
     const verifying = this.deps.repo.move(
       record.id,
       "running",
@@ -1187,9 +1295,17 @@ export class DeployService {
     const back = recipe.rollback;
     if (back === undefined) return { ok: false, detail: "The recipe has no rollback.", at: at() };
     const project = await this.deps.projects.get(record.project);
+    const deployed = recipe.deploy.flatMap((_, i) =>
+      record.handles[i]?.inputs === undefined ? [] : [record.handles[i]?.inputs],
+    );
+    const components = bindsOf(recipe.deploy, "components")
+      .map((name) => deployed.map((inputs) => inputs?.[name]).find((v) => v !== undefined))
+      .find((v) => v !== undefined);
+    // A part with no image has no version to put back: it goes back by running the job at the commit it ran before.
+    const versionless = isVersionless(recipe, components);
     // A rollback workflow starts from the base branch, so the run it makes is for the head of that branch now.
     const start =
-      back.at === "previous"
+      back.at === "previous" || versionless
         ? replaces.commit
         : ((project.base === undefined ? undefined : await this.deps.git.tip(project.path, project.base)) ??
           record.commit);
@@ -1200,13 +1316,7 @@ export class DeployService {
         at: at(),
       };
     }
-    const deployed = recipe.deploy.flatMap((_, i) =>
-      record.handles[i]?.inputs === undefined ? [] : [record.handles[i]?.inputs],
-    );
-    const components = bindsOf(recipe.deploy, "components")
-      .map((name) => deployed.map((inputs) => inputs?.[name]).find((v) => v !== undefined))
-      .find((v) => v !== undefined);
-    const bound = bindRuns(back.runs, {
+    const bound = bindRuns(versionless ? withoutVersion(back.runs) : back.runs, {
       commit: start,
       previous: replaces,
       components,
@@ -1291,7 +1401,8 @@ function alignedRecipe(
     return (
       run !== undefined &&
       step.kind === run.kind &&
-      (step.kind !== "github-workflow" || (run.kind === "github-workflow" && step.workflow === run.workflow))
+      (step.kind !== "github-workflow" || (run.kind === "github-workflow" && step.workflow === run.workflow)) &&
+      (step.kind !== "gitlab-job" || (run.kind === "gitlab-job" && step.job === run.job))
     );
   });
   return same ? recipe : undefined;
@@ -1301,14 +1412,20 @@ function alignedRecipe(
  * A sentence when the recipe's rollback needs something the environment's current version lacks, else undefined. A
  * recipe with no rollback of its own goes back through the earlier deploy, as before.
  */
-export function goesBackBy(recipe: DeployRecipe, replaces: DeployReplaces | undefined): string | undefined {
+export function goesBackBy(
+  recipe: DeployRecipe,
+  replaces: DeployReplaces | undefined,
+  /** The part of the project the deploy sends, when the recipe has parts. A part with no image goes back by commit, not by version. */
+  components?: string | undefined,
+): string | undefined {
   const back = recipe.rollback;
   if (back === undefined) return undefined;
-  if (bindsOf(back.runs, "previous-version").length > 0 && replaces?.version === undefined) {
+  const versionless = isVersionless(recipe, components);
+  if (!versionless && bindsOf(back.runs, "previous-version").length > 0 && replaces?.version === undefined) {
     return "it does not know which version the environment runs now, so it could not put it back";
   }
   if (
-    (bindsOf(back.runs, "previous-commit").length > 0 || back.at === "previous") &&
+    (bindsOf(back.runs, "previous-commit").length > 0 || back.at === "previous" || versionless) &&
     replaces?.commit === undefined
   ) {
     return "it does not know which commit the environment runs now, so it could not put it back";

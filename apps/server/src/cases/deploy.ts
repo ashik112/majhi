@@ -13,7 +13,10 @@ import {
   bindsOf,
   commitOfVersion,
   componentsFor,
+  isBuild,
+  isVersionless,
   recipeSource,
+  withoutVersion,
   wordsOf,
 } from "../deploy/recipe.ts";
 import type { DeployHint } from "../deploy/service.ts";
@@ -75,6 +78,16 @@ export interface CaseDeployPorts {
   waitMs: number;
 }
 
+/** What a case does around each environment of a deploy: the case's own record of it. */
+export interface DeployHooks {
+  /** An environment is about to move. */
+  started(path: OkPath): void;
+  /** Its runs ended, live or not. */
+  ended(path: OkPath, record: DeployRecord): Promise<void> | void;
+  /** Its deploy threw before it ended. The error goes on to the caller. */
+  threw(path: OkPath, err: unknown): void;
+}
+
 /** One question of the card a deploy asks: its id is what the captain answers with. `options` empty: a free answer. */
 export interface DeployQuestion {
   id: string;
@@ -93,10 +106,15 @@ export type DeployPath =
       replaces?: DeployReplaces;
       /** The owner's answers about the environment's own inputs: kept once the deploy went live. */
       remember?: Record<string, string>;
+      /** The registry whose image this deploy builds, when it does: a later target of the registry reuses the image. */
+      builds?: string;
       /** What majhi decided and where it read the path from: lines for the case room. */
       notes: string[];
     }
   | { ok: false; why: string; ask?: DeployQuestion[] };
+
+/** A deploy that may start. */
+export type OkPath = Extract<DeployPath, { ok: true }>;
 
 const NO_PATH = (project: string): string =>
   `${project} has no deploy majhi can repeat: its CI files show no deploy it can start, and no environment of it went live through a run the captain may start and put back. Ask the owner once with case_ask how to deploy it.`;
@@ -118,6 +136,32 @@ export interface PrepareInput {
   answers?: Readonly<Record<string, string>> | undefined;
   /** Words that name the client the case is for (the case's title, symptom and client): an environment named in them is the one. */
   about?: readonly string[] | undefined;
+  /** Images an earlier target of this deploy built or is going to build: a target of the same registry does not build it again. */
+  reuse?: readonly ReusedImage[] | undefined;
+}
+
+/** The image of a registry that an earlier target of the same deploy made, and the version it has once it is built. */
+export interface ReusedImage {
+  registry: string;
+  version?: string | undefined;
+}
+
+/**
+ * The answers meant for one environment of several: a question of a deploy to several environments has the environment
+ * in front of its id (`globex:previous-version`). What has no environment in front applies to every one.
+ */
+export function answersFor(
+  answers: Readonly<Record<string, string>> | undefined,
+  env: string,
+  all: readonly string[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(answers ?? {})) {
+    const owner = all.find((name) => key.startsWith(`${name}:`));
+    if (owner === undefined) out[key] = value;
+    else if (owner === env) out[key.slice(env.length + 1)] = value;
+  }
+  return out;
 }
 
 export class CaseDeployer {
@@ -192,6 +236,93 @@ export class CaseDeployer {
   }
 
   /**
+   * The environments a fix goes to: every production environment the project has that majhi can deploy, the one the
+   * case is about first (named by the captain, else the one whose name is a word of the case), then the others in the
+   * project's order. Nothing asks which one: the fix goes to all.
+   */
+  async order(
+    project: string,
+    pick: { env?: string | undefined; about?: readonly string[] | undefined } = {},
+  ): Promise<{ ok: true; envs: string[]; read: string[] } | { ok: false; why: string }> {
+    const read: string[] = [];
+    let found = await this.candidates(project);
+    if (found.length === 0) {
+      const added = await this.ports.discover(project).catch(() => []);
+      if (added.length > 0) read.push(`Read how ${project} deploys from its CI files: ${added.join(", ")}.`);
+      found = await this.candidates(project);
+    }
+    if (found.length === 0) return { ok: false, why: NO_PATH(project) };
+    const production = found.filter((f) => f.env.tier === "production");
+    const fit = (production.length > 0 ? production : found).map((f) => f.env.env);
+    if (pick.env !== undefined && !fit.includes(pick.env)) {
+      return {
+        ok: false,
+        why: `${project} has no deploy path to ${pick.env}. Its environments: ${fit.join(", ")}.`,
+      };
+    }
+    const about = wordsOf((pick.about ?? []).join(" "));
+    const matched = fit.filter((name) => about.has(name));
+    const first = pick.env ?? (matched.length === 1 ? matched[0] : undefined);
+    if (first !== undefined && fit.length > 1 && pick.env === undefined) {
+      read.push(`${first} is the environment the case names: it goes first.`);
+    }
+    return {
+      ok: true,
+      envs: first === undefined ? fit : [first, ...fit.filter((name) => name !== first)],
+      read,
+    };
+  }
+
+  /**
+   * Every environment the fix goes to, read before anything moves: the same checks and the same questions as one
+   * environment, asked together in one card. With several, a question's id has its environment in front of it.
+   */
+  async plan(
+    input: PrepareInput,
+  ): Promise<
+    | { ok: true; envs: string[]; paths: OkPath[] }
+    | { ok: false; why: string; ask?: DeployQuestion[] }
+  > {
+    const ordered = await this.order(input.project, {
+      env: input.env ?? input.answers?.env,
+      about: input.about,
+    });
+    if (!ordered.ok) return ordered;
+    const several = ordered.envs.length > 1;
+    const asks: DeployQuestion[] = [];
+    const paths: OkPath[] = [];
+    const reuse: ReusedImage[] = [...(input.reuse ?? [])];
+    for (const env of ordered.envs) {
+      const path = await this.prepare({
+        ...input,
+        env,
+        answers: answersFor(input.answers, env, ordered.envs),
+        reuse: [...reuse],
+      });
+      if (!path.ok) {
+        // A refusal with nothing to ask (the checks did not pass) stops everything; questions are collected.
+        if (path.ask === undefined) return { ok: false, why: path.why };
+        asks.push(
+          ...path.ask.map((q) =>
+            several ? { ...q, id: `${env}:${q.id}`, question: `${env}: ${q.question}` } : q,
+          ),
+        );
+        continue;
+      }
+      paths.push({ ...path, notes: [...(paths.length === 0 ? ordered.read : []), ...path.notes] });
+      if (path.builds !== undefined) reuse.push({ registry: path.builds });
+    }
+    if (asks.length > 0) {
+      return {
+        ok: false,
+        why: `${asks.map((a) => a.id).join(" and ")} must be answered before the fix goes to ${ordered.envs.join(", ")}: majhi does not guess. The owner is asked once.`,
+        ask: asks,
+      };
+    }
+    return { ok: true, envs: ordered.envs, paths };
+  }
+
+  /**
    * Whether the branch may be deployed at all: the project has a deploy path majhi knows, and the hand-off checks of
    * the case's head passed. Nothing moves before both hold. A recipe from the CI is filled with what the case knows
    * (the commit when it starts, the parts the change touches, the version the environment runs now); what it cannot
@@ -257,18 +388,53 @@ export class CaseDeployer {
       components = answers.components;
     }
 
+    // A part with no image sends no version and builds nothing.
+    const versionless = isVersionless(recipe, components);
+
     // What the project cannot say by itself: inputs with no value, and a version the build does not name by the commit.
     const filled: Record<string, string> = {};
     for (const ask of recipe.asks) {
       if (ask.key === "components") continue;
+      if (ask.key === "input:build-version" && versionless) continue;
       const said = answers[ask.key];
       if (said === undefined) asks.push({ id: ask.key, ...pick(ask) });
       else filled[ask.key] = said;
     }
 
+    // The build of the registry this target uses, when the project's own files could not say which: the owner's pick.
+    let runs: DeployRunStep[] = [...recipe.deploy];
+    let registry = recipe.pick?.registry;
+    const chosen = filled.registry;
+    if (recipe.builds !== undefined && chosen !== undefined) {
+      const build = recipe.builds.find((b) => b.kind === "gitlab-job" && b.job === chosen);
+      if (build === undefined) {
+        asks.push({
+          id: "registry",
+          question: `${chosen} is not one of ${env.env}'s builds. Which job builds its image?`,
+          options: recipe.builds.flatMap((b) => (b.kind === "gitlab-job" ? [b.job] : [])),
+        });
+      } else {
+        runs = [build, ...runs];
+        registry = chosen;
+      }
+    }
+
+    // The image of this registry was built by an earlier target of the same deploy: it is used, not built again.
+    const reused = registry === undefined ? undefined : input.reuse?.find((r) => r.registry === registry);
+    if (reused !== undefined) {
+      runs = runs.filter((step) => !isBuild(step));
+      notes.push(
+        `${env.env} uses the ${registry} image${reused.version === undefined ? " the first target builds" : ` ${reused.version}, built for the first target`}: it is not built again.`,
+      );
+    }
+    if (versionless) {
+      runs = withoutVersion(runs);
+      notes.push(`${env.env}: only ${components} is deployed, which has no image, so no version is built or sent.`);
+    }
+
     // The version the build makes: majhi picks the next patch when the build takes its version as an input.
-    const builtAnswer = answers["input:build-version"];
-    if (recipe.pick !== undefined) {
+    const builtAnswer = reused?.version ?? answers["input:build-version"];
+    if (recipe.pick !== undefined && reused === undefined && !versionless) {
       if (builtAnswer !== undefined) notes.push(`Build version: ${builtAnswer}, as the owner said.`);
       else {
         const next = await this.ports.nextVersion(input.project, env.env).catch(() => undefined);
@@ -291,7 +457,7 @@ export class CaseDeployer {
       .catch(() => undefined);
     const ownerCommit = answers["previous-commit"];
     if (ownerCommit !== undefined) replaces = { ...replaces, commit: ownerCommit, from: "owner" };
-    const lack = goesBackBy(recipe, replaces);
+    const lack = goesBackBy(recipe, replaces, components);
     // Several hosts could be this environment's: which one is asked before the version is.
     const hosts =
       lack !== undefined && recipe.running !== undefined
@@ -332,10 +498,13 @@ export class CaseDeployer {
     // An input of the workflow with no value of its own is the same for every deploy of the environment: kept.
     const remember = Object.fromEntries(
       Object.entries(input.answers ?? {}).filter(
-        ([key]) => (key.startsWith("input:") && key !== "input:build-version") || key === "connection",
+        ([key]) =>
+          (key.startsWith("input:") && key !== "input:build-version") ||
+          key === "connection" ||
+          key === "registry",
       ),
     );
-    const filledInputs = recipe.deploy.map((step) => {
+    const filledInputs = runs.map((step) => {
       if (step.kind !== "github-workflow") return step;
       const inputs = { ...step.inputs };
       for (const [key, value] of Object.entries(filled)) {
@@ -357,8 +526,69 @@ export class CaseDeployer {
       previous: previous.slice(0, 64),
       ...(replaces === undefined ? {} : { replaces }),
       ...(Object.keys(remember).length === 0 ? {} : { remember }),
+      ...(registry !== undefined && reused === undefined && runs.some(isBuild) ? { builds: registry } : {}),
       notes,
     };
+  }
+
+  /**
+   * The fix, environment after environment: the branch lands before the first one, each later environment is read again
+   * right before its own step (what it runs now is recorded just before it goes), and an image a target of the same
+   * registry built is not built again. It stops at the first that does not go live: that one was put back by the
+   * deploy service, and the ones after it get nothing. An environment that needs an answer stops it too, `blocked`.
+   */
+  async deployAll(
+    input: PrepareInput & { landed: boolean },
+    plan: { envs: readonly string[]; paths: readonly OkPath[] },
+    hooks: DeployHooks,
+  ): Promise<{
+    targets: { path: OkPath; record: DeployRecord }[];
+    blocked?: { env: string; why: string; ask?: DeployQuestion[] };
+  }> {
+    const targets: { path: OkPath; record: DeployRecord }[] = [];
+    const reuse: ReusedImage[] = [];
+    let landed = input.landed;
+    for (const [i, first] of plan.paths.entries()) {
+      let path = first;
+      if (i > 0) {
+        const again = await this.prepare({
+          ...input,
+          env: first.env.env,
+          answers: answersFor(input.answers, first.env.env, plan.envs),
+          reuse: [...reuse],
+        });
+        if (!again.ok) {
+          return {
+            targets,
+            blocked: { env: first.env.env, why: again.why, ...(again.ask === undefined ? {} : { ask: again.ask }) },
+          };
+        }
+        path = again;
+      }
+      hooks.started(path);
+      let record: DeployRecord;
+      try {
+        record = await this.run({
+          task: input.task,
+          project: input.project,
+          env: path.env.env,
+          runs: path.runs,
+          landed,
+          replaces: path.replaces,
+        });
+      } catch (err) {
+        hooks.threw(path, err);
+        throw err;
+      }
+      landed = true;
+      await hooks.ended(path, record);
+      targets.push({ path, record });
+      if (record.state !== "live") break;
+      if (path.builds !== undefined && record.version !== undefined) {
+        reuse.push({ registry: path.builds, version: record.version });
+      }
+    }
+    return { targets };
   }
 
   /** Keeps the owner's answers about an environment's own inputs. */

@@ -8,6 +8,7 @@ import {
   type CaseCloseInput,
   type CaseDeployInput,
   type CaseDeployResult,
+  type CaseDeployTarget,
   type CaseFollowUpInput,
   type CaseHelpInput,
   type CaseRecord,
@@ -23,7 +24,11 @@ import {
 import { errorMessage, UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import { type CaseDeployer, type DeployQuestion, runLines } from "./deploy.ts";
+import {
+  type CaseDeployer,
+  type DeployQuestion,
+  runLines,
+} from "./deploy.ts";
 import {
   badSummary,
   caseLimits,
@@ -736,95 +741,150 @@ export class CaseService {
         409,
       );
     }
-    const path = await this.deps.deployer.prepare({
+    const about = [found.task.title, found.record.symptom, found.record.client];
+    const plan = await this.deps.deployer.plan({
       task,
       project: repo.project,
       branch: input.branch,
       env: input.env,
       answers: input.answers,
-      about: [found.task.title, found.record.symptom, found.record.client],
+      about,
     });
-    if (!path.ok) {
+    if (!plan.ok) {
       // What majhi cannot fill with certainty is one card for the owner, once; the captain goes on with the rest.
-      if (path.ask !== undefined) await this.askDeploy(found.task.id, found.org, input.branch, path.ask);
-      throw new UserError(path.why, 409);
+      if (plan.ask !== undefined) await this.askDeploy(found.task.id, found.org, input.branch, plan.ask);
+      throw new UserError(plan.why, 409);
     }
-    for (const note of path.notes) this.line(task, note);
-    // The version the environment runs now is written before anything moves, so a rollback always knows where to go.
-    const at = this.at();
-    this.update(task, (r) =>
-      withDeploy(r, {
-        at,
-        project: repo.project,
-        env: path.env.env,
-        branch: input.branch,
-        previous: path.previous,
-        commit: "",
-        state: "deploying",
-      }),
-    );
-    this.line(
-      task,
-      `Deploying ${input.branch} to ${repo.project} ${path.env.env}. It replaces ${path.previous === "" ? "a version majhi does not know" : shortVersion(path.previous)}.`,
-    );
-    let ended: Awaited<ReturnType<CaseDeployer["run"]>>;
-    try {
-      ended = await this.deps.deployer.run({
+    const several = plan.envs.length > 1;
+    if (several) {
+      this.line(
         task,
-        project: repo.project,
-        env: path.env.env,
-        runs: path.runs,
-        landed: repo.landed !== undefined,
-        replaces: path.replaces,
-      });
+        `${repo.project} has ${plan.envs.length} production environments. The fix goes to each, one after another: ${plan.envs.join(", ")}. It stops at the first that fails and puts that one back.`,
+      );
+    }
+    const org = found.org;
+    const branch = input.branch;
+    let outcome: Awaited<ReturnType<CaseDeployer["deployAll"]>>;
+    try {
+      outcome = await this.deps.deployer.deployAll(
+        {
+          task,
+          project: repo.project,
+          branch,
+          env: input.env,
+          answers: input.answers,
+          about,
+          landed: repo.landed !== undefined,
+        },
+        plan,
+        {
+          started: (path) => {
+            for (const note of path.notes) this.line(task, note);
+            // The version the environment runs now is written before anything moves, so a rollback always knows where to go.
+            const at = this.at();
+            this.update(task, (r) =>
+              withDeploy(r, {
+                at,
+                project: repo.project,
+                env: path.env.env,
+                branch,
+                previous: path.previous,
+                commit: "",
+                state: "deploying",
+              }),
+            );
+            this.line(
+              task,
+              `Deploying ${branch} to ${repo.project} ${path.env.env}. It replaces ${path.previous === "" ? "a version majhi does not know" : shortVersion(path.previous)}.`,
+            );
+          },
+          threw: (path, err) => {
+            this.update(task, (r) => {
+              const last = r.deploys?.at(-1);
+              return last === undefined ? r : withDeployEnded(r, { ...last, state: "failed" });
+            });
+            this.line(
+              task,
+              `The deploy of ${branch} to ${path.env.env} did not go through: ${errorMessage(err)}`,
+              "warn",
+            );
+          },
+          ended: async (path, ended) => {
+            const live = ended.state === "live";
+            // Each run of the deploy, with its link and how it ended, before the verdict.
+            for (const text of runLines(ended)) this.line(task, text, live ? "info" : "warn");
+            this.update(task, (r) => {
+              const last = r.deploys?.at(-1);
+              return last === undefined
+                ? r
+                : withDeployEnded(r, {
+                    ...last,
+                    record: ended.id,
+                    commit: ended.commit,
+                    state: live ? "live" : "failed",
+                  });
+            });
+            if (live && path.remember !== undefined) {
+              await this.deps.deployer.remember(repo.project, path.env.env, path.remember).catch(() => undefined);
+            }
+            this.line(
+              task,
+              live
+                ? `${repo.project} ${path.env.env} is live at ${ended.commit.slice(0, 7)}.`
+                : `The deploy of ${branch} to ${path.env.env} did not go live (${ended.reason ?? ended.state}). majhi put ${path.env.env} back where it can.`,
+              live ? "info" : "warn",
+            );
+            this.deps.history?.({
+              text: `Deployed ${branch} to ${repo.project} ${path.env.env}: ${live ? "live" : "failed"}`,
+              org,
+              task,
+            });
+            this.deps.changed();
+          },
+        },
+      );
     } catch (err) {
-      const why = errorMessage(err);
-      this.update(task, (r) => {
-        const last = r.deploys?.at(-1);
-        return last === undefined ? r : withDeployEnded(r, { ...last, state: "failed" });
-      });
-      this.line(task, `The deploy of ${input.branch} did not go through: ${why}`, "warn");
-      throw err instanceof UserError ? err : new UserError(why, 409);
+      throw err instanceof UserError ? err : new UserError(errorMessage(err), 409);
     }
-    const live = ended.state === "live";
-    // Each run of the deploy, with its link and how it ended, before the verdict.
-    for (const text of runLines(ended)) this.line(task, text, live ? "info" : "warn");
-    this.update(task, (r) => {
-      const last = r.deploys?.at(-1);
-      return last === undefined
-        ? r
-        : withDeployEnded(r, {
-            ...last,
-            record: ended.id,
-            commit: ended.commit,
-            state: live ? "live" : "failed",
-          });
-    });
-    if (live && path.remember !== undefined) {
-      await this.deps.deployer.remember(repo.project, path.env.env, path.remember).catch(() => undefined);
+    const targets: CaseDeployTarget[] = outcome.targets.map(({ path, record }) => ({
+      env: path.env.env,
+      commit: record.commit,
+      previous: path.previous,
+      state: record.state === "live" ? "live" : "failed",
+    }));
+    if (outcome.blocked !== undefined) {
+      // A later target needs something the owner has to say: nothing more moves, and the earlier ones stay as they are.
+      const { blocked } = outcome;
+      if (blocked.ask !== undefined) {
+        await this.askDeploy(
+          found.task.id,
+          found.org,
+          branch,
+          blocked.ask.map((q) => ({
+            ...q,
+            id: `${blocked.env}:${q.id}`,
+            question: `${blocked.env}: ${q.question}`,
+          })),
+        );
+      }
+      const done = targets.map((t) => `${t.env} is ${t.state}`).join(", ");
+      throw new UserError(`${done === "" ? "" : `${done}. `}${blocked.why}`, 409);
     }
-    this.line(
-      task,
-      live
-        ? `${repo.project} ${path.env.env} is live at ${ended.commit.slice(0, 7)}.`
-        : `The deploy of ${input.branch} did not go live (${ended.reason ?? ended.state}). majhi put ${path.env.env} back where it can.`,
-      live ? "info" : "warn",
-    );
-    this.deps.history?.({
-      text: `Deployed ${input.branch} to ${repo.project} ${path.env.env}: ${live ? "live" : "failed"}`,
-      org: found.org,
-      task,
-    });
-    this.deps.changed();
+    const reached = targets.at(-1);
+    if (reached === undefined) throw new UserError("The fix has no environment to go to.", 409);
+    const live = reached.state === "live";
+    const rest = plan.envs.slice(targets.length);
+    const failure = outcome.targets.at(-1)?.record;
     return {
       ok: true,
-      env: path.env.env,
-      commit: ended.commit,
-      previous: path.previous,
-      state: live ? "live" : "failed",
+      env: reached.env,
+      commit: reached.commit,
+      previous: reached.previous,
+      state: reached.state,
+      ...(several ? { targets } : {}),
       note: live
         ? "Now read the thing the client said fails, and close the case when it works. If it is worse, call case_rollback."
-        : `It did not go live: ${ended.reason ?? ended.state}. Read the state before you go on.`,
+        : `It did not go live: ${failure?.reason ?? failure?.state ?? "failed"}. ${rest.length === 0 ? "" : `${rest.join(", ")} did not get the fix: majhi stopped there. `}Read the state before you go on.`,
     };
   }
 

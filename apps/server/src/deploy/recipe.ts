@@ -159,6 +159,42 @@ export function versionPutLive(
   return undefined;
 }
 
+/** What a run sends: a workflow's inputs, a job's variables. */
+export function sentOf(run: DeployRunStep): Record<string, string> | undefined {
+  return run.kind === "github-workflow" ? run.inputs : run.kind === "gitlab-job" ? run.variables : undefined;
+}
+
+/** The version a deploy sent, wherever it was sent: any input the recipe binds to the version a build made. */
+export function versionSent(
+  recipe: DeployRecipe,
+  sent: readonly (Record<string, string> | undefined)[],
+): string | undefined {
+  const names = [...bindsOf(recipe.deploy, "built-version"), ...bindsOf(recipe.deploy, "next-version")];
+  for (const inputs of [...sent].reverse()) {
+    for (const name of names) {
+      const value = inputs?.[name];
+      if (value !== undefined && value !== "") return value;
+    }
+  }
+  return undefined;
+}
+
+/** The option of the recipe's parts input that a deploy sent, read back from what its runs sent. */
+export function deployedComponents(
+  recipe: DeployRecipe,
+  sent: readonly (Record<string, string> | undefined)[],
+): string | undefined {
+  for (const name of bindsOf(recipe.deploy, "components")) {
+    for (const inputs of sent) if (inputs?.[name] !== undefined) return inputs[name];
+  }
+  return undefined;
+}
+
+/** Whether the part is one that deploys no image: it has no version, so it goes back by commit. */
+export function isVersionless(recipe: DeployRecipe, option: string | undefined): boolean {
+  return option !== undefined && (recipe.components?.versionless ?? []).includes(option);
+}
+
 /**
  * The inputs a run's title holds, read back through the pieces of the workflow's `run-name`. A title that does
  * not fit the pieces, or two inputs with no text between them (where the split would be a guess), read as nothing.

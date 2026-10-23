@@ -90,7 +90,7 @@ export const CaseDeployInputSchema = z.object({
     .max(80)
     .optional()
     .describe(
-      "The environment the client is on, when the project has several. Left out, the one the case names",
+      "The environment the case is about, when the project has several: it goes first. Left out, the one whose name the case holds. The fix goes to every production environment either way",
     ),
   answers: z
     .record(z.string().trim().min(1).max(120), z.string().trim().min(1).max(300))
@@ -103,13 +103,19 @@ export const CaseDeployInputSchema = z.object({
 /** Puts the version the last deploy of the case replaced back. Once per case. */
 export const CaseRollbackInputSchema = z.object({ case: CaseRef });
 
-export const CaseDeployResultSchema = z.object({
-  ok: z.literal(true),
-  note: z.string().optional(),
+/** One environment a case deploy went to: what it replaced, the commit, and how it ended. */
+export const CaseDeployTargetSchema = z.object({
   env: z.string(),
   commit: z.string(),
   previous: z.string(),
   state: z.enum(["live", "failed"]),
+});
+
+/** The last environment the deploy reached (the one that failed, when one did) and every one it went to, in order. */
+export const CaseDeployResultSchema = CaseDeployTargetSchema.extend({
+  ok: z.literal(true),
+  note: z.string().optional(),
+  targets: z.array(CaseDeployTargetSchema).optional(),
 });
 
 /** The owner presses Make it a task on a follow-up. */
@@ -130,6 +136,7 @@ export type CaseHelpInput = z.infer<typeof CaseHelpInputSchema>;
 export type CaseDeployInput = z.infer<typeof CaseDeployInputSchema>;
 export type CaseRollbackInput = z.infer<typeof CaseRollbackInputSchema>;
 export type CaseDeployResult = z.infer<typeof CaseDeployResultSchema>;
+export type CaseDeployTarget = z.infer<typeof CaseDeployTargetSchema>;
 export type CaseMakeTaskInput = z.infer<typeof CaseMakeTaskInputSchema>;
 
 /** The option ids of the card a stopped case writes, and what each does. */

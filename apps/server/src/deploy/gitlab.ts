@@ -105,22 +105,61 @@ const PLAYED = new Set([
 const JOB_FIND_TRIES = 8;
 const JOB_FIND_WAIT_MS = 2_000;
 
-/** The pipeline of the commit: the newest one the host has, or a new one on the base branch. */
+/**
+ * The pipeline of the commit: the newest one the host has, or a new one on the base branch. A commit that was just
+ * pushed needs a moment before GitLab makes its pipeline, so the host is asked a few times before one is made here
+ * (a second pipeline would have manual jobs of its own, and the first one's would be played by nobody).
+ */
 async function pipelineOf(ctx: DeployContext, step: Remoted, a: Access, deps: ProviderDeps): Promise<string> {
-  const found = await api(
-    deps,
-    a,
-    `/projects/${a.id}/pipelines?sha=${encodeURIComponent(ctx.commit)}&order_by=id&sort=desc&per_page=1`,
-  );
-  const first = Array.isArray(found.body) ? found.body[0] : undefined;
-  const known = num(first, "id");
-  if (known !== undefined) return String(known);
+  for (let i = 0; i < JOB_FIND_TRIES; i++) {
+    const found = await api(
+      deps,
+      a,
+      `/projects/${a.id}/pipelines?sha=${encodeURIComponent(ctx.commit)}&order_by=id&sort=desc&per_page=1`,
+    );
+    const first = Array.isArray(found.body) ? found.body[0] : undefined;
+    const known = num(first, "id");
+    if (known !== undefined) return String(known);
+    if (i < JOB_FIND_TRIES - 1) await deps.sleep(JOB_FIND_WAIT_MS);
+  }
   const made = await api(deps, a, `/projects/${a.id}/pipeline`, { ref: ref(ctx, step) });
   const id = num(made.body, "id");
   if (made.status !== 201 || id === undefined) {
     throw new DeployProblem(
       `GitLab did not create a pipeline for ${ctx.commit.slice(0, 7)} (it answered ${made.status}).`,
     );
+  }
+  return String(id);
+}
+
+/**
+ * A new pipeline at the run's commit: on the base branch while it is at that commit, else on a branch of its own at
+ * the commit (named by it, made once). For a job that ran in the commit's own pipeline already.
+ */
+async function freshPipeline(
+  ctx: DeployContext,
+  step: Remoted,
+  a: Access,
+  deps: ProviderDeps,
+): Promise<string> {
+  const base = ref(ctx, step);
+  const tip = await api(deps, a, `/projects/${a.id}/repository/branches/${encodeURIComponent(base)}`);
+  const head = tip.status === 200 ? str((tip.body as { commit?: unknown } | undefined)?.commit, "id") : undefined;
+  let onBranch = base;
+  if (head !== ctx.commit) {
+    onBranch = `majhi-rollback-${ctx.commit.slice(0, 12)}`;
+    const made = await api(deps, a, `/projects/${a.id}/repository/branches`, { branch: onBranch, ref: ctx.commit });
+    // 400 is "the branch exists": an earlier run at this commit made it.
+    if (made.status !== 201 && made.status !== 400) {
+      throw new DeployProblem(
+        `GitLab would not make a branch at ${ctx.commit.slice(0, 7)} (it answered ${made.status}).`,
+      );
+    }
+  }
+  const started = await api(deps, a, `/projects/${a.id}/pipeline`, { ref: onBranch });
+  const id = num(started.body, "id");
+  if (started.status !== 201 || id === undefined) {
+    throw new DeployProblem(`GitLab did not create a pipeline (it answered ${started.status}).`);
   }
   return String(id);
 }
@@ -283,7 +322,10 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       const a = await access(ctx, step, deps);
       if (step.kind === "gitlab-merge") return mergeInto(ctx, step, a, deps);
       if (step.kind === "gitlab-job") {
-        const pipeline = await pipelineOf(ctx, step, a, deps);
+        const pipeline =
+          step.fresh === true
+            ? await freshPipeline(ctx, step, a, deps)
+            : await pipelineOf(ctx, step, a, deps);
         const job = await jobOf(step.job, pipeline, a, deps);
         if (job === undefined) {
           throw new DeployProblem(`The pipeline ${pipeline} of ${a.slug} has no job named ${step.job}.`);
