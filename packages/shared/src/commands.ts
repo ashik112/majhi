@@ -3214,7 +3214,7 @@ export const commands = {
   "answers.cancelHeld": {
     risk: "change",
     summary:
-      "Undo an answer that waits out its Undo time: a decision id, or ask:<task>:<item> for a question card. Owner only",
+      "Undo an answer that waits out its Undo time: a decision id (any kind), batch:<batch> for a group, or ask:<task>:<item> for a question card. Owner only",
     input: z.object({ key: z.string().min(1).max(400) }),
     output: z.object({ cancelled: z.boolean() }),
   },

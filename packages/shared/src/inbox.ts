@@ -249,7 +249,7 @@ export const DecisionAnswerInputSchema = z.object({
   option: z.string().min(1).max(200),
   text: z.string().min(1).max(2000).optional(),
   /**
-   * The owner's Undo time for a one-click answer to a question: majhi holds the answer this many milliseconds
+   * The owner's Undo time for a one-click answer, of any kind: majhi holds the answer this many milliseconds
    * and then sends it, also when the tab is gone. `answers.cancelHeld` drops it before then.
    */
   holdMs: z.number().int().min(1000).max(15_000).optional(),
@@ -410,6 +410,8 @@ export const DecisionBatchInputSchema = z.object({
   batch: z.string().trim().min(8).max(80),
   intent: BatchIntentSchema,
   ids: z.array(z.string().min(1).max(300)).min(1).max(BATCH_MAX),
+  /** The owner's Undo time: majhi holds the batch this many milliseconds, then sends it, also when the tab is gone. */
+  holdMs: z.number().int().min(1000).max(15_000).optional(),
 });
 export type DecisionBatchInput = z.infer<typeof DecisionBatchInputSchema>;
 
