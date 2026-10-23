@@ -1,7 +1,13 @@
 import type { DeployEnvironment } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { discoverEnvironments } from "../deploy/discover.ts";
-import { ACME_SHOP_GITLAB_FILES, acmeShopCi, memoryCi } from "../deploy/testing/acme-shop.ts";
+import {
+  ACME_SHOP_GITLAB_FILES,
+  ACME_SHOP_MONO_FILES,
+  ACME_SHOP_MONO_FOLDERS,
+  acmeShopCi,
+  memoryCi,
+} from "../deploy/testing/acme-shop.ts";
 import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
 import {
@@ -538,6 +544,40 @@ describe("a case deploy to every production target through GitLab", () => {
       ]);
       kase = withRollback(kase, { at, record: globex.record.id, to: globex.path.previous, ok: true });
       expect(rollbackTargets(kase)).toEqual([]);
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+});
+
+describe("which environments a fix goes to", () => {
+  it("goes only to the environments that deploy the part the change touches, and says which were left out", async () => {
+    const found = await discoverEnvironments({
+      files: await acmeShopCi(ACME_SHOP_MONO_FILES),
+      base: "main",
+      provider: "gitlab",
+      remote: "gitlab",
+      folders: ACME_SHOP_MONO_FOLDERS,
+      read: memoryCi(ACME_SHOP_MONO_FILES).read,
+    });
+    const r = await rig(found.environments, "github", { origin: "github", gitlab: "gitlab" });
+    try {
+      const deployer = new CaseDeployer(portsOf(r, undefined));
+      // A change in the shop: its three targets, and the media node is left out with its reason.
+      const shop = await deployer.order("storefront", { changed: ["apps/acme-api/app/slips.py"] });
+      expect(shop).toMatchObject({ ok: true, envs: ["acme", "globex", "initech"] });
+      expect(shop.ok && shop.left.map((l) => l.env)).toEqual(["media-eu-1"]);
+      // A change in the other product: no environment of the shop gets it, and nothing deploys.
+      const media = await deployer.order("storefront", { changed: ["apps/media-service/main.go"] });
+      expect(media).toMatchObject({
+        ok: false,
+        why: expect.stringContaining("which no environment of the project deploys"),
+      });
+      // A change that belongs to no part (the docs) has nothing to narrow by: the shop's targets all go.
+      const docs = await deployer.order("storefront", { changed: ["docs/readme.md"] });
+      expect(docs).toMatchObject({ ok: true, envs: ["acme", "globex", "initech"] });
     } finally {
       await r.service.idle();
       await r.hosts.close();
