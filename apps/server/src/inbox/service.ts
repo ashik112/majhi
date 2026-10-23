@@ -140,6 +140,16 @@ export interface InboxDeps {
 
 /** A batch's result is kept this long, so a second send of the same click gets the same answer. */
 const BATCH_KEEP_MS = 10 * 60_000;
+/** The room cards a click on a decision answers (`answerCard`): any other is answered in its task. */
+const CLICK_CARDS: ReadonlySet<RoomItem["type"]> = new Set([
+  "ask",
+  "owner-question",
+  "choice",
+  "permission",
+  "approval",
+  "review",
+  "paused",
+]);
 const BATCH_KEEP_MAX = 200;
 
 /** What the server found about a review task's merge is kept this long. */
@@ -528,7 +538,18 @@ export class InboxService {
     if (option.text === true && (input.text === undefined || input.text.trim() === "")) {
       throw new UserError("Write your answer first.", 400);
     }
-    if (parseDecisionId(input.id)?.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
+    const parsed = parseDecisionId(input.id);
+    if (parsed?.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
+    // A card this path cannot answer is refused now, as `answerCard` would, not after the wait.
+    if (parsed?.kind === "room") {
+      const item = this.deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
+      if (item !== undefined && !CLICK_CARDS.has(item.type)) {
+        throw new UserError("That decision is answered in the task. Open it.", 400);
+      }
+      if (item?.type === "ask" && item.questions.length !== 1) {
+        throw new UserError("This card has several questions. Open the task.", 400);
+      }
+    }
   }
 
   /** Takes one option of a decision through the path its card has. */

@@ -620,7 +620,7 @@ export class PermissionFlow {
   /**
    * An open request ended and nobody answered it: the agent that asked is woken with one line, through the same
    * `notify` as any other wake. Once per agent and task; the cards are closed first, so a request is never woken
-   * twice. Not for a task that is done. The agent may no longer need it, and majhi's rules may have changed, so
+   * twice. Not for a task that is done or paused. The agent may no longer need it, and majhi's rules may have changed, so
    * the command may now run without asking.
    */
   private wake(items: readonly PermissionItem[], why: string): void {
@@ -631,7 +631,9 @@ export class PermissionFlow {
       if (seen.has(key)) continue;
       seen.add(key);
       const task = store.tasks.get(id);
-      if (task === undefined || task.status === "done" || !task.team.includes(agent)) continue;
+      // A paused task goes on from its own resume, with the agent told then; a done one has nothing left to ask.
+      if (task === undefined || task.status === "done" || task.status === "paused") continue;
+      if (!task.team.includes(agent)) continue;
       notify?.(id, agent, endedRequestLine(why));
     }
   }

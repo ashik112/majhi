@@ -91,4 +91,46 @@ describe("restart and crash", () => {
     expect(again.majhi.services.store.runs.interrupted()).toEqual([]);
     expect(again.majhi.services.store.runs.forTask("ACM-1").at(-1)?.checkpoint).toBe(1);
   });
+
+  it("tells a task agent whose open permission request the restart ended, once, with its resume", async () => {
+    w = await taskWorld();
+    expect((await w.h.cmd("authority.set", { org: "acme", level: "routine" })).status).toBe(200);
+    let asked = false;
+    w.h.runtime.onSession = (session) => {
+      if (w.h.runtime.sessions.length > 0) return;
+      session.script = async (turn) => {
+        asked = true;
+        await turn.ask({
+          title: "git push origin main",
+          kind: "execute",
+          command: "git push origin main",
+          toolCallId: "t1",
+          options: [
+            { id: "allow", name: "Allow", kind: "allow_once" },
+            { id: "reject", name: "Deny", kind: "reject_once" },
+          ],
+        });
+        return "end_turn";
+      };
+    };
+    expect(
+      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+        .status,
+    ).toBe(200);
+    await until(() => asked, "the agent to ask");
+    await until(
+      async () => (await items(w.h)).some((i) => i.type === "permission" && i.state === "pending"),
+      "the card",
+    );
+
+    // majhi dies with the card open.
+    extra = w.h.restart();
+    const again = extra;
+    await until(() => w.h.runtime.sessions.length === 2, "a new session");
+    await again.majhi.services.runs.idle();
+    const heard = JSON.stringify(w.h.runtime.sessions[1]?.prompts);
+    expect(heard.split("ended without an answer")).toHaveLength(2);
+    expect(heard).toContain("Continue from where you stopped");
+    expect((await items(again)).find((i) => i.type === "permission")).toMatchObject({ state: "cancelled" });
+  });
 });
