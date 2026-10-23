@@ -7,7 +7,7 @@ import {
   currentRules,
   DEFAULT_LEVEL,
   isAlwaysKind,
-  isCaptainThread,
+  isCaptainLane,
   MAJHI_OPTION_PREFIX,
   PRIVATE,
   RISK_LABEL,
@@ -18,11 +18,12 @@ import {
   withRule,
 } from "@majhi/shared";
 import { incidentShipsOf, levelOf } from "../captain/levels.ts";
+import { isRootChat } from "../captain/tell.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { DeferredResult, DeferredResults } from "../connections/deferred.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import { isIncidentTask } from "../incident/engine.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
@@ -95,6 +96,11 @@ export class PermissionFlow {
       onCardChange?: (() => void) | undefined;
       /** What the owner said on a captain's card, for the captain's next tool call or turn. */
       deferred?: DeferredResults | undefined;
+      /**
+       * Runs a command the owner allowed in the agent's own sandbox, as a background process the agent is woken
+       * about when it ends. Resolves with the process id; rejects when it cannot start.
+       */
+      runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
       /** Wakes an agent with a message from majhi (`RunManager.notify`). */
       notify?: ((task: string, agent: string, text: string, claim?: () => boolean) => void) | undefined;
     },
@@ -117,6 +123,7 @@ export class PermissionFlow {
     const org = task?.org ?? PRIVATE;
     const kind = requestRisk(ask, riskScopeOfTask(task));
     const { level, rules, incident } = await this.policyOf(org);
+    const boss = (await this.deps.config?.sections())?.boss;
     const go = riskVerdict(level, rules, org, kind, {
       incident,
       incidentFix: task !== undefined && isIncidentTask(task),
@@ -157,7 +164,11 @@ export class PermissionFlow {
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
-    if (task !== undefined && isCaptainThread(task) && task.team[0] === run.agent) {
+    const captains =
+      task !== undefined &&
+      task.team[0] === run.agent &&
+      (isCaptainLane(task) || (boss !== undefined && isRootChat(task, boss)));
+    if (captains) {
       return this.askCaptain(run, { ...ask, options }, id, kind);
     }
     this.live.set(run, { status: "waiting" });
@@ -235,17 +246,44 @@ export class PermissionFlow {
       if (chosen.id === ALWAYS_OPTION) this.keepRule(held.task, held.risk);
       else if (chosen.kind === "allow_always") store.permissions.allow(held.task, riskAllowKey(held.risk));
     }
-    if (allowed)
-      this.grants.set(grantKey(held.task, held.agent, held.command), this.now().getTime() + GRANT_MS);
     room.post(item.task, itemId, permissionPayload(item, { state: "answered", chosen: option }));
-    const text = allowed
-      ? `The owner allowed \`${held.command}\`. Run it again now: it goes ahead once without asking.`
-      : `The owner did not allow \`${held.command}\`. It did not run. Go on without it.`;
-    this.tellCaptain(held, text);
+    if (allowed) void this.runAllowed(held);
+    else
+      this.tellCaptain(
+        held,
+        `The owner did not allow \`${held.command}\`. It did not run. Go on without it.`,
+      );
     this.deps.onCardChange?.();
     const updated = room.get(held.task, itemId);
     if (updated === undefined) throw new Error("The prompt was not stored");
     return updated;
+  }
+
+  /**
+   * The owner allowed the command: it runs in the captain's own sandbox as a background process, and the captain is
+   * woken with its output when it ends, like any process it started. When majhi cannot start it there, the same
+   * command goes through once when the captain asks again, and the captain is told so.
+   */
+  private async runAllowed(held: CaptainCard): Promise<void> {
+    const { runAllowed, deferred } = this.deps;
+    const shown = redactSecrets(held.command, []);
+    try {
+      if (runAllowed === undefined) throw new Error("majhi cannot run it for you here");
+      const id = await runAllowed(held.task, held.agent, held.command);
+      if (held.told !== undefined) deferred?.discard(held.task, held.agent, held.told);
+      // The process's end wakes the captain with the output; this line is for a captain that is mid-turn.
+      deferred?.add(
+        held.task,
+        held.agent,
+        `The owner allowed \`${shown}\`. It runs now as ${id}, and you are woken with its output when it ends.`,
+      );
+    } catch (err) {
+      this.grants.set(grantKey(held.task, held.agent, held.command), this.now().getTime() + GRANT_MS);
+      this.tellCaptain(
+        held,
+        `The owner allowed \`${shown}\`, but majhi could not start it for you (${errorMessage(err)}). Run it again now: it goes ahead once without asking.`,
+      );
+    }
   }
 
   /** The captain hears it with its next majhi call, or in a message of its own, whichever comes first. */

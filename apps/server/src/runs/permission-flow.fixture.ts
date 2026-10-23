@@ -1,5 +1,5 @@
 import type { PermissionAsk } from "@majhi/acp";
-import { CAPTAIN_LANE_BRIEF, type RoomItem } from "@majhi/shared";
+import { CAPTAIN_LANE_BRIEF, CHAT_BRIEF, type RoomItem } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { DeferredResults } from "../connections/deferred.ts";
 import type { RoomService } from "../room/service.ts";
@@ -31,7 +31,9 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
         // A task named `CAP-...` is the captain's lane: its lead is the agent of the runs below.
         ...(task.startsWith("CAP")
           ? { kind: "chat", brief: CAPTAIN_LANE_BRIEF, team: ["acme-claude"] }
-          : { kind: "task", brief: "", team: ["acme-claude"] }),
+          : task.startsWith("ROOT")
+            ? { kind: "chat", brief: CHAT_BRIEF, org: undefined, team: ["acme-claude"] }
+            : { kind: "task", brief: "", team: ["acme-claude"] }),
         folder: `/Users/owner/tasks/${task}`,
         repos: [
           {
@@ -58,6 +60,7 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
   };
   const rules: { org: string; kind: string }[] = [];
   const config = {
+    sections: async () => ({ boss: "acme-claude" }),
     settings: async () => ({
       autonomy: { orgs: Object.fromEntries(Object.entries(levels).map(([o, level]) => [o, { level }])) },
       policy: { rules },
@@ -68,6 +71,7 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
   } as unknown as ConfigService;
   const deferred = new DeferredResults();
   const woken: string[] = [];
+  const launched = { ran: [] as string[], fails: false };
   const permissions = new PermissionFlow(
     {
       store,
@@ -75,6 +79,11 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
       connections,
       config,
       deferred,
+      runAllowed: async (_task: string, _agent: string, command: string) => {
+        if (launched.fails) throw new Error("no runner");
+        launched.ran.push(command);
+        return "p1";
+      },
       notify: (_task, _agent, text, claim) => {
         if (claim?.() !== false) woken.push(text);
       },
@@ -113,5 +122,5 @@ export function flow(levels: Record<string, string> = { acme: "routine", globex:
         secrets: [],
       },
     });
-  return { permissions, runOf, ask, shell, items, held, added, rules, logged, deferred, woken };
+  return { permissions, runOf, ask, shell, items, held, added, rules, logged, deferred, woken, launched };
 }

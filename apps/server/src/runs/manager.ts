@@ -174,6 +174,8 @@ export interface RunDeps {
   onCardChange?: (() => void) | undefined;
   /** What the owner said on a card the captain does not wait on, for the captain's next tool call or turn. */
   deferred?: DeferredResults | undefined;
+  /** Runs a command the owner allowed on a captain's card, in the captain's own sandbox. Resolves with the process id. */
+  runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**

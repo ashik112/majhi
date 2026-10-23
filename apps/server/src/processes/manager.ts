@@ -126,6 +126,11 @@ export interface StartInput {
   wait: boolean;
   /** Runs `spawn` instead of `command`. `command` then only describes it, and `cwd` must be absolute. */
   managed?: ManagedRun | undefined;
+  /**
+   * The owner allowed this very command on a card: the risk and connection checks, which send an agent's own
+   * command to its shell and the card, are not asked again. Set only by majhi, never by an agent's tool.
+   */
+  allowed?: boolean | undefined;
 }
 
 interface Proc {
@@ -217,8 +222,10 @@ export class ProcessManager {
     // A managed run has no runner environment to build, and its folder is the task's own.
     const launch = managed === undefined ? await this.deps.launch(input.task, input.agent) : undefined;
     try {
-      refuseConnectionWrite(input.command, launch);
-      refuseAboveSandbox(input.command, launch);
+      if (input.allowed !== true) {
+        refuseConnectionWrite(input.command, launch);
+        refuseAboveSandbox(input.command, launch);
+      }
     } catch (err) {
       await launch?.cleanup?.().catch(() => undefined);
       throw err;

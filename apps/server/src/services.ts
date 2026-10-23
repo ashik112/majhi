@@ -1046,6 +1046,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const deferred = new DeferredResults();
   const runs = new RunManager({
     deferred,
+    // The owner's Allow on a captain's card runs the very command, in the captain's own sandbox.
+    runAllowed: async (task, agent, command) =>
+      (await processes.start({ task, agent, command, wait: true, allowed: true })).id,
     store,
     projectEnv,
     onEnvReady: (task) => tasks.refreshBriefs([task]),
