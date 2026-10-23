@@ -99,3 +99,71 @@ describe("a card whose prompt is gone", () => {
     expect(() => t.permissions.answer(stale, "ACM-9", "perm:4:1", "once")).toThrow(/ended/);
   });
 });
+
+describe("the captain never waits on a card", () => {
+  it.each(["CAP-1", "ROOT-1"])(
+    "%s is refused at once and told why, keeps the card for the owner, and an Allow runs the command and wakes it",
+    async (task) => {
+      const t = flow();
+      const run = t.runOf(task);
+      const line = "git push origin main";
+
+      // The call is answered now with the reject option; no prompt holds the run.
+      expect(await t.permissions.ask(run, t.shell(line), signal)).toBe("no");
+      expect(run.pending.size).toBe(0);
+      expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending", risk: "merge-main" });
+      // The captain's next majhi call says why, and a task agent in the same spot would still wait.
+      expect(t.deferred.take(task, "acme-claude")).toEqual([
+        `\`${line}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
+      ]);
+      const agent = t.runOf("ACM-8", { runId: 5 });
+      void t.permissions.ask(agent, t.shell(line), signal);
+      await tick();
+      expect(agent.pending.size).toBe(1);
+
+      // A new session does not take the card away, and the captain cannot answer it.
+      t.permissions.dropOrphans(t.runOf(task));
+      expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending" });
+      expect(() => t.permissions.answer(undefined, task, "perm:4:1", "once", true)).toThrow(/owner/);
+
+      // The owner's Allow runs that very command in the captain's sandbox; its end wakes the captain with the output.
+      t.permissions.answer(undefined, task, "perm:4:1", "once");
+      await tick();
+      expect(t.items.get("perm:4:1")).toMatchObject({ state: "answered", chosen: "once" });
+      expect(t.launched.ran).toEqual([line]);
+      expect(t.deferred.take(task, "acme-claude")).toEqual([
+        `The owner allowed \`${line}\`. It runs now as p1, and you are woken with its output when it ends.`,
+      ]);
+
+      // When majhi cannot start it there, the captain is woken and the same command goes through once when it asks again.
+      t.launched.fails = true;
+      const second = t.runOf(task, { runId: 6 });
+      expect(await t.permissions.ask(second, t.shell("git push origin release"), signal)).toBe("no");
+      t.permissions.answer(undefined, task, "perm:6:1", "once");
+      await tick();
+      expect(t.woken).toEqual([
+        "The owner allowed `git push origin release`, but majhi could not start it for you (no runner). Run it again now: it goes ahead once without asking.",
+      ]);
+      expect(await t.permissions.ask(t.runOf(task), t.shell("git push origin release"), signal)).toBe("once");
+      expect(await t.permissions.ask(t.runOf(task), t.shell("git push origin release"), signal)).toBe("no");
+    },
+  );
+
+  it("is refused at once on a gated connection write too, keeps the card, and an Allow lets that call through once", async () => {
+    const t = flow();
+    const call = () => t.ask("mcp__acme-obs__restart_service");
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("no");
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "pending", risk: "client-server-write" });
+    expect(t.deferred.take("CAP-1", "acme-claude")).toHaveLength(1);
+
+    t.permissions.answer(undefined, "CAP-1", "perm:4:1", "once");
+    await tick();
+    expect(t.items.get("perm:4:1")).toMatchObject({ state: "answered", chosen: "once" });
+    // An MCP tool call has no command line for majhi to run, so the captain makes it again and it goes through once.
+    expect(t.woken).toEqual([
+      "The owner allowed `mcp__acme-obs__restart_service`. Make the call again now: it goes ahead once without asking.",
+    ]);
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("once");
+    expect(await t.permissions.ask(t.held("CAP-1"), call(), signal)).toBe("no");
+  });
+});

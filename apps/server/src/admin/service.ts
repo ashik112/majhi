@@ -40,6 +40,7 @@ import { incidentShipsOf, levelOf } from "../captain/levels.ts";
 import { isRootChat } from "../captain/tell.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
+import type { DeferredResults } from "../connections/deferred.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
@@ -122,6 +123,8 @@ export interface AdminDeps {
   store: Store;
   secrets: SecretStore;
   tasks: TaskService;
+  /** What the owner said on a card the captain does not wait on: the captain reads it with its next tool call. */
+  deferred?: Pick<DeferredResults, "take"> | undefined;
 }
 
 /**
@@ -196,12 +199,19 @@ export interface AutonomyGate {
     reason: string,
     item: string,
   ): void;
-  adopt(caller: "boss" | "agent", command: CommandName, output: unknown, reason?: string): void;
+  adopt(
+    caller: "boss" | "agent",
+    command: CommandName,
+    output: unknown,
+    reason?: string,
+    ownerAsked?: boolean,
+  ): void;
   bossTool(
     caller: AdminCaller,
     command: CommandName,
     input: Record<string, unknown>,
     reason: string,
+    ownerAsked?: boolean,
   ): Promise<ToolResult>;
   /** What a captain lane may read (5.18): undefined when the task is no lane. */
   laneScope(task: string): Promise<LaneReads | undefined>;
@@ -320,13 +330,27 @@ export class AdminService {
   // ---------------------------------------------------------------------------
   // Agent calls
 
-  /** One MCP tool call. Never throws: problems come back as an error result the agent can read. */
+  /**
+   * One MCP tool call. Never throws: problems come back as an error result the agent can read. What the owner
+   * answered since the agent's last call (a card it does not wait on) comes first, so a busy agent reads it at once.
+   */
   async call(
     caller: AdminCaller,
     tool: string,
     args: Record<string, unknown>,
     /** `confirm`: always wait for the owner's click, whatever the policy, a saved rule or `ownerAsked` say. */
     options: { confirm?: boolean } = {},
+  ): Promise<ToolResult> {
+    const answered = this.deps.deferred?.take(caller.task, caller.agent) ?? [];
+    const result = await this.callTool(caller, tool, args, options);
+    return answered.length === 0 ? result : { ...result, text: `${answered.join("\n\n")}\n\n${result.text}` };
+  }
+
+  private async callTool(
+    caller: AdminCaller,
+    tool: string,
+    args: Record<string, unknown>,
+    options: { confirm?: boolean },
   ): Promise<ToolResult> {
     try {
       if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
@@ -358,7 +382,8 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why, ownerAsked === true)) ??
+          error("The captain's own tools are not available here.")
         );
       }
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
@@ -846,7 +871,7 @@ export class AdminService {
       }
       if (auto !== undefined && autonomy !== undefined) {
         autonomy.ran(caller, command, input, ask.reason, done);
-        if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
+        if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason, ask.ownerAsked);
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
@@ -875,7 +900,7 @@ export class AdminService {
     input: Record<string, unknown>,
     parsed: Record<string, unknown>,
     meta: CommandMeta,
-    ask: { reason: string; confirm?: boolean },
+    ask: { reason: string; confirm?: boolean; ownerAsked?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
     if (autonomy === undefined) return error("Autonomous is not available.");
@@ -921,7 +946,7 @@ export class AdminService {
       { command, input, reason: ask.reason, ok: done.ok, result },
     );
     autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
-    if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
+    if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason, ask.ownerAsked);
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 

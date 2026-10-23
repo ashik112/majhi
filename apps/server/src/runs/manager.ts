@@ -29,6 +29,7 @@ import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
+import type { DeferredResults } from "../connections/deferred.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { type HeldSecret, redactSecrets } from "../connections/redact.ts";
 import { type RunConnections, removeRunFiles } from "../connections/run-files.ts";
@@ -171,6 +172,10 @@ export interface RunDeps {
   onTasksChanged: (task: string, rows: boolean) => void;
   /** A permission card for the owner appeared or went. */
   onCardChange?: (() => void) | undefined;
+  /** What the owner said on a card the captain does not wait on, for the captain's next tool call or turn. */
+  deferred?: DeferredResults | undefined;
+  /** Runs a command the owner allowed on a captain's card, in the captain's own sandbox. Resolves with the process id. */
+  runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**
@@ -324,7 +329,11 @@ export class RunManager {
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
     this.live = new RunLive(deps.room, deps.onTasksChanged);
-    this.permissions = new PermissionFlow(deps, this.live, this.now);
+    this.permissions = new PermissionFlow(
+      { ...deps, notify: (task, agent, text, claim) => this.notify(task, agent, text, claim) },
+      this.live,
+      this.now,
+    );
     this.codexHook = new CodexHookGate({
       run: (task, agent) => this.runs.get(this.key(task, agent)),
       ask: (run, ask, signal) => this.permissions.ask(run, ask, signal),
@@ -876,6 +885,14 @@ export class RunManager {
         this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
         run.closing = false;
       }),
+    );
+  }
+
+  /** Whether the agent still waits on this permission card: a run of the task holds its prompt. */
+  promptOpen(item: { task: string; id: string }): boolean {
+    return (
+      this.permissions.keeps(item.id) ||
+      [...this.runs.values()].some((r) => r.task === item.task && r.pending.has(item.id))
     );
   }
 

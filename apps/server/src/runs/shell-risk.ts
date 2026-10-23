@@ -181,7 +181,42 @@ function gitPush(args: readonly string[], scope: RiskScope): RiskKind {
   return "push-branch";
 }
 
-/** `gh` and `glab`: reads stay inside, a draft request is the task's own branch, the rest by what it touches. */
+/** The listing verbs of any `gh` or `glab` group: they only read what the host holds. */
+const HOST_READ_VERBS: ReadonlySet<string> = new Set(["list", "view", "status"]);
+/** Words of `gh api` and `glab api` that send a body, whatever the method says. */
+const API_BODY_FLAGS: ReadonlySet<string> = new Set([
+  "-f",
+  "-F",
+  "--field",
+  "--raw-field",
+  "--input",
+  "-d",
+  "--data",
+]);
+
+/** The request method of an `api` call: the value of `-X` or `--method`, upper case. Undefined when none is named. */
+function apiMethod(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const word = args[i] ?? "";
+    if (word === "-X" || word === "--method") return (args[i + 1] ?? "").toUpperCase();
+    if (word.startsWith("--method=")) return word.slice("--method=".length).toUpperCase();
+    if (word.startsWith("-X") && word.length > 2) return word.slice(2).toUpperCase();
+  }
+  return undefined;
+}
+
+/** `api` reads when it is a GET or HEAD, named, or implied by sending no body. */
+function apiReads(args: readonly string[]): boolean {
+  const method = apiMethod(args);
+  if (method !== undefined) return method === "GET" || method === "HEAD";
+  return !args.some((a) => API_BODY_FLAGS.has(a.split("=")[0] ?? ""));
+}
+
+/**
+ * `gh` and `glab`: reads stay inside, a draft request is the task's own branch, the rest by what it touches.
+ * Reading the workspace's own code is never a write to a client's server: the listing verbs of every group,
+ * a GET through `api`, and cloning a repository (it only writes a folder, and the path words judge that).
+ */
 function hostCli(program: "gh" | "glab", args: readonly string[]): RiskKind {
   if (programReads(program, args) === "read") return "sandbox";
   const at = firstWord(args, GH_VALUED);
@@ -190,6 +225,14 @@ function hostCli(program: "gh" | "glab", args: readonly string[]): RiskKind {
   const verbAt = firstWord(after, GH_VALUED);
   const verb = verbAt === -1 ? "" : (after[verbAt] ?? "");
   const requests = group === "pr" || group === "mr";
+  const keys = group === "secret" || group === "variable" || group === "ssh-key" || group === "gpg-key";
+  if (group === "api" && apiReads(after)) return "sandbox";
+  if (group === "repo" && verb === "clone") return "sandbox";
+  // `auth status` names the account and masks the token, unless it is asked to show it.
+  if (group === "auth" && verb === "status" && !after.includes("--show-token") && !after.includes("-t")) {
+    return "sandbox";
+  }
+  if (!keys && group !== "auth" && HOST_READ_VERBS.has(verb)) return "sandbox";
   if (verb === "delete") return "delete-outside";
   if (requests && verb === "merge") return "merge-main";
   if (requests && verb === "create") {
@@ -197,15 +240,7 @@ function hostCli(program: "gh" | "glab", args: readonly string[]): RiskKind {
     return draft ? "push-branch" : "client-message";
   }
   if (requests || group === "issue") return "client-message";
-  if (
-    group === "secret" ||
-    group === "variable" ||
-    group === "ssh-key" ||
-    group === "gpg-key" ||
-    group === "auth"
-  ) {
-    return "secret";
-  }
+  if (keys || group === "auth") return "secret";
   return "client-server-write";
 }
 

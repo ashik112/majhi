@@ -280,10 +280,32 @@ export class AutonomyService {
    */
   queueStall(): number | undefined {
     const state = this.repo.state();
-    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor === undefined)) return undefined;
+    if (state.mode !== "on" || !this.liveQueue().some((q) => q.waitFor === undefined)) return undefined;
     const since = state.lastTick ?? state.queuedAt;
     if (since === undefined) return undefined;
     return Math.max(0, (this.now().getTime() - Date.parse(since)) / 60_000);
+  }
+
+  /**
+   * The captain's plan as it stands now: the steps whose task still exists and is not done. A plan is saved with
+   * the task ids of the day it was made, so a task deleted or finished since is a step nobody can take. Every reader
+   * of the plan (the digest, the brief, the page, the waits) reads it through here. Steps with no task stay.
+   */
+  liveQueue(): QueueItem[] {
+    return this.repo.state().queue.filter((q) => {
+      if (q.task === undefined) return true;
+      const task = this.deps.store.tasks.get(q.task);
+      return task !== undefined && task.status !== "done";
+    });
+  }
+
+  /** Takes finished and deleted tasks out of the saved plan, so it does not come back. */
+  prunePlan(): void {
+    const state = this.repo.state();
+    const live = this.liveQueue();
+    if (live.length === state.queue.length) return;
+    this.repo.setQueue(live, state.queuedAt ?? this.now().toISOString());
+    this.deps.events.emit(["autonomy"]);
   }
 
   mode(): AutonomyMode {
@@ -498,7 +520,7 @@ export class AutonomyService {
     if (this.roomWait.has(task)) return "waits for a start gate";
     if (holdCovering(this.holds, found?.org ?? PRIVATE, []) !== undefined) return "held by a cap";
     if (this.deps.store.room.tasksWaitingOnOwner().has(task)) return "waits on the owner";
-    const waits = this.repo.state().queue.some((q) => q.task === task && q.waitFor !== undefined);
+    const waits = this.liveQueue().some((q) => q.task === task && q.waitFor !== undefined);
     return waits ? "waits for an account" : undefined;
   }
 
@@ -1283,16 +1305,16 @@ export class AutonomyService {
    */
   private async checkWaits(): Promise<void> {
     const state = this.repo.state();
-    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor !== undefined)) return;
+    if (state.mode !== "on" || !this.liveQueue().some((q) => q.waitFor !== undefined)) return;
     const views = await this.deps.accounts.list().catch(() => undefined);
     if (views === undefined) return;
     const status = new Map(views.map((v) => [v.id, v.status]));
     const found = evaluateWaits(
-      state.queue,
+      this.liveQueue(),
       (id) => status.get(id),
       this.now(),
       (task) => this.deps.store.tasks.get(task)?.status === "paused",
-      await this.fullAccounts(state.queue),
+      await this.fullAccounts(this.liveQueue()),
     );
     if (!found.changed) return;
     this.repo.setQueue(found.queue, state.queuedAt ?? this.now().toISOString());
@@ -1661,10 +1683,13 @@ export class AutonomyService {
     if (idea !== undefined) {
       return `Refused: ${idea.id} is an idea. Only the owner starts an idea, so the captain leaves it alone.`;
     }
-    // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
+    // What the owner asked for in the conversation is done whatever Autonomous says: the switch decides only
+    // what the captain starts on its own. The level, the hours and the limits still hold.
+    const ownerAsked = command === "tasks.start" && input.ownerAsked === true;
+    // The captain resumes what it or the Autonomous switch paused, never what the owner paused, unless the owner asks.
     if (command === "tasks.start") {
       const paused = touched.find((t) => t.id === str(input.id) && t.status === "paused");
-      const stays = paused === undefined ? undefined : await this.resumeRefusalFor(paused);
+      const stays = paused === undefined ? undefined : await this.resumeRefusalFor(paused, ownerAsked);
       if (stays !== undefined) return stays;
     }
     if (group === "tasks" || group === "team" || starts) {
@@ -1679,7 +1704,8 @@ export class AutonomyService {
     if (starts) {
       // Picking a task from the backlog is backlog work: it needs Autonomous. A reaction (an incident, a finding, a fix task) does not.
       const target = touched.find((t) => t.id === str(input.id));
-      const job: Job = command === "tasks.start" && target !== undefined ? jobOfStart(target) : "reacting";
+      const job: Job =
+        command === "tasks.start" && target !== undefined && !ownerAsked ? jobOfStart(target) : "reacting";
       const work = mayWork({ autonomous: state.mode, stopped: this.halted() }, job);
       if (!work.ok) return `Refused: ${work.why}.`;
       // Hours and freeze dates hold a start, as they hold every change.
@@ -1708,8 +1734,8 @@ export class AutonomyService {
   }
 
   /** Why the captain may not resume this paused task now, or undefined: see `resumeRefusal`. */
-  async resumeRefusalFor(task: Task): Promise<string | undefined> {
-    return resumeRefusal(task, await this.resumeEnv(task));
+  async resumeRefusalFor(task: Task, ownerAsked = false): Promise<string | undefined> {
+    return resumeRefusal(task, await this.resumeEnv(task), ownerAsked);
   }
 
   /** The current state of the causes a pause can wait on: the team's accounts and the workspace's budget. */
@@ -1753,7 +1779,8 @@ export class AutonomyService {
   /** While Autonomous is turning off, calls that start work are refused. */
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
-    if (mode !== "stopping" || !startsWork(command, input)) return undefined;
+    // Autonomous turning off stops what the captain starts on its own, not what the owner asked for.
+    if (mode !== "stopping" || !startsWork(command, input) || input.ownerAsked === true) return undefined;
     return "Autonomous is turning off: nothing new starts.";
   }
 
@@ -1809,7 +1836,8 @@ export class AutonomyService {
           ];
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
-    const atOnce = await this.captainFull(str(input.id));
+    // Autonomous's cap on its own tasks does not count a start the owner asked for.
+    const atOnce = input.ownerAsked === true ? undefined : await this.captainFull(str(input.id));
     // The owner's tasks come first: the captain takes a free running place, never a place in the line.
     const id = str(input.id);
     const running =
@@ -2079,7 +2107,13 @@ export class AutonomyService {
    * After a call of an autonomous caller ran (rule 2): tasks the captain creates, splits or starts from
    * its chat join, and so do tasks an agent of an autonomous task creates or splits.
    */
-  adopt(caller: AutonomyCaller, command: CommandName, output: unknown, reason = ""): void {
+  adopt(
+    caller: AutonomyCaller,
+    command: CommandName,
+    output: unknown,
+    reason = "",
+    ownerAsked = false,
+  ): void {
     if (caller === "boss" && (command === "tasks.create" || command === "tasks.start")) {
       const made =
         typeof output === "object" && output !== null ? (output as { id?: unknown }).id : undefined;
@@ -2087,6 +2121,8 @@ export class AutonomyService {
       if (task !== undefined) this.saidStaffing(command, task);
     }
     if (this.repo.state().mode !== "on") return;
+    // A task the owner asked the captain for is the owner's, not Autonomous's: the switch never pauses it or stops its ship.
+    if (caller === "boss" && ownerAsked) return;
     const ids: string[] = [];
     const id = (o: unknown) => (typeof o === "object" && o !== null ? (o as { id?: unknown }).id : undefined);
     if (command === "tasks.create" || (command === "tasks.start" && caller === "boss")) {
@@ -2465,6 +2501,7 @@ export class AutonomyService {
     command: CommandName,
     input: Record<string, unknown>,
     reason: string,
+    ownerAsked = false,
   ): Promise<ToolResult> {
     if ((await this.callerKind(caller)) !== "boss") {
       return fail(`${command} is a tool of the captain in its lanes.`);
@@ -2485,10 +2522,10 @@ export class AutonomyService {
     }
     const authority =
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
-    // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`).
+    // Answering what agents ask is a reaction; the queue is backlog work (`may.ts`), unless the owner asked for a plan.
     const work = mayWork(
       { autonomous: mode, stopped: this.halted() },
-      command === "autonomy.plan" ? "backlog" : "reacting",
+      command === "autonomy.plan" && !ownerAsked ? "backlog" : "reacting",
     );
     if (!work.ok) return fail(`${work.why}.`);
     const refused = await this.refusal(caller, command, input, reason);
@@ -2512,8 +2549,7 @@ export class AutonomyService {
       }
       const items =
         lane === undefined ? parsed.data.items : parsed.data.items.map((i) => ({ ...i, org: lane }));
-      const others =
-        lane === undefined ? [] : this.repo.state().queue.filter((i) => (i.org ?? PRIVATE) !== lane);
+      const others = lane === undefined ? [] : this.liveQueue().filter((i) => (i.org ?? PRIVATE) !== lane);
       this.repo.setQueue([...others, ...items], this.now().toISOString());
       this.deps.events.emit(["autonomy"]);
       return ok({ queue: items.length });
@@ -2658,9 +2694,8 @@ export class AutonomyService {
 
   /** The titles of what the captain plans next in a workspace, in its queue's order, for the brief. */
   queueTitles(max: number, org: string): string[] {
-    return this.repo
-      .state()
-      .queue.filter((q) => (q.org ?? PRIVATE) === org)
+    return this.liveQueue()
+      .filter((q) => (q.org ?? PRIVATE) === org)
       .slice(0, max)
       .map((q) => q.title);
   }
@@ -2766,7 +2801,7 @@ export class AutonomyService {
       running: this.nowList()
         .filter((n) => n.status === "running")
         .map((n) => n.task),
-      queue: after.queue,
+      queue: this.liveQueue(),
       backlog: detail ? this.backlogView(rated) : [],
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,

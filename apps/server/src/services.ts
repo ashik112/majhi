@@ -95,6 +95,7 @@ import { assertHostAllowed, type Lookup } from "./connect/self-host.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
 import { failingConnectionDecisions } from "./connections/decisions.ts";
+import { DeferredResults } from "./connections/deferred.ts";
 import { GitLink } from "./connections/git-link.ts";
 import { ConnectionHealthService } from "./connections/health.ts";
 import { probePort } from "./connections/host-probe.ts";
@@ -152,6 +153,7 @@ import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
+import { StaleCards } from "./inbox/stale.ts";
 import { IncidentEngine, isIncidentTask } from "./incident/engine.ts";
 import { IncidentFacts } from "./incident/facts.ts";
 import { InstallRequests } from "./installs/service.ts";
@@ -359,6 +361,8 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
+  /** Results the owner answered for an agent, read by its next majhi tool call or sent in a message. */
+  deferred: DeferredResults;
   /** Re-reads the run memory limit from Settings, for the next run. */
   applyRunMemory: () => Promise<void>;
   /** Deploy environments, deploy records and what follows a deploy. */
@@ -1038,7 +1042,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     facts: async (id) => projectEnvRef.current?.facts(id) ?? [],
     lines: async (id) => projectEnvRef.current?.lines(id) ?? {},
   };
+  // What the owner said on a card the captain does not wait on: one list for the whole server.
+  const deferred = new DeferredResults();
   const runs = new RunManager({
+    deferred,
+    // The owner's Allow on a captain's card runs the very command, in the captain's own sandbox.
+    runAllowed: async (task, agent, command) =>
+      (await processes.start({ task, agent, command, wait: true, allowed: true })).id,
     store,
     projectEnv,
     onEnvReady: (task) => tasks.refreshBriefs([task]),
@@ -1137,6 +1147,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   runs.recover();
+  let staleCards: StaleCards | undefined;
   // What runs held of their connections never reaches the room (5.14).
   room.redactWith((task, text) => redactSecrets(text, runs.secretsOf(task)));
   const uploads = new UploadStore(env.majhiHome);
@@ -1439,6 +1450,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
+    // Bound below: a task that is done or gone closes the cards and drops the plan steps that waited on it.
+    onSettled: () => {
+      staleCards?.sweep();
+      autonomy.prunePlan();
+    },
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
       void labelFinishedTask(id);
@@ -1788,7 +1804,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     waitsOnProcess: (task) => processes.waiting(task).length > 0,
     delayMs: options.idleWatchMs,
   });
-  const admin = new AdminService({ config, room, store, secrets, tasks });
+  const admin = new AdminService({ config, room, store, secrets, tasks, deferred });
   const scheduleRows = new ScheduleRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
   loopGuard = new LoopGuard({
@@ -1840,8 +1856,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let opsWatch: OpsWatch | undefined;
   let opsEngine: WatchEngine | undefined;
   let incidentEngine: IncidentEngine | undefined;
+  // Cards that wait for nobody (their task is done or gone, their prompt is gone) close themselves.
+  staleCards = new StaleCards({
+    store,
+    room,
+    promptOpen: (item) => runs.promptOpen(item),
+    changed: () => events.emit(["captain"]),
+  });
   const inbox = new InboxService({
     outbound,
+    closeStale: () => staleCards?.sweep(),
     clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
     incidentOf: (task) => incidentEngine?.alertsOf(task),
@@ -2782,6 +2806,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   captain.boot();
+  // What waited on a task that finished or was removed while majhi was off closes now.
+  staleCards?.sweep();
+  autonomy.prunePlan();
   background.run(
     () => autonomy.boot(),
     (err) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`),
@@ -3821,6 +3848,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
 
   return {
+    deferred,
     config,
     applyRunMemory,
     runtime,

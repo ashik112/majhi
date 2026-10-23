@@ -72,4 +72,17 @@ describe("what Autonomous may start", () => {
     expect(list.isError).toBe(false);
     expect(list.text).toContain(fix.id);
   });
+
+  it("starts what the owner asked for whatever Autonomous says, and does not make it Autonomous's task", async () => {
+    const t = await on();
+    const fix = await t.ownerTask("Fix the typo on the login page");
+    expect((await t.h.cmd("autonomy.stop")).status).toBe(200);
+    // Off, the captain picks nothing alone ...
+    expect((await t.call("majhi_tasks_start", { id: fix.id })).isError).toBe(true);
+    // ... but the owner asked for this one in the conversation, so it starts at once.
+    const asked = await t.call("majhi_tasks_start", { id: fix.id, ownerAsked: true });
+    expect(asked.isError).toBe(false);
+    expect(t.h.majhi.services.store.tasks.get(fix.id)?.status).toBe("running");
+    expect(t.h.majhi.services.autonomy.isAutonomous(fix.id)).toBe(false);
+  });
 });
