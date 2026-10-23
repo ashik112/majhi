@@ -957,6 +957,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     risk: RiskKindSchema.optional(),
     /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
     by: CaptainBySchema.optional(),
+    /** A line under the title: a better way to do what was asked, when majhi has one (a project's one-click deploy). */
+    hint: z.string().max(400).optional(),
     /**
      * A write to one of the run's connections (5.14): which one, the action and why it counts as a
      * write. No remembered choice covers it, and Allow counts once. `destructive`: it deletes or

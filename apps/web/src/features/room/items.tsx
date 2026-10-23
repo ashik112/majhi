@@ -781,6 +781,7 @@ function Permission({
       ))}
       details={
         <>
+          {item.hint !== undefined && <p>{item.hint}</p>}
           {item.connection === undefined ? (
             <code className="font-mono break-words text-fg-soft">{toolLabel(item.title)}</code>
           ) : (

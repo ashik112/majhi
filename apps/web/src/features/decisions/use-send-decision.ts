@@ -8,7 +8,7 @@ import { describeError } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
 import { rowTitle } from "./model";
 
-/** How long a one-click answer to a question waits before it is sent, as in the room. */
+/** How long a one-click answer waits before it is sent, as in the room. */
 export const UNDO_MS = 5000;
 
 interface Hold {
@@ -55,8 +55,8 @@ interface SendOptions {
 }
 
 /**
- * Answers a decision from Needs you, the bell or Home. A one-click answer to a question waits five
- * seconds with an Undo, like the room's question card; everything else is sent at once. A failure
+ * Answers a decision from Needs you, the bell or Home. A one-click answer of any kind waits five
+ * seconds with an Undo, like the room's question card; a typed answer is sent at once. A failure
  * says what failed ("Could not merge") and why.
  */
 export function useSendDecision() {
@@ -92,7 +92,7 @@ export function useSendDecision() {
   const send = useCallback(
     (decision: OwnerDecision, option: string, options: SendOptions = {}) => {
       const chosen = decision.options.find((o) => o.id === option);
-      const holdable = decision.kind === "question" && chosen !== undefined && chosen.text !== true;
+      const holdable = chosen !== undefined && chosen.text !== true;
       if (!holdable) {
         sendNow(decision, option, options);
         return;

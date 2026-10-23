@@ -34,6 +34,7 @@ import {
   isBuild,
   isVersionless,
   nextPatch,
+  notForChange,
   sentOf,
   tagOf,
   tagsOfRunning,
@@ -131,6 +132,8 @@ export interface DeployDeps {
   nothingDeploys?: (task: string, by: DeployActor) => Promise<void>;
   /** One line in the room of the task a deploy belongs to, keyed so a repeat says nothing new. */
   taskNote?: (task: string, key: string, level: "info" | "warn", text: string) => void;
+  /** The files a task changed in a project, when git can say: a plan leaves out the environments that deploy other parts. */
+  changedIn?: (task: string, project: string) => Promise<string[] | undefined>;
   now(): Date;
   sleep(ms: number): Promise<void>;
   /** Time between looks at a run, and between looks of the check. */
@@ -165,7 +168,13 @@ export interface DeployHint {
 
 /** What a decision to deploy says before anything starts: the sentence that stops it, or what it would run with. */
 export type Evaluated =
-  | { ok: false; why: string; kind: DeployRefusal["kind"] | "setup" | "unpushed" }
+  | {
+      ok: false;
+      why: string;
+      kind: DeployRefusal["kind"] | "setup" | "unpushed";
+      /** For `unpushed`: the commit the host lacks, which `deploy` sends first. */
+      commit?: string;
+    }
   | { ok: true; project: DeployProject; env: DeployEnvironment; ctx: DeployContext; unchecked: boolean };
 
 /** Calls to a provider that fail this many times in a row end the follow: what the run did is not known. */
@@ -261,7 +270,7 @@ export class DeployService {
     const ctx = this.contextFor(project, env, commit, base);
     // The host must have the commit before a run starts. A commit not pushed yet is a wait, not a failure.
     const missing = await this.hostLacks(ctx, req.runs);
-    if (missing !== undefined) return { ok: false, ...missing };
+    if (missing !== undefined) return { ok: false, ...missing, commit };
     return { ok: true, project, env, unchecked: deployIsUnchecked(facts), ctx };
   }
 
@@ -296,15 +305,19 @@ export class DeployService {
    * a task and projects of one workspace, a step once.
    */
   async plan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
-    return this.writePlan({ ...input, steps: await this.withEveryTarget(input.steps) }, actor);
+    return this.writePlan({ ...input, steps: await this.withEveryTarget(input.task, input.steps) }, actor);
   }
 
   /**
    * A plan that deploys a project to production deploys it to every production environment the project has that
    * its CI deploys (those with a recipe), one after another: the steps the plan names first, in its order, then the
-   * rest in the project's order. A step the plan holds, or an environment the plan names, stays as it is.
+   * rest in the project's order. A step the plan holds, or an environment the plan names, stays as it is. The ones
+   * added are those that deploy a part the task changed (`notForChange`, the rule a case deploy uses too).
    */
-  private async withEveryTarget(steps: PlanDeployInput["steps"]): Promise<PlanDeployInput["steps"]> {
+  private async withEveryTarget(
+    task: string,
+    steps: PlanDeployInput["steps"],
+  ): Promise<PlanDeployInput["steps"]> {
     const out = [...steps];
     for (const id of new Set(steps.map((s) => s.project))) {
       const project = await this.deps.projects.get(id).catch(() => undefined);
@@ -313,8 +326,11 @@ export class DeployService {
       const goesToProduction = steps.some((s) => s.project === id && production.some((e) => e.env === s.env));
       if (!goesToProduction) continue;
       const last = out.map((s) => s.project).lastIndexOf(id);
-      const more = production
-        .filter((e) => e.recipe !== undefined && !steps.some((s) => s.project === id && s.env === e.env))
+      const deployable = production.filter((e) => e.recipe !== undefined);
+      const changed = await this.deps.changedIn?.(task, id).catch(() => undefined);
+      const more = deployable
+        .filter((e) => !steps.some((s) => s.project === id && s.env === e.env))
+        .filter((e) => notForChange(e, deployable, changed) === undefined)
         .map((e) => ({
           project: id,
           env: e.env,

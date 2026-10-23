@@ -238,5 +238,6 @@ export function permissionPayload(
     ...(chosen === undefined ? {} : { chosen }),
     ...(item.connection === undefined ? {} : { connection: item.connection }),
     ...(item.risk === undefined ? {} : { risk: item.risk }),
+    ...(item.hint === undefined ? {} : { hint: item.hint }),
   };
 }

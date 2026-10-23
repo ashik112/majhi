@@ -4,6 +4,8 @@ import { git, gitOk, refIsThere } from "../git/git.ts";
 export interface DeployGit {
   /** The newest tip of the base branch: the local branch and each remote's copy, whichever contains the others. */
   tip(path: string, base: string): Promise<string | undefined>;
+  /** The base branch as one remote has it, or undefined when that copy is not there. For reading files, never for deploying. */
+  remoteTip?(path: string, base: string, remote: string): Promise<string | undefined>;
   /** Why there is no tip, in a sentence: the copies of the base branch differ (and which commits), or git cannot be read. */
   whyNoTip(path: string, base: string): Promise<string>;
   /** A file at a commit, or undefined when the commit has none. */
@@ -56,6 +58,14 @@ export const deployGit: DeployGit = {
       return entries;
     } catch {
       return [];
+    }
+  },
+  async remoteTip(path, base, remote) {
+    try {
+      const ref = `refs/remotes/${remote}/${base}`;
+      return (await refIsThere(path, ref)) ? (await git(path, ["rev-parse", ref])).trim() : undefined;
+    } catch {
+      return undefined;
     }
   },
   async tip(path, base) {

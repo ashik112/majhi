@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PermissionAsk } from "@majhi/acp";
 import {
   type AllowRule,
@@ -34,6 +35,9 @@ import { requestRisk } from "./request-risk.ts";
 import type { AgentRun } from "./run.ts";
 import { SandboxLog } from "./sandbox-log.ts";
 import { riskScopeOfTask } from "./shell-risk.ts";
+
+/** A permission card in the room. */
+type PermissionItem = Extract<RoomItem, { type: "permission" }>;
 
 /** The options majhi adds to a card, beside the agent's own. */
 const TASK_OPTION = `${MAJHI_OPTION_PREFIX}task`;
@@ -87,6 +91,8 @@ export class PermissionFlow {
   private readonly captainCards = new Map<string, CaptainCard>();
   /** Commands the owner allowed on a captain's card, until the captain asks again: `task agent command` to when. */
   private readonly grants = new Map<string, number>();
+  /** Requests the restart ended, until their agents are woken. */
+  private readonly restarted: PermissionItem[] = [];
 
   constructor(
     private readonly deps: {
@@ -104,6 +110,13 @@ export class PermissionFlow {
        * about when it ends. Resolves with the process id; rejects when it cannot start.
        */
       runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
+      /**
+       * A better way to do what a raw command asks, in a sentence, when the project has one: a push or a job play
+       * where majhi deploys the whole task with one click. Shown on the card and told to the captain.
+       */
+      deployWay?:
+        | ((task: string, command: string) => Promise<{ card: string; captain: string } | undefined>)
+        | undefined;
       /** Wakes an agent with a message from majhi (`RunManager.notify`). */
       notify?: ((task: string, agent: string, text: string, claim?: () => boolean) => void) | undefined;
     },
@@ -138,6 +151,11 @@ export class PermissionFlow {
     const keptForTask =
       !go.go && isAlwaysKind(kind) && store.permissions.allowed(run.task, riskAllowKey(kind));
     const id = `perm:${run.runId ?? "x"}:${++run.permSeq}`;
+    const way =
+      ask.kind === "execute" && ask.command !== undefined
+        ? await this.deps.deployWay?.(run.task, ask.command).catch(() => undefined)
+        : undefined;
+    const hint = way?.card;
     const base = {
       type: "permission" as const,
       agent: run.agent,
@@ -145,6 +163,7 @@ export class PermissionFlow {
       ...(ask.toolCallId === undefined ? {} : { toolCallId: ask.toolCallId }),
       risk: kind,
       options: ask.options,
+      ...(hint === undefined ? {} : { hint }),
     };
     if (once !== undefined && !go.go && !keptForTask && this.takeGrant(run, ask)) {
       room.post(run.task, id, { ...base, state: "auto", chosen: once.id });
@@ -171,7 +190,7 @@ export class PermissionFlow {
     const options = this.cardOptions(ask.options, once?.id, kind);
     room.post(run.task, id, { ...base, options, state: "pending" });
     this.deps.onCardChange?.();
-    if (captains) return this.askCaptain(run, { ...ask, options }, id, kind);
+    if (captains) return this.askCaptain(run, { ...ask, options }, id, kind, undefined, way?.captain);
     this.live.set(run, { status: "waiting" });
     return new Promise<string | undefined>((resolve) => {
       run.pending.set(id, { ask: { ...ask, options }, resolve, risk: kind });
@@ -190,13 +209,14 @@ export class PermissionFlow {
     id: string,
     kind: RiskKind,
     write?: { writes: readonly GateWrite[]; tool: ToolWrite | undefined },
+    hint?: string,
   ): Promise<string | undefined> {
     const command = ask.command ?? ask.title;
     const shown = redactSecrets(command, run.connections?.secrets ?? []);
     const told = this.deps.deferred?.add(
       run.task,
       run.agent,
-      `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.`,
+      `\`${shown}\` needs the owner, so it did not run. The owner was asked with a card, and you are woken with their answer. Go on with whatever does not need it; do not ask for it again until then.${hint === undefined ? "" : ` ${hint}`}`,
     );
     this.captainCards.set(id, {
       task: run.task,
@@ -471,6 +491,7 @@ export class PermissionFlow {
       if (item?.type === "permission" && item.state === "pending") {
         room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
         this.deps.onCardChange?.();
+        this.wake([item], "its run had ended");
       }
       throw new UserError("That question ended: the agent moved on. The card is closed.", 409);
     }
@@ -571,14 +592,64 @@ export class PermissionFlow {
    */
   dropOrphans(run: AgentRun): void {
     const { store, room } = this.deps;
-    let dropped = false;
+    const dropped: PermissionItem[] = [];
     for (const item of store.room.pendingPermissions()) {
       if (item.type !== "permission" || item.task !== run.task || item.agent !== run.agent) continue;
       if (run.pending.has(item.id) || this.captainCards.has(item.id)) continue;
       room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
-      dropped = true;
+      dropped.push(item);
     }
-    if (dropped) this.deps.onCardChange?.();
+    if (dropped.length === 0) return;
+    this.deps.onCardChange?.();
+    this.wake(dropped, "its session was replaced");
+  }
+
+  /**
+   * At server start: requests nobody can answer any more end, with one line per task in the room. The agents that
+   * asked are woken by `wakeAfterRestart` once everything is built.
+   */
+  recover(): void {
+    const { store, room } = this.deps;
+    const told = new Set<string>();
+    for (const item of store.room.pendingPermissions()) {
+      if (item.type !== "permission") continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      this.restarted.push(item);
+      // One line per task: why the request vanished.
+      if (told.has(item.task)) continue;
+      told.add(item.task);
+      room.post(item.task, `restart:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "majhi restarted, so the open permission request ended. The agent is told to ask again if it still needs it.",
+      });
+    }
+  }
+
+  /** Wakes the agents whose request the restart ended, once each. */
+  wakeAfterRestart(): void {
+    this.wake(this.restarted.splice(0), "majhi restarted");
+  }
+
+  /**
+   * An open request ended and nobody answered it: the agent that asked is woken with one line, through the same
+   * `notify` as any other wake. Once per agent and task; the cards are closed first, so a request is never woken
+   * twice. Not for a task that is done or paused. The agent may no longer need it, and majhi's rules may have changed, so
+   * the command may now run without asking.
+   */
+  private wake(items: readonly PermissionItem[], why: string): void {
+    const { store, notify } = this.deps;
+    const seen = new Set<string>();
+    for (const { task: id, agent } of items) {
+      const key = `${id}\u0000${agent}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const task = store.tasks.get(id);
+      // A paused task goes on from its own resume, with the agent told then; a done one has nothing left to ask.
+      if (task === undefined || task.status === "done" || task.status === "paused") continue;
+      if (!task.team.includes(agent)) continue;
+      notify?.(id, agent, endedRequestLine(why));
+    }
   }
 
   cancelAll(run: AgentRun): void {
@@ -671,6 +742,10 @@ function toolWriteOf(writes: readonly GateWrite[]): ToolWrite | undefined {
 }
 
 const toolKey = (tool: ToolWrite): string => connectionToolKey(tool.connection, tool.name);
+
+/** What an agent is told when its open request ended without an answer. */
+export const endedRequestLine = (why: string): string =>
+  `Your open permission request ended without an answer (${why}). Run it again if you still need it: majhi's rules may have changed, so it may now run without asking. If you no longer need it, answer in a line.`;
 
 const grantKey = (task: string, agent: string, command: string): string =>
   `${task}\u0000${agent}\u0000${command}`;

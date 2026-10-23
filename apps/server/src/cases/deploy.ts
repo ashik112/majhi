@@ -14,11 +14,9 @@ import {
   componentsFor,
   isBuild,
   isVersionless,
+  notForChange,
   parseTag,
-  partOf,
   recipeSource,
-  scopeOf,
-  underFolders,
   withoutVersion,
   wordsOf,
 } from "../deploy/recipe.ts";
@@ -53,7 +51,7 @@ export interface CaseDeployPorts {
   /** The version the build is given when majhi picks it: the next patch after the highest it knows. */
   nextVersion(project: string, env: string): Promise<{ version: string; after: string } | undefined>;
   /** The files the case's branch changed against the project's base; undefined when git cannot say. */
-  changedPaths(project: string, branch: string): Promise<string[] | undefined>;
+  changedPaths(project: string, branch: string, task: string): Promise<string[] | undefined>;
   /** The newest live deploy of an environment, with the runs that made it. */
   latestLive(project: string, env: string): DeployRecord | undefined;
   /** Whether those runs can be put back for an earlier commit. */
@@ -69,7 +67,7 @@ export interface CaseDeployPorts {
   land(task: string, project: string, push: boolean): Promise<void>;
   deploy(
     input: { project: string; env: string; runs: DeployRunStep[]; task: string },
-    actor: "captain",
+    actor: "captain" | "owner",
     hint?: DeployHint,
   ): Promise<{ record: DeployRecord; repeat: boolean }>;
   rollback(id: number, actor: "captain"): Promise<{ record: DeployRecord; repeat: boolean }>;
@@ -124,37 +122,6 @@ export interface LeftOut {
   why: string;
 }
 
-/**
- * Why an environment is not for this change, or undefined when it is. An environment goes only when the change touches
- * a part it deploys: its parts' folders, or the folders its job works in. When the change touches no part of any
- * environment there is nothing to narrow by and every one goes. An environment that says nothing about which part it
- * deploys goes only when none of its siblings does: majhi does not guess that it is the same product.
- */
-function notForChange(
-  env: DeployEnvironment,
-  all: readonly DeployEnvironment[],
-  changed: readonly string[] | undefined,
-): string | undefined {
-  if (changed === undefined || changed.length === 0) return undefined;
-  const touches = (e: DeployEnvironment) => {
-    const scope = scopeOf(e.recipe);
-    return scope !== undefined && changed.some((p) => underFolders(p, scope));
-  };
-  if (!all.some(touches)) {
-    // Nothing the environments deploy changed. A change that lies wholly in other parts of the project (`apps/voice-service`)
-    // is for what deploys those; anything else (docs, the root) has no part to narrow by.
-    const parts = [...new Set(changed.flatMap((p) => partOf(p) ?? []))];
-    return parts.length > 0 && changed.every((p) => partOf(p) !== undefined)
-      ? `the change is in ${parts.join(", ")}, which no environment of the project deploys`
-      : undefined;
-  }
-  if (touches(env)) return undefined;
-  const scope = scopeOf(env.recipe);
-  return scope === undefined
-    ? "majhi cannot tell which part of the project it deploys, and the change touches a part that others deploy"
-    : `it deploys ${scope.join(", ")}, which this change does not touch`;
-}
-
 /** A deploy that may start. */
 export type OkPath = Extract<DeployPath, { ok: true }>;
 
@@ -180,6 +147,8 @@ export interface PrepareInput {
   about?: readonly string[] | undefined;
   /** Images an earlier target of this deploy built or is going to build: a target of the same registry does not build it again. */
   reuse?: readonly ReusedImage[] | undefined;
+  /** A task's deploy plan names its targets: only these environments are considered (a case leaves it out). */
+  only?: readonly string[] | undefined;
 }
 
 /** The image of a registry that an earlier target of the same deploy made, and the version it has once it is built. */
@@ -289,6 +258,8 @@ export class CaseDeployer {
       about?: readonly string[] | undefined;
       /** The files the fix changes, when they are known: an environment that deploys another part is left out. */
       changed?: readonly string[] | undefined;
+      /** A task's deploy plan names its targets: only these are considered. */
+      only?: readonly string[] | undefined;
     } = {},
   ): Promise<{ ok: true; envs: string[]; read: string[]; left: LeftOut[] } | { ok: false; why: string }> {
     const read: string[] = [];
@@ -300,7 +271,9 @@ export class CaseDeployer {
     }
     if (found.length === 0) return { ok: false, why: NO_PATH(project) };
     const production = found.filter((f) => f.env.tier === "production");
-    const everyone = production.length > 0 ? production : found;
+    const everyone = (production.length > 0 ? production : found).filter(
+      (f) => pick.only === undefined || pick.only.includes(f.env.env),
+    );
     const left: LeftOut[] = [];
     // Production environments of the project that majhi has no way to deploy: said, so the owner knows they were not touched.
     for (const env of await this.ports.environments(project)) {
@@ -361,7 +334,8 @@ export class CaseDeployer {
     const ordered = await this.order(input.project, {
       env: input.env ?? input.answers?.env,
       about: input.about,
-      changed: await this.ports.changedPaths(input.project, input.branch),
+      changed: await this.ports.changedPaths(input.project, input.branch, input.task),
+      only: input.only,
     });
     if (!ordered.ok) return ordered;
     const several = ordered.envs.length > 1;
@@ -457,7 +431,7 @@ export class CaseDeployer {
       const said = answers.components;
       if (said !== undefined) components = said;
       else {
-        const paths = await this.ports.changedPaths(input.project, input.branch);
+        const paths = await this.ports.changedPaths(input.project, input.branch, input.task);
         const picked = paths === undefined ? undefined : componentsFor(recipe.components, paths);
         if (picked !== undefined) {
           components = picked.option;
@@ -637,7 +611,13 @@ export class CaseDeployer {
    * deploy service, and the ones after it get nothing. An environment that needs an answer stops it too, `blocked`.
    */
   async deployAll(
-    input: PrepareInput & { landed: boolean },
+    input: PrepareInput & {
+      landed: boolean;
+      /** Who starts each target. Default: the captain, as in a case. */
+      actor?: "captain" | "owner" | undefined;
+      /** False for a task's deploy: only a case's fix is an incident fix. Default true. */
+      incidentFix?: boolean | undefined;
+    },
     plan: { envs: readonly string[]; paths: readonly OkPath[] },
     hooks: DeployHooks,
   ): Promise<{
@@ -678,6 +658,8 @@ export class CaseDeployer {
           runs: path.runs,
           landed,
           replaces: path.replaces,
+          actor: input.actor,
+          incidentFix: input.incidentFix,
         });
       } catch (err) {
         hooks.threw(path, err);
@@ -710,14 +692,21 @@ export class CaseDeployer {
     runs: DeployRunStep[];
     landed: boolean;
     replaces?: DeployReplaces | undefined;
+    /** Who starts it: the captain (a case), or the owner's click on a task's deploy. */
+    actor?: "captain" | "owner" | undefined;
+    /** False for a task's deploy: only a case's fix is an incident fix that may push the base branch. Default true. */
+    incidentFix?: boolean | undefined;
   }): Promise<DeployRecord> {
     if (!input.landed)
       await this.ports.land(input.task, input.project, await this.ports.onHost(input.project));
     const started = await this.ports.deploy(
       { project: input.project, env: input.env, runs: input.runs, task: input.task },
-      "captain",
+      input.actor ?? "captain",
       // A case's fix: the push of the base branch it may need is part of shipping it.
-      { incidentFix: true, ...(input.replaces === undefined ? {} : { replaces: input.replaces }) },
+      {
+        incidentFix: input.incidentFix ?? true,
+        ...(input.replaces === undefined ? {} : { replaces: input.replaces }),
+      },
     );
     return this.settled(started.record);
   }

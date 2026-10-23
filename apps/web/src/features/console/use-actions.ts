@@ -12,7 +12,7 @@ import { useCallback } from "react";
 import { useToast } from "@/components/ui/toast";
 import { actionOf, openLabel } from "@/features/decisions/model";
 import { cmd } from "@/lib/api";
-import { useAfterBatch, useAnswerDecision } from "@/lib/decision-queries";
+import { useAfterBatch } from "@/lib/decision-queries";
 import { useFeedLost } from "@/lib/feed-status";
 import { useOrgFilter } from "@/lib/org-filter";
 import { queryKeys } from "@/lib/queries";
@@ -29,7 +29,6 @@ function line(label: string, what: string): string {
 export function useConsoleActions(openChat: (id: string) => void) {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const answer = useAnswerDecision();
   const afterBatch = useAfterBatch();
   const lost = useFeedLost();
   const toast = useToast();
@@ -46,40 +45,32 @@ export function useConsoleActions(openChat: (id: string) => void) {
     [toast],
   );
 
-  /** One decision, one option. A question is held by the server; everything else is held here. */
+  /** One decision, one option, of any kind. The server holds the answer for the Undo time; this only shows the toast. */
   const answerOne = useCallback(
     (decision: OwnerDecision, optionId: string, what: string, text?: string) => {
       if (lost) return say("Offline. The answer waits until majhi is back.");
       const option = decision.options.find((o) => o.id === optionId);
       if (option === undefined) return;
-      const toastLine = line(option.label, what);
-      const failure = failed(`Could not ${option.label.toLowerCase()}`);
-      if (decision.kind === "question" && option.text !== true && text === undefined) {
-        holdOnServer({
-          text: toastLine,
-          hidden: [decision.id],
-          key: decision.id,
-          start: () =>
-            cmd(
-              "decisions.answer",
-              { id: decision.id, option: optionId, holdMs: UNDO_MS },
-              { reason: "Owner answered a decision" },
-            ),
-          afterSend: refresh,
-          onFail: failure,
-        });
-        return;
-      }
-      hold({
-        text: toastLine,
+      holdOnServer({
+        text: line(option.label, what),
         hidden: [decision.id],
-        send: () =>
-          answer.mutateAsync({ id: decision.id, option: optionId, ...(text === undefined ? {} : { text }) }),
+        key: decision.id,
+        start: () =>
+          cmd(
+            "decisions.answer",
+            {
+              id: decision.id,
+              option: optionId,
+              ...(text === undefined ? {} : { text }),
+              holdMs: UNDO_MS,
+            },
+            { reason: "Owner answered a decision" },
+          ),
         afterSend: refresh,
-        onFail: failure,
+        onFail: failed(`Could not ${option.label.toLowerCase()}`),
       });
     },
-    [lost, answer, refresh, failed],
+    [lost, refresh, failed],
   );
 
   /** Many decisions at once with the "approve" or "leave" button each has, after the undo time. */
@@ -88,20 +79,22 @@ export function useConsoleActions(openChat: (id: string) => void) {
       if (lost) return say("Offline. The answer waits until majhi is back.");
       const plan = batchPlan(decisions, intent);
       if (plan.ids.length === 0) return say("None of these can be done in one go. Open them one by one.");
-      hold({
+      const batch = crypto.randomUUID();
+      holdOnServer({
         text,
         hidden: plan.ids,
-        send: () =>
+        key: `batch:${batch}`,
+        start: () =>
           cmd(
             "decisions.answerBatch",
-            { batch: crypto.randomUUID(), intent, ids: plan.ids },
+            { batch, intent, ids: plan.ids, holdMs: UNDO_MS },
             { reason: "Owner answered decisions in a batch" },
-          ).then(afterBatch),
+          ),
         afterSend: refresh,
         onFail: failed("Could not answer them"),
       });
     },
-    [lost, afterBatch, refresh, failed],
+    [lost, refresh, failed],
   );
 
   /** Removes what held these tasks back, then lets them go on. */

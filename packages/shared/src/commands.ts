@@ -2142,7 +2142,7 @@ export const commands = {
   "projects.deployView": {
     risk: "read",
     summary:
-      "Where a project is deployed: its environments (name, tier, branch that deploys, check address) and the deploys so far, newest first",
+      "Where a project is deployed: its environments (name, tier, branch that deploys, check address, and the recipe majhi read from the project's CI files when there is one) and the deploys so far, newest first. Read from the CI at start and each time the base branch moves, so it is there without a scan",
     input: DeployViewInputSchema,
     output: ProjectDeployViewSchema,
   },
@@ -2156,7 +2156,7 @@ export const commands = {
   "projects.planDeploy": {
     risk: "change",
     summary:
-      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch; leave the runs out for an environment whose deploy majhi read from the project's CI files, and its recipe runs), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+      "Deploy a finished task: write its deploy plan, once. This is the only way to deploy a task. Never push to a remote that deploys and never play a CI job by hand, one raw command at a time: each of those is a card for the owner, and the plan is one. The plan is the ordered steps (project, environment). Leave the runs out for every environment that projects.deployView lists with a recipe, because majhi read its deploy from the project's CI files: majhi then adds the production environments that deploy a part this change touches and skips the rest, and says which. The owner gets one Deploy card for the whole task; one click runs each target in order (pushes the commit to the remote that deploys when the host lacks it, builds, deploys, reads the status, puts a target back if it fails and does not start the next). Where the workspace lets the captain decide production deploys, it runs without the card. Name the runs yourself only for an environment with no recipe (a GitHub workflow, a GitLab job or pipeline, a Bitbucket pipeline, Vercel; for an environment that deploys when its branch is pushed, a GitLab merge into that branch), and then each step is a click of its own. hold: migration leaves a step for the owner, note says why in a line. The plan replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start the plan",
     input: PlanDeployInputSchema,
     output: PlanDeployResultSchema,
   },
@@ -3214,7 +3214,7 @@ export const commands = {
   "answers.cancelHeld": {
     risk: "change",
     summary:
-      "Undo an answer that waits out its Undo time: a decision id, or ask:<task>:<item> for a question card. Owner only",
+      "Undo an answer that waits out its Undo time: a decision id (any kind), batch:<batch> for a group, or ask:<task>:<item> for a question card. Owner only",
     input: z.object({ key: z.string().min(1).max(400) }),
     output: z.object({ cancelled: z.boolean() }),
   },

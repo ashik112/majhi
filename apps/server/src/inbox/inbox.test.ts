@@ -166,3 +166,54 @@ describe("answering a decision", () => {
     expect(log).toEqual(["choice ACM-1 ch1 now"]);
   });
 });
+
+describe("a held answer", () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it.each([
+    ["a permission card", "room:ACM-1:pm1", "yes", "permission ACM-1 pm1 yes"],
+    ["a choice card", "room:ACM-1:ch1", "now", "choice ACM-1 ch1 now"],
+    ["a budget question", "budget:acme:2026-10-04", "raise", "budget acme raise"],
+  ])(
+    "of %s is applied after the hold with no client connected, and an Undo inside the hold drops it",
+    async (_name, id, option, applied) => {
+      const s = service();
+      // Sent and nothing more: the caller is gone, as a closed tab is. Nothing is applied before the hold ends.
+      await s.answerView({ id, option, holdMs: 40 });
+      expect(log).toEqual([]);
+      await wait(120);
+      expect(log).toEqual([applied]);
+
+      // An Undo inside the hold takes it back: the key is the decision's id, whatever its kind.
+      log.length = 0;
+      await s.answerView({ id: "room:ACM-1:oq1", option: "c0", holdMs: 60 });
+      expect(s.held.cancel("room:ACM-1:oq1")).toBe(true);
+      await wait(150);
+      expect(log).toEqual([]);
+    },
+  );
+
+  it("is refused at once when the button is not there, and a batch waits out its hold too", async () => {
+    const s = service();
+    await expect(s.answerView({ id: "room:ACM-1:pm1", option: "nope", holdMs: 40 })).rejects.toThrow(
+      /not one of the options/,
+    );
+    const out = await s.answerBatch({
+      batch: "batch-0001",
+      intent: "approve",
+      ids: ["room:ACM-1:pm1"],
+      holdMs: 40,
+    });
+    expect(out.done).toEqual([]);
+    expect(log).toEqual([]);
+    await wait(150);
+    expect(log).toEqual(["permission ACM-1 pm1 yes"]);
+
+    // Undo drops the whole batch.
+    log.length = 0;
+    await s.answerBatch({ batch: "batch-0002", intent: "approve", ids: ["room:ACM-1:ch1"], holdMs: 60 });
+    expect(s.held.cancel("batch:batch-0002")).toBe(true);
+    await wait(150);
+    expect(log).toEqual([]);
+  });
+});

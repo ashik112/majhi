@@ -117,7 +117,15 @@ export class DeployPlanner {
       who === "captain" ? "captain" : "owner",
       plan.rest,
     );
-    if (!ev.ok) {
+    // A commit a GitLab host lacks is not a block: the deploy pushes it there first, as a case's deploy does.
+    const pushes =
+      !ev.ok &&
+      ev.kind === "unpushed" &&
+      ev.commit !== undefined &&
+      rec.runs.some(
+        (r) => r.kind === "gitlab-job" || r.kind === "gitlab-pipeline" || r.kind === "gitlab-merge",
+      );
+    if (!ev.ok && !pushes) {
       return {
         ...base,
         who,
@@ -125,13 +133,15 @@ export class DeployPlanner {
         why: ev.why,
       };
     }
+    const commit = ev.ok ? ev.ctx.commit : ev.commit;
+    if (commit === undefined) return { ...base, who, state: "blocked", why: ev.ok ? "" : ev.why };
     // Another task's deploy of the same head is this task's step too.
-    const existing = this.deps.repo.find(rec.project, rec.env, ev.ctx.commit);
+    const existing = this.deps.repo.find(rec.project, rec.env, commit);
     if (existing !== undefined && existing.id !== rec.id) return deployStepOfRecord(existing, tier);
     return {
       ...base,
       who,
-      commit: ev.ctx.commit,
+      commit,
       state: who === "captain" ? "captain-next" : "waits-for-owner",
     };
   }

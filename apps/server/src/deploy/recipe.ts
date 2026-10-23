@@ -185,6 +185,37 @@ export function underFolders(path: string, folders: readonly string[]): boolean 
   return folders.some((f) => path === f || path.startsWith(`${f}/`));
 }
 
+/**
+ * Why an environment is not for this change, or undefined when it is. An environment goes only when the change touches
+ * a part it deploys: its parts' folders, or the folders its job works in. When the change touches no part of any
+ * environment there is nothing to narrow by and every one goes. An environment that says nothing about which part it
+ * deploys goes only when none of its siblings does: majhi does not guess that it is the same product.
+ */
+export function notForChange(
+  env: DeployEnvironment,
+  all: readonly DeployEnvironment[],
+  changed: readonly string[] | undefined,
+): string | undefined {
+  if (changed === undefined || changed.length === 0) return undefined;
+  const touches = (e: DeployEnvironment) => {
+    const scope = scopeOf(e.recipe);
+    return scope !== undefined && changed.some((p) => underFolders(p, scope));
+  };
+  if (!all.some(touches)) {
+    // Nothing the environments deploy changed. A change that lies wholly in other parts of the project (`apps/voice-service`)
+    // is for what deploys those; anything else (docs, the root) has no part to narrow by.
+    const parts = [...new Set(changed.flatMap((p) => partOf(p) ?? []))];
+    return parts.length > 0 && changed.every((p) => partOf(p) !== undefined)
+      ? `the change is in ${parts.join(", ")}, which no environment of the project deploys`
+      : undefined;
+  }
+  if (touches(env)) return undefined;
+  const scope = scopeOf(env.recipe);
+  return scope === undefined
+    ? "majhi cannot tell which part of the project it deploys, and the change touches a part that others deploy"
+    : `it deploys ${scope.join(", ")}, which this change does not touch`;
+}
+
 /** What a run sends: a workflow's inputs, a job's variables. */
 export function sentOf(run: DeployRunStep): Record<string, string> | undefined {
   return run.kind === "github-workflow" ? run.inputs : run.kind === "gitlab-job" ? run.variables : undefined;

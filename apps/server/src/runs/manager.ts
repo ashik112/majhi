@@ -65,7 +65,7 @@ import {
 } from "./context.ts";
 import { buildCarry, checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
-import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
+import { handoffPayload, ItemMapper, ownerPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
 import { handedOffLine, limitPauseText } from "./limit.ts";
 import { capacityOf, globalCap, type Limits, runsTotal, Slots } from "./limits.ts";
@@ -129,6 +129,12 @@ const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
 const LIMIT_CHECK_MS = 15_000;
 /** A turn that heard from its agent this recently is streaming fine: going offline does not cut it. */
 export const STREAMING_MS = 30_000;
+/**
+ * A turn that heard nothing from its agent for this long is hung, not working: an update that waits for idle does
+ * not wait for it. Well above the longest wait majhi itself holds a tool call for (a case deploy waits up to 30
+ * minutes with the agent silent), and a cut turn continues after the update anyway.
+ */
+export const HUNG_TURN_MS = 2 * 60 * 60_000;
 
 export interface RunDeps {
   store: Store;
@@ -176,6 +182,10 @@ export interface RunDeps {
   deferred?: DeferredResults | undefined;
   /** Runs a command the owner allowed on a captain's card, in the captain's own sandbox. Resolves with the process id. */
   runAllowed?: ((task: string, agent: string, command: string) => Promise<string>) | undefined;
+  /** A better way to do what a raw push or job play asks, when the task's project has a deploy majhi runs. */
+  deployWay?:
+    | ((task: string, command: string) => Promise<{ card: string; captain: string } | undefined>)
+    | undefined;
   /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
   onSkillsChanged?: () => void;
   /**
@@ -371,21 +381,13 @@ export class RunManager {
 
   /** At server start: runs that were live are over, and prompts nobody can answer any more are cancelled. */
   recover(): void {
-    const { store, room } = this.deps;
-    store.runs.endAllLive("server-restart", this.now().toISOString());
-    const told = new Set<string>();
-    for (const item of store.room.pendingPermissions()) {
-      if (item.type !== "permission") continue;
-      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
-      // One line per task: why the request vanished.
-      if (told.has(item.task)) continue;
-      told.add(item.task);
-      room.post(item.task, `restart:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: "majhi restarted, so the open permission request ended. The agent asks again if it still needs it.",
-      });
-    }
+    this.deps.store.runs.endAllLive("server-restart", this.now().toISOString());
+    this.permissions.recover();
+  }
+
+  /** The agents whose permission request the restart ended are woken, once each. Called when everything is built. */
+  wakeAfterRestart(): void {
+    this.permissions.wakeAfterRestart();
   }
 
   /** True when the agent is queued, starting, working or waiting in any task. */
@@ -434,24 +436,32 @@ export class RunManager {
    */
   workingTasks(): string[] {
     const out = new Set<string>();
-    for (const r of this.runs.values()) {
-      const status = r.live.status;
-      const idleish = status === "queued" || status === "waiting";
-      if (
-        status === "starting" ||
-        status === "working" ||
-        (r.turning && !r.closing && !r.settling && !idleish)
-      ) {
-        out.add(r.task);
-      }
-    }
+    for (const r of this.runs.values()) if (this.isWorkingRun(r)) out.add(r.task);
     return [...out];
   }
 
-  /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
+  /** Starting or in a turn: not queued for a slot, not waiting on an answer, not on its way out. */
+  private isWorkingRun(r: AgentRun): boolean {
+    const status = r.live.status;
+    const idleish = status === "queued" || status === "waiting";
+    return (
+      status === "starting" || status === "working" || (r.turning && !r.closing && !r.settling && !idleish)
+    );
+  }
+
+  /**
+   * Agents in the middle of a turn, across majhi: the same look as `workingTasks` (so an agent that waits on the
+   * owner is not one), without a turn that went quiet for `HUNG_TURN_MS`. An update waits for these with
+   * "when they finish".
+   */
   turnsInFlight(): number {
+    const now = this.now().getTime();
     let n = 0;
-    for (const r of this.runs.values()) if (r.turning && r.session !== undefined) n++;
+    for (const r of this.runs.values()) {
+      // A turn that has not started or heard anything yet is new, not hung.
+      const heard = Math.max(r.turnStartedAt, r.lastEventAt, r.waitSeenAt);
+      if (this.isWorkingRun(r) && (heard === 0 || now - heard < HUNG_TURN_MS)) n++;
+    }
     return n;
   }
 

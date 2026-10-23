@@ -83,6 +83,11 @@ export interface DeployWorldDeps {
   vercelApi?: string | undefined;
   /** Sends the base branch to a remote that deploys (a fast-forward, never forced) when it lacks the commit. */
   publish?: DeployDeps["publish"] | undefined;
+  /**
+   * Runs a finished task's whole deploy plan as the captain, through the case deployer, and answers with the first
+   * target's record once it exists. Absent: the captain starts one planned record at a time.
+   */
+  runTask?: ((task: string) => Promise<{ record: DeployRecord; repeat: boolean } | undefined>) | undefined;
   timing?: Partial<DeployTiming> | undefined;
   now?: (() => Date) | undefined;
 }
@@ -98,6 +103,8 @@ export interface DeployWorld {
   view(project: string): Promise<ProjectDeployView>;
   /** The deploy steps of recently merged tasks that are not all live yet, for the board. Kept briefly. */
   board(): Promise<HomeDeploy[]>;
+  /** The files a task changed in a project (its branch since it was cut), or undefined when git cannot say. */
+  changed(task: string, project: string): Promise<string[] | undefined>;
 }
 
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -187,8 +194,32 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     }
   };
 
+  /**
+   * The files a task changed in a project: the branch since the commit it was cut from, else what its landing commit
+   * brought. A branch that merged still has its tip, so the range is read after the merge too.
+   */
+  const changed = async (taskId: string, projectId: string): Promise<string[] | undefined> => {
+    const repo = deps.store.tasks.get(taskId)?.repos.find((r) => r.project === projectId);
+    const info = await deps.projects.get(projectId).catch(() => undefined);
+    if (repo === undefined || info === undefined) return undefined;
+    const range =
+      repo.startCommit !== undefined && repo.shipped !== undefined
+        ? [`${repo.startCommit}...${repo.shipped.head}`]
+        : repo.landed !== undefined
+          ? [`${repo.landed.commit}^1`, repo.landed.commit]
+          : undefined;
+    if (range === undefined) return undefined;
+    try {
+      const out = await git(info.path, ["diff", "--name-only", ...range]);
+      return out.split("\n").filter((p) => p !== "");
+    } catch {
+      return undefined;
+    }
+  };
+
   const service: DeployService = new DeployService({
     repo: deps.store.deploys,
+    changedIn: changed,
     projects: { get: project },
     tasks: {
       get: (id) => {
@@ -315,6 +346,10 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
         : (found?.why ?? "it is not the captain's to deploy now");
     },
     async deploy(_org, step) {
+      // The whole plan of the task goes, every target in order, the way a case's fix does. A plan that names its
+      // own runs (no recipe) goes a record at a time.
+      const whole = await deps.runTask?.(step.task);
+      if (whole !== undefined) return whole;
       const plan = await deps.ship.plan(step.task).catch(() => undefined);
       return service.deploy({ record: step.record }, "captain", plan?.rest);
     },
@@ -364,5 +399,5 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     said: (org, text) => deps.said?.(org, text),
   });
 
-  return { service, planner, discovery, ports, view, board: boardNow };
+  return { service, planner, discovery, ports, view, board: boardNow, changed };
 }
