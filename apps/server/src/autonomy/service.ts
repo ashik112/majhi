@@ -280,10 +280,32 @@ export class AutonomyService {
    */
   queueStall(): number | undefined {
     const state = this.repo.state();
-    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor === undefined)) return undefined;
+    if (state.mode !== "on" || !this.liveQueue().some((q) => q.waitFor === undefined)) return undefined;
     const since = state.lastTick ?? state.queuedAt;
     if (since === undefined) return undefined;
     return Math.max(0, (this.now().getTime() - Date.parse(since)) / 60_000);
+  }
+
+  /**
+   * The captain's plan as it stands now: the steps whose task still exists and is not done. A plan is saved with
+   * the task ids of the day it was made, so a task deleted or finished since is a step nobody can take. Every reader
+   * of the plan (the digest, the brief, the page, the waits) reads it through here. Steps with no task stay.
+   */
+  liveQueue(): QueueItem[] {
+    return this.repo.state().queue.filter((q) => {
+      if (q.task === undefined) return true;
+      const task = this.deps.store.tasks.get(q.task);
+      return task !== undefined && task.status !== "done";
+    });
+  }
+
+  /** Takes finished and deleted tasks out of the saved plan, so it does not come back. */
+  prunePlan(): void {
+    const state = this.repo.state();
+    const live = this.liveQueue();
+    if (live.length === state.queue.length) return;
+    this.repo.setQueue(live, state.queuedAt ?? this.now().toISOString());
+    this.deps.events.emit(["autonomy"]);
   }
 
   mode(): AutonomyMode {
@@ -498,7 +520,7 @@ export class AutonomyService {
     if (this.roomWait.has(task)) return "waits for a start gate";
     if (holdCovering(this.holds, found?.org ?? PRIVATE, []) !== undefined) return "held by a cap";
     if (this.deps.store.room.tasksWaitingOnOwner().has(task)) return "waits on the owner";
-    const waits = this.repo.state().queue.some((q) => q.task === task && q.waitFor !== undefined);
+    const waits = this.liveQueue().some((q) => q.task === task && q.waitFor !== undefined);
     return waits ? "waits for an account" : undefined;
   }
 
@@ -1283,16 +1305,16 @@ export class AutonomyService {
    */
   private async checkWaits(): Promise<void> {
     const state = this.repo.state();
-    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor !== undefined)) return;
+    if (state.mode !== "on" || !this.liveQueue().some((q) => q.waitFor !== undefined)) return;
     const views = await this.deps.accounts.list().catch(() => undefined);
     if (views === undefined) return;
     const status = new Map(views.map((v) => [v.id, v.status]));
     const found = evaluateWaits(
-      state.queue,
+      this.liveQueue(),
       (id) => status.get(id),
       this.now(),
       (task) => this.deps.store.tasks.get(task)?.status === "paused",
-      await this.fullAccounts(state.queue),
+      await this.fullAccounts(this.liveQueue()),
     );
     if (!found.changed) return;
     this.repo.setQueue(found.queue, state.queuedAt ?? this.now().toISOString());
@@ -2512,8 +2534,7 @@ export class AutonomyService {
       }
       const items =
         lane === undefined ? parsed.data.items : parsed.data.items.map((i) => ({ ...i, org: lane }));
-      const others =
-        lane === undefined ? [] : this.repo.state().queue.filter((i) => (i.org ?? PRIVATE) !== lane);
+      const others = lane === undefined ? [] : this.liveQueue().filter((i) => (i.org ?? PRIVATE) !== lane);
       this.repo.setQueue([...others, ...items], this.now().toISOString());
       this.deps.events.emit(["autonomy"]);
       return ok({ queue: items.length });
@@ -2658,9 +2679,8 @@ export class AutonomyService {
 
   /** The titles of what the captain plans next in a workspace, in its queue's order, for the brief. */
   queueTitles(max: number, org: string): string[] {
-    return this.repo
-      .state()
-      .queue.filter((q) => (q.org ?? PRIVATE) === org)
+    return this.liveQueue()
+      .filter((q) => (q.org ?? PRIVATE) === org)
       .slice(0, max)
       .map((q) => q.title);
   }
@@ -2766,7 +2786,7 @@ export class AutonomyService {
       running: this.nowList()
         .filter((n) => n.status === "running")
         .map((n) => n.task),
-      queue: after.queue,
+      queue: this.liveQueue(),
       backlog: detail ? this.backlogView(rated) : [],
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,
