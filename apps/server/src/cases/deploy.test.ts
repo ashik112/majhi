@@ -355,7 +355,7 @@ describe("a case deploy to every production target through GitLab", () => {
     // What each target's containers run: acme and initech share the production registry, globex has its own.
     r.remoteRun.byAlias = {
       "deploy@203.0.113.7": "registry.acme.example/acme-shop/backend:1.4.7\npostgres:16",
-      "deploy@203.0.113.8": "registry.globex.example/acme-shop/backend:2.0.3",
+      "deploy@203.0.113.8": "registry.globex.example/acme-shop/backend:globex-2.0.3",
       "deploy@203.0.113.9": "registry.acme.example/acme-shop/backend:1.4.7",
     };
     pushTo(r, C1);
@@ -418,7 +418,7 @@ describe("a case deploy to every production target through GitLab", () => {
       );
       expect(done.blocked).toBeUndefined();
       expect(done.targets.map((t) => [t.path.env.env, t.record.state, t.record.version])).toEqual([
-        ["globex", "live", "2.0.4"],
+        ["globex", "live", "globex-2.0.4"],
         ["acme", "live", "1.4.8"],
         ["initech", "live", "1.4.8"],
       ]);
@@ -430,8 +430,8 @@ describe("a case deploy to every production target through GitLab", () => {
       // Each target: the build of its registry (initech's image is acme's, built just before), the deploy with the target
       // confirmed and the version, then the target's status. Every job is one of the commit's pipeline.
       expect(played(r)).toEqual([
-        ["image:build:globex", { VERSION: "2.0.4" }],
-        ["app:deploy:globex", sent("globex", "2.0.4")],
+        ["image:build:globex", { VERSION: "globex-2.0.4" }],
+        ["app:deploy:globex", sent("globex", "globex-2.0.4")],
         ["app:status:globex", { TARGET: "globex" }],
         ["image:build:production", { VERSION: "1.4.8" }],
         ["app:deploy:acme", sent("acme", "1.4.8")],
@@ -444,7 +444,7 @@ describe("a case deploy to every production target through GitLab", () => {
       // What a target ran was read from its containers and noted before its own step: the later hosts are read again
       // after the targets before them were played.
       expect(events).toEqual([
-        "globex starts, replacing 2.0.3, after 0 jobs, host read once",
+        "globex starts, replacing globex-2.0.3, after 0 jobs, host read once",
         "globex live",
         "acme starts, replacing 1.4.7, after 3 jobs, host read again",
         "acme live",
@@ -481,8 +481,8 @@ describe("a case deploy to every production target through GitLab", () => {
       // Globex stays as it is, acme is played again with the version it ran before in a pipeline of its own, and initech
       // was never touched.
       expect(played(r)).toEqual([
-        ["image:build:globex", { VERSION: "2.0.4" }],
-        ["app:deploy:globex", sent("globex", "2.0.4")],
+        ["image:build:globex", { VERSION: "globex-2.0.4" }],
+        ["app:deploy:globex", sent("globex", "globex-2.0.4")],
         ["app:status:globex", { TARGET: "globex" }],
         ["image:build:production", { VERSION: "1.4.8" }],
         ["app:deploy:acme", sent("acme", "1.4.8")],
@@ -492,7 +492,7 @@ describe("a case deploy to every production target through GitLab", () => {
       const pipelines = r.hosts.played.map((p) => p.pipeline);
       expect(pipelines[5]).not.toBe(pipelines[4]);
       expect(events).toEqual([
-        "globex starts, replacing 2.0.3, after 0 jobs, host read once",
+        "globex starts, replacing globex-2.0.3, after 0 jobs, host read once",
         "globex live",
         "acme starts, replacing 1.4.7, after 3 jobs, host read again",
         "acme rolled-back",

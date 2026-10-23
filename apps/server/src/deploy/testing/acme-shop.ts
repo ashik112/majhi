@@ -274,6 +274,7 @@ docker build -t "$IMAGE_NAME:$VERSION" backend
 `;
 
 const VERSION_PATTERN = "VERSION_PATTERN='^[0-9]+\\.[0-9]+\\.[0-9]+$'";
+const PREFIXED_PATTERN = "VERSION_PATTERN='^globex-[0-9]+\\.[0-9]+\\.[0-9]+$'";
 
 /** The GitLab layout of `acme-shop`: the pipeline, the scripts of its jobs and the settings of its targets and registries. */
 export const ACME_SHOP_GITLAB_FILES: Readonly<Record<string, string>> = {
@@ -282,7 +283,7 @@ export const ACME_SHOP_GITLAB_FILES: Readonly<Record<string, string>> = {
   "deploy/ci/deploy.sh": DEPLOY_SCRIPT,
   "deploy/ci/build-image.sh": BUILD_SCRIPT,
   "deploy/ci/targets/acme.env": `REGISTRY_TARGET=production\n${VERSION_PATTERN}\n`,
-  "deploy/ci/targets/globex.env": `REGISTRY_TARGET=globex\n${VERSION_PATTERN}\n`,
+  "deploy/ci/targets/globex.env": `REGISTRY_TARGET=globex\n${PREFIXED_PATTERN}\n`,
   "deploy/ci/targets/initech.env": `REGISTRY_TARGET=production\n${VERSION_PATTERN}\n`,
   "deploy/ci/registries/production.env": "IMAGE_NAME=registry.acme.example/acme-shop/backend\n",
   "deploy/ci/registries/globex.env": "IMAGE_NAME=registry.globex.example/acme-shop/backend\n",

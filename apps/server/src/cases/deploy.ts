@@ -14,6 +14,7 @@ import {
   componentsFor,
   isBuild,
   isVersionless,
+  parseTag,
   recipeSource,
   withoutVersion,
   wordsOf,
@@ -419,8 +420,26 @@ export class CaseDeployer {
       }
     }
 
-    // The image of this registry was built by an earlier target of the same deploy: it is used, not built again.
-    const reused = registry === undefined ? undefined : input.reuse?.find((r) => r.registry === registry);
+    // The version the environment runs now, read before anything moves: where a rollback goes.
+    let replaces = await this.ports
+      .current(input.project, env.env, {
+        connection: answers.connection,
+        version: answers["previous-version"],
+      })
+      .catch(() => undefined);
+    const ownerCommit = answers["previous-commit"];
+    if (ownerCommit !== undefined) replaces = { ...replaces, commit: ownerCommit, from: "owner" };
+    // The image of this registry was built by an earlier target of the same deploy: it is used, not built again. Two
+    // targets of one registry may tag differently (`1.4.7`, `pyzasoft-1.2.3`): an image is not shared across shapes.
+    const built = registry === undefined ? undefined : input.reuse?.find((r) => r.registry === registry);
+    const mine = replaces?.version === undefined ? undefined : parseTag(replaces.version);
+    const theirs = built?.version === undefined ? undefined : parseTag(built.version);
+    const sameShape =
+      mine === undefined || theirs === undefined || (mine.prefix === theirs.prefix && mine.suffix === theirs.suffix);
+    const reused = sameShape ? built : undefined;
+    if (built !== undefined && reused === undefined) {
+      notes.push(`${env.env} tags its images differently from ${built.version}: its own image is built.`);
+    }
     if (reused !== undefined) {
       runs = runs.filter((step) => !isBuild(step));
       notes.push(
@@ -450,15 +469,6 @@ export class CaseDeployer {
       }
     }
 
-    // The version the environment runs now, read before anything moves: where a rollback goes.
-    let replaces = await this.ports
-      .current(input.project, env.env, {
-        connection: answers.connection,
-        version: answers["previous-version"],
-      })
-      .catch(() => undefined);
-    const ownerCommit = answers["previous-commit"];
-    if (ownerCommit !== undefined) replaces = { ...replaces, commit: ownerCommit, from: "owner" };
     const lack = goesBackBy(recipe, replaces, components);
     // Several hosts could be this environment's: which one is asked before the version is.
     const hosts =
@@ -620,7 +630,8 @@ export class CaseDeployer {
     const started = await this.ports.deploy(
       { project: input.project, env: input.env, runs: input.runs, task: input.task },
       "captain",
-      input.replaces === undefined ? {} : { replaces: input.replaces },
+      // A case's fix: the push of the base branch it may need is part of shipping it.
+      { incidentFix: true, ...(input.replaces === undefined ? {} : { replaces: input.replaces }) },
     );
     return this.settled(started.record);
   }

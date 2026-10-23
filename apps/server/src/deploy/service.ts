@@ -99,6 +99,8 @@ export interface DeployDeps {
     branch: string;
     commit: string;
     actor: DeployActor;
+    /** The deploy is a case's incident fix: the workspace's "Captain ships" switch applies to its push. */
+    incidentFix: boolean;
   }) => Promise<{ ok: true } | { ok: false; why: string }>;
   /** One look at an environment's check address. */
   looks: Pick<VerifyDeps, "health">;
@@ -157,6 +159,8 @@ export interface DeployRequest {
 export interface DeployHint {
   /** What the environment runs now, when the caller read it or the owner said. */
   replaces?: DeployReplaces | undefined;
+  /** The deploy is a case's incident fix, so a push of the base branch it needs is part of shipping that fix. */
+  incidentFix?: boolean | undefined;
 }
 
 /** What a decision to deploy says before anything starts: the sentence that stops it, or what it would run with. */
@@ -485,7 +489,7 @@ export class DeployService {
     let evaluated = await this.evaluate(req, actor, rest);
     // A GitLab pipeline only has the commit once it is pushed there: send it, then look again.
     if (!evaluated.ok && evaluated.kind === "unpushed") {
-      const sent = await this.publish(req, actor);
+      const sent = await this.publish(req, actor, hint.incidentFix === true);
       if (sent !== undefined) {
         if (!sent.ok) throw new UserError(sent.why, 409);
         evaluated = await this.evaluate(req, actor, rest);
@@ -574,6 +578,7 @@ export class DeployService {
   private async publish(
     req: DeployRequest,
     actor: DeployActor,
+    incidentFix: boolean,
   ): Promise<{ ok: true } | { ok: false; why: string } | undefined> {
     const publish = this.deps.publish;
     if (publish === undefined) return undefined;
@@ -589,7 +594,7 @@ export class DeployService {
     }
     let sent = false;
     for (const remote of remotes) {
-      const done = await publish({ project, remote, branch: project.base, commit, actor });
+      const done = await publish({ project, remote, branch: project.base, commit, actor, incidentFix });
       if (!done.ok) return done;
       sent = true;
     }
@@ -954,13 +959,17 @@ export class DeployService {
     for (const r of this.deps.repo.ofProject(projectId, 200)) {
       if (sameRegistry(r.env)) known.push(r.version, r.replaces?.version);
     }
-    known.push((await this.current(projectId, envName).catch(() => undefined))?.version);
+    const running = (await this.current(projectId, envName).catch(() => undefined))?.version;
+    known.push(running);
     if (pick.runs !== undefined && project.base !== undefined) {
       const ctx = this.contextFor(project, env, "unknown", project.base);
       const built = await this.deps.providers["github-workflow"].builtVersions?.(ctx, pick.runs, pick.input);
       known.push(...(built ?? []).map((b) => b.version));
     }
-    return nextPatch(known);
+    // The target keeps the shape of its own tag (a prefix, a suffix): what it runs now, else what it ran last.
+    const like =
+      running ?? this.deps.repo.ofProject(projectId, 200).find((r) => r.env === envName && r.version !== undefined)?.version;
+    return nextPatch(known, like);
   }
 
   /**

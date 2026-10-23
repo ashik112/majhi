@@ -290,37 +290,69 @@ export function commitOfVersion(recipe: DeployRecipe, version: string): string |
   return rest.length === 40 ? rest : undefined;
 }
 
-/** `1.4.7` as numbers; undefined for anything that is not exactly three numbers (a tag, a commit, `1.4`). */
-export function parseVersion(version: string): [number, number, number] | undefined {
-  const pieces = version.split(".");
-  if (pieces.length !== 3) return undefined;
-  const nums = pieces.map((p) =>
-    p !== "" && [...p].every((c) => c >= "0" && c <= "9") ? Number(p) : Number.NaN,
-  );
-  const [major, minor, patch] = nums;
-  if (major === undefined || minor === undefined || patch === undefined) return undefined;
-  return Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)
-    ? undefined
-    : [major, minor, patch];
+/** A version tag read by its characters: the text before its three numbers, the numbers, and the text after them. */
+export interface TagParts {
+  prefix: string;
+  numbers: [number, number, number];
+  suffix: string;
 }
 
-/** The next patch after the highest `X.Y.Z` among the versions. Undefined when none is one. */
+const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
+
+/**
+ * `pyzasoft-1.2.3` is `pyzasoft-`, 1, 2, 3 and nothing after. The numbers are the last three runs of digits that are
+ * joined by single dots; anything else in the tag is kept as it is. Undefined when the tag has no such three numbers
+ * (a commit, `1.4`, `latest`).
+ */
+export function parseTag(tag: string): TagParts | undefined {
+  const runs: { start: number; end: number }[] = [];
+  for (let i = 0; i < tag.length; i++) {
+    if (!isDigit(tag[i])) continue;
+    const start = i;
+    while (isDigit(tag[i + 1])) i++;
+    runs.push({ start, end: i + 1 });
+  }
+  for (let at = runs.length - 3; at >= 0; at--) {
+    const [x, y, z] = [runs[at], runs[at + 1], runs[at + 2]];
+    if (x === undefined || y === undefined || z === undefined) continue;
+    if (tag[x.end] !== "." || y.start !== x.end + 1 || tag[y.end] !== "." || z.start !== y.end + 1) continue;
+    return {
+      prefix: tag.slice(0, x.start),
+      numbers: [
+        Number(tag.slice(x.start, x.end)),
+        Number(tag.slice(y.start, y.end)),
+        Number(tag.slice(z.start, z.end)),
+      ],
+      suffix: tag.slice(z.end),
+    };
+  }
+  return undefined;
+}
+
+function newer(a: [number, number, number], b: [number, number, number]): boolean {
+  return a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+}
+
+/**
+ * The next patch after the highest version of the same shape: the tag keeps its prefix and suffix, so `pyzasoft-1.2.3`
+ * is followed by `pyzasoft-1.2.4`. The shape is the one of `like` (what the target runs now) when it has one; else the
+ * shape of the highest version known. Undefined when no known version has the shape.
+ */
 export function nextPatch(
   versions: readonly (string | undefined)[],
+  like?: string | undefined,
 ): { version: string; after: string } | undefined {
-  let best: { at: [number, number, number]; text: string } | undefined;
+  const shape = like === undefined ? undefined : parseTag(like);
+  let best: { parts: TagParts; text: string } | undefined;
   for (const text of versions) {
-    const at = text === undefined ? undefined : parseVersion(text);
-    if (text === undefined || at === undefined) continue;
-    const higher =
-      best === undefined ||
-      at[0] > best.at[0] ||
-      (at[0] === best.at[0] && (at[1] > best.at[1] || (at[1] === best.at[1] && at[2] > best.at[2])));
-    if (higher) best = { at, text };
+    const parts = text === undefined ? undefined : parseTag(text);
+    if (text === undefined || parts === undefined) continue;
+    if (shape !== undefined && (parts.prefix !== shape.prefix || parts.suffix !== shape.suffix)) continue;
+    if (best === undefined || newer(parts.numbers, best.parts.numbers)) best = { parts, text };
   }
-  return best === undefined
-    ? undefined
-    : { version: `${best.at[0]}.${best.at[1]}.${best.at[2] + 1}`, after: best.text };
+  if (best === undefined) return undefined;
+  const [major, minor, patch] = best.parts.numbers;
+  return { version: `${best.parts.prefix}${major}.${minor}.${patch + 1}${best.parts.suffix}`, after: best.text };
 }
 
 /**

@@ -2604,12 +2604,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     timing: options.deploy?.timing,
     // The owner's own deploy is the owner's say. The captain's reaches the owner's remotes only as far as the
     // workspace's authority goes: a push of the base branch is a merge into main, which Full and "Captain ships" allow.
-    publish: async ({ project, remote, branch, commit, actor }) => {
+    publish: async ({ project, remote, branch, commit, actor, incidentFix }) => {
       if (actor === "captain") {
         const autonomy = (await config.settings()).autonomy;
         const allowed = levelAllows(levelOf(autonomy, project.org), "merge-main", {
           incident: incidentShipsOf(autonomy, project.org),
-          incidentFix: true,
+          incidentFix,
         });
         if (!allowed) {
           return {
