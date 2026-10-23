@@ -71,6 +71,8 @@ export interface CaseDeployPorts {
   ): Promise<{ record: DeployRecord; repeat: boolean }>;
   rollback(id: number, actor: "captain"): Promise<{ record: DeployRecord; repeat: boolean }>;
   record(id: number): DeployRecord | undefined;
+  /** Whether the deploy service is putting the deploy's environment back now. */
+  rollingBack(id: number): boolean;
   now(): Date;
   sleep(ms: number): Promise<void>;
   /** Time between looks at the deploy, and the longest the captain's call waits for it. */
@@ -280,8 +282,7 @@ export class CaseDeployer {
   async plan(
     input: PrepareInput,
   ): Promise<
-    | { ok: true; envs: string[]; paths: OkPath[] }
-    | { ok: false; why: string; ask?: DeployQuestion[] }
+    { ok: true; envs: string[]; paths: OkPath[] } | { ok: false; why: string; ask?: DeployQuestion[] }
   > {
     const ordered = await this.order(input.project, {
       env: input.env ?? input.answers?.env,
@@ -429,7 +430,9 @@ export class CaseDeployer {
     }
     if (versionless) {
       runs = withoutVersion(runs);
-      notes.push(`${env.env}: only ${components} is deployed, which has no image, so no version is built or sent.`);
+      notes.push(
+        `${env.env}: only ${components} is deployed, which has no image, so no version is built or sent.`,
+      );
     }
 
     // The version the build makes: majhi picks the next patch when the build takes its version as an input.
@@ -560,7 +563,11 @@ export class CaseDeployer {
         if (!again.ok) {
           return {
             targets,
-            blocked: { env: first.env.env, why: again.why, ...(again.ask === undefined ? {} : { ask: again.ask }) },
+            blocked: {
+              env: first.env.env,
+              why: again.why,
+              ...(again.ask === undefined ? {} : { ask: again.ask }),
+            },
           };
         }
         path = again;
@@ -622,7 +629,8 @@ export class CaseDeployer {
   private async settled(first: DeployRecord): Promise<DeployRecord> {
     const until = this.ports.now().getTime() + this.ports.waitMs;
     let record = first;
-    while (deployIsActive(record.state)) {
+    // A deploy that failed is still moving while the deploy service puts the environment back.
+    while (deployIsActive(record.state) || this.ports.rollingBack(first.id)) {
       if (this.ports.now().getTime() >= until) {
         throw new UserError(
           `The deploy is still going after ${Math.round(this.ports.waitMs / 60_000)} minutes. majhi keeps following it; read the project's deploys before you go on.`,

@@ -306,9 +306,7 @@ export class DeployService {
       const project = await this.deps.projects.get(id).catch(() => undefined);
       if (project === undefined) continue;
       const production = project.environments.filter((e) => e.tier === "production");
-      const goesToProduction = steps.some(
-        (s) => s.project === id && production.some((e) => e.env === s.env),
-      );
+      const goesToProduction = steps.some((s) => s.project === id && production.some((e) => e.env === s.env));
       if (!goesToProduction) continue;
       const last = out.map((s) => s.project).lastIndexOf(id);
       const more = production
@@ -796,7 +794,14 @@ export class DeployService {
     const lacking =
       recipe === undefined
         ? undefined
-        : goesBackBy(recipe, replaces, deployedComponents(recipe, record.runs.map((r) => sentOf(r))));
+        : goesBackBy(
+            recipe,
+            replaces,
+            deployedComponents(
+              recipe,
+              record.runs.map((r) => sentOf(r)),
+            ),
+          );
     if (lacking !== undefined) {
       return this.fail(running, `majhi did not start the deploy: ${lacking}`, { rollback: false });
     }
@@ -1401,7 +1406,8 @@ function alignedRecipe(
     return (
       run !== undefined &&
       step.kind === run.kind &&
-      (step.kind !== "github-workflow" || (run.kind === "github-workflow" && step.workflow === run.workflow)) &&
+      (step.kind !== "github-workflow" ||
+        (run.kind === "github-workflow" && step.workflow === run.workflow)) &&
       (step.kind !== "gitlab-job" || (run.kind === "gitlab-job" && step.job === run.job))
     );
   });

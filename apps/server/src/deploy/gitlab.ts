@@ -144,11 +144,15 @@ async function freshPipeline(
 ): Promise<string> {
   const base = ref(ctx, step);
   const tip = await api(deps, a, `/projects/${a.id}/repository/branches/${encodeURIComponent(base)}`);
-  const head = tip.status === 200 ? str((tip.body as { commit?: unknown } | undefined)?.commit, "id") : undefined;
+  const head =
+    tip.status === 200 ? str((tip.body as { commit?: unknown } | undefined)?.commit, "id") : undefined;
   let onBranch = base;
   if (head !== ctx.commit) {
     onBranch = `majhi-rollback-${ctx.commit.slice(0, 12)}`;
-    const made = await api(deps, a, `/projects/${a.id}/repository/branches`, { branch: onBranch, ref: ctx.commit });
+    const made = await api(deps, a, `/projects/${a.id}/repository/branches`, {
+      branch: onBranch,
+      ref: ctx.commit,
+    });
     // 400 is "the branch exists": an earlier run at this commit made it.
     if (made.status !== 201 && made.status !== 400) {
       throw new DeployProblem(

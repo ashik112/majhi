@@ -1,7 +1,7 @@
 import type { DeployEnvironment } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { discoverEnvironments } from "../deploy/discover.ts";
-import { acmeShopCi } from "../deploy/testing/acme-shop.ts";
+import { ACME_SHOP_GITLAB_FILES, acmeShopCi, memoryCi } from "../deploy/testing/acme-shop.ts";
 import { C1, C2, environment, GH, push as pushTo, type Rig, rig } from "../deploy/testing/rig.ts";
 import { CaseDeployer, type CaseDeployPorts } from "./deploy.ts";
 import { closingLines, newCase, rollbackTarget, withDeploy, withRollback } from "./record.ts";
@@ -35,6 +35,7 @@ describe("a case deploy", () => {
         deploy: (input, actor, hint) => r.service.deploy(input, actor, undefined, hint),
         rollback: (id, actor) => r.service.rollback(id, actor),
         record: (id) => r.store.deploys.get(id),
+        rollingBack: (id) => r.service.rollingBackIds().includes(id),
         now: () => new Date(),
         sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
         pollMs: 1,
@@ -143,6 +144,7 @@ function portsOf(r: Rig, paths: string[] | undefined, landed: string[] = []): Ca
     deploy: (input, actor, hint) => r.service.deploy(input, actor, undefined, hint),
     rollback: (id, actor) => r.service.rollback(id, actor),
     record: (id) => r.store.deploys.get(id),
+    rollingBack: (id) => r.service.rollingBackIds().includes(id),
     now: () => new Date(),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     pollMs: 1,
@@ -307,6 +309,196 @@ describe("a case deploy through the recipe of the project's CI", () => {
         remember: { connection: "acme-eu" },
       });
       expect(askedHosts(r)).toEqual(["deploy@203.0.113.9 docker ps --format '{{.Image}}'"]);
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+});
+
+describe("a case deploy to every production target through GitLab", () => {
+  const remotes = { origin: "github", gitlab: "gitlab" } as const;
+  const slug = "acme/storefront";
+  /** The manual jobs of the sample project's GitLab pipeline. */
+  const JOBS = [
+    "image:build:production",
+    "image:build:globex",
+    "app:deploy:acme",
+    "app:deploy:globex",
+    "app:deploy:initech",
+    "app:status:acme",
+    "app:status:globex",
+    "app:status:initech",
+  ];
+
+  /** The sample project on GitHub (where fixes merge) and GitLab (where production deploys), both at the first commit. */
+  async function gitlabWorld(): Promise<Rig> {
+    const found = await discoverEnvironments({
+      files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
+      base: "main",
+      provider: "gitlab",
+      remote: "gitlab",
+      folders: ["backend", "frontend"],
+      read: memoryCi(ACME_SHOP_GITLAB_FILES).read,
+    });
+    const r = await rig(
+      found.environments.map((e) => ({ ...e, check: `https://${e.env}.acme.example/health` })),
+      "github",
+      remotes,
+    );
+    r.hosts.gitlabJobs = JOBS;
+    r.sshHosts.push(
+      { id: "globex-host", name: "Globex host", alias: "deploy@203.0.113.8" },
+      { id: "initech-host", name: "Initech host", alias: "deploy@203.0.113.9" },
+    );
+    // What each target's containers run: acme and initech share the production registry, globex has its own.
+    r.remoteRun.byAlias = {
+      "deploy@203.0.113.7": "registry.acme.example/acme-shop/backend:1.4.7\npostgres:16",
+      "deploy@203.0.113.8": "registry.globex.example/acme-shop/backend:2.0.3",
+      "deploy@203.0.113.9": "registry.acme.example/acme-shop/backend:1.4.7",
+    };
+    pushTo(r, C1);
+    r.hosts.branches.set(`gitlab:${slug}:main`, C1);
+    return r;
+  }
+
+  const HOST = {
+    acme: "deploy@203.0.113.7",
+    globex: "deploy@203.0.113.8",
+    initech: "deploy@203.0.113.9",
+  } as const;
+  type Target = keyof typeof HOST;
+  const reads = (r: Rig, env: string) => r.remote.filter((c) => c.alias === HOST[env as Target]).length;
+
+  /**
+   * What the case saw: each environment as it started (what it replaces, how many jobs were played already, and
+   * whether its host was read again after the plan) and how it ended.
+   */
+  function watch(r: Rig, events: string[]) {
+    const afterPlan = { acme: reads(r, "acme"), globex: reads(r, "globex"), initech: reads(r, "initech") };
+    return {
+      started: (path: { env: { env: string }; previous: string }) =>
+        void events.push(
+          `${path.env.env} starts, replacing ${path.previous}, after ${r.hosts.played.length} jobs, host read ${
+            reads(r, path.env.env) > afterPlan[path.env.env as Target] ? "again" : "once"
+          }`,
+        ),
+      ended: (path: { env: { env: string } }, record: { state: string }) =>
+        void events.push(`${path.env.env} ${record.state}`),
+      threw: () => undefined,
+    };
+  }
+
+  const played = (r: Rig) => r.hosts.played.map((p) => [p.job, p.variables] as const);
+  const sent = (target: string, version: string) => ({
+    TARGET: target,
+    CONFIRM_TARGET: target,
+    COMPONENTS: "backend",
+    VERSION: version,
+  });
+
+  it("pushes the commit to GitLab first, then builds and deploys each target in order, each with the version it replaces recorded before it", async () => {
+    const r = await gitlabWorld();
+    try {
+      const landed: string[] = [];
+      const deployer = new CaseDeployer(portsOf(r, ["backend/app/slips.py"], landed));
+      // The case is about globex: it goes first, then the others in the project's order.
+      const plan = await deployer.plan({ ...fix, about: ["Globex cannot print slips"] });
+      if (!plan.ok) throw new Error(plan.why);
+      expect(plan.envs).toEqual(["globex", "acme", "initech"]);
+      expect(r.hosts.played).toEqual([]);
+      expect(r.published).toEqual([]);
+
+      const events: string[] = [];
+      const done = await deployer.deployAll(
+        { ...fix, about: ["Globex cannot print slips"], landed: false },
+        plan,
+        watch(r, events),
+      );
+      expect(done.blocked).toBeUndefined();
+      expect(done.targets.map((t) => [t.path.env.env, t.record.state, t.record.version])).toEqual([
+        ["globex", "live", "2.0.4"],
+        ["acme", "live", "1.4.8"],
+        ["initech", "live", "1.4.8"],
+      ]);
+
+      // The fix landed, and GitLab was sent the merged main once: a fast-forward by a push, never forced.
+      expect(landed).toEqual(["storefront"]);
+      expect(r.published).toEqual([{ remote: "gitlab", commit: C2, actor: "captain" }]);
+
+      // Each target: the build of its registry (initech's image is acme's, built just before), the deploy with the target
+      // confirmed and the version, then the target's status. Every job is one of the commit's pipeline.
+      expect(played(r)).toEqual([
+        ["image:build:globex", { VERSION: "2.0.4" }],
+        ["app:deploy:globex", sent("globex", "2.0.4")],
+        ["app:status:globex", { TARGET: "globex" }],
+        ["image:build:production", { VERSION: "1.4.8" }],
+        ["app:deploy:acme", sent("acme", "1.4.8")],
+        ["app:status:acme", { TARGET: "acme" }],
+        ["app:deploy:initech", sent("initech", "1.4.8")],
+        ["app:status:initech", { TARGET: "initech" }],
+      ]);
+      expect(new Set(r.hosts.played.map((p) => p.pipeline)).size).toBe(1);
+
+      // What a target ran was read from its containers and noted before its own step: the later hosts are read again
+      // after the targets before them were played.
+      expect(events).toEqual([
+        "globex starts, replacing 2.0.3, after 0 jobs, host read once",
+        "globex live",
+        "acme starts, replacing 1.4.7, after 3 jobs, host read again",
+        "acme live",
+        "initech starts, replacing 1.4.7, after 6 jobs, host read again",
+        "initech live",
+      ]);
+    } finally {
+      await r.service.idle();
+      await r.hosts.close();
+      r.store.close();
+    }
+  });
+
+  it("puts only the target that failed back to its version, and stops before the next one", async () => {
+    const r = await gitlabWorld();
+    try {
+      // acme's deploy job fails once; the same job played again with the version before works.
+      r.hosts.jobOutcomes.set("app:deploy:acme", ["failed"]);
+      const deployer = new CaseDeployer(portsOf(r, ["backend/app/slips.py"]));
+      const plan = await deployer.plan({ ...fix, about: ["Globex cannot print slips"] });
+      if (!plan.ok) throw new Error(plan.why);
+      const events: string[] = [];
+      const done = await deployer.deployAll(
+        { ...fix, about: ["Globex cannot print slips"], landed: false },
+        plan,
+        watch(r, events),
+      );
+
+      expect(done.targets.map((t) => [t.path.env.env, t.record.state])).toEqual([
+        ["globex", "live"],
+        ["acme", "rolled-back"],
+      ]);
+      expect(done.targets[1]?.record.rollback).toMatchObject({ ok: true });
+      // Globex stays as it is, acme is played again with the version it ran before in a pipeline of its own, and initech
+      // was never touched.
+      expect(played(r)).toEqual([
+        ["image:build:globex", { VERSION: "2.0.4" }],
+        ["app:deploy:globex", sent("globex", "2.0.4")],
+        ["app:status:globex", { TARGET: "globex" }],
+        ["image:build:production", { VERSION: "1.4.8" }],
+        ["app:deploy:acme", sent("acme", "1.4.8")],
+        ["app:deploy:acme", sent("acme", "1.4.7")],
+        ["app:status:acme", { TARGET: "acme" }],
+      ]);
+      const pipelines = r.hosts.played.map((p) => p.pipeline);
+      expect(pipelines[5]).not.toBe(pipelines[4]);
+      expect(events).toEqual([
+        "globex starts, replacing 2.0.3, after 0 jobs, host read once",
+        "globex live",
+        "acme starts, replacing 1.4.7, after 3 jobs, host read again",
+        "acme rolled-back",
+      ]);
+      // The incident and the owner's word say which target went back.
+      expect(r.incidents.map((i) => i.record.env)).toEqual(["acme"]);
     } finally {
       await r.service.idle();
       await r.hosts.close();

@@ -46,7 +46,8 @@ export interface Rig {
   checks: { configured: boolean };
   /** False: the workspace is not signed in to the host. */
   signedIn: { value: boolean };
-  remoteRun: { code: number | null; output: string };
+  /** What a command on a host answers: `output` for any host, or the host's own in `byAlias`. */
+  remoteRun: { code: number | null; output: string; byAlias: Record<string, string> };
   /** The workspace's ssh connections. */
   sshHosts: { id: string; name: string; alias: string }[];
   /** What was pushed to a remote that deploys, in order: the remote and the commit. */
@@ -69,7 +70,7 @@ export async function rig(
   const tell: string[] = [];
   const incidents: Rig["incidents"] = [];
   const remote: Rig["remote"] = [];
-  const remoteRun = { code: 0 as number | null, output: "" };
+  const remoteRun = { code: 0 as number | null, output: "", byAlias: {} as Record<string, string> };
   const sshHosts: { id: string; name: string; alias: string }[] = [
     { id: "acme-host", name: "Acme host", alias: "deploy@203.0.113.7" },
   ];
@@ -102,7 +103,7 @@ export async function rig(
   };
   const run: RemoteRunFn = async (alias, command) => {
     remote.push({ alias, command });
-    return remoteRun;
+    return { code: remoteRun.code, output: remoteRun.byAlias[alias] ?? remoteRun.output };
   };
   const providerDeps: ProviderDeps = {
     fetch,

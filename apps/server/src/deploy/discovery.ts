@@ -1,7 +1,7 @@
 import type { CommandMeta, DeployEnvironment } from "@majhi/shared";
 import { readCiFiles } from "../ci/read.ts";
 import type { ProjectInfo } from "../projects/service.ts";
-import { type DiscoverInput, type Discovered, discoverEnvironments } from "./discover.ts";
+import { type Discovered, type DiscoverInput, discoverEnvironments } from "./discover.ts";
 import type { DeployGit } from "./git.ts";
 import type { RepoRef } from "./types.ts";
 

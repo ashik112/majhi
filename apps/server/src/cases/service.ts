@@ -24,11 +24,7 @@ import {
 import { errorMessage, UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import {
-  type CaseDeployer,
-  type DeployQuestion,
-  runLines,
-} from "./deploy.ts";
+import { type CaseDeployer, type DeployQuestion, runLines } from "./deploy.ts";
 import {
   badSummary,
   caseLimits,
@@ -825,7 +821,9 @@ export class CaseService {
                   });
             });
             if (live && path.remember !== undefined) {
-              await this.deps.deployer.remember(repo.project, path.env.env, path.remember).catch(() => undefined);
+              await this.deps.deployer
+                .remember(repo.project, path.env.env, path.remember)
+                .catch(() => undefined);
             }
             this.line(
               task,

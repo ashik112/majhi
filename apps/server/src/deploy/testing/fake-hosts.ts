@@ -328,7 +328,11 @@ export async function startFakeHosts(
         return send(
           res,
           200,
-          mine.map((r) => ({ id: r.id, sha: r.sha, web_url: `http://${state.host}/${slug}/-/pipelines/${r.id}` })),
+          mine.map((r) => ({
+            id: r.id,
+            sha: r.sha,
+            web_url: `http://${state.host}/${slug}/-/pipelines/${r.id}`,
+          })),
         );
       }
       const pipeJobs = /^pipelines\/(\d+)\/jobs$/.exec(rest);
@@ -367,7 +371,11 @@ export async function startFakeHosts(
             job.polls += 1;
             if (job.polls > state.pollsToFinish) job.status = job.result;
           }
-          return send(res, 200, { id: job.id, status: job.status === "failed" ? "failed" : job.status, web_url: link });
+          return send(res, 200, {
+            id: job.id,
+            status: job.status === "failed" ? "failed" : job.status,
+            web_url: link,
+          });
         }
       }
       const pipe = /^pipelines\/(\d+)$/.exec(rest);

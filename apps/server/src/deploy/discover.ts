@@ -602,7 +602,6 @@ function liveOf(
 // ---------------------------------------------------------------------------
 // GitLab jobs
 
-
 /** The branches a job is limited to by `only:` or by `rules: - if: $CI_COMMIT_BRANCH == "x"`. */
 function jobBranches(job: Record<string, unknown>): string[] {
   const out: string[] = [];
@@ -715,7 +714,14 @@ async function settingsOf(
 function imageIn(...sources: ReadonlyMap<string, string>[]): DeployRecipe["running"] {
   for (const source of sources) {
     for (const [key, value] of source) {
-      if (value === "" || value.includes("$") || !includesWord(key.toLowerCase(), IMAGE_KEYS.map((k) => k.toLowerCase())))
+      if (
+        value === "" ||
+        value.includes("$") ||
+        !includesWord(
+          key.toLowerCase(),
+          IMAGE_KEYS.map((k) => k.toLowerCase()),
+        )
+      )
         continue;
       return value.includes("/") ? { repo: value, whole: true } : { repo: value, whole: false };
     }
@@ -729,7 +735,11 @@ function optionsFromDescription(description: string | undefined, folders: readon
   let word = "";
   const end = () => {
     const lower = word.toLowerCase();
-    if (lower !== "" && !out.includes(lower) && (ALL_WORDS.includes(lower) || folderOf(lower, folders) !== undefined))
+    if (
+      lower !== "" &&
+      !out.includes(lower) &&
+      (ALL_WORDS.includes(lower) || folderOf(lower, folders) !== undefined)
+    )
       out.push(lower);
     word = "";
   };
@@ -802,7 +812,8 @@ async function variablesRecipe(
           ? candidates[0]
           : undefined
         : candidates.find((b) => b.registry === registry);
-    if (build !== undefined) pick = { input: build.version, ...(build.registry === undefined ? {} : { registry: build.registry }) };
+    if (build !== undefined)
+      pick = { input: build.version, ...(build.registry === undefined ? {} : { registry: build.registry }) };
     else if (registry === undefined && candidates.length > 1) {
       builds = candidates.map((b) => buildStep(b, input.remote));
       pick = { input: versionVar };
@@ -890,7 +901,11 @@ async function variablesRecipe(
   const line = job.entry.file.located.lineOf([job.name]);
   const recipe: DeployRecipe = {
     from: { file: job.entry.file.path, ...optionalLine(line) },
-    deploy: [...(build === undefined ? [] : [buildStep(build, input.remote)]), play(bindDeploy), ...status] as DeployRecipe["deploy"],
+    deploy: [
+      ...(build === undefined ? [] : [buildStep(build, input.remote)]),
+      play(bindDeploy),
+      ...status,
+    ] as DeployRecipe["deploy"],
     // The same job again with the version before, in a pipeline of its own: the one the commit has ran it already.
     rollback: {
       runs: [{ ...play(bindBack), fresh: true }, ...status] as DeployRecipe["deploy"],
