@@ -92,6 +92,14 @@ export const DeployRunStepSchema = z.discriminatedUnion("kind", [
     /** A manual job of the commit's pipeline. The pipeline is created when the commit has none. */
     job: z.string().trim().min(1).max(200),
     variables: InputsSchema.optional(),
+    /** Variables whose value is only known when the job is played (the version, the parts): filled like a workflow's inputs. */
+    bind: z.record(z.string().trim().min(1).max(100), InputBindingSchema).optional(),
+    /**
+     * Play the job in a pipeline made for this run, at the run's commit, instead of the pipeline the commit has.
+     * A job that ran already is not played again in its own pipeline, so a rollback (the same job with the version
+     * before) and a build asked again with another version go in a new one.
+     */
+    fresh: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("gitlab-pipeline"),
@@ -218,6 +226,8 @@ export const DeployRecipeSchema = z.object({
   pick: z
     .object({
       input: z.string().trim().min(1).max(100),
+      /** The registry the build puts the image in. Two builds of one registry share their versions; targets of one registry share the image. */
+      registry: z.string().trim().min(1).max(100).optional(),
       runs: z
         .object({
           remote: RemoteNameSchema,
@@ -242,8 +252,15 @@ export const DeployRecipeSchema = z.object({
       parts: z
         .array(z.object({ option: z.string().trim().min(1).max(100), folder: z.string().max(200) }))
         .max(8),
+      /** Options that deploy no image, so no version is built or sent for them (a front end). */
+      versionless: z.array(z.string().trim().min(1).max(100)).max(8).optional(),
     })
     .optional(),
+  /**
+   * The builds the project has, one per registry, when the YAML cannot say which registry this environment uses:
+   * the owner's answer to the `registry` question picks the one that goes first.
+   */
+  builds: z.array(DeployRunStepSchema).max(8).optional(),
   asks: z.array(RecipeAskSchema).max(6).default([]),
   /** What the owner answered to an `input:` question once, so the next deploy does not ask it again. */
   answers: z.record(z.string(), z.string().max(300)).default({}),

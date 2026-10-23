@@ -164,6 +164,130 @@ export const ACME_SHOP_FILES: Readonly<Record<string, string>> = {
   ".gitlab-ci.yml": GITLAB,
 };
 
+/**
+ * `acme-shop` as it deploys from GitLab: its GitHub remote builds and tests, and production deploys are manual jobs of
+ * the GitLab pipeline. Two registries (`production` for acme and initech, `globex` for globex), one build job each; a
+ * deploy job per target takes the parts, the version and a confirmation that must equal the target; a status job reads
+ * each target. A target's settings file says its registry, the registry's file says the image.
+ */
+const GITLAB_ROOT = `stages: [build, deploy]
+include:
+  - local: .gitlab/ci/deploy.yml
+`;
+
+const GITLAB_DEPLOY = `.image:build:
+  stage: build
+  when: manual
+  script:
+    - ./deploy/ci/build-image.sh
+  variables:
+    VERSION:
+      value: ""
+      description: Image tag, X.Y.Z. Empty takes the next one
+
+.app:deploy:
+  stage: deploy
+  when: manual
+  script:
+    - ./deploy/ci/deploy.sh
+  variables:
+    COMPONENTS:
+      value: backend
+      description: What to deploy
+      options: [backend, frontend, both]
+    VERSION:
+      value: ""
+      description: Image tag, X.Y.Z. Needed unless the target deploys only the frontend
+    CONFIRM_TARGET:
+      value: ""
+      description: Type the target again to confirm
+
+.app:status:
+  stage: deploy
+  when: manual
+  script:
+    - ./deploy/ci/status.sh
+
+image:build:production:
+  extends: .image:build
+  resource_group: image-production
+  variables:
+    REGISTRY_TARGET: production
+
+image:build:globex:
+  extends: .image:build
+  resource_group: image-globex
+  variables:
+    REGISTRY_TARGET: globex
+
+app:deploy:acme:
+  extends: .app:deploy
+  environment:
+    name: app/acme
+  variables:
+    TARGET: acme
+
+app:deploy:globex:
+  extends: .app:deploy
+  environment:
+    name: app/globex
+  variables:
+    TARGET: globex
+
+app:deploy:initech:
+  extends: .app:deploy
+  environment:
+    name: app/initech
+  variables:
+    TARGET: initech
+
+app:status:acme:
+  extends: .app:status
+  environment:
+    name: app/acme
+    action: access
+  variables:
+    TARGET: acme
+
+app:status:globex:
+  extends: .app:status
+  variables:
+    TARGET: globex
+
+app:status:initech:
+  extends: .app:status
+  variables:
+    TARGET: initech
+`;
+
+const DEPLOY_SCRIPT = `#!/bin/sh
+set -eu
+. "deploy/ci/targets/\${TARGET}.env"
+[ "$CONFIRM_TARGET" = "$TARGET" ] || { echo "CONFIRM_TARGET must equal TARGET"; exit 1; }
+./deploy/ci/rollout.sh "$COMPONENTS" "$VERSION"
+`;
+
+const BUILD_SCRIPT = `#!/bin/sh
+set -eu
+. "deploy/ci/registries/\${REGISTRY_TARGET}.env"
+docker build -t "$IMAGE_NAME:$VERSION" backend
+`;
+
+const VERSION_PATTERN = "VERSION_PATTERN='^[0-9]+\\.[0-9]+\\.[0-9]+$'";
+
+/** The GitLab layout of `acme-shop`: the pipeline, the scripts of its jobs and the settings of its targets and registries. */
+export const ACME_SHOP_GITLAB_FILES: Readonly<Record<string, string>> = {
+  ".gitlab-ci.yml": GITLAB_ROOT,
+  ".gitlab/ci/deploy.yml": GITLAB_DEPLOY,
+  "deploy/ci/deploy.sh": DEPLOY_SCRIPT,
+  "deploy/ci/build-image.sh": BUILD_SCRIPT,
+  "deploy/ci/targets/acme.env": `REGISTRY_TARGET=production\n${VERSION_PATTERN}\n`,
+  "deploy/ci/targets/globex.env": `REGISTRY_TARGET=globex\n${VERSION_PATTERN}\n`,
+  "deploy/ci/targets/initech.env": `REGISTRY_TARGET=production\n${VERSION_PATTERN}\n`,
+  "deploy/ci/registries/production.env": "IMAGE_NAME=registry.acme.example/acme-shop/backend\n",
+  "deploy/ci/registries/globex.env": "IMAGE_NAME=registry.globex.example/acme-shop/backend\n",
+};
+
 /** An in-memory repo: its files by path, and the folders their paths make. */
 export function memoryCi(files: Readonly<Record<string, string>>): CiSource {
   return {

@@ -1,7 +1,13 @@
 import type { DeployRunStep } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
-import { ACME_SHOP_FILES, acmeShopCi, BUILD_BY_COMMIT } from "./testing/acme-shop.ts";
+import {
+  ACME_SHOP_FILES,
+  ACME_SHOP_GITLAB_FILES,
+  acmeShopCi,
+  BUILD_BY_COMMIT,
+  memoryCi,
+} from "./testing/acme-shop.ts";
 
 /**
  * How a project deploys, read from its own CI files (docs/DECISIONS.md, "deploy from CI"): the sample `acme-shop` has a
@@ -152,5 +158,99 @@ describe("finding how a project deploys from its CI files", () => {
     // A manual job goes back by running the job that deployed the commit before it again.
     expect(gitlab.environments[0]?.recipe?.rollback).toMatchObject({ at: "previous" });
     expect(gitlab.environments[0]?.recipe?.from).toEqual({ file: ".gitlab-ci.yml", line: 5 });
+  });
+
+  it("reads each GitLab target as a manual job with its confirmation, version and parts, linked to the build of its registry", async () => {
+    const found = await discoverEnvironments({
+      files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
+      base: "main",
+      provider: "gitlab",
+      remote: "gitlab",
+      folders: FOLDERS,
+      read: memoryCi(ACME_SHOP_GITLAB_FILES).read,
+    });
+    // One production environment per deploy job. A status job reads a target and a build job makes an image: neither is a place to deploy.
+    expect(found.environments.map((e) => [e.env, e.tier])).toEqual([
+      ["acme", "production"],
+      ["globex", "production"],
+      ["initech", "production"],
+    ]);
+    const buildOf = (registry: string) => ({
+      kind: "gitlab-job",
+      remote: "gitlab",
+      job: `image:build:${registry}`,
+      bind: { VERSION: "next-version" },
+    });
+    const deployOf = (target: string, bind: Record<string, string>) => ({
+      kind: "gitlab-job",
+      remote: "gitlab",
+      job: `app:deploy:${target}`,
+      // TARGET from the job, and the confirmation the script compares with it.
+      variables: { TARGET: target, CONFIRM_TARGET: target },
+      bind,
+    });
+    const statusOf = (target: string) => ({
+      kind: "gitlab-job",
+      remote: "gitlab",
+      job: `app:status:${target}`,
+      variables: { TARGET: target },
+    });
+    const [acme, globex, initech] = found.environments.map((e) => e.recipe);
+    // acme and initech share the production registry's build, globex has its own: the target's settings file says which.
+    const forward = { COMPONENTS: "components", VERSION: "built-version" };
+    expect(acme?.deploy).toEqual([buildOf("production"), deployOf("acme", forward), statusOf("acme")]);
+    expect(globex?.deploy).toEqual([buildOf("globex"), deployOf("globex", forward), statusOf("globex")]);
+    expect(initech?.deploy).toEqual([
+      buildOf("production"),
+      deployOf("initech", forward),
+      statusOf("initech"),
+    ]);
+    expect(acme?.pick).toEqual({ input: "VERSION", registry: "production" });
+    expect(globex?.pick).toEqual({ input: "VERSION", registry: "globex" });
+    // The image each registry makes is what the containers are read for.
+    expect(acme?.running).toEqual({ repo: "registry.acme.example/acme-shop/backend", whole: true });
+    expect(globex?.running).toEqual({ repo: "registry.globex.example/acme-shop/backend", whole: true });
+    // The rollback is the same deploy job with the version before, in a pipeline of its own.
+    expect(acme?.rollback).toEqual({
+      at: "deployed",
+      runs: [
+        { ...deployOf("acme", { COMPONENTS: "components", VERSION: "previous-version" }), fresh: true },
+        statusOf("acme"),
+      ],
+    });
+    // The parts come from the variable's options, the folders from the repo, and the frontend takes no version.
+    expect(acme?.components).toEqual({
+      all: "both",
+      parts: [
+        { option: "backend", folder: "backend" },
+        { option: "frontend", folder: "frontend" },
+      ],
+      versionless: ["frontend"],
+    });
+    expect(acme?.live).toEqual({ kind: "gitlab-environment", remote: "gitlab", name: "app/acme" });
+    expect(acme?.from.file).toBe(".gitlab/ci/deploy.yml");
+    expect(acme?.asks).toEqual([]);
+
+    // Without the settings files the YAML cannot say which registry a target uses: majhi asks once, and offers the builds.
+    const bare = await discoverEnvironments({
+      files: await acmeShopCi(ACME_SHOP_GITLAB_FILES),
+      base: "main",
+      provider: "gitlab",
+      remote: "gitlab",
+      folders: FOLDERS,
+    });
+    const asked = bare.environments[0]?.recipe;
+    expect(asked?.asks).toEqual([
+      {
+        key: "registry",
+        question: expect.stringContaining("Which registry does acme use"),
+        options: ["image:build:production", "image:build:globex"],
+      },
+    ]);
+    expect(asked?.deploy.map((r) => (r.kind === "gitlab-job" ? r.job : r.kind))).toEqual([
+      "app:deploy:acme",
+      "app:status:acme",
+    ]);
+    expect(asked?.builds).toEqual([buildOf("production"), buildOf("globex")]);
   });
 });

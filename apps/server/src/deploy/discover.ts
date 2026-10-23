@@ -9,6 +9,19 @@ import type {
   TagPart,
 } from "@majhi/shared";
 import type { CiFiles, GitlabFile, YamlFile } from "../ci/read.ts";
+import {
+  confirmationsRead,
+  expandVariables,
+  type JobEntry,
+  type JobVariable,
+  jobEntries,
+  jobVariables,
+  plainSettings,
+  resolveJob,
+  scriptFiles,
+  scriptLines,
+  sourcedPaths,
+} from "./gitlab-jobs.ts";
 
 /**
  * How a project deploys, read from its own CI files with a YAML parser. A GitHub workflow with `workflow_dispatch`
@@ -29,6 +42,8 @@ export interface DiscoverInput {
   remote: string;
   /** Folders of the repo's root, and the children of `apps`, `services` and `packages`: where a component lives. */
   folders: readonly string[];
+  /** A file of the repo at the same commit as the CI files, as text. Reads the settings a job's script sources. */
+  read?: ((rel: string) => Promise<string | undefined>) | undefined;
 }
 
 export interface Discovered {
@@ -526,7 +541,18 @@ function componentsOf(
   release: Flow,
   folders: readonly string[],
 ): NonNullable<DeployRecipe["components"]> | "asks" | undefined {
-  const spec = rolesOf(release).components;
+  return componentsFrom(rolesOf(release).components, folders);
+}
+
+/**
+ * The same for any input with options. `versionless` names the options that deploy no image (a front end): they are
+ * kept on the recipe, so no version is built or sent for them.
+ */
+function componentsFrom(
+  spec: InputSpec | undefined,
+  folders: readonly string[],
+  versionless: readonly string[] = [],
+): NonNullable<DeployRecipe["components"]> | "asks" | undefined {
   if (spec === undefined) return undefined;
   const all = spec.options.find((o) => ALL_WORDS.includes(o.toLowerCase()));
   if (all === undefined) return "asks";
@@ -537,7 +563,9 @@ function componentsOf(
     if (folder === undefined) return "asks";
     parts.push({ option, folder });
   }
-  return parts.length === 0 ? "asks" : { all, parts };
+  if (parts.length === 0) return "asks";
+  const none = parts.filter((p) => versionless.includes(p.option.toLowerCase())).map((p) => p.option);
+  return { all, parts, ...(none.length === 0 ? {} : { versionless: none }) };
 }
 
 function folderOf(option: string, folders: readonly string[]): string | undefined {
@@ -574,19 +602,6 @@ function liveOf(
 // ---------------------------------------------------------------------------
 // GitLab jobs
 
-const GITLAB_KEYWORDS = new Set([
-  "stages",
-  "variables",
-  "default",
-  "include",
-  "workflow",
-  "image",
-  "services",
-  "before_script",
-  "after_script",
-  "cache",
-  "pages",
-]);
 
 /** The branches a job is limited to by `only:` or by `rules: - if: $CI_COMMIT_BRANCH == "x"`. */
 function jobBranches(job: Record<string, unknown>): string[] {
@@ -617,60 +632,375 @@ function isManual(job: Record<string, unknown>): boolean {
   return (Array.isArray(job.rules) ? job.rules : []).some((r) => rec(r).when === "manual");
 }
 
-function gitlabEnvironments(input: DiscoverInput): DeployEnvironment[] {
-  const out: DeployEnvironment[] = [];
-  for (const file of input.files.gitlab as GitlabFile[]) {
-    for (const [name, raw] of Object.entries(rec(file.located.data))) {
-      if (GITLAB_KEYWORDS.has(name) || name.startsWith(".")) continue;
-      const job = rec(raw);
-      if (job.script === undefined && job.trigger === undefined) continue;
-      const environment = job.environment;
-      const envName = typeof environment === "string" ? environment : text(rec(environment).name);
-      if (envName === undefined || envName.includes("$") || rec(environment).action === "stop") continue;
-      const env = envNameOf(envName);
-      if (env === "") continue;
-      const line = file.located.lineOf([name]);
-      const from = { file: file.path, ...optionalLine(line) };
-      const live: LiveSource = { kind: "gitlab-environment", remote: input.remote, name: envName };
-      if (isManual(job)) {
-        const runs: DeployRunStep[] = [{ kind: "gitlab-job", remote: input.remote, job: name }];
-        out.push({
-          env,
-          tier: tierOf(env),
-          recipe: {
-            from,
-            deploy: runs as DeployRecipe["deploy"],
-            rollback: { runs: runs as DeployRecipe["deploy"], at: "previous" },
-            live,
-            asks: [],
-            answers: {},
+/** The variable names a job may declare, by what each one is for. */
+const TARGET_VAR = "TARGET";
+const VERSION_VARS = ["VERSION", "IMAGE_VERSION", "IMAGE_TAG"];
+const COMPONENT_VARS = ["COMPONENTS", "COMPONENT"];
+const REGISTRY_VARS = ["REGISTRY_TARGET", "REGISTRY"];
+/** A manual job with one of these in its name reads a target's status: it is not a place to deploy. */
+const STATUS_WORDS = ["status", "health", "smoke"];
+/** `environment: action:` values of a job that does not deploy. */
+const NOT_A_DEPLOY = ["stop", "verify", "access", "prepare"];
+/** Options of a components input that deploy no image: no version goes with them. */
+const VERSIONLESS_WORDS = ["frontend", "front", "web", "ui", "client", "static", "site"];
+/** A setting whose name holds one of these is the image a build makes. */
+const IMAGE_KEYS = ["IMAGE", "REPOSITORY"];
+
+interface GlJob {
+  name: string;
+  entry: JobEntry;
+  /** The job with the jobs it extends merged in. */
+  data: Record<string, unknown>;
+  vars: Map<string, JobVariable>;
+}
+
+/** A manual job that builds the image of one registry. */
+interface GlBuild {
+  job: GlJob;
+  /** The name of its version variable. */
+  version: string;
+  registry: string | undefined;
+}
+
+const valuesOf = (vars: ReadonlyMap<string, JobVariable>): Map<string, string> =>
+  new Map([...vars].map(([name, v]) => [name, v.value]));
+
+/** The first variable of the job that is one of `names`. */
+function firstVar(
+  vars: ReadonlyMap<string, JobVariable>,
+  names: readonly string[],
+): { name: string; spec: JobVariable } | undefined {
+  for (const name of names) {
+    const spec = vars.get(name);
+    if (spec !== undefined) return { name, spec };
+  }
+  return undefined;
+}
+
+function environmentOf(job: GlJob): { name: string } | undefined {
+  const environment = job.data.environment;
+  const raw = typeof environment === "string" ? environment : text(rec(environment).name);
+  if (raw === undefined || NOT_A_DEPLOY.includes(text(rec(environment).action) ?? "")) return undefined;
+  const name = expandVariables(raw, valuesOf(job.vars));
+  return name.includes("$") ? undefined : { name };
+}
+
+/** The settings a job's script reads: the files it sources, and the files of the scripts it runs. */
+async function settingsOf(
+  job: GlJob,
+  input: DiscoverInput,
+): Promise<{ settings: Map<string, string>; lines: string[] }> {
+  const settings = new Map<string, string>();
+  const lines = scriptLines(job.data);
+  const read = input.read;
+  if (read === undefined) return { settings, lines };
+  const values = valuesOf(job.vars);
+  const paths = sourcedPaths(lines, values);
+  for (const script of scriptFiles(lines)) {
+    const body = await read(script);
+    if (body === undefined) continue;
+    const inside = body.split("\n").map((l) => l.trim());
+    lines.push(...inside);
+    paths.push(...sourcedPaths(inside, values));
+  }
+  for (const path of [...new Set(paths)]) {
+    if (path.startsWith("/") || path.split("/").includes("..")) continue;
+    const body = await read(path);
+    if (body !== undefined) for (const [key, value] of plainSettings(body)) settings.set(key, value);
+  }
+  return { settings, lines };
+}
+
+/** The image a build makes: the first setting or variable named for an image that holds a plain value. */
+function imageIn(...sources: ReadonlyMap<string, string>[]): DeployRecipe["running"] {
+  for (const source of sources) {
+    for (const [key, value] of source) {
+      if (value === "" || value.includes("$") || !includesWord(key.toLowerCase(), IMAGE_KEYS.map((k) => k.toLowerCase())))
+        continue;
+      return value.includes("/") ? { repo: value, whole: true } : { repo: value, whole: false };
+    }
+  }
+  return undefined;
+}
+
+/** The words of a variable's description that are options of a components input: an all-word or a folder of the repo. */
+function optionsFromDescription(description: string | undefined, folders: readonly string[]): string[] {
+  const out: string[] = [];
+  let word = "";
+  const end = () => {
+    const lower = word.toLowerCase();
+    if (lower !== "" && !out.includes(lower) && (ALL_WORDS.includes(lower) || folderOf(lower, folders) !== undefined))
+      out.push(lower);
+    word = "";
+  };
+  for (const c of description ?? "") {
+    if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9")) word += c;
+    else end();
+  }
+  end();
+  return out;
+}
+
+/** What a job must be told so its own check passes: each confirmation variable gets the value of the variable it confirms. */
+function confirmations(job: GlJob, lines: readonly string[]): Record<string, string> {
+  const declared = new Set(job.vars.keys());
+  const isConfirm = (name: string) => name.startsWith("CONFIRM");
+  const pairs: [string, string][] = confirmationsRead(lines, declared, isConfirm);
+  for (const name of declared) {
+    const rest = name.startsWith("CONFIRM_") ? name.slice("CONFIRM_".length) : "";
+    if (rest !== "" && declared.has(rest)) pairs.push([name, rest]);
+  }
+  const out: Record<string, string> = {};
+  for (const [confirm, other] of pairs) {
+    const value = job.vars.get(other)?.value;
+    if (value !== undefined && value !== "") out[confirm] = value;
+  }
+  return out;
+}
+
+/**
+ * The recipe of a manual job that deploys with variables: a target, the parts, a version, a confirmation. The build
+ * that makes the image of its registry goes first; a status job of the target goes last. Every question it cannot
+ * answer is an `asks` entry.
+ */
+async function variablesRecipe(
+  job: GlJob,
+  jobs: { builds: readonly GlBuild[]; statuses: ReadonlyMap<string, string> },
+  input: DiscoverInput,
+  notes: string[],
+): Promise<{ env: string; recipe: DeployRecipe } | undefined> {
+  const environment = environmentOf(job);
+  const target = job.vars.get(TARGET_VAR)?.value;
+  const envName = target !== undefined && target !== "" ? target : environment?.name;
+  if (envName === undefined) return undefined;
+  const env = envNameOf(envName);
+  if (env === "") return undefined;
+  const own = await settingsOf(job, input);
+  const asks: RecipeAsk[] = [];
+
+  // The image: the build of the registry this target uses. The YAML says the registry, else the target's settings do.
+  const versionVar = firstVar(job.vars, VERSION_VARS)?.name;
+  const registryVar = firstVar(job.vars, REGISTRY_VARS);
+  let registry = registryVar?.spec.value === "" ? undefined : registryVar?.spec.value;
+  if (registry === undefined) {
+    for (const key of REGISTRY_VARS) {
+      const set = own.settings.get(key);
+      if (set !== undefined && set !== "") {
+        registry = set;
+        break;
+      }
+    }
+  }
+  let build: GlBuild | undefined;
+  let builds: DeployRunStep[] | undefined;
+  let pick: DeployRecipe["pick"];
+  if (versionVar !== undefined) {
+    const candidates = jobs.builds;
+    build =
+      registry === undefined
+        ? candidates.length === 1
+          ? candidates[0]
+          : undefined
+        : candidates.find((b) => b.registry === registry);
+    if (build !== undefined) pick = { input: build.version, ...(build.registry === undefined ? {} : { registry: build.registry }) };
+    else if (registry === undefined && candidates.length > 1) {
+      builds = candidates.map((b) => buildStep(b, input.remote));
+      pick = { input: versionVar };
+      asks.push({
+        key: "registry",
+        question: `Which registry does ${env} use? majhi builds the image with the job of that registry first.`,
+        options: candidates.map((b) => b.job.name).slice(0, 8),
+      });
+    } else {
+      notes.push(`${job.name}: no build job makes the image of ${registry ?? "its registry"}`);
+      asks.push({
+        key: "input:build-version",
+        question: `Which version should ${job.name} deploy for ${env}? majhi found no job that builds it.`,
+        options: [],
+      });
+    }
+  }
+
+  // The parts of the project this job deploys: its options, as GitLab's typed variable says them.
+  const componentsVar = firstVar(job.vars, COMPONENT_VARS);
+  let components: DeployRecipe["components"];
+  if (componentsVar !== undefined) {
+    const options =
+      componentsVar.spec.options.length > 0
+        ? componentsVar.spec.options
+        : optionsFromDescription(componentsVar.spec.description, input.folders);
+    const spec: InputSpec = {
+      name: componentsVar.name,
+      options,
+      required: false,
+      hasDefault: componentsVar.spec.value !== "",
+      description: componentsVar.spec.description,
+    };
+    const found = componentsFrom(spec, input.folders, VERSIONLESS_WORDS);
+    if (found === "asks") {
+      asks.push({
+        key: "components",
+        question: `Which part of ${env} does this change deploy?`,
+        options: options.slice(0, 8),
+      });
+    } else components = found;
+  }
+
+  const confirm = confirmations(job, own.lines);
+  const variables: Record<string, string> = {
+    ...(target === undefined || target === "" ? {} : { [TARGET_VAR]: target }),
+    ...confirm,
+  };
+  const bindDeploy: Record<string, InputBinding> = {
+    ...(componentsVar === undefined ? {} : { [componentsVar.name]: "components" }),
+    ...(versionVar === undefined ? {} : { [versionVar]: "built-version" }),
+  };
+  const bindBack: Record<string, InputBinding> = {
+    ...(componentsVar === undefined ? {} : { [componentsVar.name]: "components" }),
+    ...(versionVar === undefined ? {} : { [versionVar]: "previous-version" }),
+  };
+  const play = (bind: Record<string, InputBinding>): DeployRunStep => ({
+    kind: "gitlab-job",
+    remote: input.remote,
+    job: job.name,
+    ...(Object.keys(variables).length === 0 ? {} : { variables }),
+    ...(Object.keys(bind).length === 0 ? {} : { bind }),
+  });
+  const statusJob = target === undefined ? undefined : jobs.statuses.get(target);
+  const status: DeployRunStep[] =
+    statusJob === undefined
+      ? []
+      : [
+          {
+            kind: "gitlab-job",
+            remote: input.remote,
+            job: statusJob,
+            variables: { [TARGET_VAR]: target ?? "" },
           },
-        });
+        ];
+
+  // The image the containers of this target run, read from the host before a deploy replaces it.
+  const built = build === undefined ? undefined : await settingsOf(build.job, input);
+  const running = imageIn(
+    ...(build === undefined ? [] : [valuesOf(build.job.vars)]),
+    ...(built === undefined ? [] : [built.settings]),
+    own.settings,
+  );
+
+  const line = job.entry.file.located.lineOf([job.name]);
+  const recipe: DeployRecipe = {
+    from: { file: job.entry.file.path, ...optionalLine(line) },
+    deploy: [...(build === undefined ? [] : [buildStep(build, input.remote)]), play(bindDeploy), ...status] as DeployRecipe["deploy"],
+    // The same job again with the version before, in a pipeline of its own: the one the commit has ran it already.
+    rollback: {
+      runs: [{ ...play(bindBack), fresh: true }, ...status] as DeployRecipe["deploy"],
+      at: "deployed",
+    },
+    live: { kind: "gitlab-environment", remote: input.remote, name: environment?.name ?? envName },
+    ...(pick === undefined ? {} : { pick }),
+    ...(running === undefined ? {} : { running }),
+    ...(components === undefined ? {} : { components }),
+    ...(builds === undefined ? {} : { builds }),
+    asks,
+    answers: {},
+  };
+  return { env, recipe };
+}
+
+/** The run that builds the image of a registry: it picks the version, so the deploy that follows has one to send. */
+function buildStep(build: GlBuild, remote: string): DeployRunStep {
+  return { kind: "gitlab-job", remote, job: build.job.name, bind: { [build.version]: "next-version" } };
+}
+
+async function gitlabEnvironments(input: DiscoverInput, notes: string[]): Promise<DeployEnvironment[]> {
+  const entries = jobEntries(input.files.gitlab as GitlabFile[]);
+  const jobs: GlJob[] = [];
+  for (const [name, entry] of entries) {
+    if (name.startsWith(".")) continue;
+    const data = resolveJob(name, entries);
+    if (data.script === undefined && data.trigger === undefined) continue;
+    jobs.push({ name, entry, data, vars: jobVariables(data) });
+  }
+
+  // The jobs that are not a place to deploy: the builds of the registries and the status of each target.
+  const statuses = new Map<string, string>();
+  const builds: GlBuild[] = [];
+  const support = new Set<string>();
+  for (const job of jobs) {
+    if (!isManual(job.data)) continue;
+    const target = job.vars.get(TARGET_VAR)?.value;
+    if (includesWord(job.name, STATUS_WORDS) && target !== undefined && target !== "") {
+      statuses.set(target, job.name);
+      support.add(job.name);
+      continue;
+    }
+    const version = firstVar(job.vars, VERSION_VARS)?.name;
+    const registry = firstVar(job.vars, REGISTRY_VARS)?.spec.value;
+    if (
+      job.data.environment === undefined &&
+      version !== undefined &&
+      (registry !== undefined || includesWord(job.name, BUILD_WORDS))
+    ) {
+      builds.push({ job, version, registry: registry === "" ? undefined : registry });
+      support.add(job.name);
+    }
+  }
+
+  const out: DeployEnvironment[] = [];
+  for (const job of jobs) {
+    if (support.has(job.name)) continue;
+    const environment = environmentOf(job);
+    if (environment === undefined) continue;
+    const envName = environment.name;
+    const env = envNameOf(envName);
+    if (env === "") continue;
+    const line = job.entry.file.located.lineOf([job.name]);
+    const from = { file: job.entry.file.path, ...optionalLine(line) };
+    const live: LiveSource = { kind: "gitlab-environment", remote: input.remote, name: envName };
+    if (isManual(job.data)) {
+      const withVariables = [TARGET_VAR, ...VERSION_VARS, ...COMPONENT_VARS].some((n) => job.vars.has(n));
+      if (withVariables) {
+        const made = await variablesRecipe(job, { builds, statuses }, input, notes);
+        if (made !== undefined) out.push({ env: made.env, tier: tierOf(made.env), recipe: made.recipe });
         continue;
       }
-      const [branch] = jobBranches(job);
-      if (branch === undefined) continue;
-      const runs: DeployRunStep[] =
-        branch === input.base
-          ? [{ kind: "gitlab-pipeline", remote: input.remote, ref: "base" }]
-          : [{ kind: "gitlab-merge", remote: input.remote, branch }];
+      const runs: DeployRunStep[] = [{ kind: "gitlab-job", remote: input.remote, job: job.name }];
       out.push({
         env,
         tier: tierOf(env),
-        ...(branch === input.base ? {} : { branch }),
-        recipe: { from, deploy: runs as DeployRecipe["deploy"], live, asks: [], answers: {} },
+        recipe: {
+          from,
+          deploy: runs as DeployRecipe["deploy"],
+          rollback: { runs: runs as DeployRecipe["deploy"], at: "previous" },
+          live,
+          asks: [],
+          answers: {},
+        },
       });
+      continue;
     }
+    const [branch] = jobBranches(job.data);
+    if (branch === undefined) continue;
+    const runs: DeployRunStep[] =
+      branch === input.base
+        ? [{ kind: "gitlab-pipeline", remote: input.remote, ref: "base" }]
+        : [{ kind: "gitlab-merge", remote: input.remote, branch }];
+    out.push({
+      env,
+      tier: tierOf(env),
+      ...(branch === input.base ? {} : { branch }),
+      recipe: { from, deploy: runs as DeployRecipe["deploy"], live, asks: [], answers: {} },
+    });
   }
   return out;
 }
 
 /** The environments the project's CI deploys, each with its recipe. Each environment is listed once, the first wins. */
-export function discoverEnvironments(input: DiscoverInput): Discovered {
+export async function discoverEnvironments(input: DiscoverInput): Promise<Discovered> {
   const notes: string[] = [];
   const found: DeployEnvironment[] = [];
   if (input.provider === "github") found.push(...githubEnvironments(input, notes));
-  else if (input.provider === "gitlab") found.push(...gitlabEnvironments(input));
+  else if (input.provider === "gitlab") found.push(...(await gitlabEnvironments(input, notes)));
   const seen = new Set<string>();
   const environments = found.filter((e) => !seen.has(e.env) && seen.add(e.env));
   return { environments, notes };

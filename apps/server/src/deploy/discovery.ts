@@ -1,7 +1,7 @@
 import type { CommandMeta, DeployEnvironment } from "@majhi/shared";
 import { readCiFiles } from "../ci/read.ts";
 import type { ProjectInfo } from "../projects/service.ts";
-import { type DiscoverInput, discoverEnvironments } from "./discover.ts";
+import { type DiscoverInput, type Discovered, discoverEnvironments } from "./discover.ts";
 import type { DeployGit } from "./git.ts";
 import type { RepoRef } from "./types.ts";
 
@@ -26,6 +26,8 @@ export interface DiscoveryDeps {
   repoRef(project: ProjectInfo, remote?: string): Promise<RepoRef | undefined>;
   /** The remote the runs name: the one merge requests go to. */
   remoteOf(project: ProjectInfo): string;
+  /** The names of the project's git remotes. */
+  remotes(project: ProjectInfo): Promise<string[]>;
   /** One line for the workspace's log: what was found and where. */
   said(org: string, text: string): void;
 }
@@ -86,8 +88,16 @@ export class DeployDiscovery {
     if (!project.exists || project.base === undefined) {
       return { ...none, skipped: `${projectId} has no checkout or base branch to read` };
     }
-    const repo = await this.deps.repoRef(project);
-    if (repo === undefined)
+    // Every remote on a host majhi deploys through: a project can build on one host and deploy on another (its GitHub
+    // `origin` and a `gitlab` remote whose pipeline holds the production jobs). The merge request remote reads first.
+    const mr = this.deps.remoteOf(project);
+    const names = [mr, ...(await this.deps.remotes(project)).filter((n) => n !== mr)];
+    const hosts: { remote: string; provider: RepoRef["provider"] }[] = [];
+    for (const remote of names) {
+      const repo = await this.deps.repoRef(project, remote);
+      if (repo !== undefined) hosts.push({ remote, provider: repo.provider });
+    }
+    if (hosts.length === 0)
       return { ...none, skipped: `${projectId} has no remote on a host majhi deploys through` };
     const tip = await this.deps.git.tip(project.path, project.base);
     if (tip === undefined) return { ...none, skipped: `${projectId} has no single head on ${project.base}` };
@@ -95,14 +105,24 @@ export class DeployDiscovery {
       read: (rel) => this.deps.git.file(project.path, tip, rel),
       list: (rel) => this.deps.git.list(project.path, tip, rel),
     });
-    const input: DiscoverInput = {
-      files,
-      base: project.base,
-      provider: repo.provider,
-      remote: this.deps.remoteOf(project),
-      folders: await foldersOf(this.deps.git, project.path, tip),
-    };
-    const found = discoverEnvironments(input);
+    const folders = await foldersOf(this.deps.git, project.path, tip);
+    const found: Discovered = { environments: [], notes: [] };
+    for (const host of hosts) {
+      const input: DiscoverInput = {
+        files,
+        base: project.base,
+        provider: host.provider,
+        remote: host.remote,
+        folders,
+        read: (rel) => this.deps.git.file(project.path, tip, rel),
+      };
+      const one = await discoverEnvironments(input);
+      // An environment is listed once: the first remote that has it wins.
+      for (const env of one.environments) {
+        if (!found.environments.some((e) => e.env === env.env)) found.environments.push(env);
+      }
+      found.notes.push(...one.notes);
+    }
 
     const next = [...project.deploy];
     const added: string[] = [];

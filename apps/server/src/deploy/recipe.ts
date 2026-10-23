@@ -57,34 +57,90 @@ export function bindRuns(
 ): { runs: DeployRunStep[]; missing: string[] } {
   const missing: string[] = [];
   const out = runs.map((step): DeployRunStep => {
-    if (step.kind !== "github-workflow" || step.bind === undefined) return step;
-    const inputs: Record<string, string> = { ...step.inputs };
-    const left: Record<string, InputBinding> = {};
-    for (const [name, binding] of Object.entries(step.bind)) {
-      const value = bindingValue(binding, facts);
-      if (value === undefined) {
-        missing.push(`${name} needs ${binding}`);
-        left[name] = binding;
-      } else inputs[name] = value;
+    if (step.kind === "github-workflow") {
+      const filled = fillBinds(step.bind, step.inputs, facts, missing);
+      const { bind: _all, inputs: _old, ...rest } = step;
+      return {
+        ...rest,
+        ...(Object.keys(filled.values).length === 0 ? {} : { inputs: filled.values }),
+        ...(Object.keys(filled.left).length === 0 ? {} : { bind: filled.left }),
+      };
     }
-    const { bind: _all, inputs: _old, ...rest } = step;
-    return {
-      ...rest,
-      ...(Object.keys(inputs).length === 0 ? {} : { inputs }),
-      ...(Object.keys(left).length === 0 ? {} : { bind: left }),
-    };
+    if (step.kind === "gitlab-job") {
+      const filled = fillBinds(step.bind, step.variables, facts, missing);
+      const { bind: _all, variables: _old, ...rest } = step;
+      return {
+        ...rest,
+        ...(Object.keys(filled.values).length === 0 ? {} : { variables: filled.values }),
+        ...(Object.keys(filled.left).length === 0 ? {} : { bind: filled.left }),
+      };
+    }
+    return step;
   });
   return { runs: out, missing };
+}
+
+/** The values a run's binds give, and the binds the facts cannot fill yet. */
+function fillBinds(
+  bind: Readonly<Record<string, InputBinding>> | undefined,
+  given: Readonly<Record<string, string>> | undefined,
+  facts: BindFacts,
+  missing: string[],
+): { values: Record<string, string>; left: Record<string, InputBinding> } {
+  const values: Record<string, string> = { ...given };
+  const left: Record<string, InputBinding> = {};
+  for (const [name, binding] of Object.entries(bind ?? {})) {
+    const value = bindingValue(binding, facts);
+    if (value === undefined) {
+      missing.push(`${name} needs ${binding}`);
+      left[name] = binding;
+    } else values[name] = value;
+  }
+  return { values, left };
+}
+
+/** The binds of a run, whatever kind of run it is. */
+function bindOf(step: DeployRunStep): Readonly<Record<string, InputBinding>> | undefined {
+  return step.kind === "github-workflow" || step.kind === "gitlab-job" ? step.bind : undefined;
 }
 
 /** Every input name a recipe's runs bind to the given source, over its deploy and rollback runs. */
 export function bindsOf(runs: readonly DeployRunStep[], binding: InputBinding): string[] {
   const names: string[] = [];
   for (const step of runs) {
-    if (step.kind !== "github-workflow" || step.bind === undefined) continue;
-    for (const [name, b] of Object.entries(step.bind)) if (b === binding) names.push(name);
+    for (const [name, b] of Object.entries(bindOf(step) ?? {})) if (b === binding) names.push(name);
   }
   return names;
+}
+
+/** Whether a run builds the version majhi picks: it binds an input to `next-version`. */
+export function isBuild(step: DeployRunStep): boolean {
+  return Object.values(bindOf(step) ?? {}).includes("next-version");
+}
+
+/**
+ * The runs of a deploy with no build and no version sent: for the parts of a project that deploy no image (a front
+ * end).
+ */
+export function withoutVersion(runs: readonly DeployRunStep[]): DeployRunStep[] {
+  return runs
+    .filter((step) => !isBuild(step))
+    .map((step) => {
+      const bind = bindOf(step);
+      if (bind === undefined) return step;
+      const kept = Object.fromEntries(
+        Object.entries(bind).filter(([, b]) => b !== "built-version" && b !== "previous-version"),
+      );
+      if (step.kind === "github-workflow") {
+        const { bind: _b, ...rest } = step;
+        return Object.keys(kept).length === 0 ? rest : { ...rest, bind: kept };
+      }
+      if (step.kind === "gitlab-job") {
+        const { bind: _b, ...rest } = step;
+        return Object.keys(kept).length === 0 ? rest : { ...rest, bind: kept };
+      }
+      return step;
+    });
 }
 
 /** The version a set of dispatched inputs put live: the first input the runs bound to a version. */
@@ -93,8 +149,7 @@ export function versionPutLive(
   sent: readonly (Record<string, string> | undefined)[],
 ): string | undefined {
   for (const [i, step] of steps.entries()) {
-    if (step.kind !== "github-workflow" || step.bind === undefined) continue;
-    for (const [name, binding] of Object.entries(step.bind)) {
+    for (const [name, binding] of Object.entries(bindOf(step) ?? {})) {
       if (binding !== "built-version" && binding !== "previous-version" && binding !== "next-version")
         continue;
       const value = sent[i]?.[name];

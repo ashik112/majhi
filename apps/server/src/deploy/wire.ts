@@ -10,6 +10,7 @@ import type { DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
+import { git } from "../git/git.ts";
 import { remoteUrl } from "../mrs/push.ts";
 import { mrHostOf, mrRemoteName, realHostOf, repoSlug } from "../mrs/remote.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
@@ -351,6 +352,11 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     git: deployGit,
     repoRef: (p, remote) => repoRef(projectOf(p), remote),
     remoteOf: (p) => mrRemoteName(p.remotes),
+    remotes: async (p) =>
+      (await git(p.path, ["remote"]).catch(() => ""))
+        .split("\n")
+        .map((n) => n.trim())
+        .filter((n) => n !== ""),
     said: (org, text) => deps.said?.(org, text),
   });
 

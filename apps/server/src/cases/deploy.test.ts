@@ -113,7 +113,7 @@ describe("a case deploy", () => {
 
 /** The environments of the sample `acme-shop`, as discovery reads them from its CI files. */
 async function shop(): Promise<DeployEnvironment[]> {
-  const found = discoverEnvironments({
+  const found = await discoverEnvironments({
     files: await acmeShopCi(),
     base: "main",
     provider: "github",
