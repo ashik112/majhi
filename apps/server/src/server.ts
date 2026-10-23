@@ -71,7 +71,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     hostLink,
     commit: env.commit,
     majhiHome: env.majhiHome,
-    working: () => services.runs.turnsInFlight(),
+    working: () => services.workInFlight(),
     beforeUpdate: () => services.backup.before("before-update"),
     openTasks: () =>
       [...services.store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),

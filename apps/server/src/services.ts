@@ -420,6 +420,8 @@ export interface Services {
   coordinator: RoomCoordinator;
   /** Looks at a room that went quiet. Its timer runs it; a test calls `check` instead of waiting for it. */
   idleWatch: IdleWatch;
+  /** What an update that waits for idle waits for: agents in a turn and the processes they wait on, never a status flag. */
+  workInFlight: () => number;
   orgs: OrgService;
   accounts: AccountService;
   terminals: TerminalManager;
@@ -3906,6 +3908,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     testBrowser,
     coordinator,
     idleWatch,
+    workInFlight: () => {
+      // A task that runs with nothing behind the flag is settled where it is seen, so it never holds an update.
+      tasks.settleStalled((id) => idleWatch.quiet(id));
+      return tasks.workInFlight();
+    },
     store,
     backup,
     uploads,

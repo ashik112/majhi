@@ -129,6 +129,11 @@ const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
 const LIMIT_CHECK_MS = 15_000;
 /** A turn that heard from its agent this recently is streaming fine: going offline does not cut it. */
 export const STREAMING_MS = 30_000;
+/**
+ * A turn that heard nothing from its agent for this long is hung, not working: an update that waits for idle does
+ * not wait for it. A tool that runs this long without a word is rare, and a cut turn continues after the update.
+ */
+export const HUNG_TURN_MS = 30 * 60_000;
 
 export interface RunDeps {
   store: Store;
@@ -426,24 +431,32 @@ export class RunManager {
    */
   workingTasks(): string[] {
     const out = new Set<string>();
-    for (const r of this.runs.values()) {
-      const status = r.live.status;
-      const idleish = status === "queued" || status === "waiting";
-      if (
-        status === "starting" ||
-        status === "working" ||
-        (r.turning && !r.closing && !r.settling && !idleish)
-      ) {
-        out.add(r.task);
-      }
-    }
+    for (const r of this.runs.values()) if (this.isWorkingRun(r)) out.add(r.task);
     return [...out];
   }
 
-  /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
+  /** Starting or in a turn: not queued for a slot, not waiting on an answer, not on its way out. */
+  private isWorkingRun(r: AgentRun): boolean {
+    const status = r.live.status;
+    const idleish = status === "queued" || status === "waiting";
+    return (
+      status === "starting" || status === "working" || (r.turning && !r.closing && !r.settling && !idleish)
+    );
+  }
+
+  /**
+   * Agents in the middle of a turn, across majhi: the same look as `workingTasks` (so an agent that waits on the
+   * owner is not one), without a turn that went quiet for `HUNG_TURN_MS`. An update waits for these with
+   * "when they finish".
+   */
   turnsInFlight(): number {
+    const now = this.now().getTime();
     let n = 0;
-    for (const r of this.runs.values()) if (r.turning && r.session !== undefined) n++;
+    for (const r of this.runs.values()) {
+      // A turn that has not started or heard anything yet is new, not hung.
+      const heard = Math.max(r.turnStartedAt, r.lastEventAt, r.waitSeenAt);
+      if (this.isWorkingRun(r) && (heard === 0 || now - heard < HUNG_TURN_MS)) n++;
+    }
     return n;
   }
 

@@ -362,12 +362,20 @@ export interface CreateInput {
 const mrNotRestarted = (task: string, agent: string): string =>
   `${task} has a merge request open, so the message to @${agent} was not delivered and the task did not restart. Close the merge request, then send the task back.`;
 
+/** How long a running task may have nothing behind it before it is settled as stale. */
+const STALE_RUNNING_MS = 2 * 60_000;
+
+/** An agent ended its turn to wait for a process of its own, which is still running. */
+const isWaitedOn = (p: ProcessInfo): boolean => p.wait && p.status === "running";
+
 /** Creating, starting, stopping and removing tasks, and the owner's messages to a task's agent. */
 export class TaskService {
   private readonly files: FileIndex;
   private readonly now: () => Date;
   /** `wait` processes the room was told the task waits for, so it is said once. */
   private readonly waitNoted = new Set<string>();
+  /** Running tasks with nothing behind the flag, and since when (`settleStalled`). */
+  private readonly stalledSince = new Map<string, number>();
   /** Tasks inside `start` (worktrees, memory) that have no run yet, and the ones the owner stopped there. */
   private readonly starting = new Set<string>();
   /** Tasks the room was told wait for a free place, so it is said once. */
@@ -475,10 +483,45 @@ export class TaskService {
    */
   private workingOf(id: string): string[] {
     const inTurn = this.deps.runs.working(id);
-    const waiting = (this.deps.processes?.list(id) ?? [])
-      .filter((p) => p.wait && p.status === "running")
-      .map((p) => p.agent);
+    const waiting = (this.deps.processes?.list(id) ?? []).filter(isWaitedOn).map((p) => p.agent);
     return [...new Set([...inTurn, ...waiting])];
+  }
+
+  /**
+   * What "update when idle" waits for: agents in a turn (`RunManager.turnsInFlight`) and the processes agents wait
+   * on, the same two things `workingOf` shows on the board. A task's `running` flag counts for nothing.
+   */
+  workInFlight(): number {
+    const waiting = (this.deps.processes?.listAll() ?? []).filter(isWaitedOn).length;
+    return this.deps.runs.turnsInFlight() + waiting;
+  }
+
+  /**
+   * A task that runs while no agent is in a turn or queued, none waits on a process or the owner, and no subtask
+   * moves has nothing behind its flag. When it stays so for `STALE_RUNNING_MS` it is paused with one line, like a
+   * task a restart could not bring back, so nothing waits for it. `quiet` is the idle watch's own look.
+   */
+  settleStalled(quiet: (id: string) => boolean): void {
+    const now = this.now().getTime();
+    const seen = new Set<string>();
+    for (const { id, status } of this.deps.store.tasks.list(false)) {
+      if (status !== "running" || this.workingOf(id).length > 0 || !quiet(id)) continue;
+      seen.add(id);
+      const since = this.stalledSince.get(id) ?? now;
+      this.stalledSince.set(id, since);
+      if (now - since < STALE_RUNNING_MS) continue;
+      this.stalledSince.delete(id);
+      void this.settleStale(id).catch((err: unknown) =>
+        this.warn(id as TaskId, `Could not settle it: ${errorMessage(err)}`),
+      );
+    }
+    for (const id of [...this.stalledSince.keys()]) if (!seen.has(id)) this.stalledSince.delete(id);
+  }
+
+  private async settleStale(id: string): Promise<void> {
+    const line = "Nothing was working on this and no run was alive, so it paused. Resume to continue.";
+    this.note(id as TaskId, line);
+    await this.lostByRestart(id, line);
   }
 
   list(includeDone: boolean, only?: readonly string[]): TaskSummary[] {
