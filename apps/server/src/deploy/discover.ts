@@ -10,16 +10,19 @@ import type {
 } from "@majhi/shared";
 import type { CiFiles, GitlabFile, YamlFile } from "../ci/read.ts";
 import {
+  commandsOf,
   confirmationsRead,
   expandVariables,
+  foldersTouched,
   type JobEntry,
   type JobVariable,
   jobEntries,
   jobVariables,
-  plainSettings,
+  optionsAccepted,
   resolveJob,
   scriptFiles,
   scriptLines,
+  settingsFor,
   sourcedPaths,
 } from "./gitlab-jobs.ts";
 
@@ -55,6 +58,35 @@ export interface Discovered {
 const DEPLOY_WORDS = ["deploy", "release", "promote", "ship", "publish"];
 const ROLLBACK_WORDS = ["rollback", "roll-back", "roll_back", "revert"];
 const BUILD_WORDS = ["build", "image", "package", "docker"];
+/**
+ * Words of a workflow that say it does another job on a target, even when it also says deploy: it runs a data backfill,
+ * a migration, a prune, a bootstrap, a check. Such a workflow is never the way a project deploys. Matched by the start of
+ * a word of its file name, name or run name (`migrat` is migrate, migration, migrations).
+ */
+const OTHER_JOB_WORDS = [
+  "backfill",
+  "migrat",
+  "prune",
+  "bootstrap",
+  "rekey",
+  "rehears",
+  "verif",
+  "status",
+  "hygiene",
+  "seed",
+  "restor",
+  "backup",
+  "rotat",
+  "cleanup",
+  "report",
+  "audit",
+  "smoke",
+  "health",
+  "reindex",
+  "maintenance",
+  "prepar",
+  "bump",
+];
 /** Input names that choose which environment a run is for. */
 const TARGET_NAMES = ["target", "environment", "env", "client", "customer", "tenant", "site", "stage"];
 /** Input names that hold the commit, branch or tag a run starts from. */
@@ -75,6 +107,26 @@ const text = (v: unknown): string | undefined =>
 function includesWord(name: string, words: readonly string[]): boolean {
   const lower = name.toLowerCase();
   return words.some((w) => lower.includes(w));
+}
+
+/** The words of a name: its runs of letters and digits, lowercase. */
+export function wordsIn(name: string): string[] {
+  const out: string[] = [];
+  let word = "";
+  for (const c of name.toLowerCase()) {
+    if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) word += c;
+    else if (word !== "") {
+      out.push(word);
+      word = "";
+    }
+  }
+  if (word !== "") out.push(word);
+  return out;
+}
+
+/** Whether a word of the name starts with one of the stems. */
+function startsWithWord(name: string, stems: readonly string[]): boolean {
+  return wordsIn(name).some((w) => stems.some((s) => w.startsWith(s)));
 }
 
 /** A name an environment may have: lowercase letters, digits and dashes, at most 40. Empty when nothing is left. */
@@ -110,6 +162,8 @@ type FlowKind = "build" | "release" | "rollback" | "other";
 
 interface Flow {
   file: YamlFile;
+  /** The file's name, its name and its run name, as one text to read words from. */
+  label: string;
   /** The file's name, as `workflow:` writes it. */
   base: string;
   kind: FlowKind;
@@ -194,14 +248,15 @@ function flowOf(file: YamlFile): Flow {
   const base = file.path.split("/").at(-1) ?? file.path;
   const { dispatch, inputs } = dispatchOf(data);
   const name = text(rec(data).name) ?? "";
-  const label = `${base} ${name}`;
-  const hasTarget = inputs.some((i) => TARGET_NAMES.includes(i.name) && i.options.length > 0);
+  const label = `${base} ${name} ${text(rec(data)["run-name"]) ?? ""}`;
+  // A workflow is a release only when its own words say deploy and none says it does something else. One that merely
+  // takes a target is not: majhi never guesses that a workflow deploys.
   let kind: FlowKind = "other";
   if (includesWord(label, ROLLBACK_WORDS)) kind = "rollback";
-  else if (includesWord(label, DEPLOY_WORDS)) kind = "release";
+  else if (startsWithWord(label, OTHER_JOB_WORDS)) kind = "other";
+  else if (startsWithWord(label, DEPLOY_WORDS)) kind = "release";
   else if (includesWord(label, BUILD_WORDS)) kind = "build";
-  else if (hasTarget) kind = "release";
-  return { file, base, kind, dispatch, inputs, runName: runNameParts(rec(data)["run-name"]) };
+  return { file, label, base, kind, dispatch, inputs, runName: runNameParts(rec(data)["run-name"]) };
 }
 
 // The tag a build gives an image, when it is a function of the commit alone.
@@ -436,6 +491,31 @@ function dispatchStep(
   return { step, asks };
 }
 
+/**
+ * What a build must be told that depends on the environment: an input that chooses between several options (which
+ * registry, which artifact) and is none of the inputs a recipe fills itself. It is the environment's own name when that
+ * is one of the options; any other case is a question, never the default (a default is for a person who looks).
+ */
+function chosenInputs(build: Flow, env: string): { fixed: Record<string, string>; asks: RecipeAsk[] } {
+  const roles = rolesOf(build);
+  const own = new Set([roles.target, roles.components?.name, ...roles.refs, ...roles.versions]);
+  const fixed: Record<string, string> = {};
+  const asks: RecipeAsk[] = [];
+  for (const spec of build.inputs) {
+    if (own.has(spec.name) || spec.options.length < 2) continue;
+    const named = spec.options.find((o) => envNameOf(o) === env);
+    if (named !== undefined) fixed[spec.name] = named;
+    else {
+      asks.push({
+        key: `input:${spec.name}`,
+        question: `${build.base} needs ${spec.name}${spec.description === undefined ? "" : ` (${spec.description})`} for ${env}. Which one?`,
+        options: spec.options.slice(0, 8),
+      });
+    }
+  }
+  return { fixed, asks };
+}
+
 function lineOfTarget(flow: Flow, target: string | undefined): number | undefined {
   const at = flow.file.located;
   return (
@@ -445,14 +525,59 @@ function lineOfTarget(flow: Flow, target: string | undefined): number | undefine
   );
 }
 
+/**
+ * How close a release workflow's name is to "deploy" or "release": 0 when its file or its name is just that, 1 when one of
+ * its words is, 2 for any other. Where several workflows could deploy a target, the closest one is the deploy.
+ */
+function closeness(flow: Flow): number {
+  const stem = flow.base.endsWith(".yml")
+    ? flow.base.slice(0, -4)
+    : flow.base.endsWith(".yaml")
+      ? flow.base.slice(0, -5)
+      : flow.base;
+  const name = text(rec(flow.file.located.data).name)?.trim().toLowerCase() ?? "";
+  if ([stem.toLowerCase(), name].some((n) => n === "deploy" || n === "release")) return 0;
+  return wordsIn(flow.label).some((w) => w === "deploy" || w === "release") ? 1 : 2;
+}
+
+/**
+ * The environments the project's GitHub workflows deploy. A workflow counts only when its own words say it deploys and
+ * none says it does another job (`flowOf`). One that takes a target counts for each target; one that takes none counts
+ * only when it is the project's one release (it deploys the project, not a part of it). Where several workflows deploy
+ * a target, the closest in name to deploy or release is the one; two equally close stay, both, and the environment
+ * asks which one deploys it.
+ */
 function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnvironment[] {
   const flows = input.files.workflows.map(flowOf);
-  const release =
-    flows.find((f) => f.kind === "release" && f.dispatch && f.inputs.length > 0) ??
-    flows.find((f) => f.kind === "release" && f.dispatch);
-  if (release === undefined) return [];
+  const releases = flows.filter((f) => f.kind === "release" && f.dispatch);
+  const found: { env: DeployEnvironment; rank: number }[] = [];
+  for (const release of releases) {
+    if (rolesOf(release).target === undefined && releases.length > 1) {
+      notes.push(
+        `${release.file.path}: one of ${releases.length} workflows that deploy, with no target to say what it deploys: left alone`,
+      );
+      continue;
+    }
+    for (const env of releaseEnvironments(release, flows, input, notes))
+      found.push({ env, rank: closeness(release) });
+  }
+  return found
+    .filter((f) => f.rank === Math.min(...found.filter((o) => o.env.env === f.env.env).map((o) => o.rank)))
+    .map((f) => f.env);
+}
+
+function releaseEnvironments(
+  release: Flow,
+  flows: readonly Flow[],
+  input: DiscoverInput,
+  notes: string[],
+): DeployEnvironment[] {
   const rollback = flows.find((f) => f.kind === "rollback" && f.dispatch);
-  const build = flows.find((f) => f.kind === "build");
+  const builds = flows.filter((f) => f.kind === "build");
+  const build =
+    builds.find((f) => f.dispatch && rolesOf(f).versions.length > 0) ??
+    builds.find((f) => f.dispatch) ??
+    builds[0];
   const roles = rolesOf(release);
   const pick = build === undefined ? undefined : pickOf(build, input.remote);
   const running = build === undefined ? undefined : imageOf(build);
@@ -475,9 +600,10 @@ function githubEnvironments(input: DiscoverInput, notes: string[]): DeployEnviro
     // Deploy: the build for the commit, when there is one to run, then the release.
     const deploy: DeployRunStep[] = [];
     if (build !== undefined && build.dispatch && roles.versions.length > 0) {
-      const built = dispatchStep(build, input.remote, {}, "deploy", pick?.input);
+      const chosen = chosenInputs(build, env);
+      const built = dispatchStep(build, input.remote, chosen.fixed, "deploy", pick?.input);
       deploy.push(built.step);
-      asks.push(...built.asks);
+      asks.push(...chosen.asks, ...built.asks);
     } else if (build !== undefined && roles.versions.length > 0 && tag !== undefined) {
       notes.push(`${build.file.path} runs on push, so ${release.file.path} deploys what it already built`);
     }
@@ -570,11 +696,27 @@ function componentsFrom(
   return { all, parts, ...(none.length === 0 ? {} : { versionless: none }) };
 }
 
+/** The names a part of a project goes by in a folder name: `backend` is `ecom-backend`, `frontend` is `pulse-fe`. */
+const PART_ALIASES: Record<string, readonly string[]> = {
+  backend: ["backend", "back", "be", "api", "server"],
+  frontend: ["frontend", "front", "fe", "web", "ui", "client", "spa"],
+};
+
+/**
+ * The folder of a part: the folder named like it, else the one folder whose own name has the part among its words (or
+ * one of the names the part goes by). Two folders that could be it are none: majhi does not choose.
+ */
 function folderOf(option: string, folders: readonly string[]): string | undefined {
   const name = option.toLowerCase();
   if (folders.includes(name)) return name;
   for (const parent of PARENT_FOLDERS) if (folders.includes(`${parent}/${name}`)) return `${parent}/${name}`;
-  return undefined;
+  const names = PART_ALIASES[name] ?? [name];
+  const under = folders.filter((f) => PARENT_FOLDERS.some((p) => f.startsWith(`${p}/`)) || !f.includes("/"));
+  const named = under.filter((f) => {
+    const own = wordsIn(f.split("/").at(-1) ?? f);
+    return own.some((w) => names.includes(w));
+  });
+  return named.length === 1 ? named[0] : undefined;
 }
 
 /** How the release's run titles name this environment, when they do: the target input is in the title. */
@@ -651,6 +793,8 @@ const TARGET_VAR = "TARGET";
 const VERSION_VARS = ["VERSION", "IMAGE_VERSION", "IMAGE_TAG"];
 const COMPONENT_VARS = ["COMPONENTS", "COMPONENT"];
 const REGISTRY_VARS = ["REGISTRY_TARGET", "REGISTRY"];
+/** The variables whose value names an arm of a script's `case`: the target, the registry. */
+const ARM_VARS = [TARGET_VAR, ...REGISTRY_VARS];
 /** A manual job with one of these in its name reads a target's status: it is not a place to deploy. */
 const STATUS_WORDS = ["status", "health", "smoke"];
 /** `environment: action:` values of a job that does not deploy. */
@@ -659,6 +803,10 @@ const NOT_A_DEPLOY = ["stop", "verify", "access", "prepare"];
 const VERSIONLESS_WORDS = ["frontend", "front", "web", "ui", "client", "static", "site"];
 /** A setting whose name holds one of these is the image a build makes. */
 const IMAGE_KEYS = ["IMAGE", "REPOSITORY"];
+/** A setting with one of these names is the registry an image goes to. */
+const REGISTRY_PREFIX_KEYS = ["registry", "registry_url", "registry_host"];
+/** Folders that hold how a project deploys, not a part of it: a change to them is not a change to a part. */
+const NOT_A_PART = ["deploy", "ci", "docs", "scripts", "tools", "docker", "infra", "ops", "config"];
 
 interface GlJob {
   name: string;
@@ -674,6 +822,8 @@ interface GlBuild {
   /** The name of its version variable. */
   version: string;
   registry: string | undefined;
+  /** The settings its script reads for its own registry: where the image goes. */
+  settings: ReadonlyMap<string, string>;
 }
 
 const valuesOf = (vars: ReadonlyMap<string, JobVariable>): Map<string, string> =>
@@ -699,47 +849,96 @@ function environmentOf(job: GlJob): { name: string } | undefined {
   return name.includes("$") ? undefined : { name };
 }
 
-/** The settings a job's script reads: the files it sources, and the files of the scripts it runs. */
-async function settingsOf(
-  job: GlJob,
-  input: DiscoverInput,
-): Promise<{ settings: Map<string, string>; lines: string[] }> {
-  const settings = new Map<string, string>();
-  const lines = scriptLines(job.data);
+/** What a job's script reads and sets: the lines it runs, the files it runs and sources, and their settings for the job's target. */
+interface Reading {
+  settings: Map<string, string>;
+  lines: string[];
+  /** The text of each script file and each file it sources. */
+  texts: string[];
+}
+
+/** The directory of a path: `deploy/ci/a.sh` is `deploy/ci`. */
+const dirOf = (path: string): string => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".");
+
+/** The variables of a script that hold its own directory: `here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`. */
+function ownDirectoryVars(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const eq = line.indexOf("=");
+    if (eq <= 0 || !line.includes("dirname") || !line.includes("BASH_SOURCE")) continue;
+    const name = line.slice(0, eq);
+    if (
+      [...name].every(
+        (c) => (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c === "_",
+      )
+    ) {
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+async function readingOf(job: GlJob, input: DiscoverInput): Promise<Reading> {
+  const out: Reading = { settings: new Map(), lines: scriptLines(job.data), texts: [] };
   const read = input.read;
-  if (read === undefined) return { settings, lines };
+  if (read === undefined) return out;
   const values = valuesOf(job.vars);
-  const paths = sourcedPaths(lines, values);
-  for (const script of scriptFiles(lines)) {
+  const names = new Set(ARM_VARS.flatMap((n) => ((values.get(n) ?? "") === "" ? [] : [values.get(n) ?? ""])));
+  const paths = sourcedPaths(out.lines, values);
+  const own: string[] = [];
+  for (const script of scriptFiles(out.lines)) {
     const body = await read(script);
     if (body === undefined) continue;
+    out.texts.push(body);
+    own.push(body);
     const inside = body.split("\n").map((l) => l.trim());
-    lines.push(...inside);
-    paths.push(...sourcedPaths(inside, values));
+    out.lines.push(...inside);
+    // `. "$here/lib.sh"` is a file beside the script.
+    const withDir = new Map(values);
+    for (const name of ownDirectoryVars(inside)) withDir.set(name, dirOf(script));
+    paths.push(...sourcedPaths(inside, withDir));
   }
   for (const path of [...new Set(paths)]) {
     if (path.startsWith("/") || path.split("/").includes("..")) continue;
     const body = await read(path);
-    if (body !== undefined) for (const [key, value] of plainSettings(body)) settings.set(key, value);
+    if (body === undefined) continue;
+    out.texts.push(body);
+    own.push(body);
   }
-  return { settings, lines };
+  // A script says what it sets for one target in the arms of a `case`; only the arms of this job's target count.
+  for (const body of own) for (const [key, value] of settingsFor(body, names)) out.settings.set(key, value);
+  return out;
 }
 
 /** The image a build makes: the first setting or variable named for an image that holds a plain value. */
-function imageIn(...sources: ReadonlyMap<string, string>[]): DeployRecipe["running"] {
+function imageValue(...sources: ReadonlyMap<string, string>[]): string | undefined {
   for (const source of sources) {
     for (const [key, value] of source) {
+      if (value === "" || value.includes("$")) continue;
       if (
-        value === "" ||
-        value.includes("$") ||
-        !includesWord(
+        includesWord(
           key.toLowerCase(),
           IMAGE_KEYS.map((k) => k.toLowerCase()),
         )
       )
-        continue;
-      return value.includes("/") ? { repo: value, whole: true } : { repo: value, whole: false };
+        return value;
     }
+  }
+  return undefined;
+}
+
+const imageOfValue = (value: string | undefined): DeployRecipe["running"] =>
+  value === undefined
+    ? undefined
+    : value.includes("/")
+      ? { repo: value, whole: true }
+      : { repo: value, whole: false };
+
+/** Where a build puts its image: the registry its script sets for its own target. */
+function registryPrefix(settings: ReadonlyMap<string, string>): string | undefined {
+  for (const [key, value] of settings) {
+    if (REGISTRY_PREFIX_KEYS.includes(key.toLowerCase()) && value !== "" && !value.includes("$"))
+      return value;
   }
   return undefined;
 }
@@ -747,27 +946,18 @@ function imageIn(...sources: ReadonlyMap<string, string>[]): DeployRecipe["runni
 /** The words of a variable's description that are options of a components input: an all-word or a folder of the repo. */
 function optionsFromDescription(description: string | undefined, folders: readonly string[]): string[] {
   const out: string[] = [];
-  let word = "";
-  const end = () => {
-    const lower = word.toLowerCase();
-    if (
-      lower !== "" &&
-      !out.includes(lower) &&
-      (ALL_WORDS.includes(lower) || folderOf(lower, folders) !== undefined)
-    )
-      out.push(lower);
-    word = "";
-  };
-  for (const c of description ?? "") {
-    if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9")) word += c;
-    else end();
+  for (const word of wordsIn(description ?? "")) {
+    if (!out.includes(word) && (ALL_WORDS.includes(word) || folderOf(word, folders) !== undefined))
+      out.push(word);
   }
-  end();
   return out;
 }
 
-/** What a job must be told so its own check passes: each confirmation variable gets the value of the variable it confirms. */
-function confirmations(job: GlJob, lines: readonly string[]): Record<string, string> {
+/** What a job's confirmation variables must be told so its own check passes: each gets the value of the variable it confirms. */
+function confirmations(
+  job: GlJob,
+  lines: readonly string[],
+): { values: Record<string, string>; unpaired: string[] } {
   const declared = new Set(job.vars.keys());
   const isConfirm = (name: string) => name.startsWith("CONFIRM");
   const pairs: [string, string][] = confirmationsRead(lines, declared, isConfirm);
@@ -775,12 +965,67 @@ function confirmations(job: GlJob, lines: readonly string[]): Record<string, str
     const rest = name.startsWith("CONFIRM_") ? name.slice("CONFIRM_".length) : "";
     if (rest !== "" && declared.has(rest)) pairs.push([name, rest]);
   }
-  const out: Record<string, string> = {};
+  const values: Record<string, string> = {};
   for (const [confirm, other] of pairs) {
     const value = job.vars.get(other)?.value;
-    if (value !== undefined && value !== "") out[confirm] = value;
+    if (value !== undefined && value !== "") values[confirm] = value;
   }
-  return out;
+  // A confirmation the job asks for and nothing says what it must equal cannot be filled: the deploy would be refused.
+  return { values, unpaired: [...declared].filter((n) => isConfirm(n) && values[n] === undefined) };
+}
+
+/**
+ * Why majhi cannot play a deploy job by itself, or undefined when it can: it asks for a confirmation that nothing says
+ * the value of, or it needs a manual job (an artifact build of its own) played first. Such a job is a place the project
+ * deploys, so it stays an environment, but it has no recipe: the captain never deploys it.
+ */
+function blockedBy(
+  job: GlJob,
+  entries: ReadonlyMap<string, JobEntry>,
+  builds: readonly GlBuild[],
+  confirm: { unpaired: string[] },
+): string | undefined {
+  if (confirm.unpaired.length > 0) {
+    return `${job.name} asks for ${confirm.unpaired.join(", ")} and nothing says what it must equal`;
+  }
+  const needs = Array.isArray(job.data.needs) ? job.data.needs : [];
+  for (const need of needs) {
+    const name = typeof need === "string" ? need : text(rec(need).job);
+    if (name === undefined || rec(need).optional === true || builds.some((b) => b.job.name === name))
+      continue;
+    if (entries.has(name) && isManual(resolveJob(name, entries))) {
+      return `${job.name} needs ${name} played first, which majhi does not do`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The folders a job deploys from, read from what it and the manual jobs it needs run (`cd apps/voice-service`), cache
+ * and publish: the part of the project it is, when its variables do not say.
+ */
+function scopeOfJob(
+  job: GlJob,
+  entries: ReadonlyMap<string, JobEntry>,
+  reading: Reading,
+  folders: readonly string[],
+): string[] {
+  const words: string[] = [];
+  const take = (data: Record<string, unknown>, lines: readonly string[]) => {
+    for (const line of lines) for (const command of commandsOf(line)) words.push(...command);
+    const files = rec(rec(data.cache).key).files;
+    for (const item of Array.isArray(files) ? files : []) if (typeof item === "string") words.push(item);
+    const paths = rec(data.artifacts).paths;
+    for (const item of Array.isArray(paths) ? paths : []) if (typeof item === "string") words.push(item);
+  };
+  take(job.data, reading.lines);
+  const needs = Array.isArray(job.data.needs) ? job.data.needs : [];
+  for (const need of needs) {
+    const name = typeof need === "string" ? need : text(rec(need).job);
+    const data = name === undefined || !entries.has(name) ? undefined : resolveJob(name, entries);
+    if (data !== undefined) take(data, scriptLines(data));
+  }
+  return foldersTouched(words, folders, NOT_A_PART);
 }
 
 /**
@@ -790,20 +1035,31 @@ function confirmations(job: GlJob, lines: readonly string[]): Record<string, str
  */
 async function variablesRecipe(
   job: GlJob,
-  jobs: { builds: readonly GlBuild[]; statuses: ReadonlyMap<string, string> },
+  jobs: {
+    builds: readonly GlBuild[];
+    statuses: ReadonlyMap<string, string>;
+    entries: ReadonlyMap<string, JobEntry>;
+  },
   input: DiscoverInput,
   notes: string[],
-): Promise<{ env: string; recipe: DeployRecipe } | undefined> {
+): Promise<{ env: string; recipe: DeployRecipe | undefined } | undefined> {
   const environment = environmentOf(job);
   const target = job.vars.get(TARGET_VAR)?.value;
   const envName = target !== undefined && target !== "" ? target : environment?.name;
   if (envName === undefined) return undefined;
   const env = envNameOf(envName);
   if (env === "") return undefined;
-  const own = await settingsOf(job, input);
+  const own = await readingOf(job, input);
   const asks: RecipeAsk[] = [];
+  const confirm = confirmations(job, own.lines);
+  const blocked = blockedBy(job, jobs.entries, jobs.builds, confirm);
+  if (blocked !== undefined) {
+    notes.push(`${blocked}: ${env} has no recipe`);
+    return { env, recipe: undefined };
+  }
 
-  // The image: the build of the registry this target uses. The YAML says the registry, else the target's settings do.
+  // The image: the build of the registry this target uses. The YAML says the registry, else the target's settings do,
+  // else the image the target pulls says it (it starts with the registry the build pushes to).
   const versionVar = firstVar(job.vars, VERSION_VARS)?.name;
   const registryVar = firstVar(job.vars, REGISTRY_VARS);
   let registry = registryVar?.spec.value === "" ? undefined : registryVar?.spec.value;
@@ -821,15 +1077,22 @@ async function variablesRecipe(
   let pick: DeployRecipe["pick"];
   if (versionVar !== undefined) {
     const candidates = jobs.builds;
-    build =
-      registry === undefined
-        ? candidates.length === 1
-          ? candidates[0]
-          : undefined
-        : candidates.find((b) => b.registry === registry);
-    if (build !== undefined)
+    if (registry === undefined) {
+      const image = imageValue(own.settings);
+      const byImage =
+        image === undefined
+          ? []
+          : candidates.filter((b) => {
+              const prefix = registryPrefix(b.settings);
+              return prefix !== undefined && image.startsWith(`${prefix}/`);
+            });
+      build = byImage.length === 1 ? byImage[0] : candidates.length === 1 ? candidates[0] : undefined;
+    } else {
+      build = candidates.find((b) => b.registry === registry);
+    }
+    if (build !== undefined) {
       pick = { input: build.version, ...(build.registry === undefined ? {} : { registry: build.registry }) };
-    else if (registry === undefined && candidates.length > 1) {
+    } else if (registry === undefined && candidates.length > 1) {
       builds = candidates.map((b) => buildStep(b, input.remote));
       pick = { input: versionVar };
       asks.push({
@@ -847,14 +1110,18 @@ async function variablesRecipe(
     }
   }
 
-  // The parts of the project this job deploys: its options, as GitLab's typed variable says them.
+  // The parts of the project this job deploys: its options, as GitLab's typed variable says them, else the values its
+  // script accepts for it, else the words of its description.
   const componentsVar = firstVar(job.vars, COMPONENT_VARS);
   let components: DeployRecipe["components"];
   if (componentsVar !== undefined) {
+    const accepted = optionsAccepted(own.texts, componentsVar.name);
     const options =
       componentsVar.spec.options.length > 0
         ? componentsVar.spec.options
-        : optionsFromDescription(componentsVar.spec.description, input.folders);
+        : accepted.length > 0
+          ? accepted
+          : optionsFromDescription(componentsVar.spec.description, input.folders);
     const spec: InputSpec = {
       name: componentsVar.name,
       options,
@@ -872,10 +1139,9 @@ async function variablesRecipe(
     } else components = found;
   }
 
-  const confirm = confirmations(job, own.lines);
   const variables: Record<string, string> = {
     ...(target === undefined || target === "" ? {} : { [TARGET_VAR]: target }),
-    ...confirm,
+    ...confirm.values,
   };
   const bindDeploy: Record<string, InputBinding> = {
     ...(componentsVar === undefined ? {} : { [componentsVar.name]: "components" }),
@@ -905,13 +1171,13 @@ async function variablesRecipe(
           },
         ];
 
-  // The image the containers of this target run, read from the host before a deploy replaces it.
-  const built = build === undefined ? undefined : await settingsOf(build.job, input);
-  const running = imageIn(
-    ...(build === undefined ? [] : [valuesOf(build.job.vars)]),
-    ...(built === undefined ? [] : [built.settings]),
-    own.settings,
+  // The image the containers of this target run, read from the host before a deploy replaces it: the target's own
+  // setting first, else what its build makes.
+  const running = imageOfValue(
+    imageValue(own.settings, ...(build === undefined ? [] : [valuesOf(build.job.vars), build.settings])),
   );
+  // The folders it deploys from, when its parts do not say.
+  const scope = components === undefined ? scopeOfJob(job, jobs.entries, own, input.folders) : undefined;
 
   const line = job.entry.file.located.lineOf([job.name]);
   const recipe: DeployRecipe = {
@@ -930,6 +1196,7 @@ async function variablesRecipe(
     ...(pick === undefined ? {} : { pick }),
     ...(running === undefined ? {} : { running }),
     ...(components === undefined ? {} : { components }),
+    ...(scope === undefined || scope.length === 0 ? {} : { scope }),
     ...(builds === undefined ? {} : { builds }),
     asks,
     answers: {},
@@ -971,7 +1238,12 @@ async function gitlabEnvironments(input: DiscoverInput, notes: string[]): Promis
       version !== undefined &&
       (registry !== undefined || includesWord(job.name, BUILD_WORDS))
     ) {
-      builds.push({ job, version, registry: registry === "" ? undefined : registry });
+      builds.push({
+        job,
+        version,
+        registry: registry === "" ? undefined : registry,
+        settings: (await readingOf(job, input)).settings,
+      });
       support.add(job.name);
     }
   }
@@ -990,11 +1262,26 @@ async function gitlabEnvironments(input: DiscoverInput, notes: string[]): Promis
     if (isManual(job.data)) {
       const withVariables = [TARGET_VAR, ...VERSION_VARS, ...COMPONENT_VARS].some((n) => job.vars.has(n));
       if (withVariables) {
-        const made = await variablesRecipe(job, { builds, statuses }, input, notes);
-        if (made !== undefined) out.push({ env: made.env, tier: tierOf(made.env), recipe: made.recipe });
+        const made = await variablesRecipe(job, { builds, statuses, entries }, input, notes);
+        if (made !== undefined) {
+          out.push({
+            env: made.env,
+            tier: tierOf(made.env),
+            ...(made.recipe === undefined ? {} : { recipe: made.recipe }),
+          });
+        }
+        continue;
+      }
+      // A manual job with no variables of the kinds above: played as it is, unless it asks for something majhi cannot give.
+      const reading = await readingOf(job, input);
+      const blocked = blockedBy(job, entries, builds, confirmations(job, reading.lines));
+      if (blocked !== undefined) {
+        notes.push(`${blocked}: ${env} has no recipe`);
+        out.push({ env, tier: tierOf(env) });
         continue;
       }
       const runs: DeployRunStep[] = [{ kind: "gitlab-job", remote: input.remote, job: job.name }];
+      const scope = scopeOfJob(job, entries, reading, input.folders);
       out.push({
         env,
         tier: tierOf(env),
@@ -1003,6 +1290,7 @@ async function gitlabEnvironments(input: DiscoverInput, notes: string[]): Promis
           deploy: runs as DeployRecipe["deploy"],
           rollback: { runs: runs as DeployRecipe["deploy"], at: "previous" },
           live,
+          ...(scope.length === 0 ? {} : { scope }),
           asks: [],
           answers: {},
         },
@@ -1025,13 +1313,16 @@ async function gitlabEnvironments(input: DiscoverInput, notes: string[]): Promis
   return out;
 }
 
-/** The environments the project's CI deploys, each with its recipe. Each environment is listed once, the first wins. */
+/** The environments the project's CI deploys, each with its recipe. Two files that equally deploy one environment are both listed. */
 export async function discoverEnvironments(input: DiscoverInput): Promise<Discovered> {
   const notes: string[] = [];
   const found: DeployEnvironment[] = [];
   if (input.provider === "github") found.push(...githubEnvironments(input, notes));
   else if (input.provider === "gitlab") found.push(...(await gitlabEnvironments(input, notes)));
   const seen = new Set<string>();
-  const environments = found.filter((e) => !seen.has(e.env) && seen.add(e.env));
+  const environments = found.filter((e) => {
+    const key = `${e.env}\0${e.recipe?.from.file ?? ""}`;
+    return !seen.has(key) && seen.add(key);
+  });
   return { environments, notes };
 }

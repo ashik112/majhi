@@ -751,6 +751,9 @@ export class CaseService {
       if (plan.ask !== undefined) await this.askDeploy(found.task.id, found.org, input.branch, plan.ask);
       throw new UserError(plan.why, 409);
     }
+    // Environments the fix does not go to, and why: said in the case, so nothing is left out silently.
+    for (const out of plan.left)
+      this.line(task, `${repo.project} ${out.env} does not get this fix: ${out.why}.`);
     const several = plan.envs.length > 1;
     if (several) {
       this.line(

@@ -289,6 +289,310 @@ export const ACME_SHOP_GITLAB_FILES: Readonly<Record<string, string>> = {
   "deploy/ci/registries/globex.env": "IMAGE_NAME=registry.globex.example/acme-shop/backend\n",
 };
 
+/**
+ * `acme-shop` as a monorepo with two products in it, shaped like a real one: the shop (`apps/acme-api`, `apps/acme-web`)
+ * deploys to three targets through one release, a second product (`apps/media-service`) deploys to its own node through
+ * jobs of its own. Beside the release GitHub has workflows that take a target and do something else (a data backfill, a
+ * status read, the media node's deploy). Nothing names its registry in the YAML: the scripts do, one `case` arm per
+ * target, and the allowed parts are the values a script accepts.
+ */
+const MONO_WORKFLOWS = {
+  ".github/workflows/backfill.yml": `name: Backfill
+run-name: Backfill \${{ inputs.command }} on \${{ inputs.target }} (\${{ inputs.mode }})
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to run against
+        required: true
+        type: choice
+        options: [acme, globex]
+        default: acme
+      command:
+        required: true
+        type: choice
+        options: [backfill_orders, seed_defaults]
+      mode:
+        required: true
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo backfill
+`,
+  ".github/workflows/deployment-status.yml": `name: Deployment status
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [acme, globex, initech]
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo status
+`,
+  ".github/workflows/deploy-media-node.yml": `name: Deploy Media Node
+on:
+  workflow_dispatch:
+    inputs:
+      target_node:
+        required: true
+        type: choice
+        options: [eu-1]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploy
+`,
+  ".github/workflows/build.yml": `name: Build
+run-name: Build \${{ inputs.registry }} from \${{ inputs.source_ref }}
+on:
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: Artifact to build
+        required: true
+        type: choice
+        options: [production, globex, media-service]
+        default: production
+      source_ref:
+        required: true
+        default: main
+      backend_version:
+        description: Image tag, X.Y.Z. Empty takes the next one
+        required: false
+        default: ""
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build
+`,
+  ".github/workflows/release.yml": `name: Deploy
+run-name: Deploy \${{ inputs.target }} \${{ inputs.components }} from \${{ inputs.source_ref }}
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options: [acme, globex, initech]
+        default: acme
+      source_ref:
+        required: true
+        default: main
+      components:
+        description: Components to deploy
+        type: choice
+        options: [both, backend, frontend]
+        default: both
+      backend_version:
+        description: Existing immutable backend tag from Build
+        required: false
+        default: ""
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploy
+`,
+};
+
+const MONO_GITLAB = `.runner:
+  image: debian:bookworm-slim
+
+.image_build:
+  extends: .runner
+  stage: build
+  needs: []
+  variables:
+    VERSION: ""
+  script:
+    - bash deploy/ci/build-image.sh
+  rules:
+    - when: manual
+      allow_failure: true
+
+image:build:production:
+  extends: .image_build
+  variables:
+    REGISTRY_TARGET: production
+
+image:build:globex:
+  extends: .image_build
+  variables:
+    REGISTRY_TARGET: globex
+
+.app_deploy:
+  extends: .runner
+  stage: deploy
+  needs:
+    - job: spa:build
+      artifacts: true
+      optional: true
+  variables:
+    COMPONENTS: backend
+    VERSION: ""
+    CONFIRM_TARGET: ""
+  script:
+    - bash deploy/ci/app-deploy.sh
+  rules:
+    - when: manual
+      allow_failure: false
+
+app:deploy:acme:
+  extends: .app_deploy
+  environment:
+    name: app/acme
+  variables:
+    TARGET: acme
+
+app:deploy:globex:
+  extends: .app_deploy
+  environment:
+    name: app/globex
+  variables:
+    TARGET: globex
+
+app:deploy:initech:
+  extends: .app_deploy
+  environment:
+    name: app/initech
+  variables:
+    TARGET: initech
+
+.app_status:
+  extends: .runner
+  stage: verify
+  needs: []
+  script:
+    - bash deploy/ci/status.sh
+  rules:
+    - when: manual
+      allow_failure: true
+
+app:status:acme:
+  extends: .app_status
+  variables:
+    TARGET: acme
+
+app:status:globex:
+  extends: .app_status
+  variables:
+    TARGET: globex
+
+app:status:initech:
+  extends: .app_status
+  variables:
+    TARGET: initech
+
+media:artifact:
+  extends: .runner
+  stage: build
+  needs: []
+  script:
+    - cd apps/media-service && go test ./...
+    - bash deploy/ci/build-media.sh
+  cache:
+    key:
+      files:
+        - apps/media-service/go.sum
+  rules:
+    - when: manual
+      allow_failure: true
+
+media:deploy:
+  extends: .runner
+  stage: deploy
+  needs:
+    - job: media:artifact
+      artifacts: true
+  variables:
+    TARGET_NODE: eu-1
+    CONFIRM_TARGET: ""
+  script:
+    - bash deploy/ci/media-deploy.sh
+  environment:
+    name: media/eu-1
+  rules:
+    - when: manual
+      allow_failure: false
+`;
+
+const MONO_APP_DEPLOY = `#!/usr/bin/env bash
+here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+. "$here/lib.sh"
+: "\${TARGET:?TARGET is required}"
+components="\${COMPONENTS:-backend}"
+[ "$CONFIRM_TARGET" = "$TARGET" ] || exit 1
+case "$components" in
+  backend | frontend | both) ;;
+  *) echo "unsupported COMPONENTS value" >&2; exit 1 ;;
+esac
+resolve_target "$TARGET"
+`;
+
+const MONO_LIB = `#!/usr/bin/env bash
+resolve_target() {
+  local target="\${1:?target is required}"
+  case "$target" in
+    acme | initech)
+      BACKEND_IMAGE=registry.acme.example/main/acme-backend
+      VERSION_PATTERN='^[0-9]+\\.[0-9]+\\.[0-9]+$'
+      ;;
+    globex)
+      BACKEND_IMAGE=registry.globex.example/own/acme-backend
+      VERSION_PATTERN='^globex-[0-9]+\\.[0-9]+\\.[0-9]+$'
+      ;;
+    *)
+      echo "unsupported target" >&2
+      exit 1
+      ;;
+  esac
+}
+`;
+
+const MONO_BUILD = `#!/usr/bin/env bash
+here="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+. "$here/lib.sh"
+case "$REGISTRY_TARGET" in
+  production)
+    registry=registry.acme.example/main
+    ;;
+  globex)
+    registry=registry.globex.example/own
+    ;;
+  *) echo "unsupported REGISTRY_TARGET" >&2; exit 1 ;;
+esac
+`;
+
+/** The folders of the monorepo `acme-shop`. */
+export const ACME_SHOP_MONO_FOLDERS = [
+  "apps",
+  "apps/acme-api",
+  "apps/acme-web",
+  "apps/media-service",
+  "deploy",
+  "docs",
+];
+
+export const ACME_SHOP_MONO_FILES: Readonly<Record<string, string>> = {
+  ...MONO_WORKFLOWS,
+  ".gitlab-ci.yml": GITLAB_ROOT,
+  ".gitlab/ci/deploy.yml": MONO_GITLAB,
+  "deploy/ci/app-deploy.sh": MONO_APP_DEPLOY,
+  "deploy/ci/lib.sh": MONO_LIB,
+  "deploy/ci/build-image.sh": MONO_BUILD,
+};
+
 /** An in-memory repo: its files by path, and the folders their paths make. */
 export function memoryCi(files: Readonly<Record<string, string>>): CiSource {
   return {

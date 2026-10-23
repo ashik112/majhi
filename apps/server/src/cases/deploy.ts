@@ -15,7 +15,10 @@ import {
   isBuild,
   isVersionless,
   parseTag,
+  partOf,
   recipeSource,
+  scopeOf,
+  underFolders,
   withoutVersion,
   wordsOf,
 } from "../deploy/recipe.ts";
@@ -114,6 +117,43 @@ export type DeployPath =
       notes: string[];
     }
   | { ok: false; why: string; ask?: DeployQuestion[] };
+
+/** A production environment the fix does not go to, and why. */
+export interface LeftOut {
+  env: string;
+  why: string;
+}
+
+/**
+ * Why an environment is not for this change, or undefined when it is. An environment goes only when the change touches
+ * a part it deploys: its parts' folders, or the folders its job works in. When the change touches no part of any
+ * environment there is nothing to narrow by and every one goes. An environment that says nothing about which part it
+ * deploys goes only when none of its siblings does: majhi does not guess that it is the same product.
+ */
+function notForChange(
+  env: DeployEnvironment,
+  all: readonly DeployEnvironment[],
+  changed: readonly string[] | undefined,
+): string | undefined {
+  if (changed === undefined || changed.length === 0) return undefined;
+  const touches = (e: DeployEnvironment) => {
+    const scope = scopeOf(e.recipe);
+    return scope !== undefined && changed.some((p) => underFolders(p, scope));
+  };
+  if (!all.some(touches)) {
+    // Nothing the environments deploy changed. A change that lies wholly in other parts of the project (`apps/voice-service`)
+    // is for what deploys those; anything else (docs, the root) has no part to narrow by.
+    const parts = [...new Set(changed.flatMap((p) => partOf(p) ?? []))];
+    return parts.length > 0 && changed.every((p) => partOf(p) !== undefined)
+      ? `the change is in ${parts.join(", ")}, which no environment of the project deploys`
+      : undefined;
+  }
+  if (touches(env)) return undefined;
+  const scope = scopeOf(env.recipe);
+  return scope === undefined
+    ? "majhi cannot tell which part of the project it deploys, and the change touches a part that others deploy"
+    : `it deploys ${scope.join(", ")}, which this change does not touch`;
+}
 
 /** A deploy that may start. */
 export type OkPath = Extract<DeployPath, { ok: true }>;
@@ -244,8 +284,13 @@ export class CaseDeployer {
    */
   async order(
     project: string,
-    pick: { env?: string | undefined; about?: readonly string[] | undefined } = {},
-  ): Promise<{ ok: true; envs: string[]; read: string[] } | { ok: false; why: string }> {
+    pick: {
+      env?: string | undefined;
+      about?: readonly string[] | undefined;
+      /** The files the fix changes, when they are known: an environment that deploys another part is left out. */
+      changed?: readonly string[] | undefined;
+    } = {},
+  ): Promise<{ ok: true; envs: string[]; read: string[]; left: LeftOut[] } | { ok: false; why: string }> {
     const read: string[] = [];
     let found = await this.candidates(project);
     if (found.length === 0) {
@@ -255,7 +300,34 @@ export class CaseDeployer {
     }
     if (found.length === 0) return { ok: false, why: NO_PATH(project) };
     const production = found.filter((f) => f.env.tier === "production");
-    const fit = (production.length > 0 ? production : found).map((f) => f.env.env);
+    const everyone = production.length > 0 ? production : found;
+    const left: LeftOut[] = [];
+    // Production environments of the project that majhi has no way to deploy: said, so the owner knows they were not touched.
+    for (const env of await this.ports.environments(project)) {
+      if (env.tier === "production" && !found.some((f) => f.env.env === env.env)) {
+        left.push({
+          env: env.env,
+          why: "majhi does not deploy it by itself: its deploy needs something played or confirmed that majhi cannot fill, or it never went live through a run majhi can repeat",
+        });
+      }
+    }
+    const fit = everyone
+      .filter((f) => {
+        const why = notForChange(
+          f.env,
+          everyone.map((o) => o.env),
+          pick.changed,
+        );
+        if (why !== undefined && f.env.env !== pick.env) left.push({ env: f.env.env, why });
+        return why === undefined || f.env.env === pick.env;
+      })
+      .map((f) => f.env.env);
+    if (fit.length === 0) {
+      return {
+        ok: false,
+        why: `The fix goes to no environment of ${project}: ${left.map((l) => `${l.env}: ${l.why}`).join("; ")}. Ask the owner once with case_ask how to deploy it.`,
+      };
+    }
     if (pick.env !== undefined && !fit.includes(pick.env)) {
       return {
         ok: false,
@@ -272,6 +344,7 @@ export class CaseDeployer {
       ok: true,
       envs: first === undefined ? fit : [first, ...fit.filter((name) => name !== first)],
       read,
+      left,
     };
   }
 
@@ -282,11 +355,13 @@ export class CaseDeployer {
   async plan(
     input: PrepareInput,
   ): Promise<
-    { ok: true; envs: string[]; paths: OkPath[] } | { ok: false; why: string; ask?: DeployQuestion[] }
+    | { ok: true; envs: string[]; paths: OkPath[]; left: LeftOut[] }
+    | { ok: false; why: string; ask?: DeployQuestion[] }
   > {
     const ordered = await this.order(input.project, {
       env: input.env ?? input.answers?.env,
       about: input.about,
+      changed: await this.ports.changedPaths(input.project, input.branch),
     });
     if (!ordered.ok) return ordered;
     const several = ordered.envs.length > 1;
@@ -320,7 +395,7 @@ export class CaseDeployer {
         ask: asks,
       };
     }
-    return { ok: true, envs: ordered.envs, paths };
+    return { ok: true, envs: ordered.envs, paths, left: ordered.left };
   }
 
   /**

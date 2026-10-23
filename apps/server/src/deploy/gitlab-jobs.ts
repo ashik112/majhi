@@ -248,3 +248,143 @@ export function plainSettings(file: string): Map<string, string> {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Shell files: what a target's settings are, read by lines
+
+/** One `case` statement of a shell file: the variable it looks at, and its arms. */
+export interface CaseBlock {
+  subject: string;
+  arms: { patterns: string[]; body: string[] }[];
+}
+
+const ARM_CHARS = new Set(["-", ".", "*", "|", " ", "/", "_", '"', "'"]);
+
+/** `kinbe | nbr) FOO=1` is the arm of `kinbe` and `nbr` with `FOO=1` in it. Undefined when the line is not an arm head. */
+function armHead(line: string): { patterns: string[]; rest: string } | undefined {
+  const close = line.indexOf(")");
+  if (close <= 0) return undefined;
+  const head = line.slice(0, close).trim();
+  if (head === "" || ![...head].every((c) => isNameChar(c) || ARM_CHARS.has(c))) return undefined;
+  const patterns = head
+    .split("|")
+    .map((p) =>
+      [...p]
+        .filter((c) => !QUOTES.has(c))
+        .join("")
+        .trim(),
+    )
+    .filter((p) => p !== "");
+  return { patterns, rest: line.slice(close + 1).trim() };
+}
+
+/**
+ * A shell file split into the lines outside any `case` and the `case` statements, read line by line (an arm ends at
+ * `;;`, a statement at `esac`). Enough to ask what a script assigns for one target: nothing here runs or expands.
+ */
+export function parseShell(file: string): { outside: string[]; cases: CaseBlock[] } {
+  const outside: string[] = [];
+  const cases: CaseBlock[] = [];
+  const stack: { block: CaseBlock; arm: { patterns: string[]; body: string[] } | undefined }[] = [];
+  for (const raw of file.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("case ") && line.endsWith(" in")) {
+      const word = line.slice("case ".length, -" in".length).trim();
+      const block: CaseBlock = {
+        subject: referencesOf(word)[0] ?? [...word].filter((c) => !QUOTES.has(c)).join(""),
+        arms: [],
+      };
+      cases.push(block);
+      stack.push({ block, arm: undefined });
+      continue;
+    }
+    const top = stack.at(-1);
+    if (top === undefined) {
+      outside.push(line);
+      continue;
+    }
+    if (line === "esac" || line.startsWith("esac ")) {
+      stack.pop();
+      continue;
+    }
+    let text = line;
+    if (top.arm === undefined) {
+      const head = armHead(line);
+      if (head === undefined) continue;
+      top.arm = { patterns: head.patterns, body: [] };
+      top.block.arms.push(top.arm);
+      text = head.rest;
+    }
+    const end = text.indexOf(";;");
+    const body = end >= 0 ? text.slice(0, end).trim() : text;
+    if (body !== "") top.arm.body.push(body);
+    if (end >= 0) top.arm = undefined;
+  }
+  return { outside, cases };
+}
+
+/**
+ * The plain settings of a shell file for some target names: the assignments outside any `case`, and those in the arms of
+ * every `case` that has one of the names as a pattern. A value that is computed is left out.
+ */
+export function settingsFor(file: string, names: ReadonlySet<string>): Map<string, string> {
+  const shell = parseShell(file);
+  const out = plainSettings(shell.outside.join("\n"));
+  for (const block of shell.cases) {
+    for (const arm of block.arms) {
+      if (!arm.patterns.some((p) => names.has(p))) continue;
+      for (const [key, value] of plainSettings(arm.body.join("\n"))) out.set(key, value);
+    }
+  }
+  return out;
+}
+
+/** The names a script copies a variable into: `components="${COMPONENTS:-backend}"` makes `components` one of `COMPONENTS`. */
+export function aliasesOf(lines: readonly string[], variable: string): Set<string> {
+  const out = new Set([variable]);
+  for (const raw of lines) {
+    const line = raw.trim();
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const name = line.slice(0, eq);
+    if (![...name].every(isNameChar)) continue;
+    if (referencesOf(line.slice(eq + 1)).includes(variable)) out.add(name);
+  }
+  return out;
+}
+
+/** The values a script accepts for a variable: the patterns of the `case` that looks at it (or at a copy of it). */
+export function optionsAccepted(files: readonly string[], variable: string): string[] {
+  const out: string[] = [];
+  for (const file of files) {
+    const aliases = aliasesOf(file.split("\n"), variable);
+    for (const block of parseShell(file).cases) {
+      if (!aliases.has(block.subject)) continue;
+      for (const arm of block.arms)
+        for (const p of arm.patterns) if (p !== "*" && !out.includes(p)) out.push(p);
+    }
+  }
+  return out;
+}
+
+/** The folders of the repo a job works in: the paths its script, its cache and its artifacts name, matched to `folders`. */
+export function foldersTouched(
+  words: readonly string[],
+  folders: readonly string[],
+  ignore: readonly string[],
+): string[] {
+  const out: string[] = [];
+  const known = [...folders].sort((a, b) => b.length - a.length);
+  for (const raw of words) {
+    let word = raw;
+    for (const prefix of ["./", "$CI_PROJECT_DIR/", `$\{CI_PROJECT_DIR}/`]) {
+      if (word.startsWith(prefix)) word = word.slice(prefix.length);
+    }
+    const folder = known.find((f) => word === f || word.startsWith(`${f}/`));
+    if (folder === undefined || out.includes(folder)) continue;
+    const own = folder.split("/").at(-1) ?? folder;
+    if (own.startsWith(".") || ignore.includes(own)) continue;
+    out.push(folder);
+  }
+  return out;
+}
