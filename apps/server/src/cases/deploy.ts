@@ -439,7 +439,7 @@ export class CaseDeployer {
     const ownerCommit = answers["previous-commit"];
     if (ownerCommit !== undefined) replaces = { ...replaces, commit: ownerCommit, from: "owner" };
     // The image of this registry was built by an earlier target of the same deploy: it is used, not built again. Two
-    // targets of one registry may tag differently (`1.4.7`, `pyzasoft-1.2.3`): an image is not shared across shapes.
+    // targets of one registry may tag differently (`1.4.7`, `globex-1.2.3`): an image is not shared across shapes.
     const built = registry === undefined ? undefined : input.reuse?.find((r) => r.registry === registry);
     const mine = replaces?.version === undefined ? undefined : parseTag(replaces.version);
     const theirs = built?.version === undefined ? undefined : parseTag(built.version);

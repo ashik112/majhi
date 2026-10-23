@@ -300,7 +300,7 @@ export interface TagParts {
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= "0" && c <= "9";
 
 /**
- * `pyzasoft-1.2.3` is `pyzasoft-`, 1, 2, 3 and nothing after. The numbers are the last three runs of digits that are
+ * `globex-1.2.3` is `globex-`, 1, 2, 3 and nothing after. The numbers are the last three runs of digits that are
  * joined by single dots; anything else in the tag is kept as it is. Undefined when the tag has no such three numbers
  * (a commit, `1.4`, `latest`).
  */
@@ -334,8 +334,8 @@ function newer(a: [number, number, number], b: [number, number, number]): boolea
 }
 
 /**
- * The next patch after the highest version of the same shape: the tag keeps its prefix and suffix, so `pyzasoft-1.2.3`
- * is followed by `pyzasoft-1.2.4`. The shape is the one of `like` (what the target runs now) when it has one; else the
+ * The next patch after the highest version of the same shape: the tag keeps its prefix and suffix, so `globex-1.2.3`
+ * is followed by `globex-1.2.4`. The shape is the one of `like` (what the target runs now) when it has one; else the
  * shape of the highest version known. Undefined when no known version has the shape.
  */
 export function nextPatch(

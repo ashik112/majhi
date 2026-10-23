@@ -397,11 +397,11 @@ describe("finding how a project deploys from its CI files", () => {
 
   it("picks the next version in the shape of the target's own tag", () => {
     // A prefixed tag keeps its prefix, and the plain tags of the same registry do not count for it.
-    expect(nextPatch(["pyzasoft-1.2.3", "9.9.9", "pyzasoft-1.1.8"], "pyzasoft-1.2.0")).toEqual({
-      version: "pyzasoft-1.2.4",
-      after: "pyzasoft-1.2.3",
+    expect(nextPatch(["globex-1.2.3", "9.9.9", "globex-1.1.8"], "globex-1.2.0")).toEqual({
+      version: "globex-1.2.4",
+      after: "globex-1.2.3",
     });
-    expect(nextPatch(["pyzasoft-1.2.3", "1.4.7", "1.4.2"], "1.4.0")).toEqual({
+    expect(nextPatch(["globex-1.2.3", "1.4.7", "1.4.2"], "1.4.0")).toEqual({
       version: "1.4.8",
       after: "1.4.7",
     });
