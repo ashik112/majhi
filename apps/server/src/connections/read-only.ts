@@ -151,7 +151,7 @@ const READ_TABLE: Readonly<Record<string, ReadTable>> = {
       pr: ["diff", "view", "list", "status", "checks"],
       run: ["view", "list", "watch"],
       issue: ["view", "list", "status"],
-      repo: ["view", "list"],
+      repo: ["view", "list", "clone"],
       release: ["view", "list"],
       workflow: ["view", "list"],
       label: ["list"],
@@ -166,7 +166,7 @@ const READ_TABLE: Readonly<Record<string, ReadTable>> = {
       issue: ["view", "list"],
       ci: ["view", "list", "status", "trace"],
       pipeline: ["list", "view", "status"],
-      repo: ["view", "list"],
+      repo: ["view", "list", "clone"],
       release: ["view", "list"],
       api: [],
     },
@@ -183,6 +183,8 @@ const READ_TABLE: Readonly<Record<string, ReadTable>> = {
       "rev-parse",
       "describe",
       "shortlog",
+      "clone",
+      "fetch",
     ),
   },
   docker: {
@@ -216,6 +218,13 @@ const API_WRITE_FLAGS = set(
 const KUBECTL_SECRETS = set("secret", "secrets");
 /** Flags that make a git read write a file or run a program. */
 const GIT_UNSAFE = ["--output", "--ext-diff", "--textconv", "-c", "-C", "--exec"];
+/**
+ * Flags that make a clone or a fetch run a program or set config: a copy into a scratch folder only reads
+ * the remote without them. `gh` and `glab` pass the words after `--` to git, so they count there too.
+ */
+const COPY_UNSAFE = ["--upload-pack", "-u", "-c", "--config", "--template", "--separate-git-dir"];
+const copies = (program: string, first: string, second: string | undefined) =>
+  program === "git" ? first === "clone" || first === "fetch" : first === "repo" && second === "clone";
 
 /**
  * What a CLI's arguments do, by its table: `read`, `write`, or undefined when the program has no table
@@ -233,6 +242,11 @@ export function programReads(
   const [first, second] = args;
   if (first === undefined || first.startsWith("-")) return "write";
   if (program === "git" && args.some((a) => GIT_UNSAFE.some((u) => a === u || a.startsWith(`${u}=`))))
+    return "write";
+  if (
+    copies(program, first, second) &&
+    args.some((a) => COPY_UNSAFE.some((u) => a === u || a.startsWith(`${u}=`)))
+  )
     return "write";
   if (
     program === "kubectl" &&
