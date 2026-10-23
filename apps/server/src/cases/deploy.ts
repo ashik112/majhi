@@ -11,7 +11,6 @@ import {
 import {
   bindRuns,
   bindsOf,
-  commitOfVersion,
   componentsFor,
   isBuild,
   isVersionless,
